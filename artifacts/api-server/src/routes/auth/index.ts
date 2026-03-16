@@ -107,6 +107,7 @@ router.get("/auth/google", passport.authenticate("google", {
     "email",
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/drive",
   ],
   accessType: "offline",
   prompt: "consent",
