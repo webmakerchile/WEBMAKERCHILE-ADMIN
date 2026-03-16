@@ -1,10 +1,18 @@
 import { Router, type IRouter } from "express";
-import { ReplitConnectors } from "@replit/connectors-sdk";
+import { google } from "googleapis";
 
 const router: IRouter = Router();
 
-function getConnectors() {
-  return new ReplitConnectors();
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+function getGoogleAuth(user: any) {
+  const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({
+    access_token: user.googleAccessToken,
+    refresh_token: user.googleRefreshToken,
+  });
+  return oauth2Client;
 }
 
 router.get("/drive/files", async (req, res) => {
@@ -12,26 +20,29 @@ router.get("/drive/files", async (req, res) => {
   const pageToken = (req.query.pageToken as string) || undefined;
 
   try {
-    const connectors = getConnectors();
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
+
     let query = "trashed = false";
     if (folderId) {
       query += ` and '${folderId}' in parents`;
     }
 
-    let url = `/drive/v3/files?q=${encodeURIComponent(query)}&fields=nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime,webViewLink,thumbnailLink,parents)&orderBy=name&pageSize=100`;
-    if (pageToken) {
-      url += `&pageToken=${encodeURIComponent(pageToken)}`;
-    }
-
-    const response = await connectors.proxy("google-drive", url, {
-      method: "GET",
+    const response = await drive.files.list({
+      q: query,
+      fields: "nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime,webViewLink,thumbnailLink,parents)",
+      orderBy: "name",
+      pageSize: 100,
+      pageToken: pageToken || undefined,
     });
-    const data = await response.json();
+
     res.json({
-      files: data.files || [],
-      nextPageToken: data.nextPageToken || undefined,
+      files: response.data.files || [],
+      nextPageToken: response.data.nextPageToken || undefined,
     });
   } catch (error: any) {
+    console.error("[Drive] Error listing files:", error.message);
     res.status(500).json({ error: error.message || "Failed to list files" });
   }
 });
@@ -40,64 +51,50 @@ router.get("/drive/folders", async (req, res) => {
   const parentId = (req.query.parentId as string) || undefined;
 
   try {
-    const connectors = getConnectors();
-    let query =
-      "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
+
+    let query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
     if (parentId) {
       query += ` and '${parentId}' in parents`;
     }
 
-    const url = `/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,createdTime,modifiedTime,webViewLink,parents)&orderBy=name&pageSize=100`;
-
-    const response = await connectors.proxy("google-drive", url, {
-      method: "GET",
+    const response = await drive.files.list({
+      q: query,
+      fields: "files(id,name,mimeType,createdTime,modifiedTime,webViewLink,parents)",
+      orderBy: "name",
+      pageSize: 100,
     });
-    const data = await response.json();
-    res.json(data.files || []);
+
+    res.json(response.data.files || []);
   } catch (error: any) {
+    console.error("[Drive] Error listing folders:", error.message);
     res.status(500).json({ error: error.message || "Failed to list folders" });
   }
 });
 
-router.post("/drive/upload", async (req, res) => {
-  const { name, folderId, base64Data, mimeType } = req.body;
+router.get("/drive/search", async (req, res) => {
+  const searchQuery = (req.query.q as string) || "";
 
   try {
-    const connectors = getConnectors();
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
 
-    const metadata = {
-      name,
-      parents: [folderId],
-    };
+    const query = `name contains '${searchQuery.replace(/'/g, "\\'")}' and trashed = false`;
 
-    const boundary = "foo_bar_baz";
-    const binaryData = Buffer.from(base64Data, "base64");
+    const response = await drive.files.list({
+      q: query,
+      fields: "files(id,name,mimeType,size,createdTime,modifiedTime,webViewLink,thumbnailLink,parents)",
+      orderBy: "modifiedTime desc",
+      pageSize: 50,
+    });
 
-    const multipartBody =
-      `--${boundary}\r\n` +
-      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-      `${JSON.stringify(metadata)}\r\n` +
-      `--${boundary}\r\n` +
-      `Content-Type: ${mimeType}\r\n` +
-      `Content-Transfer-Encoding: base64\r\n\r\n` +
-      `${base64Data}\r\n` +
-      `--${boundary}--`;
-
-    const response = await connectors.proxy(
-      "google-drive",
-      "/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": `multipart/related; boundary=${boundary}`,
-        },
-        body: multipartBody,
-      }
-    );
-    const data = await response.json();
-    res.json(data);
+    res.json(response.data.files || []);
   } catch (error: any) {
-    res.status(500).json({ error: error.message || "Failed to upload file" });
+    console.error("[Drive] Error searching:", error.message);
+    res.status(500).json({ error: error.message || "Failed to search" });
   }
 });
 

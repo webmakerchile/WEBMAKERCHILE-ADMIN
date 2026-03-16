@@ -4,7 +4,8 @@ import { videos } from "@workspace/db/schema";
 import { eq, desc, lte, and } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
-import { ReplitConnectors } from "@replit/connectors-sdk";
+import { google } from "googleapis";
+import { Readable } from "stream";
 import {
   CreateVideoBody,
   ScheduleVideoBody,
@@ -16,8 +17,16 @@ import multer from "multer";
 const router: IRouter = Router();
 const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
 
-function getConnectors() {
-  return new ReplitConnectors();
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+function getGoogleAuth(user: any) {
+  const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({
+    access_token: user.googleAccessToken,
+    refresh_token: user.googleRefreshToken,
+  });
+  return oauth2Client;
 }
 
 function findReferenceImage(): string {
@@ -209,38 +218,48 @@ router.post("/content/videos/:id/upload-video", videoUpload.single("video"), asy
   }
 
   try {
-    const connectors = getConnectors();
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
     const folderId = process.env.DRIVE_FOLDER_ID || "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
 
     const fileName = videoFile.originalname || `video_${id}_${Date.now()}.mp4`;
 
-    const driveRes = await connectors.googleDrive.uploadFile(
-      videoFile.buffer,
-      fileName,
-      videoFile.mimetype || "video/mp4",
-      folderId,
-    );
+    const driveRes = await drive.files.create({
+      requestBody: {
+        name: fileName,
+        mimeType: videoFile.mimetype || "video/mp4",
+        parents: [folderId],
+      },
+      media: {
+        mimeType: videoFile.mimetype || "video/mp4",
+        body: Readable.from(videoFile.buffer),
+      },
+      fields: "id,name",
+    });
 
-    if (!driveRes || !driveRes.id) {
-      console.error("[Upload] Drive response invalid:", driveRes);
+    if (!driveRes.data || !driveRes.data.id) {
+      console.error("[Upload] Drive response invalid:", driveRes.data);
       res.status(500).json({ error: "Error al subir a Google Drive" });
       return;
     }
 
+    const driveFileId = driveRes.data.id;
+
     const [updated] = await db
       .update(videos)
       .set({
-        videoFileDriveId: driveRes.id,
+        videoFileDriveId: driveFileId,
         videoFileName: fileName,
         updatedAt: new Date(),
       })
       .where(eq(videos.id, id))
       .returning();
 
-    console.log(`[Upload] Video file uploaded to Drive: ${driveRes.id} for video ${id}`);
+    console.log(`[Upload] Video file uploaded to Drive: ${driveFileId} for video ${id}`);
     res.json({
       success: true,
-      driveFileId: driveRes.id,
+      driveFileId: driveFileId,
       fileName,
       video: updated,
     });
@@ -298,8 +317,14 @@ router.get("/content/videos/:id/download-video", async (req, res) => {
   }
 
   try {
-    const connectors = getConnectors();
-    const fileData = await connectors.googleDrive.getFileContent(video.videoFileDriveId);
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
+    const driveResponse = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    const fileData = Buffer.from(driveResponse.data as ArrayBuffer);
 
     res.set({
       "Content-Type": "video/mp4",

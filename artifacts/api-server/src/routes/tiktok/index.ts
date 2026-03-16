@@ -4,7 +4,7 @@ import { users, videos } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import multer from "multer";
 import crypto from "crypto";
-import { ReplitConnectors } from "@replit/connectors-sdk";
+import { google } from "googleapis";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
@@ -12,6 +12,17 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256
 const TIKTOK_CLIENT_KEY = (process.env.TIKTOK_CLIENT_KEY || "").trim();
 const TIKTOK_CLIENT_SECRET = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+function getGoogleOAuth2Client(user: any) {
+  const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({
+    access_token: user.googleAccessToken,
+    refresh_token: user.googleRefreshToken,
+  });
+  return oauth2Client;
+}
 
 function getTikTokRedirectUri(): string {
   return process.env.TIKTOK_REDIRECT_URI || "https://admin.webmakerchile.com/api/tiktok/callback";
@@ -360,9 +371,13 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
   }
 
   try {
-    const connectors = new ReplitConnectors();
-    const fileData = await connectors.googleDrive.getFileContent(video.videoFileDriveId);
-    const videoBuffer = Buffer.from(fileData);
+    const gAuth = getGoogleOAuth2Client(user);
+    const drive = google.drive({ version: "v3", auth: gAuth });
+    const driveResponse = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    const videoBuffer = Buffer.from(driveResponse.data as ArrayBuffer);
 
     const caption = video.tiktokDescription || `${video.title} #webmakerchile`;
     const videoSize = videoBuffer.length;

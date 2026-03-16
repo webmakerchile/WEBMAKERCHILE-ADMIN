@@ -5,7 +5,6 @@ import { videos, users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { Readable } from "stream";
 import multer from "multer";
-import { ReplitConnectors } from "@replit/connectors-sdk";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
@@ -212,11 +211,14 @@ router.post("/youtube/upload-from-drive/:videoId", async (req: Request, res: Res
   }
 
   try {
-    const connectors = new ReplitConnectors();
-    const fileData = await connectors.googleDrive.getFileContent(video.videoFileDriveId);
-    const videoBuffer = Buffer.from(fileData);
-
     const auth = getOAuth2Client(user);
+    const drive = google.drive({ version: "v3", auth });
+    const driveResponse = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    const videoBuffer = Buffer.from(driveResponse.data as ArrayBuffer);
+
     const youtube = google.youtube({ version: "v3", auth });
 
     const title = video.youtubeTitle || video.title;
