@@ -69,6 +69,13 @@ artifacts-monorepo/
   - upload-from-drive downloads video from Google Drive (videoFileDriveId) and uploads to YouTube without requiring manual file selection
   - Auto-upload during schedule/check queue processing when youtubeStatus is "scheduled"
   - Dashboard shows YouTube channel connection status
+- **Instagram Content Publishing API**: Reel publishing via Instagram Graph API
+  - Uses static access token (INSTAGRAM_ACCESS_TOKEN) + user ID (INSTAGRAM_USER_ID)
+  - Meta App ID: 1317067910325181, Instagram App ID: 1494052229003058
+  - Flow: Make Drive file temporarily public → Create Reel container → Poll for processing → Publish → Remove public access
+  - Routes: GET /api/instagram/status, POST /api/instagram/upload-from-drive/:videoId, GET /api/instagram/media-status/:videoId
+  - Videos published as public Reels with caption from instagramDescription
+  - StepReview has Instagram upload button alongside YouTube and TikTok
 - **TikTok Login Kit + Content Posting API** (sandbox mode):
   - OAuth v2 flow: GET /api/tiktok/auth → TikTok authorize → GET /api/tiktok/callback
   - Token exchange via POST https://open.tiktokapis.com/v2/oauth/token/

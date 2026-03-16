@@ -60,6 +60,7 @@ type VideoData = {
   youtubeDescription?: string | null;
   tiktokPublishId?: string | null;
   tiktokStatus?: string | null;
+  instagramMediaId?: string | null;
   instagramStatus?: string | null;
   youtubeVideoId?: string | null;
   youtubeStatus?: string | null;
@@ -1419,8 +1420,11 @@ function StepReview({
   const [ytResult, setYtResult] = useState<{ success?: boolean; message?: string; youtubeUrl?: string; error?: string; thumbnailSet?: boolean; thumbnailError?: string } | null>(null);
   const [ttUploading, setTtUploading] = useState(false);
   const [ttResult, setTtResult] = useState<{ success?: boolean; message?: string; publishId?: string; error?: string } | null>(null);
+  const [igUploading, setIgUploading] = useState(false);
+  const [igResult, setIgResult] = useState<{ success?: boolean; message?: string; mediaId?: string; error?: string } | null>(null);
   const [showYtDrivePicker, setShowYtDrivePicker] = useState(false);
   const [showTtDrivePicker, setShowTtDrivePicker] = useState(false);
+  const [showIgDrivePicker, setShowIgDrivePicker] = useState(false);
   const queryClient = useQueryClient();
 
   const hasVideoFile = !!video.videoFileDriveId;
@@ -1528,6 +1532,69 @@ function StepReview({
       setYtResult({ success: false, error: err.message || "Error de red" });
     } finally {
       setYtUploading(false);
+    }
+  };
+
+  const handleIgDriveSelect = async (file: { id: string; name: string }) => {
+    setShowIgDrivePicker(false);
+    setIgUploading(true);
+    setIgResult(null);
+    try {
+      await apiFetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driveFileId: file.id, fileName: file.name }),
+      });
+      const res = await apiFetch(`${API_BASE}/instagram/upload-from-drive/${video.id}`, {
+        method: "POST",
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        setIgResult({ success: false, error: `Error del servidor (${res.status}).` });
+        return;
+      }
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIgResult({ success: true, message: data.message, mediaId: data.mediaId });
+        queryClient.invalidateQueries({ queryKey: ["videos"] });
+      } else {
+        setIgResult({ success: false, error: data.error || "Error desconocido" });
+      }
+    } catch (err: any) {
+      setIgResult({ success: false, error: err.message || "Error de red" });
+    } finally {
+      setIgUploading(false);
+    }
+  };
+
+  const handleInstagramUpload = async () => {
+    if (!hasVideoFile) {
+      setIgResult({ success: false, error: "No hay archivo de video en Drive. Sube uno primero." });
+      return;
+    }
+    setIgUploading(true);
+    setIgResult(null);
+    try {
+      const res = await apiFetch(`${API_BASE}/instagram/upload-from-drive/${video.id}`, {
+        method: "POST",
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        setIgResult({ success: false, error: `Error del servidor (${res.status}). Recarga la página e intenta de nuevo.` });
+        setIgUploading(false);
+        return;
+      }
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIgResult({ success: true, message: data.message, mediaId: data.mediaId });
+        queryClient.invalidateQueries({ queryKey: ["videos"] });
+      } else {
+        setIgResult({ success: false, error: data.error || "Error desconocido" });
+      }
+    } catch (err: any) {
+      setIgResult({ success: false, error: err.message || "Error de red" });
+    } finally {
+      setIgUploading(false);
     }
   };
 
@@ -1927,6 +1994,93 @@ function StepReview({
                     <p className="font-medium">{ttResult.message}</p>
                   ) : (
                     <p>{ttResult.error}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {video.instagramMediaId ? (
+            <div className="bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-orange-500/10 border border-pink-500/20 rounded-xl p-4 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+              </span>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-pink-400">Subido a Instagram</p>
+                <p className="text-xs text-muted-foreground">Media ID: {video.instagramMediaId}</p>
+              </div>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
+                Publicado
+              </span>
+            </div>
+          ) : isScheduled && video.instagramDescription && (
+            <div className="bg-white/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
+                <span className="text-[10px] text-muted-foreground">· Se sube ahora como Reel público</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 flex items-center justify-center flex-shrink-0">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+                </span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">Subir a Instagram ahora</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hasVideoFile
+                      ? `Subir "${video.videoFileName || "video"}" como Reel público (inmediato)`
+                      : "Selecciona un video desde Google Drive para publicar como Reel"}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {hasVideoFile ? (
+                    <Button
+                      onClick={() => handleInstagramUpload()}
+                      disabled={igUploading}
+                      className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 hover:from-purple-500 hover:via-pink-400 hover:to-orange-300 text-white"
+                      size="sm"
+                    >
+                      {igUploading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Upload className="w-4 h-4 mr-2" />
+                      )}
+                      {igUploading ? "Subiendo..." : "Subir desde Drive"}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => setShowIgDrivePicker(true)}
+                      disabled={igUploading}
+                      className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 hover:from-purple-500 hover:via-pink-400 hover:to-orange-300 text-white"
+                      size="sm"
+                    >
+                      {igUploading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <FolderOpen className="w-4 h-4 mr-2" />
+                      )}
+                      {igUploading ? "Subiendo..." : "Desde Drive"}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {showIgDrivePicker && (
+                <DriveVideoPicker
+                  onSelect={(file) => handleIgDriveSelect(file)}
+                  onClose={() => setShowIgDrivePicker(false)}
+                />
+              )}
+
+              {igResult && (
+                <div className={`rounded-lg p-3 text-sm ${
+                  igResult.success
+                    ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/10 border border-red-500/20 text-red-400"
+                }`}>
+                  {igResult.success ? (
+                    <p className="font-medium">{igResult.message}</p>
+                  ) : (
+                    <p>{igResult.error}</p>
                   )}
                 </div>
               )}

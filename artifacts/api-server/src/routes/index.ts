@@ -6,6 +6,7 @@ import contentRouter from "./content";
 import studioRouter from "./studio";
 import youtubeRouter from "./youtube";
 import tiktokRouter from "./tiktok";
+import instagramRouter from "./instagram";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(contentRouter);
 router.use(studioRouter);
 router.use(youtubeRouter);
 router.use(tiktokRouter);
+router.use(instagramRouter);
 
 export default router;

@@ -27,6 +27,7 @@ export const videos = pgTable("videos", {
   youtubeDescription: text("youtube_description"),
   tiktokPublishId: text("tiktok_publish_id"),
   tiktokStatus: text("tiktok_status").default("pending"),
+  instagramMediaId: text("instagram_media_id"),
   instagramStatus: text("instagram_status").default("pending"),
   youtubeVideoId: text("youtube_video_id"),
   youtubeStatus: text("youtube_status").default("pending"),
