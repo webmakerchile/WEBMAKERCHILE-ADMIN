@@ -24,6 +24,7 @@ export const videos = pgTable("videos", {
   youtubeDescription: text("youtube_description"),
   tiktokStatus: text("tiktok_status").default("pending"),
   instagramStatus: text("instagram_status").default("pending"),
+  youtubeVideoId: text("youtube_video_id"),
   youtubeStatus: text("youtube_status").default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

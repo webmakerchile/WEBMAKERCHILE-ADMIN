@@ -25,8 +25,10 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
         callbackURL: getCallbackURL(),
-      },
-      async (_accessToken, _refreshToken, profile, done) => {
+        accessType: "offline",
+        prompt: "consent",
+      } as any,
+      async (accessToken: string, refreshToken: string, profile: any, done: any) => {
         try {
           const email = profile.emails?.[0]?.value?.toLowerCase();
           if (!email) {
@@ -44,15 +46,21 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
             .limit(1);
 
           if (existing) {
+            const updateData: Record<string, any> = {
+              lastLoginAt: new Date(),
+              name: profile.displayName || existing.name,
+              picture: profile.photos?.[0]?.value || existing.picture,
+              googleAccessToken: accessToken,
+            };
+            if (refreshToken) {
+              updateData.googleRefreshToken = refreshToken;
+            }
+
             await db
               .update(users)
-              .set({
-                lastLoginAt: new Date(),
-                name: profile.displayName || existing.name,
-                picture: profile.photos?.[0]?.value || existing.picture,
-              })
+              .set(updateData)
               .where(eq(users.id, existing.id));
-            return done(null, { ...existing, name: profile.displayName || existing.name, picture: profile.photos?.[0]?.value || existing.picture });
+            return done(null, { ...existing, ...updateData });
           }
 
           const [newUser] = await db
@@ -62,6 +70,8 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               email,
               name: profile.displayName || null,
               picture: profile.photos?.[0]?.value || null,
+              googleAccessToken: accessToken,
+              googleRefreshToken: refreshToken || null,
             })
             .returning();
 
@@ -92,8 +102,15 @@ passport.deserializeUser(async (id: number, done) => {
 });
 
 router.get("/auth/google", passport.authenticate("google", {
-  scope: ["profile", "email"],
-}));
+  scope: [
+    "profile",
+    "email",
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube",
+  ],
+  accessType: "offline",
+  prompt: "consent",
+} as any));
 
 router.get("/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/login?error=unauthorized" }),
@@ -111,6 +128,7 @@ router.get("/auth/me", (req: Request, res: Response) => {
       name: user.name,
       picture: user.picture,
       role: user.role,
+      hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
     });
   } else {
     res.status(401).json({ error: "No autenticado" });

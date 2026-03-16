@@ -7,6 +7,8 @@ export const users = pgTable("users", {
   name: text("name"),
   picture: text("picture"),
   role: text("role").notNull().default("admin"),
+  googleAccessToken: text("google_access_token"),
+  googleRefreshToken: text("google_refresh_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
 });

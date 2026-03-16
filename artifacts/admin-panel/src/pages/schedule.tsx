@@ -46,6 +46,17 @@ export default function SchedulePage() {
               <p className="text-emerald-400/80 text-sm">
                 Procesados: {checkSchedule.data.processed} | Errores: {checkSchedule.data.errors}
               </p>
+              {checkSchedule.data.details?.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  {checkSchedule.data.details.map((d: any) => (
+                    <p key={d.videoId} className="text-xs text-emerald-400/60">
+                      Video #{d.videoId}: {d.status}
+                      {d.youtube && d.youtube !== "skipped" && ` | YouTube: ${d.youtube}`}
+                      {d.error && ` (${d.error})`}
+                    </p>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
 

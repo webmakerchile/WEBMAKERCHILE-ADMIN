@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,7 @@ import {
   CalendarClock,
   Send,
   AlertCircle,
+  Upload,
 } from "lucide-react";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -49,6 +50,7 @@ type VideoData = {
   youtubeDescription?: string | null;
   tiktokStatus?: string | null;
   instagramStatus?: string | null;
+  youtubeVideoId?: string | null;
   youtubeStatus?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -954,6 +956,37 @@ function StepReview({
   isPending: boolean;
   copyText: (text: string) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [ytUploading, setYtUploading] = useState(false);
+  const [ytResult, setYtResult] = useState<{ success?: boolean; message?: string; youtubeUrl?: string; error?: string } | null>(null);
+  const queryClient = useQueryClient();
+
+  const handleYouTubeUpload = async (file: File) => {
+    setYtUploading(true);
+    setYtResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("video", file);
+
+      const res = await fetch(`${API_BASE}/youtube/upload/${video.id}`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl });
+        queryClient.invalidateQueries({ queryKey: ["videos"] });
+      } else {
+        setYtResult({ success: false, error: data.error || "Error desconocido" });
+      }
+    } catch (err: any) {
+      setYtResult({ success: false, error: err.message || "Error de red" });
+    } finally {
+      setYtUploading(false);
+    }
+  };
+
   const allComplete =
     video.title &&
     video.description &&
@@ -1106,10 +1139,87 @@ function StepReview({
               <div>
                 <p className="text-sm font-medium text-emerald-400">Programado en las 3 plataformas</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  TikTok, Instagram y YouTube están listos para publicación.
-                  Cuando conectes las APIs, se publicarán automáticamente.
+                  {video.youtubeVideoId
+                    ? `YouTube: Subido (ID: ${video.youtubeVideoId})`
+                    : "YouTube se subirá automáticamente al ejecutar la cola, o puedes subirlo manualmente."}
                 </p>
               </div>
+            </div>
+          )}
+
+          {video.youtubeVideoId ? (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              </span>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-400">Subido a YouTube</p>
+                <p className="text-xs text-muted-foreground">ID: {video.youtubeVideoId}</p>
+              </div>
+              <a
+                href={`https://youtube.com/shorts/${video.youtubeVideoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-red-400 hover:text-red-300 underline"
+              >
+                Ver en YouTube
+              </a>
+            </div>
+          ) : isScheduled && video.youtubeTitle && (
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center flex-shrink-0">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                </span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">Subir a YouTube</p>
+                  <p className="text-xs text-muted-foreground">Selecciona el archivo de video para subirlo como Short privado</p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleYouTubeUpload(file);
+                  }}
+                />
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={ytUploading}
+                  className="bg-red-600 hover:bg-red-500 text-white"
+                  size="sm"
+                >
+                  {ytUploading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  {ytUploading ? "Subiendo..." : "Subir Video"}
+                </Button>
+              </div>
+
+              {ytResult && (
+                <div className={`rounded-lg p-3 text-sm ${
+                  ytResult.success
+                    ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/10 border border-red-500/20 text-red-400"
+                }`}>
+                  {ytResult.success ? (
+                    <div>
+                      <p className="font-medium">{ytResult.message}</p>
+                      {ytResult.youtubeUrl && (
+                        <a href={ytResult.youtubeUrl} target="_blank" rel="noopener noreferrer" className="underline text-xs mt-1 block">
+                          {ytResult.youtubeUrl}
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <p>{ytResult.error}</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

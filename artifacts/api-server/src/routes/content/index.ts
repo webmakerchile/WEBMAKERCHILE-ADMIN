@@ -295,6 +295,10 @@ router.post("/content/schedule/check", async (_req, res) => {
         );
         const uploadData = await uploadRes.json();
 
+        if (!uploadData.id) {
+          throw new Error(`Drive upload failed: ${JSON.stringify(uploadData)}`);
+        }
+
         await db
           .update(videos)
           .set({

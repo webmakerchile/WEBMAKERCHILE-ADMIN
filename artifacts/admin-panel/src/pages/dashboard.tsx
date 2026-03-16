@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { 
   useListVideos, 
   useCheckScheduledVideos 
@@ -11,14 +12,28 @@ import {
   ArrowRight,
   RefreshCw,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  CheckCircle2,
+  XCircle
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
 
+const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
+
 export default function Dashboard() {
   const { data: videos, isLoading } = useListVideos();
   const checkSchedule = useCheckScheduledVideos();
+  const [ytChannel, setYtChannel] = useState<any>(null);
+  const [ytLoading, setYtLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/youtube/channel`)
+      .then(r => r.json())
+      .then(data => setYtChannel(data))
+      .catch(() => setYtChannel({ connected: false, message: "Error de conexión" }))
+      .finally(() => setYtLoading(false));
+  }, []);
 
   const stats = [
     {
@@ -152,7 +167,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Recent Activity (Placeholder for visual completeness) */}
           <div className="glass-card rounded-3xl p-8 border border-white/5">
             <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
               <Clock className="w-5 h-5 text-muted-foreground mr-2" />
@@ -184,6 +198,51 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="glass-card rounded-3xl p-8 border border-white/5">
+          <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
+            <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center mr-3">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            </span>
+            Conexión YouTube
+          </h2>
+
+          {ytLoading ? (
+            <div className="h-20 rounded-xl bg-white/5 animate-pulse" />
+          ) : ytChannel?.connected ? (
+            <div className="flex items-center gap-4 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              {ytChannel.channel?.thumbnail && (
+                <img src={ytChannel.channel.thumbnail} alt="" className="w-12 h-12 rounded-full" />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-foreground">{ytChannel.channel?.title}</h3>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {ytChannel.channel?.subscriberCount} suscriptores · {ytChannel.channel?.videoCount} videos
+                </p>
+              </div>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
+                Conectado
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+              <XCircle className="w-8 h-8 text-amber-400 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-amber-400">YouTube no conectado</h3>
+                <p className="text-sm text-muted-foreground">{ytChannel?.message || "Cierra sesión y vuelve a iniciar para otorgar permisos de YouTube"}</p>
+              </div>
+              <a
+                href={`${API_BASE}/auth/google`}
+                className="text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 px-4 py-2 rounded-lg font-medium transition-colors"
+              >
+                Reconectar
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </Layout>

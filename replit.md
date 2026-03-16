@@ -61,6 +61,13 @@ artifacts-monorepo/
   - Reference image for covers: `artifacts/api-server/assets/reference-cover.jpg` (fox mascot, flat vector art style)
   - All cover generations automatically use this reference image for consistent branding
 - **Google Drive**: File management via Replit Connectors SDK (folder: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB)
+- **YouTube Data API v3**: Video upload to YouTube via googleapis package
+  - OAuth scopes: youtube.upload, youtube
+  - User tokens (access + refresh) stored in users table
+  - Routes: GET /api/youtube/channel, POST /api/youtube/upload/:videoId, GET /api/youtube/status/:videoId
+  - Videos are uploaded as "private" by default with Shorts-optimized metadata
+  - Auto-upload during schedule/check queue processing when youtubeStatus is "scheduled"
+  - Dashboard shows YouTube channel connection status
 
 ### Authentication
 - Google OAuth 2.0 login via Passport.js
@@ -71,7 +78,7 @@ artifacts-monorepo/
 - Callback URL: https://admin.webmakerchile.com/api/auth/google/callback
 
 ### Database Tables
-- `users` - Authenticated admin users (Google OAuth, email whitelist)
+- `users` - Authenticated admin users (Google OAuth, email whitelist, YouTube access/refresh tokens)
 - `conversations` - Gemini AI chat conversations
 - `messages` - Chat messages within conversations  
 - `videos` - Video content entries with cover images, scheduling, and Drive integration
