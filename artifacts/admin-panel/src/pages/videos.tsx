@@ -53,6 +53,7 @@ type VideoData = {
   week?: string | null;
   day?: string | null;
   videoNumber?: string | null;
+  scheduleHour?: string | null;
   tiktokDescription?: string | null;
   instagramDescription?: string | null;
   youtubeTitle?: string | null;
@@ -129,7 +130,7 @@ export default function VideosPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { title: string; description: string; month?: string; week?: string; day?: string; videoNumber?: string }) => {
+    mutationFn: async (data: { title: string; description: string; month?: string; week?: string; day?: string; videoNumber?: string; scheduleHour?: string }) => {
       const res = await apiFetch(`${API_BASE}/content/videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -292,7 +293,7 @@ export default function VideosPage() {
                           {video.month && (
                             <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
                               <Folder className="w-3 h-3" />
-                              {video.month}/{video.week}/{video.day}/#{video.videoNumber}
+                              {video.month}/{video.week}/{video.day}/#{video.videoNumber}{video.scheduleHour ? ` · ${video.scheduleHour}` : ""}
                             </span>
                           )}
                         </div>
@@ -363,6 +364,7 @@ function VideoWizard({
     week: video?.week || "",
     day: video?.day || "",
     videoNumber: video?.videoNumber || "",
+    scheduleHour: video?.scheduleHour || "",
     tiktokDescription: video?.tiktokDescription || "",
     instagramDescription: video?.instagramDescription || "",
     youtubeTitle: video?.youtubeTitle || "",
@@ -378,6 +380,7 @@ function VideoWizard({
         week: video.week || "",
         day: video.day || "",
         videoNumber: video.videoNumber || "",
+        scheduleHour: video.scheduleHour || "",
         tiktokDescription: video.tiktokDescription || "",
         instagramDescription: video.instagramDescription || "",
         youtubeTitle: video.youtubeTitle || "",
@@ -443,6 +446,7 @@ function VideoWizard({
         week: formData.week || undefined,
         day: formData.day || undefined,
         videoNumber: formData.videoNumber || undefined,
+        scheduleHour: formData.scheduleHour || undefined,
       });
     } else {
       onUpdate({
@@ -452,6 +456,7 @@ function VideoWizard({
         week: formData.week || undefined,
         day: formData.day || undefined,
         videoNumber: formData.videoNumber || undefined,
+        scheduleHour: formData.scheduleHour || undefined,
       });
       goNext();
     }
@@ -896,42 +901,100 @@ function StepInfo({
           />
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-5 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Mes</label>
-            <input
+            <select
               value={formData.month}
               onChange={(e) => setFormData({ ...formData, month: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none"
-              placeholder="Octubre"
-            />
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+            >
+              <option value="">Seleccionar</option>
+              <option value="Enero">Enero</option>
+              <option value="Febrero">Febrero</option>
+              <option value="Marzo">Marzo</option>
+              <option value="Abril">Abril</option>
+              <option value="Mayo">Mayo</option>
+              <option value="Junio">Junio</option>
+              <option value="Julio">Julio</option>
+              <option value="Agosto">Agosto</option>
+              <option value="Septiembre">Septiembre</option>
+              <option value="Octubre">Octubre</option>
+              <option value="Noviembre">Noviembre</option>
+              <option value="Diciembre">Diciembre</option>
+            </select>
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Semana</label>
-            <input
+            <select
               value={formData.week}
               onChange={(e) => setFormData({ ...formData, week: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none"
-              placeholder="Semana 1"
-            />
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+            >
+              <option value="">Seleccionar</option>
+              <option value="Semana 1">Semana 1</option>
+              <option value="Semana 2">Semana 2</option>
+              <option value="Semana 3">Semana 3</option>
+              <option value="Semana 4">Semana 4</option>
+              <option value="Semana 5">Semana 5</option>
+            </select>
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Día</label>
-            <input
+            <select
               value={formData.day}
               onChange={(e) => setFormData({ ...formData, day: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none"
-              placeholder="Lunes"
-            />
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+            >
+              <option value="">Seleccionar</option>
+              <option value="Lunes">Lunes</option>
+              <option value="Martes">Martes</option>
+              <option value="Miércoles">Miércoles</option>
+              <option value="Jueves">Jueves</option>
+              <option value="Viernes">Viernes</option>
+              <option value="Sábado">Sábado</option>
+              <option value="Domingo">Domingo</option>
+            </select>
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Video #</label>
-            <input
+            <select
               value={formData.videoNumber}
               onChange={(e) => setFormData({ ...formData, videoNumber: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none"
-              placeholder="01"
-            />
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+            >
+              <option value="">Seleccionar</option>
+              <option value="01">#01</option>
+              <option value="02">#02</option>
+              <option value="03">#03</option>
+              <option value="04">#04</option>
+              <option value="05">#05</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Hora</label>
+            <select
+              value={formData.scheduleHour}
+              onChange={(e) => setFormData({ ...formData, scheduleHour: e.target.value })}
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+            >
+              <option value="">Seleccionar</option>
+              <option value="08:00">08:00</option>
+              <option value="09:00">09:00</option>
+              <option value="10:00">10:00</option>
+              <option value="11:00">11:00</option>
+              <option value="12:00">12:00</option>
+              <option value="13:00">13:00</option>
+              <option value="14:00">14:00</option>
+              <option value="15:00">15:00</option>
+              <option value="16:00">16:00</option>
+              <option value="17:00">17:00</option>
+              <option value="18:00">18:00</option>
+              <option value="19:00">19:00</option>
+              <option value="20:00">20:00</option>
+              <option value="21:00">21:00</option>
+              <option value="22:00">22:00</option>
+            </select>
           </div>
         </div>
 
@@ -1495,7 +1558,7 @@ function StepReview({
                 <div className="flex items-center gap-2 mt-3">
                   <Badge variant="outline" className="border-white/10">
                     <Folder className="w-3 h-3 mr-1" />
-                    {video.month}/{video.week}/{video.day}/#{video.videoNumber}
+                    {video.month}/{video.week}/{video.day}/#{video.videoNumber}{video.scheduleHour ? ` · ${video.scheduleHour}` : ""}
                   </Badge>
                 </div>
               )}

@@ -20,6 +20,7 @@ export const videos = pgTable("videos", {
   week: text("week"),
   day: text("day"),
   videoNumber: text("video_number"),
+  scheduleHour: text("schedule_hour"),
   tiktokDescription: text("tiktok_description"),
   instagramDescription: text("instagram_description"),
   youtubeTitle: text("youtube_title"),
