@@ -10,6 +10,8 @@ import DriveBrowserPage from "./pages/drive-browser";
 import SchedulePage from "./pages/schedule";
 import StudioPage from "./pages/studio";
 import LoginPage from "./pages/login";
+import TermsPage from "./pages/terms";
+import PrivacyPage from "./pages/privacy";
 import NotFound from "./pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -85,14 +87,26 @@ function Router() {
   );
 }
 
+function PublicRoutes() {
+  return (
+    <Switch>
+      <Route path="/terms" component={TermsPage} />
+      <Route path="/privacy" component={PrivacyPage} />
+      <Route>
+        <AuthLoader>
+          <Router />
+        </AuthLoader>
+      </Route>
+    </Switch>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AuthLoader>
-            <Router />
-          </AuthLoader>
+          <PublicRoutes />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
