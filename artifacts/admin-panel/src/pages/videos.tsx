@@ -640,20 +640,30 @@ function DriveVideoPicker({
     { id: DEFAULT_DRIVE_ROOT, name: "WebMakerChile" },
   ]);
 
-  const { data: filesData, isLoading: filesLoading } = useQuery({
+  const { data: filesData, isLoading: filesLoading, error: filesError } = useQuery({
     queryKey: ["drive-files", folderId],
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/drive/files?folderId=${folderId}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error al cargar archivos" }));
+        throw new Error(err.error || "Error al cargar archivos");
+      }
       return res.json();
     },
+    retry: false,
   });
 
-  const { data: foldersData, isLoading: foldersLoading } = useQuery({
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useQuery({
     queryKey: ["drive-folders", folderId],
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/drive/folders?parentId=${folderId}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error al cargar carpetas" }));
+        throw new Error(err.error || "Error al cargar carpetas");
+      }
       return res.json();
     },
+    retry: false,
   });
 
   const navigateToFolder = (id: string, name: string) => {
@@ -722,7 +732,15 @@ function DriveVideoPicker({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 min-h-[300px]">
-          {isLoading ? (
+          {(filesError || foldersError) ? (
+            <div className="flex flex-col items-center justify-center py-16 text-red-400">
+              <p className="text-sm font-medium mb-2">Error al acceder a Google Drive</p>
+              <p className="text-xs text-muted-foreground text-center max-w-md">
+                {(filesError as any)?.message || (foldersError as any)?.message || "Error desconocido"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">Cierra sesión y vuelve a iniciar para otorgar permisos de Drive.</p>
+            </div>
+          ) : isLoading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
             </div>
