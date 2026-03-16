@@ -1,5 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/App";
+import { useQueryClient } from "@tanstack/react-query";
 import { 
   LayoutDashboard, 
   Video, 
@@ -13,6 +15,8 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
+const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
+
 const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/videos", icon: Video, label: "Gestor de Videos" },
@@ -25,10 +29,22 @@ const navItems = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const user = useAuth();
+  const queryClient = useQueryClient();
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {}
+    queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+    window.location.reload();
+  };
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      {/* Sidebar */}
       <motion.aside 
         initial={{ x: -250 }}
         animate={{ x: 0 }}
@@ -72,17 +88,38 @@ export function Layout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="p-4 border-t border-white/5">
-          <button className="flex items-center w-full px-3 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-destructive/10 hover:text-destructive rounded-xl transition-all duration-200">
+        <div className="p-4 border-t border-white/5 space-y-3">
+          {user && (
+            <div className="flex items-center gap-3 px-3">
+              {user.picture ? (
+                <img
+                  src={user.picture}
+                  alt={user.name || ""}
+                  className="w-8 h-8 rounded-full border border-white/10"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                  {(user.name || user.email || "?")[0].toUpperCase()}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{user.name || "Admin"}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+              </div>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="flex items-center w-full px-3 py-3 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-destructive/10 hover:text-destructive rounded-xl transition-all duration-200"
+          >
             <LogOut className="w-4 h-4 mr-3" />
             Cerrar Sesión
           </button>
         </div>
       </motion.aside>
 
-      {/* Main Content */}
       <main className="flex-1 relative overflow-y-auto overflow-x-hidden bg-background">
-        {/* Decorative background glow */}
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[120px] pointer-events-none" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] bg-orange-600/5 rounded-full blur-[100px] pointer-events-none" />
         

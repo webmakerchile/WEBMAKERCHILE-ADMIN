@@ -1,0 +1,136 @@
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { db } from "@workspace/db";
+import { users } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
+
+const router: IRouter = Router();
+
+const ALLOWED_EMAILS = (process.env.ALLOWED_ADMIN_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+function getCallbackURL() {
+  if (process.env.GOOGLE_CALLBACK_URL) return process.env.GOOGLE_CALLBACK_URL;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/auth/google/callback`;
+  return "http://localhost:3000/api/auth/google/callback";
+}
+
+if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
+        callbackURL: getCallbackURL(),
+      },
+      async (_accessToken, _refreshToken, profile, done) => {
+        try {
+          const email = profile.emails?.[0]?.value?.toLowerCase();
+          if (!email) {
+            return done(null, false, { message: "No se pudo obtener el correo de Google" });
+          }
+
+          if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email)) {
+            return done(null, false, { message: "Correo no autorizado" });
+          }
+
+          const [existing] = await db
+            .select()
+            .from(users)
+            .where(eq(users.googleId, profile.id))
+            .limit(1);
+
+          if (existing) {
+            await db
+              .update(users)
+              .set({
+                lastLoginAt: new Date(),
+                name: profile.displayName || existing.name,
+                picture: profile.photos?.[0]?.value || existing.picture,
+              })
+              .where(eq(users.id, existing.id));
+            return done(null, { ...existing, name: profile.displayName || existing.name, picture: profile.photos?.[0]?.value || existing.picture });
+          }
+
+          const [newUser] = await db
+            .insert(users)
+            .values({
+              googleId: profile.id,
+              email,
+              name: profile.displayName || null,
+              picture: profile.photos?.[0]?.value || null,
+            })
+            .returning();
+
+          return done(null, newUser);
+        } catch (error) {
+          return done(error as Error);
+        }
+      }
+    )
+  );
+}
+
+passport.serializeUser((user: any, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: number, done) => {
+  try {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+    done(null, user || null);
+  } catch (error) {
+    done(error);
+  }
+});
+
+router.get("/auth/google", passport.authenticate("google", {
+  scope: ["profile", "email"],
+}));
+
+router.get("/auth/google/callback",
+  passport.authenticate("google", { failureRedirect: "/login?error=unauthorized" }),
+  (_req: Request, res: Response) => {
+    res.redirect("/");
+  }
+);
+
+router.get("/auth/me", (req: Request, res: Response) => {
+  if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+    const user = req.user as any;
+    res.json({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      picture: user.picture,
+      role: user.role,
+    });
+  } else {
+    res.status(401).json({ error: "No autenticado" });
+  }
+});
+
+router.post("/auth/logout", (req: Request, res: Response) => {
+  req.logout(() => {
+    req.session?.destroy(() => {
+      res.json({ success: true });
+    });
+  });
+});
+
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated && req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ error: "No autenticado" });
+}
+
+export { passport };
+export default router;
