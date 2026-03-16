@@ -1,0 +1,28 @@
+{
+  "name": "WebMakerAdmin",
+  "short_name": "WMAdmin",
+  "description": "Panel de administración de contenido - WebMakerChile",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#f97316",
+  "orientation": "any",
+  "categories": ["business", "productivity"],
+  "lang": "es-CL",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "prefer_related_applications": false
+}

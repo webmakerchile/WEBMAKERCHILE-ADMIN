@@ -11,7 +11,6 @@ import {
   CalendarClock,
   Clapperboard,
   LogOut,
-  Sparkles
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -51,7 +50,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         className="w-64 flex-shrink-0 border-r border-white/5 bg-card/50 backdrop-blur-xl flex flex-col relative z-20"
       >
         <div className="h-16 flex items-center px-6 border-b border-white/5">
-          <Sparkles className="w-6 h-6 text-primary mr-3" />
+          <img src="/icon-192.png" alt="Logo" className="w-7 h-7 rounded-lg mr-3" />
           <h1 className="font-display font-bold text-xl tracking-tight text-gradient">
             WebMaker<span className="text-primary">Admin</span>
           </h1>

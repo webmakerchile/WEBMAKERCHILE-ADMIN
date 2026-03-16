@@ -1,4 +1,3 @@
-import { Sparkles, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 
@@ -22,9 +21,14 @@ export default function LoginPage() {
       >
         <div className="bg-card/50 backdrop-blur-xl border border-white/10 rounded-3xl p-10 shadow-2xl">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-orange-500/20 flex items-center justify-center mb-6 border border-primary/20">
-              <Sparkles className="w-8 h-8 text-primary" />
-            </div>
+            <motion.img
+              src="/icon-192.png"
+              alt="WebMakerAdmin"
+              className="w-20 h-20 rounded-2xl mb-6 shadow-lg shadow-primary/20"
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", bounce: 0.4, duration: 0.8 }}
+            />
             <h1 className="font-display font-bold text-3xl tracking-tight text-center">
               WebMaker<span className="text-primary">Admin</span>
             </h1>
