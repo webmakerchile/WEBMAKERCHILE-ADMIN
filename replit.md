@@ -16,6 +16,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 - **AI**: Gemini AI via Replit AI Integrations (gemini-2.5-flash for chat, gemini-2.5-flash-image for image generation)
+- **Authentication**: Google OAuth 2.0 (Passport.js + express-session)
 - **Google Drive**: Replit Connectors SDK (@replit/connectors-sdk)
 
 ## Structure
@@ -62,7 +63,16 @@ artifacts-monorepo/
   - All cover generations automatically use this reference image for consistent branding
 - **Google Drive**: File management via Replit Connectors SDK (folder: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB)
 
+### Authentication
+- Google OAuth 2.0 login via Passport.js
+- Session-based auth with express-session (7-day cookie)
+- Only whitelisted emails can access (ALLOWED_ADMIN_EMAILS env var)
+- Auth routes: GET /api/auth/google, GET /api/auth/google/callback, GET /api/auth/me, POST /api/auth/logout
+- All /api routes except auth and health require authentication
+- Callback URL: https://admin.webmakerchile.com/api/auth/google/callback
+
 ### Database Tables
+- `users` - Authenticated admin users (Google OAuth, email whitelist)
 - `conversations` - Gemini AI chat conversations
 - `messages` - Chat messages within conversations  
 - `videos` - Video content entries with cover images, scheduling, and Drive integration
