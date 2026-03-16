@@ -3,6 +3,10 @@ import { google } from "googleapis";
 import { db } from "@workspace/db";
 import { videos, users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { randomBytes } from "crypto";
+import { writeFile, unlink, mkdir } from "fs/promises";
+import path from "path";
+import { registerTempFile, unregisterTempFile } from "./temp-serve";
 
 const router: IRouter = Router();
 
@@ -13,6 +17,14 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
 const IG_API_BASE = "https://graph.instagram.com/v21.0";
+const TEMP_DIR = path.join(process.cwd(), "tmp-ig-videos");
+
+function getPublicBaseUrl(): string {
+  if (process.env.REPLIT_DEPLOYMENT_URL) {
+    return process.env.REPLIT_DEPLOYMENT_URL;
+  }
+  return `https://admin.webmakerchile.com`;
+}
 
 function getOAuth2Client(user: any) {
   const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
@@ -35,46 +47,24 @@ function getOAuth2Client(user: any) {
   return oauth2Client;
 }
 
-async function makeDriveFilePublic(auth: any, fileId: string): Promise<string> {
-  const drive = google.drive({ version: "v3", auth });
-
-  await drive.permissions.create({
-    fileId,
-    requestBody: {
-      role: "reader",
-      type: "anyone",
-    },
-  });
-
-  const fileInfo = await drive.files.get({
-    fileId,
-    fields: "webContentLink",
-  });
-
-  const downloadLink = fileInfo.data.webContentLink;
-  if (!downloadLink) {
-    throw new Error("No se pudo obtener el link de descarga del archivo en Drive");
-  }
-
-  return downloadLink;
+async function saveTempVideo(buffer: Buffer): Promise<{ token: string; filePath: string }> {
+  await mkdir(TEMP_DIR, { recursive: true });
+  const token = randomBytes(32).toString("hex");
+  const filePath = path.join(TEMP_DIR, `${token}.mp4`);
+  await writeFile(filePath, buffer);
+  registerTempFile(token, filePath);
+  return { token, filePath };
 }
 
-async function removeDrivePublicAccess(auth: any, fileId: string) {
+async function cleanupTempVideo(token: string) {
+  unregisterTempFile(token);
+  const filePath = path.join(TEMP_DIR, `${token}.mp4`);
   try {
-    const drive = google.drive({ version: "v3", auth });
-    const perms = await drive.permissions.list({ fileId });
-    const anyonePerms = perms.data.permissions?.filter((p) => p.type === "anyone") || [];
-    for (const perm of anyonePerms) {
-      if (perm.id) {
-        await drive.permissions.delete({ fileId, permissionId: perm.id });
-      }
-    }
-  } catch (err: any) {
-    console.warn("[Instagram] Could not remove public access from Drive file:", err.message);
-  }
+    await unlink(filePath);
+  } catch { }
 }
 
-async function waitForContainer(containerId: string, maxAttempts = 30): Promise<string> {
+async function waitForContainer(containerId: string, maxAttempts = 60): Promise<string> {
   for (let i = 0; i < maxAttempts; i++) {
     const res = await fetch(
       `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${INSTAGRAM_ACCESS_TOKEN}`
@@ -97,12 +87,12 @@ async function waitForContainer(containerId: string, maxAttempts = 30): Promise<
       return "FINISHED";
     }
     if (data.status_code === "ERROR") {
-      throw new Error(`Error procesando video: ${data.status || "Error desconocido de Instagram"}`);
+      throw new Error(`Error procesando video en Instagram: ${data.status || "El video no cumple los requisitos de Instagram (formato, duración, resolución)"}`);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
-  throw new Error("Timeout: el video tardó demasiado en procesarse en Instagram");
+  throw new Error("Timeout: el video tardó demasiado en procesarse en Instagram (5 min)");
 }
 
 router.get("/instagram/status", async (_req: Request, res: Response) => {
@@ -181,13 +171,24 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
   }
 
   const auth = getOAuth2Client(user);
-  let madePublic = false;
+  let tempToken: string | null = null;
 
   try {
-    console.log(`[Instagram] Making Drive file ${video.videoFileDriveId} temporarily public...`);
-    const videoUrl = await makeDriveFilePublic(auth, video.videoFileDriveId);
-    madePublic = true;
-    console.log(`[Instagram] Public URL obtained: ${videoUrl.substring(0, 80)}...`);
+    console.log(`[Instagram] Downloading video from Drive: ${video.videoFileDriveId}...`);
+    const drive = google.drive({ version: "v3", auth });
+    const driveResponse = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    const videoBuffer = Buffer.from(driveResponse.data as ArrayBuffer);
+    console.log(`[Instagram] Video downloaded: ${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB`);
+
+    const { token } = await saveTempVideo(videoBuffer);
+    tempToken = token;
+
+    const baseUrl = getPublicBaseUrl();
+    const publicVideoUrl = `${baseUrl}/api/instagram/temp-video/${token}`;
+    console.log(`[Instagram] Temp video URL: ${publicVideoUrl}`);
 
     const caption = video.instagramDescription || video.description || "";
 
@@ -197,7 +198,7 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         media_type: "REELS",
-        video_url: videoUrl,
+        video_url: publicVideoUrl,
         caption,
         access_token: INSTAGRAM_ACCESS_TOKEN,
       }),
@@ -242,7 +243,7 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
       })
       .where(eq(videos.id, videoId));
 
-    await removeDrivePublicAccess(auth, video.videoFileDriveId);
+    await cleanupTempVideo(token);
 
     res.json({
       success: true,
@@ -252,8 +253,8 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
   } catch (error: any) {
     console.error("[Instagram] Upload error:", error.message);
 
-    if (madePublic && video.videoFileDriveId) {
-      await removeDrivePublicAccess(auth, video.videoFileDriveId);
+    if (tempToken) {
+      await cleanupTempVideo(tempToken);
     }
 
     res.status(500).json({ error: error.message || "Error al subir a Instagram" });

@@ -39,6 +39,9 @@ app.use("/api", authRouter);
 import healthRouter from "./routes/health";
 app.use("/api", healthRouter);
 
+import { serveTempVideo } from "./routes/instagram/temp-serve";
+app.get("/api/instagram/temp-video/:token", serveTempVideo);
+
 app.use("/api", requireAuth, router);
 
 export default app;
