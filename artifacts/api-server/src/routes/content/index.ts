@@ -11,8 +11,10 @@ import {
 } from "@workspace/api-zod";
 import * as fs from "fs";
 import * as path from "path";
+import multer from "multer";
 
 const router: IRouter = Router();
+const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
 
 function getConnectors() {
   return new ReplitConnectors();
@@ -184,6 +186,97 @@ router.delete("/content/videos/:id", async (req, res) => {
     return;
   }
   res.status(204).send();
+});
+
+router.post("/content/videos/:id/upload-video", videoUpload.single("video"), async (req, res) => {
+  const id = Number(req.params.id);
+  const videoFile = (req as any).file;
+
+  if (!videoFile) {
+    res.status(400).json({ error: "No se adjuntó archivo de video" });
+    return;
+  }
+
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, id))
+    .limit(1);
+
+  if (!video) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+
+  try {
+    const connectors = getConnectors();
+    const folderId = process.env.DRIVE_FOLDER_ID || "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
+
+    const fileName = videoFile.originalname || `video_${id}_${Date.now()}.mp4`;
+
+    const driveRes = await connectors.googleDrive.uploadFile(
+      videoFile.buffer,
+      fileName,
+      videoFile.mimetype || "video/mp4",
+      folderId,
+    );
+
+    if (!driveRes || !driveRes.id) {
+      console.error("[Upload] Drive response invalid:", driveRes);
+      res.status(500).json({ error: "Error al subir a Google Drive" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(videos)
+      .set({
+        videoFileDriveId: driveRes.id,
+        videoFileName: fileName,
+        updatedAt: new Date(),
+      })
+      .where(eq(videos.id, id))
+      .returning();
+
+    console.log(`[Upload] Video file uploaded to Drive: ${driveRes.id} for video ${id}`);
+    res.json({
+      success: true,
+      driveFileId: driveRes.id,
+      fileName,
+      video: updated,
+    });
+  } catch (err: any) {
+    console.error("[Upload] Error:", err.message);
+    res.status(500).json({ error: err.message || "Error al subir archivo de video" });
+  }
+});
+
+router.get("/content/videos/:id/download-video", async (req, res) => {
+  const id = Number(req.params.id);
+
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, id))
+    .limit(1);
+
+  if (!video || !video.videoFileDriveId) {
+    res.status(404).json({ error: "Video no encontrado o sin archivo adjunto" });
+    return;
+  }
+
+  try {
+    const connectors = getConnectors();
+    const fileData = await connectors.googleDrive.getFileContent(video.videoFileDriveId);
+
+    res.set({
+      "Content-Type": "video/mp4",
+      "Content-Disposition": `attachment; filename="${video.videoFileName || "video.mp4"}"`,
+    });
+    res.send(Buffer.from(fileData));
+  } catch (err: any) {
+    console.error("[Download] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.post("/content/videos/:id/generate-cover", async (req, res) => {

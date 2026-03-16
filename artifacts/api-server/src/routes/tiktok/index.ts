@@ -4,6 +4,7 @@ import { users, videos } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import multer from "multer";
 import crypto from "crypto";
+import { ReplitConnectors } from "@replit/connectors-sdk";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
@@ -324,6 +325,123 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
     });
   } catch (err: any) {
     console.error("[TikTok] Upload error:", err.message);
+    res.status(500).json({ error: err.message || "Error al subir a TikTok" });
+  }
+});
+
+router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Response) => {
+  const user = req.user as any;
+  const videoId = Number(req.params.videoId);
+
+  const token = await getValidTikTokToken(user);
+  if (!token) {
+    res.status(400).json({ error: "TikTok no conectado o token expirado. Reconecta tu cuenta." });
+    return;
+  }
+
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, videoId))
+    .limit(1);
+
+  if (!video) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+
+  if (!video.videoFileDriveId) {
+    res.status(400).json({ error: "Este video no tiene archivo adjunto. Sube un video primero." });
+    return;
+  }
+
+  try {
+    const connectors = new ReplitConnectors();
+    const fileData = await connectors.googleDrive.getFileContent(video.videoFileDriveId);
+    const videoBuffer = Buffer.from(fileData);
+
+    const caption = video.tiktokDescription || `${video.title} #webmakerchile`;
+    const videoSize = videoBuffer.length;
+    const chunkSize = Math.min(64 * 1024 * 1024, videoSize);
+    const totalChunkCount = Math.ceil(videoSize / chunkSize);
+
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        post_info: {
+          title: caption.substring(0, 150),
+          privacy_level: "SELF_ONLY",
+          disable_duet: false,
+          disable_comment: false,
+          disable_stitch: false,
+          video_cover_timestamp_ms: 1000,
+        },
+        source_info: {
+          source: "FILE_UPLOAD",
+          video_size: videoSize,
+          chunk_size: chunkSize,
+          total_chunk_count: totalChunkCount,
+        },
+      }),
+    });
+
+    const initData = await initRes.json();
+
+    if (initData.error?.code !== "ok") {
+      console.error("[TikTok] Init upload failed:", initData);
+      res.status(500).json({
+        error: `Error al iniciar subida: ${initData.error?.message || JSON.stringify(initData.error)}`,
+      });
+      return;
+    }
+
+    const uploadUrl = initData.data?.upload_url;
+    const publishId = initData.data?.publish_id;
+
+    if (!uploadUrl) {
+      res.status(500).json({ error: "No se recibió URL de subida de TikTok" });
+      return;
+    }
+
+    for (let i = 0; i < totalChunkCount; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, videoSize);
+      const chunk = videoBuffer.slice(start, end);
+
+      const chunkRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Range": `bytes ${start}-${end - 1}/${videoSize}`,
+          "Content-Type": "video/mp4",
+        },
+        body: chunk,
+      });
+
+      if (!chunkRes.ok) {
+        const errText = await chunkRes.text();
+        console.error(`[TikTok] Chunk ${i} upload failed:`, errText);
+        res.status(500).json({ error: `Error subiendo chunk ${i + 1}/${totalChunkCount}` });
+        return;
+      }
+    }
+
+    await db.update(videos).set({
+      tiktokPublishId: publishId,
+      tiktokStatus: "uploaded",
+      updatedAt: new Date(),
+    }).where(eq(videos.id, videoId));
+
+    res.json({
+      success: true,
+      publishId,
+      message: `Video subido a TikTok (privado). Publish ID: ${publishId}`,
+    });
+  } catch (err: any) {
+    console.error("[TikTok] Upload from Drive error:", err.message);
     res.status(500).json({ error: err.message || "Error al subir a TikTok" });
   }
 });

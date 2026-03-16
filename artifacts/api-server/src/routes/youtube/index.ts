@@ -5,6 +5,7 @@ import { videos, users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { Readable } from "stream";
 import multer from "multer";
+import { ReplitConnectors } from "@replit/connectors-sdk";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
@@ -181,6 +182,101 @@ router.post("/youtube/upload/:videoId", upload.single("video"), async (req: Requ
       return;
     }
 
+    res.status(500).json({ error: error.message || "Error al subir a YouTube" });
+  }
+});
+
+router.post("/youtube/upload-from-drive/:videoId", async (req: Request, res: Response) => {
+  const user = req.user as any;
+  const videoId = Number(req.params.videoId);
+
+  if (!user.googleAccessToken || !user.googleRefreshToken) {
+    res.status(400).json({ error: "Necesitas reconectarte con Google para otorgar permisos de YouTube" });
+    return;
+  }
+
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, videoId))
+    .limit(1);
+
+  if (!video) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+
+  if (!video.videoFileDriveId) {
+    res.status(400).json({ error: "Este video no tiene archivo adjunto. Sube un video primero." });
+    return;
+  }
+
+  try {
+    const connectors = new ReplitConnectors();
+    const fileData = await connectors.googleDrive.getFileContent(video.videoFileDriveId);
+    const videoBuffer = Buffer.from(fileData);
+
+    const auth = getOAuth2Client(user);
+    const youtube = google.youtube({ version: "v3", auth });
+
+    const title = video.youtubeTitle || video.title;
+    const description = video.youtubeDescription || video.description;
+
+    const videoStream = Readable.from(videoBuffer);
+
+    const uploadResponse = await youtube.videos.insert({
+      part: ["snippet", "status"],
+      requestBody: {
+        snippet: {
+          title: title.substring(0, 100),
+          description,
+          tags: ["webmakerchile", "shorts", "emprendimiento", "chile"],
+          categoryId: "22",
+          defaultLanguage: "es",
+        },
+        status: {
+          privacyStatus: "private",
+          selfDeclaredMadeForKids: false,
+        },
+      },
+      media: {
+        mimeType: "video/mp4",
+        body: videoStream,
+      },
+    });
+
+    const ytVideoId = uploadResponse.data.id;
+
+    if (video.coverImageBase64 && ytVideoId) {
+      try {
+        const thumbnailBuffer = Buffer.from(video.coverImageBase64, "base64");
+        const thumbStream = Readable.from(thumbnailBuffer);
+        await youtube.thumbnails.set({
+          videoId: ytVideoId,
+          media: { mimeType: video.coverMimeType || "image/png", body: thumbStream },
+        });
+      } catch (thumbErr: any) {
+        console.log("[YouTube] Thumbnail upload skipped:", thumbErr.message);
+      }
+    }
+
+    await db
+      .update(videos)
+      .set({ youtubeVideoId: ytVideoId, youtubeStatus: "uploaded", updatedAt: new Date() })
+      .where(eq(videos.id, videoId));
+
+    res.json({
+      success: true,
+      youtubeVideoId: ytVideoId,
+      youtubeUrl: `https://youtube.com/shorts/${ytVideoId}`,
+      message: `Video subido a YouTube como privado. ID: ${ytVideoId}`,
+    });
+  } catch (error: any) {
+    console.error("[YouTube] Upload from Drive error:", error.message);
+    if (error.code === 401 || error.message?.includes("invalid_grant")) {
+      res.status(401).json({ error: "Token expirado. Cierra sesión y vuelve a iniciar." });
+      return;
+    }
     res.status(500).json({ error: error.message || "Error al subir a YouTube" });
   }
 });

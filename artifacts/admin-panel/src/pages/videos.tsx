@@ -35,6 +35,8 @@ type VideoData = {
   coverPrompt?: string | null;
   coverImageBase64?: string | null;
   coverMimeType?: string | null;
+  videoFileDriveId?: string | null;
+  videoFileName?: string | null;
   driveFileId?: string | null;
   driveFolderId?: string | null;
   status: string;
@@ -48,6 +50,7 @@ type VideoData = {
   instagramDescription?: string | null;
   youtubeTitle?: string | null;
   youtubeDescription?: string | null;
+  tiktokPublishId?: string | null;
   tiktokStatus?: string | null;
   instagramStatus?: string | null;
   youtubeVideoId?: string | null;
@@ -342,6 +345,7 @@ function VideoWizard({
   isGeneratingCover: boolean;
   toast: any;
 }) {
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     title: video?.title || "",
     description: video?.description || "",
@@ -499,6 +503,10 @@ function VideoWizard({
               onSave={handleSaveInfo}
               isPending={isCreatingPending || isUpdating}
               isCreating={isCreating}
+              video={video}
+              onVideoUploaded={() => {
+                queryClient.invalidateQueries({ queryKey: ["videos"] });
+              }}
             />
           )}
 
@@ -579,13 +587,46 @@ function StepInfo({
   onSave,
   isPending,
   isCreating,
+  video,
+  onVideoUploaded,
 }: {
   formData: any;
   setFormData: (data: any) => void;
   onSave: () => void;
   isPending: boolean;
   isCreating: boolean;
+  video?: VideoData | null;
+  onVideoUploaded?: () => void;
 }) {
+  const videoFileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<{ success?: boolean; error?: string; fileName?: string } | null>(null);
+
+  const handleVideoUpload = async (file: File) => {
+    if (!video) return;
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("video", file);
+      const res = await fetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setUploadResult({ success: true, fileName: data.fileName });
+        if (onVideoUploaded) onVideoUploaded();
+      } else {
+        setUploadResult({ success: false, error: data.error || "Error al subir" });
+      }
+    } catch (err: any) {
+      setUploadResult({ success: false, error: err.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <Card className="bg-card/50 border-white/5">
       <CardHeader>
@@ -656,6 +697,79 @@ function StepInfo({
             />
           </div>
         </div>
+
+        {!isCreating && video && (
+          <div className="space-y-3 pt-2">
+            <label className="text-sm font-medium flex items-center gap-2">
+              <Upload className="w-4 h-4 text-primary" />
+              Archivo de Video
+            </label>
+
+            {video.videoFileDriveId || uploadResult?.success ? (
+              <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                <Check className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-emerald-400">Video subido a Drive</p>
+                  <p className="text-xs text-muted-foreground">
+                    {uploadResult?.fileName || video.videoFileName || "Archivo adjunto"}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => videoFileRef.current?.click()}
+                  disabled={uploading}
+                  className="text-xs"
+                >
+                  Cambiar
+                </Button>
+              </div>
+            ) : (
+              <div
+                onClick={() => !uploading && videoFileRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+                  uploading
+                    ? "border-primary/50 bg-primary/5"
+                    : "border-white/10 hover:border-primary/50 hover:bg-white/5"
+                }`}
+              >
+                {uploading ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    <p className="text-sm text-muted-foreground">Subiendo a Google Drive...</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <Upload className="w-8 h-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      Haz clic para subir el archivo de video
+                    </p>
+                    <p className="text-xs text-muted-foreground/60">
+                      MP4, MOV · Máx 256MB · Se guardará en Google Drive
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <input
+              ref={videoFileRef}
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleVideoUpload(file);
+              }}
+            />
+
+            {uploadResult && !uploadResult.success && (
+              <div className="rounded-lg p-3 text-sm bg-red-500/10 border border-red-500/20 text-red-400">
+                {uploadResult.error}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="pt-4 flex justify-end">
           <Button onClick={onSave} disabled={isPending} className="bg-primary">
@@ -964,17 +1078,30 @@ function StepReview({
   const [ttResult, setTtResult] = useState<{ success?: boolean; message?: string; publishId?: string; error?: string } | null>(null);
   const queryClient = useQueryClient();
 
-  const handleYouTubeUpload = async (file: File) => {
+  const hasVideoFile = !!video.videoFileDriveId;
+
+  const handleYouTubeUpload = async (file?: File) => {
     setYtUploading(true);
     setYtResult(null);
     try {
-      const formData = new FormData();
-      formData.append("video", file);
-
-      const res = await fetch(`${API_BASE}/youtube/upload/${video.id}`, {
-        method: "POST",
-        body: formData,
-      });
+      let res: Response;
+      if (hasVideoFile && !file) {
+        res = await fetch(`${API_BASE}/youtube/upload-from-drive/${video.id}`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } else if (file) {
+        const formData = new FormData();
+        formData.append("video", file);
+        res = await fetch(`${API_BASE}/youtube/upload/${video.id}`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        setYtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
+        setYtUploading(false);
+        return;
+      }
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -990,17 +1117,28 @@ function StepReview({
     }
   };
 
-  const handleTikTokUpload = async (file: File) => {
+  const handleTikTokUpload = async (file?: File) => {
     setTtUploading(true);
     setTtResult(null);
     try {
-      const formData = new FormData();
-      formData.append("video", file);
-
-      const res = await fetch(`${API_BASE}/tiktok/upload/${video.id}`, {
-        method: "POST",
-        body: formData,
-      });
+      let res: Response;
+      if (hasVideoFile && !file) {
+        res = await fetch(`${API_BASE}/tiktok/upload-from-drive/${video.id}`, {
+          method: "POST",
+          credentials: "include",
+        });
+      } else if (file) {
+        const formData = new FormData();
+        formData.append("video", file);
+        res = await fetch(`${API_BASE}/tiktok/upload/${video.id}`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        setTtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
+        setTtUploading(false);
+        return;
+      }
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -1202,7 +1340,11 @@ function StepReview({
                 </span>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-foreground">Subir a YouTube</p>
-                  <p className="text-xs text-muted-foreground">Selecciona el archivo de video para subirlo como Short privado</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hasVideoFile
+                      ? `Subir "${video.videoFileName || "video"}" desde Drive como Short privado`
+                      : "Selecciona el archivo de video para subirlo como Short privado"}
+                  </p>
                 </div>
                 <input
                   ref={fileInputRef}
@@ -1214,19 +1356,35 @@ function StepReview({
                     if (file) handleYouTubeUpload(file);
                   }}
                 />
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={ytUploading}
-                  className="bg-red-600 hover:bg-red-500 text-white"
-                  size="sm"
-                >
-                  {ytUploading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4 mr-2" />
-                  )}
-                  {ytUploading ? "Subiendo..." : "Subir Video"}
-                </Button>
+                {hasVideoFile ? (
+                  <Button
+                    onClick={() => handleYouTubeUpload()}
+                    disabled={ytUploading}
+                    className="bg-red-600 hover:bg-red-500 text-white"
+                    size="sm"
+                  >
+                    {ytUploading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    {ytUploading ? "Subiendo..." : "Subir desde Drive"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={ytUploading}
+                    className="bg-red-600 hover:bg-red-500 text-white"
+                    size="sm"
+                  >
+                    {ytUploading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    {ytUploading ? "Subiendo..." : "Seleccionar Video"}
+                  </Button>
+                )}
               </div>
 
               {ytResult && (
@@ -1273,7 +1431,11 @@ function StepReview({
                 </span>
                 <div className="flex-1">
                   <p className="text-sm font-medium text-foreground">Subir a TikTok</p>
-                  <p className="text-xs text-muted-foreground">Selecciona el archivo de video para subirlo a TikTok (privado, sandbox)</p>
+                  <p className="text-xs text-muted-foreground">
+                    {hasVideoFile
+                      ? `Subir "${video.videoFileName || "video"}" desde Drive a TikTok (privado)`
+                      : "Selecciona el archivo de video para subirlo a TikTok (privado, sandbox)"}
+                  </p>
                 </div>
                 <input
                   ref={ttFileInputRef}
@@ -1285,19 +1447,35 @@ function StepReview({
                     if (file) handleTikTokUpload(file);
                   }}
                 />
-                <Button
-                  onClick={() => ttFileInputRef.current?.click()}
-                  disabled={ttUploading}
-                  className="bg-black hover:bg-zinc-800 text-white border border-white/10"
-                  size="sm"
-                >
-                  {ttUploading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Upload className="w-4 h-4 mr-2" />
-                  )}
-                  {ttUploading ? "Subiendo..." : "Subir Video"}
-                </Button>
+                {hasVideoFile ? (
+                  <Button
+                    onClick={() => handleTikTokUpload()}
+                    disabled={ttUploading}
+                    className="bg-black hover:bg-zinc-800 text-white border border-white/10"
+                    size="sm"
+                  >
+                    {ttUploading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    {ttUploading ? "Subiendo..." : "Subir desde Drive"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => ttFileInputRef.current?.click()}
+                    disabled={ttUploading}
+                    className="bg-black hover:bg-zinc-800 text-white border border-white/10"
+                    size="sm"
+                  >
+                    {ttUploading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="w-4 h-4 mr-2" />
+                    )}
+                    {ttUploading ? "Subiendo..." : "Seleccionar Video"}
+                  </Button>
+                )}
               </div>
 
               {ttResult && (

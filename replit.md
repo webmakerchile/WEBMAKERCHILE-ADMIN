@@ -64,8 +64,9 @@ artifacts-monorepo/
 - **YouTube Data API v3**: Video upload to YouTube via googleapis package
   - OAuth scopes: youtube.upload, youtube
   - User tokens (access + refresh) stored in users table
-  - Routes: GET /api/youtube/channel, POST /api/youtube/upload/:videoId, GET /api/youtube/status/:videoId
+  - Routes: GET /api/youtube/channel, POST /api/youtube/upload/:videoId, POST /api/youtube/upload-from-drive/:videoId, GET /api/youtube/status/:videoId
   - Videos are uploaded as "private" by default with Shorts-optimized metadata
+  - upload-from-drive downloads video from Google Drive (videoFileDriveId) and uploads to YouTube without requiring manual file selection
   - Auto-upload during schedule/check queue processing when youtubeStatus is "scheduled"
   - Dashboard shows YouTube channel connection status
 - **TikTok Login Kit + Content Posting API** (sandbox mode):
@@ -73,8 +74,9 @@ artifacts-monorepo/
   - Token exchange via POST https://open.tiktokapis.com/v2/oauth/token/
   - Scopes: user.info.basic, video.publish
   - User tokens (access + refresh + open_id) stored in users table
-  - Content Posting: POST /api/tiktok/upload/:videoId (FILE_UPLOAD chunked method)
+  - Content Posting: POST /api/tiktok/upload/:videoId (FILE_UPLOAD chunked method), POST /api/tiktok/upload-from-drive/:videoId
   - Videos published as SELF_ONLY (private) via /v2/post/publish/video/init/
+  - upload-from-drive downloads video from Google Drive (videoFileDriveId) and uploads to TikTok without requiring manual file selection
   - Routes: GET /api/tiktok/status, POST /api/tiktok/disconnect, POST /api/tiktok/publish-status/:videoId
   - Dashboard shows TikTok connection card with connect/disconnect
   - StepReview has TikTok upload button alongside YouTube upload

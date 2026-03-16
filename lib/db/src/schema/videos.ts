@@ -9,6 +9,8 @@ export const videos = pgTable("videos", {
   coverPrompt: text("cover_prompt"),
   coverImageBase64: text("cover_image_base64"),
   coverMimeType: text("cover_mime_type"),
+  videoFileDriveId: text("video_file_drive_id"),
+  videoFileName: text("video_file_name"),
   driveFileId: text("drive_file_id"),
   driveFolderId: text("drive_folder_id"),
   status: text("status").notNull().default("draft"),
