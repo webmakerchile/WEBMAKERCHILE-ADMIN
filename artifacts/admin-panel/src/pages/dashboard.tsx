@@ -28,19 +28,27 @@ export default function Dashboard() {
   const [ytLoading, setYtLoading] = useState(true);
   const [tiktokStatus, setTiktokStatus] = useState<any>(null);
   const [tiktokLoading, setTiktokLoading] = useState(true);
+  const [igStatus, setIgStatus] = useState<any>(null);
+  const [igLoading, setIgLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_BASE}/youtube/channel`)
+    fetch(`${API_BASE}/youtube/channel`, { credentials: "include" })
       .then(r => r.json())
       .then(data => setYtChannel(data))
       .catch(() => setYtChannel({ connected: false, message: "Error de conexión" }))
       .finally(() => setYtLoading(false));
 
-    fetch(`${API_BASE}/tiktok/status`)
+    fetch(`${API_BASE}/tiktok/status`, { credentials: "include" })
       .then(r => r.json())
       .then(data => setTiktokStatus(data))
       .catch(() => setTiktokStatus({ connected: false, message: "Error de conexión" }))
       .finally(() => setTiktokLoading(false));
+
+    fetch(`${API_BASE}/instagram/status`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setIgStatus(data))
+      .catch(() => setIgStatus({ connected: false, message: "Error de conexión" }))
+      .finally(() => setIgLoading(false));
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("tiktok") === "connected") {
@@ -91,18 +99,18 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-8">
-        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
           <div>
-            <h1 className="text-4xl font-display font-bold text-gradient mb-2">Panel de Control</h1>
-            <p className="text-muted-foreground text-lg">Resumen de tu contenido y automatizaciones.</p>
+            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Panel de Control</h1>
+            <p className="text-muted-foreground text-sm sm:text-lg">Resumen de tu contenido y automatizaciones.</p>
           </div>
           
           <button
             onClick={handleProcessSchedule}
             disabled={checkSchedule.isPending}
-            className="flex items-center px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-medium transition-all group disabled:opacity-50"
+            className="flex items-center justify-center px-4 py-2.5 sm:px-6 sm:py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all group disabled:opacity-50"
           >
-            <RefreshCw className={`w-5 h-5 mr-2 ${checkSchedule.isPending ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"}`} />
+            <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 mr-2 ${checkSchedule.isPending ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"}`} />
             {checkSchedule.isPending ? "Procesando..." : "Forzar Programación"}
           </button>
         </header>
@@ -143,10 +151,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-          {/* Quick Actions */}
-          <div className="glass-card rounded-3xl p-8 border border-white/5">
-            <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <div className="glass-card rounded-2xl p-5 sm:p-8 border border-white/5">
+            <h2 className="text-lg sm:text-2xl font-display font-bold mb-4 sm:mb-6 flex items-center">
               <Sparkles className="w-5 h-5 text-primary mr-2" />
               Acciones Rápidas
             </h2>
@@ -180,8 +187,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="glass-card rounded-3xl p-8 border border-white/5">
-            <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
+          <div className="glass-card rounded-2xl p-5 sm:p-8 border border-white/5">
+            <h2 className="text-lg sm:text-2xl font-display font-bold mb-4 sm:mb-6 flex items-center">
               <Clock className="w-5 h-5 text-muted-foreground mr-2" />
               Actividad Reciente
             </h2>
@@ -213,91 +220,109 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="glass-card rounded-3xl p-8 border border-white/5">
-          <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
-            <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center mr-3">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="glass-card rounded-2xl p-5 border border-white/5">
+          <h2 className="text-lg font-display font-bold mb-4 flex items-center">
+            <span className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center mr-2.5 flex-shrink-0">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
             </span>
-            Conexión YouTube
+            YouTube
           </h2>
 
           {ytLoading ? (
-            <div className="h-20 rounded-xl bg-white/5 animate-pulse" />
+            <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
           ) : ytChannel?.connected ? (
-            <div className="flex items-center gap-4 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
               {ytChannel.channel?.thumbnail && (
-                <img src={ytChannel.channel.thumbnail} alt="" className="w-12 h-12 rounded-full" />
+                <img src={ytChannel.channel.thumbnail} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
               )}
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-foreground">{ytChannel.channel?.title}</h3>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-semibold text-sm text-foreground truncate">{ytChannel.channel?.title}</h3>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {ytChannel.channel?.subscriberCount} suscriptores · {ytChannel.channel?.videoCount} videos
+                <p className="text-xs text-muted-foreground">
+                  {ytChannel.channel?.subscriberCount} subs · {ytChannel.channel?.videoCount} videos
                 </p>
               </div>
-              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
-                Conectado
-              </span>
             </div>
           ) : (
-            <div className="flex items-center gap-4 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-              <XCircle className="w-8 h-8 text-amber-400 flex-shrink-0" />
-              <div className="flex-1">
-                <h3 className="font-semibold text-amber-400">YouTube no conectado</h3>
-                <p className="text-sm text-muted-foreground">{ytChannel?.message || "Cierra sesión y vuelve a iniciar para otorgar permisos de YouTube"}</p>
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
+              <XCircle className="w-6 h-6 text-amber-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm text-amber-400">No conectado</h3>
+                <p className="text-xs text-muted-foreground truncate">{ytChannel?.message || "Reconecta Google"}</p>
               </div>
-              <a
-                href={`${API_BASE}/auth/google`}
-                className="text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                Reconectar
-              </a>
             </div>
           )}
         </div>
 
-        <div className="glass-card rounded-3xl p-8 border border-white/5">
-          <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
-            <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center mr-3">
-              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
+        <div className="glass-card rounded-2xl p-5 border border-white/5">
+          <h2 className="text-lg font-display font-bold mb-4 flex items-center">
+            <span className="w-7 h-7 rounded-lg bg-black flex items-center justify-center mr-2.5 flex-shrink-0 border border-white/10">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
             </span>
-            Conexión TikTok
+            TikTok
           </h2>
 
           {tiktokLoading ? (
-            <div className="h-20 rounded-xl bg-white/5 animate-pulse" />
+            <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
           ) : tiktokStatus?.connected ? (
-            <div className="flex items-center gap-4 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
               {tiktokStatus.user?.avatar && (
-                <img src={tiktokStatus.user.avatar} alt="" className="w-12 h-12 rounded-full" />
+                <img src={tiktokStatus.user.avatar} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
               )}
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-foreground">{tiktokStatus.user?.displayName || "TikTok"}</h3>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-semibold text-sm text-foreground truncate">{tiktokStatus.user?.displayName || "TikTok"}</h3>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                 </div>
-                <p className="text-sm text-muted-foreground">Cuenta conectada (sandbox)</p>
+                <p className="text-xs text-muted-foreground">Conectado (sandbox)</p>
               </div>
-              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
-                Conectado
-              </span>
             </div>
           ) : (
-            <div className="flex items-center gap-4 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
-              <XCircle className="w-8 h-8 text-amber-400 flex-shrink-0" />
-              <div className="flex-1">
-                <h3 className="font-semibold text-amber-400">TikTok no conectado</h3>
-                <p className="text-sm text-muted-foreground">{tiktokStatus?.message || "Conecta tu cuenta de TikTok para publicar videos"}</p>
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
+              <XCircle className="w-6 h-6 text-amber-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm text-amber-400">No conectado</h3>
+                <p className="text-xs text-muted-foreground truncate">{tiktokStatus?.message || "Conecta TikTok"}</p>
               </div>
-              <a
-                href={`${API_BASE}/tiktok/auth`}
-                className="text-xs bg-black/50 text-white hover:bg-black/70 px-4 py-2 rounded-lg font-medium transition-colors border border-white/10"
-              >
-                Conectar TikTok
-              </a>
+            </div>
+          )}
+        </div>
+
+        <div className="glass-card rounded-2xl p-5 border border-white/5">
+          <h2 className="text-lg font-display font-bold mb-4 flex items-center">
+            <span className="w-7 h-7 rounded-lg bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 flex items-center justify-center mr-2.5 flex-shrink-0">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+            </span>
+            Instagram
+          </h2>
+
+          {igLoading ? (
+            <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
+          ) : igStatus?.connected ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              {igStatus.account?.profilePicture && (
+                <img src={igStatus.account.profilePicture} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-semibold text-sm text-foreground truncate">@{igStatus.account?.username || "Instagram"}</h3>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {igStatus.account?.followersCount || 0} seguidores · {igStatus.account?.mediaCount || 0} posts
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
+              <XCircle className="w-6 h-6 text-amber-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm text-amber-400">No conectado</h3>
+                <p className="text-xs text-muted-foreground truncate">{igStatus?.message || "Configura Instagram"}</p>
+              </div>
             </div>
           )}
         </div>

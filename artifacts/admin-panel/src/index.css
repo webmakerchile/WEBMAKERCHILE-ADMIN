@@ -125,4 +125,8 @@
   .text-gradient-primary {
     @apply bg-clip-text text-transparent bg-gradient-to-br from-primary to-orange-300;
   }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }

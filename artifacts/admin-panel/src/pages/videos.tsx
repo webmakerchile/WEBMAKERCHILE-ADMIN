@@ -27,6 +27,7 @@ import {
   HardDrive,
   FileVideo,
   FolderOpen,
+  CheckCircle2,
 } from "lucide-react";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -227,10 +228,10 @@ export default function VideosPage() {
   return (
     <Layout>
       <div className="space-y-8">
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-4xl font-display font-bold text-gradient mb-2">Gestor de Videos</h1>
-            <p className="text-muted-foreground text-lg">Tu editora puede completar cada video paso a paso sin salir de aquí.</p>
+            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Gestor de Videos</h1>
+            <p className="text-muted-foreground text-xs sm:text-lg">Tu editora puede completar cada video paso a paso sin salir de aquí.</p>
           </div>
           <Button
             onClick={() => { setIsCreating(true); setWizardStep("info"); }}
@@ -274,9 +275,9 @@ export default function VideosPage() {
                     else setWizardStep("review");
                   }}
                 >
-                  <CardContent className="p-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-xl overflow-hidden bg-black/20 border border-white/5 flex-shrink-0 flex items-center justify-center">
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-start gap-3 sm:gap-4">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-black/20 border border-white/5 flex-shrink-0 flex items-center justify-center">
                         {video.coverImageBase64 ? (
                           <img
                             src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
@@ -284,34 +285,34 @@ export default function VideosPage() {
                             alt=""
                           />
                         ) : (
-                          <Video className="w-6 h-6 text-muted-foreground/30" />
+                          <Video className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/30" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-foreground truncate">{video.title}</h3>
-                        <p className="text-sm text-muted-foreground truncate">{video.description}</p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          {video.month && (
-                            <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
-                              <Folder className="w-3 h-3" />
-                              {video.month}/{video.week}/{video.day}/#{video.videoNumber}{video.scheduleHour ? ` · ${video.scheduleHour}` : ""}
-                            </span>
-                          )}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{video.title}</h3>
+                            <p className="text-xs sm:text-sm text-muted-foreground truncate">{video.description}</p>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-muted-foreground/30 flex-shrink-0 hidden sm:block" />
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <div className="text-right">
-                          <Badge variant="outline" className={statusBadge.className}>
+                        <div className="flex items-center gap-2 mt-2 flex-wrap">
+                          <Badge variant="outline" className={statusBadge.className + " text-[10px] sm:text-xs"}>
                             {statusBadge.label}
                           </Badge>
-                          <div className="mt-2 w-24 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className="w-16 sm:w-24 h-1.5 bg-white/5 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full transition-all"
                               style={{ width: `${progress}%` }}
                             />
                           </div>
+                          {video.month && (
+                            <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
+                              <Folder className="w-3 h-3" />
+                              {video.month}/{video.week}/{video.day}/#{video.videoNumber}
+                            </span>
+                          )}
                         </div>
-                        <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
                       </div>
                     </div>
                   </CardContent>
@@ -1985,15 +1986,24 @@ function StepReview({
               )}
 
               {ttResult && (
-                <div className={`rounded-lg p-3 text-sm ${
+                <div className={`rounded-xl p-4 text-sm flex items-start gap-3 ${
                   ttResult.success
                     ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
                     : "bg-red-500/10 border border-red-500/20 text-red-400"
                 }`}>
                   {ttResult.success ? (
-                    <p className="font-medium">{ttResult.message}</p>
+                    <>
+                      <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Subida exitosa a TikTok</p>
+                        <p className="text-xs text-muted-foreground mt-1">{ttResult.message}</p>
+                      </div>
+                    </>
                   ) : (
-                    <p>{ttResult.error}</p>
+                    <>
+                      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <p>{ttResult.error}</p>
+                    </>
                   )}
                 </div>
               )}
@@ -2072,15 +2082,24 @@ function StepReview({
               )}
 
               {igResult && (
-                <div className={`rounded-lg p-3 text-sm ${
+                <div className={`rounded-xl p-4 text-sm flex items-start gap-3 ${
                   igResult.success
                     ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
                     : "bg-red-500/10 border border-red-500/20 text-red-400"
                 }`}>
                   {igResult.success ? (
-                    <p className="font-medium">{igResult.message}</p>
+                    <>
+                      <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Subida exitosa a Instagram</p>
+                        <p className="text-xs text-muted-foreground mt-1">{igResult.message}</p>
+                      </div>
+                    </>
                   ) : (
-                    <p>{igResult.error}</p>
+                    <>
+                      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      <p>{igResult.error}</p>
+                    </>
                   )}
                 </div>
               )}

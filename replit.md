@@ -43,7 +43,8 @@ artifacts-monorepo/
 ## Features
 
 ### Admin Panel (Content Admin Panel)
-- **Dashboard**: Overview of video content stats, quick actions, recent activity
+- **Mobile-first layout**: Responsive design with bottom navigation bar on mobile, slide-out hamburger menu for additional items, desktop sidebar hidden on mobile. Uses `100dvh` for proper mobile viewport height. Safe area insets for iOS notch support.
+- **Dashboard**: Overview of video content stats, quick actions, recent activity, YouTube/TikTok/Instagram connection status cards
 - **Video Manager**: Guided step-by-step wizard for the editor to complete each video without leaving the page. Steps: Basic Info → Cover (AI generation) → TikTok & Instagram descriptions → YouTube title & description → Review & Schedule to all 3 platforms. Each video shows progress percentage. DB includes per-platform status fields (tiktokStatus, instagramStatus, youtubeStatus) ready for API integration. Step 1 includes Drive file picker modal to select video files directly from Google Drive (browsable with folder navigation).
 - **Cover Generator**: AI-powered cover image generation using Gemini with reference images
 - **Google Drive Browser**: Browse and manage files in connected Google Drive folder
