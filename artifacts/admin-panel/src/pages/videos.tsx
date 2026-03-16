@@ -349,6 +349,9 @@ function VideoWizard({
   toast: any;
 }) {
   const queryClient = useQueryClient();
+  const [pendingVideoFile, setPendingVideoFile] = useState<
+    { type: "drive"; driveFileId: string; fileName: string } | { type: "upload"; file: File; fileName: string } | null
+  >(null);
   const [formData, setFormData] = useState({
     title: video?.title || "",
     description: video?.description || "",
@@ -378,6 +381,34 @@ function VideoWizard({
       });
     }
   }, [video]);
+
+  useEffect(() => {
+    if (video && pendingVideoFile && !isCreating) {
+      const linkPending = async () => {
+        try {
+          if (pendingVideoFile.type === "drive") {
+            await fetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ driveFileId: pendingVideoFile.driveFileId, fileName: pendingVideoFile.fileName }),
+            });
+          } else if (pendingVideoFile.type === "upload") {
+            const fd = new FormData();
+            fd.append("video", pendingVideoFile.file);
+            await fetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
+              method: "POST",
+              body: fd,
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: ["videos"] });
+        } catch (err) {
+          console.error("Error linking pending video file:", err);
+        }
+        setPendingVideoFile(null);
+      };
+      linkPending();
+    }
+  }, [video?.id, isCreating]);
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
 
@@ -510,6 +541,8 @@ function VideoWizard({
               onVideoUploaded={() => {
                 queryClient.invalidateQueries({ queryKey: ["videos"] });
               }}
+              pendingVideoFile={pendingVideoFile}
+              setPendingVideoFile={setPendingVideoFile}
             />
           )}
 
@@ -739,6 +772,8 @@ function StepInfo({
   isCreating,
   video,
   onVideoUploaded,
+  pendingVideoFile,
+  setPendingVideoFile,
 }: {
   formData: any;
   setFormData: (data: any) => void;
@@ -747,16 +782,30 @@ function StepInfo({
   isCreating: boolean;
   video?: VideoData | null;
   onVideoUploaded?: () => void;
+  pendingVideoFile?: { type: "drive"; driveFileId: string; fileName: string } | { type: "upload"; file: File; fileName: string } | null;
+  setPendingVideoFile?: (f: any) => void;
 }) {
   const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [linkResult, setLinkResult] = useState<{ success?: boolean; error?: string; fileName?: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [resultMsg, setResultMsg] = useState<{ success?: boolean; error?: string; fileName?: string } | null>(null);
+  const videoFileRef = useRef<HTMLInputElement>(null);
+
+  const hasVideoLinked = !!(video?.videoFileDriveId) || !!resultMsg?.success;
+  const hasPending = !!pendingVideoFile;
+  const videoAttached = hasVideoLinked || hasPending;
+  const displayFileName = resultMsg?.fileName || pendingVideoFile?.fileName || video?.videoFileName || null;
 
   const handleDriveSelect = async (file: { id: string; name: string; mimeType: string }) => {
-    if (!video) return;
     setShowDrivePicker(false);
+
+    if (!video) {
+      if (setPendingVideoFile) setPendingVideoFile({ type: "drive", driveFileId: file.id, fileName: file.name });
+      return;
+    }
+
     setLinking(true);
-    setLinkResult(null);
+    setResultMsg(null);
     try {
       const res = await fetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
         method: "POST",
@@ -765,16 +814,50 @@ function StepInfo({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setLinkResult({ success: true, fileName: data.fileName });
+        setResultMsg({ success: true, fileName: data.fileName });
         if (onVideoUploaded) onVideoUploaded();
       } else {
-        setLinkResult({ success: false, error: data.error || "Error al vincular" });
+        setResultMsg({ success: false, error: data.error || "Error al vincular" });
       }
     } catch (err: any) {
-      setLinkResult({ success: false, error: err.message });
+      setResultMsg({ success: false, error: err.message });
     } finally {
       setLinking(false);
     }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!video) {
+      if (setPendingVideoFile) setPendingVideoFile({ type: "upload", file, fileName: file.name });
+      return;
+    }
+
+    setUploading(true);
+    setResultMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("video", file);
+      const res = await fetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResultMsg({ success: true, fileName: data.fileName });
+        if (onVideoUploaded) onVideoUploaded();
+      } else {
+        setResultMsg({ success: false, error: data.error || "Error al subir" });
+      }
+    } catch (err: any) {
+      setResultMsg({ success: false, error: err.message });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleClearSelection = () => {
+    if (setPendingVideoFile) setPendingVideoFile(null);
+    setResultMsg(null);
   };
 
   return (
@@ -848,74 +931,103 @@ function StepInfo({
           </div>
         </div>
 
-        {!isCreating && video && (
-          <div className="space-y-3 pt-2">
-            <label className="text-sm font-medium flex items-center gap-2">
-              <HardDrive className="w-4 h-4 text-primary" />
-              Archivo de Video
-            </label>
+        <div className="space-y-3 pt-2">
+          <label className="text-sm font-medium flex items-center gap-2">
+            <FileVideo className="w-4 h-4 text-primary" />
+            Archivo de Video
+          </label>
 
-            {video.videoFileDriveId || linkResult?.success ? (
-              <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-                <FileVideo className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-emerald-400">Video vinculado desde Drive</p>
-                  <p className="text-xs text-muted-foreground">
-                    {linkResult?.fileName || video.videoFileName || "Archivo adjunto"}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDrivePicker(true)}
-                  disabled={linking}
-                  className="text-xs"
-                >
-                  Cambiar
-                </Button>
-              </div>
-            ) : (
-              <div
-                onClick={() => !linking && setShowDrivePicker(true)}
-                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-                  linking
-                    ? "border-primary/50 bg-primary/5"
-                    : "border-white/10 hover:border-primary/50 hover:bg-white/5"
-                }`}
-              >
-                {linking ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Vinculando archivo...</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <HardDrive className="w-8 h-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Seleccionar video desde Google Drive
-                    </p>
-                    <p className="text-xs text-muted-foreground/60">
-                      Navega tu Drive y selecciona el archivo de video
-                    </p>
-                  </div>
+          {videoAttached ? (
+            <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              <FileVideo className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-emerald-400">
+                  {hasVideoLinked ? "Video vinculado" : hasPending && pendingVideoFile?.type === "drive" ? "Video de Drive seleccionado" : "Video seleccionado"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {displayFileName || "Archivo adjunto"}
+                </p>
+                {hasPending && !hasVideoLinked && (
+                  <p className="text-xs text-primary/70 mt-1">Se vinculará al guardar</p>
                 )}
               </div>
-            )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearSelection}
+                disabled={linking || uploading}
+                className="text-xs"
+              >
+                Cambiar
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {linking || uploading ? (
+                <div className="border-2 border-dashed border-primary/50 bg-primary/5 rounded-xl p-8 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    <p className="text-sm text-muted-foreground">
+                      {linking ? "Vinculando desde Drive..." : "Subiendo archivo..."}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setShowDrivePicker(true)}
+                    className="border-2 border-dashed border-white/10 hover:border-primary/50 hover:bg-white/5 rounded-xl p-6 text-center cursor-pointer transition-all"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <HardDrive className="w-8 h-8 text-primary" />
+                      <p className="text-sm font-medium text-foreground">Desde Google Drive</p>
+                      <p className="text-xs text-muted-foreground/60">
+                        Selecciona un video de tu Drive
+                      </p>
+                    </div>
+                  </div>
 
-            {linkResult && !linkResult.success && (
-              <div className="rounded-lg p-3 text-sm bg-red-500/10 border border-red-500/20 text-red-400">
-                {linkResult.error}
-              </div>
-            )}
+                  <div
+                    onClick={() => videoFileRef.current?.click()}
+                    className="border-2 border-dashed border-white/10 hover:border-orange-500/50 hover:bg-white/5 rounded-xl p-6 text-center cursor-pointer transition-all"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <Upload className="w-8 h-8 text-orange-400" />
+                      <p className="text-sm font-medium text-foreground">Subir Archivo</p>
+                      <p className="text-xs text-muted-foreground/60">
+                        MP4, MOV · Máx 256MB
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
-            {showDrivePicker && (
-              <DriveVideoPicker
-                onSelect={handleDriveSelect}
-                onClose={() => setShowDrivePicker(false)}
-              />
-            )}
-          </div>
-        )}
+          <input
+            ref={videoFileRef}
+            type="file"
+            accept="video/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleFileUpload(file);
+            }}
+          />
+
+          {resultMsg && !resultMsg.success && (
+            <div className="rounded-lg p-3 text-sm bg-red-500/10 border border-red-500/20 text-red-400">
+              {resultMsg.error}
+            </div>
+          )}
+
+          {showDrivePicker && (
+            <DriveVideoPicker
+              onSelect={handleDriveSelect}
+              onClose={() => setShowDrivePicker(false)}
+            />
+          )}
+        </div>
 
         <div className="pt-4 flex justify-end">
           <Button onClick={onSave} disabled={isPending} className="bg-primary">
