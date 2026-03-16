@@ -8,6 +8,7 @@ import CoverGeneratorPage from "./pages/cover-generator";
 import DriveBrowserPage from "./pages/drive-browser";
 import ChatPage from "./pages/chat";
 import SchedulePage from "./pages/schedule";
+import StudioPage from "./pages/studio";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/drive" component={DriveBrowserPage} />
       <Route path="/chat" component={ChatPage} />
       <Route path="/schedule" component={SchedulePage} />
+      <Route path="/estudio" component={StudioPage} />
       <Route component={NotFound} />
     </Switch>
   );

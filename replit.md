@@ -44,8 +44,14 @@ artifacts-monorepo/
 ### Admin Panel (Content Admin Panel)
 - **Dashboard**: Overview of video content stats, quick actions, recent activity
 - **Video Manager**: CRUD for video content organized by month/week/day/number
-- **Cover Generator**: AI-powered cover image generation using Gemini 3.1 Pro with reference images
+- **Cover Generator**: AI-powered cover image generation using Gemini with reference images
 - **Google Drive Browser**: Browse and manage files in connected Google Drive folder
+- **Estudio de Trabajo (Recording Studio)**: Full video content creation workspace
+  - AI idea generation by category (Corto Viral, Problema/Solución, Marketing, Historia, Educativo, Behind the Scenes, Opinión, Pack del Día)
+  - Video ideas queue with filtering, marking as recorded, bulk operations
+  - Teleprompter with speed control, mirror mode, fullscreen, font size adjustment
+  - Camera recording with pause/resume, camera switching, mirror, timer, video preview/download
+  - Recording stats dashboard
 - **AI Chat**: Chat with Gemini for content ideas and planning
 - **Schedule Manager**: Schedule videos for automatic publishing to Google Drive
 
@@ -57,6 +63,7 @@ artifacts-monorepo/
 - `conversations` - Gemini AI chat conversations
 - `messages` - Chat messages within conversations  
 - `videos` - Video content entries with cover images, scheduling, and Drive integration
+- `video_ideas` - AI-generated video ideas for the recording studio with categories, scripts, and recording status
 
 ## TypeScript & Composite Projects
 

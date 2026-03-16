@@ -7,6 +7,7 @@ import {
   FolderTree, 
   MessageSquare, 
   CalendarClock,
+  Clapperboard,
   LogOut,
   Sparkles
 } from "lucide-react";
@@ -17,6 +18,7 @@ const navItems = [
   { href: "/videos", icon: Video, label: "Gestor de Videos" },
   { href: "/cover", icon: ImageIcon, label: "Generador de Portadas" },
   { href: "/drive", icon: FolderTree, label: "Explorador Drive" },
+  { href: "/estudio", icon: Clapperboard, label: "Estudio de Trabajo" },
   { href: "/chat", icon: MessageSquare, label: "Asistente AI" },
   { href: "/schedule", icon: CalendarClock, label: "Programación" },
 ];
