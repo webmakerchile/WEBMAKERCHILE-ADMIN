@@ -110,9 +110,29 @@ router.post("/content/videos/:id/generate-cover", async (req, res) => {
     return;
   }
 
+  const titleText = video.title.toUpperCase();
+  const titleLetterByLetter = titleText.split("").join("-");
+
   const prompt =
     video.coverPrompt ||
-    `Genera una ilustración en formato vertical (9:16) con estilo flat vector art, fondo amarillo sólido, con un personaje zorro. Título: "${video.title}". Descripción: "${video.description}". El texto "${video.title.toUpperCase()}" debe estar en el tercio superior, blanco, mayúsculas, sans-serif gruesa y negrita, centrado. Estilo minimalista, líneas limpias, colores planos.`;
+    `Genera una ilustración en formato vertical (9:16) con estilo flat vector art, fondo amarillo sólido, con un personaje zorro.
+
+Título: "${video.title}"
+Descripción: "${video.description}"
+
+TEXTO OBLIGATORIO EN LA IMAGEN (tercio superior, blanco, mayúsculas, sans-serif gruesa y negrita, centrado):
+
+TEXTO EXACTO: "${titleText}"
+LETRA POR LETRA: ${titleLetterByLetter}
+
+ADVERTENCIA CRÍTICA SOBRE ORTOGRAFÍA:
+- El texto DEBE escribirse EXACTAMENTE como se muestra arriba, sin alterar NINGUNA letra.
+- NO inventes, NO reorganices, NO intercambies letras. Copia carácter por carácter.
+- Verifica que cada palabra esté escrita correctamente ANTES de renderizar.
+- Cada letra en su posición EXACTA. La precisión ortográfica es OBLIGATORIA.
+- Antes de generar, re-lee el texto letra por letra y confirma que cada carácter está en el orden correcto.
+
+Estilo minimalista, líneas limpias, colores planos.`;
 
   try {
     const { b64_json, mimeType } = await generateImage(prompt);
