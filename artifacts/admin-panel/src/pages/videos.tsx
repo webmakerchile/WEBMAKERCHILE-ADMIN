@@ -1413,18 +1413,22 @@ function StepReview({
       if (hasVideoFile && !file) {
         res = await apiFetch(`${API_BASE}/youtube/upload-from-drive/${video.id}`, {
           method: "POST",
-          credentials: "include",
         });
       } else if (file) {
-        const formData = new FormData();
-        formData.append("video", file);
+        const fd = new FormData();
+        fd.append("video", file);
         res = await apiFetch(`${API_BASE}/youtube/upload/${video.id}`, {
           method: "POST",
-          body: formData,
-          credentials: "include",
+          body: fd,
         });
       } else {
         setYtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
+        setYtUploading(false);
+        return;
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        setYtResult({ success: false, error: `Error del servidor (${res.status}). Recarga la página e intenta de nuevo.` });
         setYtUploading(false);
         return;
       }
@@ -1451,18 +1455,22 @@ function StepReview({
       if (hasVideoFile && !file) {
         res = await apiFetch(`${API_BASE}/tiktok/upload-from-drive/${video.id}`, {
           method: "POST",
-          credentials: "include",
         });
       } else if (file) {
-        const formData = new FormData();
-        formData.append("video", file);
+        const fd = new FormData();
+        fd.append("video", file);
         res = await apiFetch(`${API_BASE}/tiktok/upload/${video.id}`, {
           method: "POST",
-          body: formData,
-          credentials: "include",
+          body: fd,
         });
       } else {
         setTtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
+        setTtUploading(false);
+        return;
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        setTtResult({ success: false, error: `Error del servidor (${res.status}). Recarga la página e intenta de nuevo.` });
         setTtUploading(false);
         return;
       }
