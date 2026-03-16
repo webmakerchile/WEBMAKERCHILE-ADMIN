@@ -31,6 +31,10 @@ import {
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
+function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, credentials: "include" });
+}
+
 type VideoData = {
   id: number;
   title: string;
@@ -119,14 +123,14 @@ export default function VideosPage() {
   const { data: videos = [], isLoading } = useQuery<VideoData[]>({
     queryKey: ["videos"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/content/videos`);
+      const res = await apiFetch(`${API_BASE}/content/videos`);
       return res.json();
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; month?: string; week?: string; day?: string; videoNumber?: string }) => {
-      const res = await fetch(`${API_BASE}/content/videos`, {
+      const res = await apiFetch(`${API_BASE}/content/videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -144,7 +148,7 @@ export default function VideosPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...body }: { id: number } & Record<string, any>) => {
-      const res = await fetch(`${API_BASE}/content/videos/${id}`, {
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -159,7 +163,7 @@ export default function VideosPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`${API_BASE}/content/videos/${id}`, { method: "DELETE" });
+      await apiFetch(`${API_BASE}/content/videos/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
@@ -170,7 +174,7 @@ export default function VideosPage() {
 
   const generateCoverMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${API_BASE}/content/videos/${id}/generate-cover`, {
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}/generate-cover`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Error al generar portada");
@@ -387,7 +391,7 @@ function VideoWizard({
       const linkPending = async () => {
         try {
           if (pendingVideoFile.type === "drive") {
-            await fetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
+            await apiFetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ driveFileId: pendingVideoFile.driveFileId, fileName: pendingVideoFile.fileName }),
@@ -395,7 +399,7 @@ function VideoWizard({
           } else if (pendingVideoFile.type === "upload") {
             const fd = new FormData();
             fd.append("video", pendingVideoFile.file);
-            await fetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
+            await apiFetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
               method: "POST",
               body: fd,
             });
@@ -634,7 +638,7 @@ function DriveVideoPicker({
   const { data: filesData, isLoading: filesLoading } = useQuery({
     queryKey: ["drive-files", folderId],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/drive/files?folderId=${folderId}`);
+      const res = await apiFetch(`${API_BASE}/drive/files?folderId=${folderId}`);
       return res.json();
     },
   });
@@ -642,7 +646,7 @@ function DriveVideoPicker({
   const { data: foldersData, isLoading: foldersLoading } = useQuery({
     queryKey: ["drive-folders", folderId],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/drive/folders?parentId=${folderId}`);
+      const res = await apiFetch(`${API_BASE}/drive/folders?parentId=${folderId}`);
       return res.json();
     },
   });
@@ -807,7 +811,7 @@ function StepInfo({
     setLinking(true);
     setResultMsg(null);
     try {
-      const res = await fetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
+      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driveFileId: file.id, fileName: file.name }),
@@ -837,7 +841,7 @@ function StepInfo({
     try {
       const fd = new FormData();
       fd.append("video", file);
-      const res = await fetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
+      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
         method: "POST",
         body: fd,
       });
@@ -1344,16 +1348,17 @@ function StepReview({
     try {
       let res: Response;
       if (hasVideoFile && !file) {
-        res = await fetch(`${API_BASE}/youtube/upload-from-drive/${video.id}`, {
+        res = await apiFetch(`${API_BASE}/youtube/upload-from-drive/${video.id}`, {
           method: "POST",
           credentials: "include",
         });
       } else if (file) {
         const formData = new FormData();
         formData.append("video", file);
-        res = await fetch(`${API_BASE}/youtube/upload/${video.id}`, {
+        res = await apiFetch(`${API_BASE}/youtube/upload/${video.id}`, {
           method: "POST",
           body: formData,
+          credentials: "include",
         });
       } else {
         setYtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
@@ -1381,16 +1386,17 @@ function StepReview({
     try {
       let res: Response;
       if (hasVideoFile && !file) {
-        res = await fetch(`${API_BASE}/tiktok/upload-from-drive/${video.id}`, {
+        res = await apiFetch(`${API_BASE}/tiktok/upload-from-drive/${video.id}`, {
           method: "POST",
           credentials: "include",
         });
       } else if (file) {
         const formData = new FormData();
         formData.append("video", file);
-        res = await fetch(`${API_BASE}/tiktok/upload/${video.id}`, {
+        res = await apiFetch(`${API_BASE}/tiktok/upload/${video.id}`, {
           method: "POST",
           body: formData,
+          credentials: "include",
         });
       } else {
         setTtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });

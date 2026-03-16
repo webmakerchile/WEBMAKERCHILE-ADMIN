@@ -48,6 +48,10 @@ import {
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
+function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetch(url, { ...init, credentials: "include" });
+}
+
 const CATEGORY_ICONS: Record<string, any> = {
   "corto-viral": Zap,
   "problema-solucion": Target,
@@ -136,7 +140,7 @@ export default function StudioPage() {
   const { data: categories = [] } = useQuery({
     queryKey: ["studio-categories"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/studio/categories`);
+      const res = await apiFetch(`${API_BASE}/studio/categories`);
       return res.json();
     },
   });
@@ -148,7 +152,7 @@ export default function StudioPage() {
       if (selectedCategory !== "all") params.set("category", selectedCategory);
       if (showRecorded) params.set("recorded", "true");
       else params.set("recorded", "false");
-      const res = await fetch(`${API_BASE}/studio/ideas?${params}`);
+      const res = await apiFetch(`${API_BASE}/studio/ideas?${params}`);
       return res.json();
     },
   });
@@ -156,14 +160,14 @@ export default function StudioPage() {
   const { data: stats } = useQuery<StudioStats>({
     queryKey: ["studio-stats"],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/studio/stats`);
+      const res = await apiFetch(`${API_BASE}/studio/stats`);
       return res.json();
     },
   });
 
   const generateMutation = useMutation({
     mutationFn: async ({ category, count }: { category: string; count?: number }) => {
-      const res = await fetch(`${API_BASE}/studio/ideas/generate`, {
+      const res = await apiFetch(`${API_BASE}/studio/ideas/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category, count: count || 3 }),
@@ -181,7 +185,7 @@ export default function StudioPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...body }: { id: number; inStudio?: number; recordedAt?: string | null }) => {
-      const res = await fetch(`${API_BASE}/studio/ideas/${id}`, {
+      const res = await apiFetch(`${API_BASE}/studio/ideas/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -196,7 +200,7 @@ export default function StudioPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await fetch(`${API_BASE}/studio/ideas/${id}`, { method: "DELETE" });
+      await apiFetch(`${API_BASE}/studio/ideas/${id}`, { method: "DELETE" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["studio-ideas"] });
@@ -207,7 +211,7 @@ export default function StudioPage() {
 
   const clearMutation = useMutation({
     mutationFn: async (keepRecorded: boolean) => {
-      await fetch(`${API_BASE}/studio/ideas?keepRecorded=${keepRecorded}`, { method: "DELETE" });
+      await apiFetch(`${API_BASE}/studio/ideas?keepRecorded=${keepRecorded}`, { method: "DELETE" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["studio-ideas"] });
@@ -220,7 +224,7 @@ export default function StudioPage() {
     updateMutation.mutate({ id: idea.id, recordedAt: new Date().toISOString() });
 
     try {
-      const res = await fetch(`${API_BASE}/content/videos/from-studio`, {
+      const res = await apiFetch(`${API_BASE}/content/videos/from-studio`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
