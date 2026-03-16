@@ -9,8 +9,8 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
 
-const TIKTOK_CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || "";
-const TIKTOK_CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || "";
+const TIKTOK_CLIENT_KEY = (process.env.TIKTOK_CLIENT_KEY || "").trim();
+const TIKTOK_CLIENT_SECRET = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
 
 function getTikTokRedirectUri(): string {
