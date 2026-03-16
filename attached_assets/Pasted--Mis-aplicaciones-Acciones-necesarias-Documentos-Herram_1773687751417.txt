@@ -1,0 +1,55 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+Ayuda
+
+
+WebMakerChile Redes Sociales
+Identificador de la aplicación 1317067910325181
+Modo de la aplicación: En desarrollo
+
+En producción
+Tipo de aplicación: Empresa
+Guardado
+Configuración de la API con inicio de sesión para empresas de Instagram
+Te damos la bienvenida a la API de Instagram
+Empieza a usar la API de Instagram para crear, publicar y gestionar contenido. También puedes interactuar con los usuarios enviando y recibiendo mensajes, así como moderando comentarios. Más información
+Si quieres poder hacer un seguimiento de hashtags e insights, cambia al API setup with Facebook login.
+Nombre de aplicación de Instagram
+WebMakerChile Redes Sociales-IG
+Identificador de la aplicación de Instagram
+1494052229003058
+Clave secreta de la aplicación de Instagram
+Clave secreta de la aplicación de Instagram
+•••••••••
+1. Generar identificadores de acceso
+Añade una cuenta de Instagram para generar identificadores de acceso y configurar suscripciones a webhooks. Antes de continuar, asegúrate de asignarle a la cuenta el rol de tester de Instagram en la pestaña Roles.
+2. Configurar Webhooks
+Configura una URL de webhook personalizada o usa servicios de ayuda para configurar un extremo. Más información
+Para recibir webhooks, el modo de aplicación debe estar en "Live".
+URL de devolución de llamada
+Identificador de verificación
+
+Asocia un certificado de cliente a las solicitudes de webhook. Más información.
+3. Configura el inicio de sesión como negocio de Instagram
+Proporciona una forma segura de que las empresas concedan permisos a tu aplicación para acceder a los datos con el inicio de sesión de empresa.
+4. Completa la revisión de la aplicación
+Instagram requiere que se complete correctamente el proceso de revisión de la aplicación para que esta pueda acceder a los datos en directo. Realiza el proceso de revisión para obtener acceso avanzado a los permisos de Instagram. Envía tu solicitud de revisión cuanto lo tengas todo listo.
+Información
+La API de Instagram te permite crear aplicaciones para publicar contenidos y administrar mensajes en Instagram...Ver más
+Recursos
+Hemos reunido algunos recursos para ayudarte a empezar.
+Documentación para desarrolladores
+Empezar
+Comunidad de desarrolladores
+Políticas
+Al acceder a la plataforma y hacer uso de ella, aceptas las Políticas de la plataforma y las Políticas para desarrolladores, así como otras condiciones y políticas aplicables.
+Política de la plataforma
+Política para desarrolladores
