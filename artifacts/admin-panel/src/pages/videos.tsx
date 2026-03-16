@@ -957,8 +957,11 @@ function StepReview({
   copyText: (text: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ttFileInputRef = useRef<HTMLInputElement>(null);
   const [ytUploading, setYtUploading] = useState(false);
   const [ytResult, setYtResult] = useState<{ success?: boolean; message?: string; youtubeUrl?: string; error?: string } | null>(null);
+  const [ttUploading, setTtUploading] = useState(false);
+  const [ttResult, setTtResult] = useState<{ success?: boolean; message?: string; publishId?: string; error?: string } | null>(null);
   const queryClient = useQueryClient();
 
   const handleYouTubeUpload = async (file: File) => {
@@ -984,6 +987,32 @@ function StepReview({
       setYtResult({ success: false, error: err.message || "Error de red" });
     } finally {
       setYtUploading(false);
+    }
+  };
+
+  const handleTikTokUpload = async (file: File) => {
+    setTtUploading(true);
+    setTtResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("video", file);
+
+      const res = await fetch(`${API_BASE}/tiktok/upload/${video.id}`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setTtResult({ success: true, message: data.message, publishId: data.publishId });
+        queryClient.invalidateQueries({ queryKey: ["videos"] });
+      } else {
+        setTtResult({ success: false, error: data.error || "Error desconocido" });
+      }
+    } catch (err: any) {
+      setTtResult({ success: false, error: err.message || "Error de red" });
+    } finally {
+      setTtUploading(false);
     }
   };
 
@@ -1217,6 +1246,70 @@ function StepReview({
                     </div>
                   ) : (
                     <p>{ytResult.error}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {video.tiktokPublishId ? (
+            <div className="bg-black/20 border border-white/10 rounded-xl p-4 flex items-center gap-3">
+              <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
+              </span>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-foreground">Subido a TikTok</p>
+                <p className="text-xs text-muted-foreground">Publish ID: {video.tiktokPublishId}</p>
+              </div>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
+                Enviado
+              </span>
+            </div>
+          ) : isScheduled && video.tiktokDescription && (
+            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
+                </span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground">Subir a TikTok</p>
+                  <p className="text-xs text-muted-foreground">Selecciona el archivo de video para subirlo a TikTok (privado, sandbox)</p>
+                </div>
+                <input
+                  ref={ttFileInputRef}
+                  type="file"
+                  accept="video/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleTikTokUpload(file);
+                  }}
+                />
+                <Button
+                  onClick={() => ttFileInputRef.current?.click()}
+                  disabled={ttUploading}
+                  className="bg-black hover:bg-zinc-800 text-white border border-white/10"
+                  size="sm"
+                >
+                  {ttUploading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 mr-2" />
+                  )}
+                  {ttUploading ? "Subiendo..." : "Subir Video"}
+                </Button>
+              </div>
+
+              {ttResult && (
+                <div className={`rounded-lg p-3 text-sm ${
+                  ttResult.success
+                    ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/10 border border-red-500/20 text-red-400"
+                }`}>
+                  {ttResult.success ? (
+                    <p className="font-medium">{ttResult.message}</p>
+                  ) : (
+                    <p>{ttResult.error}</p>
                   )}
                 </div>
               )}

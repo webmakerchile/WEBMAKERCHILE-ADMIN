@@ -26,6 +26,8 @@ export default function Dashboard() {
   const checkSchedule = useCheckScheduledVideos();
   const [ytChannel, setYtChannel] = useState<any>(null);
   const [ytLoading, setYtLoading] = useState(true);
+  const [tiktokStatus, setTiktokStatus] = useState<any>(null);
+  const [tiktokLoading, setTiktokLoading] = useState(true);
 
   useEffect(() => {
     fetch(`${API_BASE}/youtube/channel`)
@@ -33,6 +35,17 @@ export default function Dashboard() {
       .then(data => setYtChannel(data))
       .catch(() => setYtChannel({ connected: false, message: "Error de conexión" }))
       .finally(() => setYtLoading(false));
+
+    fetch(`${API_BASE}/tiktok/status`)
+      .then(r => r.json())
+      .then(data => setTiktokStatus(data))
+      .catch(() => setTiktokStatus({ connected: false, message: "Error de conexión" }))
+      .finally(() => setTiktokLoading(false));
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tiktok") === "connected") {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   const stats = [
@@ -200,6 +213,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="glass-card rounded-3xl p-8 border border-white/5">
           <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
             <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center mr-3">
@@ -243,6 +257,50 @@ export default function Dashboard() {
               </a>
             </div>
           )}
+        </div>
+
+        <div className="glass-card rounded-3xl p-8 border border-white/5">
+          <h2 className="text-2xl font-display font-bold mb-6 flex items-center">
+            <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center mr-3">
+              <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
+            </span>
+            Conexión TikTok
+          </h2>
+
+          {tiktokLoading ? (
+            <div className="h-20 rounded-xl bg-white/5 animate-pulse" />
+          ) : tiktokStatus?.connected ? (
+            <div className="flex items-center gap-4 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              {tiktokStatus.user?.avatar && (
+                <img src={tiktokStatus.user.avatar} alt="" className="w-12 h-12 rounded-full" />
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-foreground">{tiktokStatus.user?.displayName || "TikTok"}</h3>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                </div>
+                <p className="text-sm text-muted-foreground">Cuenta conectada (sandbox)</p>
+              </div>
+              <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
+                Conectado
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+              <XCircle className="w-8 h-8 text-amber-400 flex-shrink-0" />
+              <div className="flex-1">
+                <h3 className="font-semibold text-amber-400">TikTok no conectado</h3>
+                <p className="text-sm text-muted-foreground">{tiktokStatus?.message || "Conecta tu cuenta de TikTok para publicar videos"}</p>
+              </div>
+              <a
+                href={`${API_BASE}/tiktok/auth`}
+                className="text-xs bg-black/50 text-white hover:bg-black/70 px-4 py-2 rounded-lg font-medium transition-colors border border-white/10"
+              >
+                Conectar TikTok
+              </a>
+            </div>
+          )}
+        </div>
         </div>
       </div>
     </Layout>

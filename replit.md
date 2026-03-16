@@ -68,6 +68,17 @@ artifacts-monorepo/
   - Videos are uploaded as "private" by default with Shorts-optimized metadata
   - Auto-upload during schedule/check queue processing when youtubeStatus is "scheduled"
   - Dashboard shows YouTube channel connection status
+- **TikTok Login Kit + Content Posting API** (sandbox mode):
+  - OAuth v2 flow: GET /api/tiktok/auth → TikTok authorize → GET /api/tiktok/callback
+  - Token exchange via POST https://open.tiktokapis.com/v2/oauth/token/
+  - Scopes: user.info.basic, video.publish
+  - User tokens (access + refresh + open_id) stored in users table
+  - Content Posting: POST /api/tiktok/upload/:videoId (FILE_UPLOAD chunked method)
+  - Videos published as SELF_ONLY (private) via /v2/post/publish/video/init/
+  - Routes: GET /api/tiktok/status, POST /api/tiktok/disconnect, POST /api/tiktok/publish-status/:videoId
+  - Dashboard shows TikTok connection card with connect/disconnect
+  - StepReview has TikTok upload button alongside YouTube upload
+  - Redirect URI: https://admin.webmakerchile.com/api/tiktok/callback
 
 ### Authentication
 - Google OAuth 2.0 login via Passport.js
@@ -78,7 +89,7 @@ artifacts-monorepo/
 - Callback URL: https://admin.webmakerchile.com/api/auth/google/callback
 
 ### Database Tables
-- `users` - Authenticated admin users (Google OAuth, email whitelist, YouTube access/refresh tokens)
+- `users` - Authenticated admin users (Google OAuth, email whitelist, YouTube access/refresh tokens, TikTok open_id/access/refresh tokens)
 - `conversations` - Gemini AI chat conversations
 - `messages` - Chat messages within conversations  
 - `videos` - Video content entries with cover images, scheduling, and Drive integration
