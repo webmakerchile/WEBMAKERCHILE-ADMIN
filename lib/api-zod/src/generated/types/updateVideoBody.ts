@@ -15,4 +15,11 @@ export interface UpdateVideoBody {
   week?: string;
   day?: string;
   videoNumber?: string;
+  tiktokDescription?: string;
+  instagramDescription?: string;
+  youtubeTitle?: string;
+  youtubeDescription?: string;
+  tiktokStatus?: string;
+  instagramStatus?: string;
+  youtubeStatus?: string;
 }

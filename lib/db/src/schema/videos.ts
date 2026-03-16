@@ -18,6 +18,13 @@ export const videos = pgTable("videos", {
   week: text("week"),
   day: text("day"),
   videoNumber: text("video_number"),
+  tiktokDescription: text("tiktok_description"),
+  instagramDescription: text("instagram_description"),
+  youtubeTitle: text("youtube_title"),
+  youtubeDescription: text("youtube_description"),
+  tiktokStatus: text("tiktok_status").default("pending"),
+  instagramStatus: text("instagram_status").default("pending"),
+  youtubeStatus: text("youtube_status").default("pending"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -205,6 +205,19 @@ export const ListVideosResponseItem = zod.object({
   week: zod.string().optional(),
   day: zod.string().optional(),
   videoNumber: zod.string().optional(),
+  tiktokDescription: zod.string().optional(),
+  instagramDescription: zod.string().optional(),
+  youtubeTitle: zod.string().optional(),
+  youtubeDescription: zod.string().optional(),
+  tiktokStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  instagramStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  youtubeStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -246,6 +259,19 @@ export const GetVideoResponse = zod.object({
   week: zod.string().optional(),
   day: zod.string().optional(),
   videoNumber: zod.string().optional(),
+  tiktokDescription: zod.string().optional(),
+  instagramDescription: zod.string().optional(),
+  youtubeTitle: zod.string().optional(),
+  youtubeDescription: zod.string().optional(),
+  tiktokStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  instagramStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  youtubeStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -266,6 +292,13 @@ export const UpdateVideoBody = zod.object({
   week: zod.string().optional(),
   day: zod.string().optional(),
   videoNumber: zod.string().optional(),
+  tiktokDescription: zod.string().optional(),
+  instagramDescription: zod.string().optional(),
+  youtubeTitle: zod.string().optional(),
+  youtubeDescription: zod.string().optional(),
+  tiktokStatus: zod.string().optional(),
+  instagramStatus: zod.string().optional(),
+  youtubeStatus: zod.string().optional(),
 });
 
 export const UpdateVideoResponse = zod.object({
@@ -284,6 +317,19 @@ export const UpdateVideoResponse = zod.object({
   week: zod.string().optional(),
   day: zod.string().optional(),
   videoNumber: zod.string().optional(),
+  tiktokDescription: zod.string().optional(),
+  instagramDescription: zod.string().optional(),
+  youtubeTitle: zod.string().optional(),
+  youtubeDescription: zod.string().optional(),
+  tiktokStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  instagramStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  youtubeStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -318,6 +364,19 @@ export const GenerateVideoCoverResponse = zod.object({
   week: zod.string().optional(),
   day: zod.string().optional(),
   videoNumber: zod.string().optional(),
+  tiktokDescription: zod.string().optional(),
+  instagramDescription: zod.string().optional(),
+  youtubeTitle: zod.string().optional(),
+  youtubeDescription: zod.string().optional(),
+  tiktokStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  instagramStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  youtubeStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -350,6 +409,19 @@ export const ScheduleVideoResponse = zod.object({
   week: zod.string().optional(),
   day: zod.string().optional(),
   videoNumber: zod.string().optional(),
+  tiktokDescription: zod.string().optional(),
+  instagramDescription: zod.string().optional(),
+  youtubeTitle: zod.string().optional(),
+  youtubeDescription: zod.string().optional(),
+  tiktokStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  instagramStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
+  youtubeStatus: zod
+    .enum(["pending", "scheduled", "published", "error"])
+    .optional(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });

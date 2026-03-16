@@ -591,6 +591,23 @@ components:
           type: string
         videoNumber:
           type: string
+        tiktokDescription:
+          type: string
+        instagramDescription:
+          type: string
+        youtubeTitle:
+          type: string
+        youtubeDescription:
+          type: string
+        tiktokStatus:
+          type: string
+          enum: [pending, scheduled, published, error]
+        instagramStatus:
+          type: string
+          enum: [pending, scheduled, published, error]
+        youtubeStatus:
+          type: string
+          enum: [pending, scheduled, published, error]
         createdAt:
           type: string
           format: date-time
@@ -642,6 +659,20 @@ components:
         day:
           type: string
         videoNumber:
+          type: string
+        tiktokDescription:
+          type: string
+        instagramDescription:
+          type: string
+        youtubeTitle:
+          type: string
+        youtubeDescription:
+          type: string
+        tiktokStatus:
+          type: string
+        instagramStatus:
+          type: string
+        youtubeStatus:
           type: string
     ScheduleVideoBody:
       type: object

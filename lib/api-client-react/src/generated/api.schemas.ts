@@ -92,6 +92,36 @@ export const VideoContentStatus = {
   published: "published",
 } as const;
 
+export type VideoContentTiktokStatus =
+  (typeof VideoContentTiktokStatus)[keyof typeof VideoContentTiktokStatus];
+
+export const VideoContentTiktokStatus = {
+  pending: "pending",
+  scheduled: "scheduled",
+  published: "published",
+  error: "error",
+} as const;
+
+export type VideoContentInstagramStatus =
+  (typeof VideoContentInstagramStatus)[keyof typeof VideoContentInstagramStatus];
+
+export const VideoContentInstagramStatus = {
+  pending: "pending",
+  scheduled: "scheduled",
+  published: "published",
+  error: "error",
+} as const;
+
+export type VideoContentYoutubeStatus =
+  (typeof VideoContentYoutubeStatus)[keyof typeof VideoContentYoutubeStatus];
+
+export const VideoContentYoutubeStatus = {
+  pending: "pending",
+  scheduled: "scheduled",
+  published: "published",
+  error: "error",
+} as const;
+
 export interface VideoContent {
   id: number;
   title: string;
@@ -108,6 +138,13 @@ export interface VideoContent {
   week?: string;
   day?: string;
   videoNumber?: string;
+  tiktokDescription?: string;
+  instagramDescription?: string;
+  youtubeTitle?: string;
+  youtubeDescription?: string;
+  tiktokStatus?: VideoContentTiktokStatus;
+  instagramStatus?: VideoContentInstagramStatus;
+  youtubeStatus?: VideoContentYoutubeStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -131,6 +168,13 @@ export interface UpdateVideoBody {
   week?: string;
   day?: string;
   videoNumber?: string;
+  tiktokDescription?: string;
+  instagramDescription?: string;
+  youtubeTitle?: string;
+  youtubeDescription?: string;
+  tiktokStatus?: string;
+  instagramStatus?: string;
+  youtubeStatus?: string;
 }
 
 export interface ScheduleVideoBody {

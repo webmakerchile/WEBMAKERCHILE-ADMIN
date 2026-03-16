@@ -27,4 +27,7 @@ export * from "./scheduleVideoBody";
 export * from "./sendGeminiMessageBody";
 export * from "./updateVideoBody";
 export * from "./videoContent";
+export * from "./videoContentInstagramStatus";
 export * from "./videoContentStatus";
+export * from "./videoContentTiktokStatus";
+export * from "./videoContentYoutubeStatus";

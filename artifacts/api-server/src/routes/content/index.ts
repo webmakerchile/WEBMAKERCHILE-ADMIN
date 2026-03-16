@@ -7,7 +7,6 @@ import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import { ReplitConnectors } from "@replit/connectors-sdk";
 import {
   CreateVideoBody,
-  UpdateVideoBody,
   ScheduleVideoBody,
 } from "@workspace/api-zod";
 
@@ -59,7 +58,7 @@ router.get("/content/videos/:id", async (req, res) => {
 
 router.patch("/content/videos/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const body = UpdateVideoBody.parse(req.body);
+  const body = req.body;
 
   const updateData: Record<string, any> = { updatedAt: new Date() };
   if (body.title !== undefined) updateData.title = body.title;
@@ -70,6 +69,13 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.week !== undefined) updateData.week = body.week;
   if (body.day !== undefined) updateData.day = body.day;
   if (body.videoNumber !== undefined) updateData.videoNumber = body.videoNumber;
+  if (body.tiktokDescription !== undefined) updateData.tiktokDescription = body.tiktokDescription;
+  if (body.instagramDescription !== undefined) updateData.instagramDescription = body.instagramDescription;
+  if (body.youtubeTitle !== undefined) updateData.youtubeTitle = body.youtubeTitle;
+  if (body.youtubeDescription !== undefined) updateData.youtubeDescription = body.youtubeDescription;
+  if (body.tiktokStatus !== undefined) updateData.tiktokStatus = body.tiktokStatus;
+  if (body.instagramStatus !== undefined) updateData.instagramStatus = body.instagramStatus;
+  if (body.youtubeStatus !== undefined) updateData.youtubeStatus = body.youtubeStatus;
 
   const [row] = await db
     .update(videos)

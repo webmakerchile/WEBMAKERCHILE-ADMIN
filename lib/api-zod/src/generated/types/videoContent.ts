@@ -5,7 +5,10 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { VideoContentInstagramStatus } from "./videoContentInstagramStatus";
 import type { VideoContentStatus } from "./videoContentStatus";
+import type { VideoContentTiktokStatus } from "./videoContentTiktokStatus";
+import type { VideoContentYoutubeStatus } from "./videoContentYoutubeStatus";
 
 export interface VideoContent {
   id: number;
@@ -23,6 +26,13 @@ export interface VideoContent {
   week?: string;
   day?: string;
   videoNumber?: string;
+  tiktokDescription?: string;
+  instagramDescription?: string;
+  youtubeTitle?: string;
+  youtubeDescription?: string;
+  tiktokStatus?: VideoContentTiktokStatus;
+  instagramStatus?: VideoContentInstagramStatus;
+  youtubeStatus?: VideoContentYoutubeStatus;
   createdAt: Date;
   updatedAt: Date;
 }
