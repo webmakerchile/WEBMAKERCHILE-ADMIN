@@ -7,7 +7,6 @@ import {
   Video, 
   Image as ImageIcon, 
   FolderTree, 
-  MessageSquare, 
   CalendarClock,
   Clapperboard,
   LogOut,
@@ -22,7 +21,6 @@ const navItems = [
   { href: "/cover", icon: ImageIcon, label: "Generador de Portadas" },
   { href: "/drive", icon: FolderTree, label: "Explorador Drive" },
   { href: "/estudio", icon: Clapperboard, label: "Estudio de Trabajo" },
-  { href: "/chat", icon: MessageSquare, label: "Asistente AI" },
   { href: "/schedule", icon: CalendarClock, label: "Programación" },
 ];
 

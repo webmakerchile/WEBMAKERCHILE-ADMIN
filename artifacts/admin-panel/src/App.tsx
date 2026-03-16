@@ -7,7 +7,6 @@ import Dashboard from "./pages/dashboard";
 import VideosPage from "./pages/videos";
 import CoverGeneratorPage from "./pages/cover-generator";
 import DriveBrowserPage from "./pages/drive-browser";
-import ChatPage from "./pages/chat";
 import SchedulePage from "./pages/schedule";
 import StudioPage from "./pages/studio";
 import LoginPage from "./pages/login";
@@ -79,7 +78,6 @@ function Router() {
       <Route path="/videos" component={VideosPage} />
       <Route path="/cover" component={CoverGeneratorPage} />
       <Route path="/drive" component={DriveBrowserPage} />
-      <Route path="/chat" component={ChatPage} />
       <Route path="/schedule" component={SchedulePage} />
       <Route path="/estudio" component={StudioPage} />
       <Route component={NotFound} />

@@ -54,11 +54,10 @@ artifacts-monorepo/
   - Teleprompter with speed control, mirror mode, fullscreen, font size adjustment
   - Camera recording with pause/resume, camera switching, mirror, timer, video preview/download
   - Recording stats dashboard
-- **AI Chat**: Chat with Gemini for content ideas and planning
 - **Schedule Manager**: Schedule videos for automatic publishing to Google Drive
 
 ### Integrations
-- **Gemini AI**: Image generation (covers/portadas) with reference image support, and chat via Replit AI Integrations proxy
+- **Gemini AI**: Image generation (covers/portadas) with reference image support via Replit AI Integrations proxy
   - Reference image for covers: `artifacts/api-server/assets/reference-cover.jpg` (fox mascot, flat vector art style)
   - All cover generations automatically use this reference image for consistent branding
 - **Google Drive**: File management via Replit Connectors SDK (folder: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB)
