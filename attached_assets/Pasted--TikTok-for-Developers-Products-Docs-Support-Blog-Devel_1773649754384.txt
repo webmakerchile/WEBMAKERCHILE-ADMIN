@@ -1,0 +1,187 @@
+
+TikTok for Developers
+
+Products
+Docs
+Support
+Blog
+
+Developer Portal
+
+
+AI Assistant
+Webmakerchile
+
+Production
+Sandbox
+
+URL properties
+
+
+Sandbox
+
+
+Webmakerchile
+App details
+Credentials
+
+Basic information
+
+Products
+Login Kit
+
+Content Posting API
+
+Scopes
+Sandbox settings
+Target users
+
+
+Delete Sandbox
+This form has unsaved changes
+
+Apply changes
+You are editing Webmakerchile, a Sandbox version of Webmakerchile
+App details
+
+Credentials
+Client key
+sbaw4gnk6xiux720bm
+Client secret
+EJR0reHsztsknh58xEJeiwDvKy8DWQg8
+
+Basic information
+App icon *
+This will be displayed publicly to TikTok users.
+
+Requirements:
+1024px x 1024px
+Up to 5MB
+JPEG, JPG, or PNG formats
+App name *
+This will be displayed to TikTok users
+Webmakerchile
+13 / 50
+Category *
+
+Business
+Description *
+Describe what your website or mobile app does and how it works. This will be displayed to TikTok users.
+Examples:
+A website that sells pet supplies.
+Manage all your social media content in one place.
+Plataforma de gestión de contenido para crear y publicar videos en redes sociales.
+82 / 120
+Terms of Service URL *
+Link to your app or website's official Terms of Service
+https://admin.webmakerchile.com/terms
+Privacy Policy URL *
+Link to your app or website's official privacy policy
+https://admin.webmakerchile.com/privacy
+Platforms *
+
+Web
+
+Desktop
+
+Android
+
+iOS
+Configure for Web/Desktop
+Web/Desktop URL *
+Link to the official website for your app or service
+https://admin.webmakerchile.com
+Products
+
+Add products
+
+
+Login Kit
+
+Redirect URI
+ *
+
+Add up to 10 Redirect URIs. Users will be redirected to this path after they have authorized your app with TikTok.
+
+
+Web*
+
+Desktop
+
+Android
+
+iOS
+https://admin.webmakerchile.com/api/tiktok/callback
+
+Add a URI
+
+
+Content Posting API
+
+By default, Upload to TikTok is enabled, allowing you to upload content to TikTok as a draft for creators to further edit and post.
+Direct Post
+
+Directly post content to authorized users' profiles.
+Verify domains
+The video/content can be posted in two ways, push_by_file and pull_by_url. To enable pull_by_url, you have to verify your domains. Check out the Media Transfer Guide to learn more.
+
+Verify
+
+Add products
+Scopes
+
+Search
+
+Add scopes
+user.info.basic
+user.info.basic
+Read a user's profile info (open id, avatar, display name ...)
+Included in Login Kit
+video.upload
+video.upload
+Share content to creator's account as a draft to further edit and post in TikTok.
+Included in Content Posting API
+Sandbox settings
+
+Target Users
+
+Add account
+TikTok username	Time added	
+webmakerchile	Mar 16, 2026 5:28 AM	
+Remove
+Total 1 item
+History
+
+Changelog
+
+Review comments
+
+All
+TikTok for Developers
+Products
+Share Kit
+Login Kit
+Content Posting API
+Research API
+Display API
+Embed Videos
+Data Portability API
+Green Screen Kit
+Commercial Content API
+Other platforms
+TikTok Embeds
+TikTok for Business
+Advertise on TikTok
+TikTok Creative Center
+TikTok.com
+Company
+About TikTok
+Newsroom
+Contact
+Careers
+ByteDance
+Transparency Center
+© 2026 TikTok
+Terms of Service
+Privacy Policy
+Resources & Legal
