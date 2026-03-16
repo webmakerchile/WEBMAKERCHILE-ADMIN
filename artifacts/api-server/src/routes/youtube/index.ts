@@ -139,12 +139,14 @@ router.post("/youtube/upload/:videoId", upload.single("video"), async (req: Requ
     });
 
     const ytVideoId = uploadResponse.data.id;
+    let thumbnailSet = false;
+    let thumbnailError = "";
 
     if (video.coverImageBase64 && ytVideoId) {
       try {
         const thumbnailBuffer = Buffer.from(video.coverImageBase64, "base64");
         const thumbStream = Readable.from(thumbnailBuffer);
-
+        console.log(`[YouTube] Setting thumbnail for ${ytVideoId}, size: ${thumbnailBuffer.length} bytes, mime: ${video.coverMimeType || "image/png"}`);
         await youtube.thumbnails.set({
           videoId: ytVideoId,
           media: {
@@ -152,9 +154,11 @@ router.post("/youtube/upload/:videoId", upload.single("video"), async (req: Requ
             body: thumbStream,
           },
         });
-        console.log(`[YouTube] Thumbnail set for video ${ytVideoId}`);
+        thumbnailSet = true;
+        console.log(`[YouTube] Thumbnail set successfully for ${ytVideoId}`);
       } catch (thumbErr: any) {
-        console.log("[YouTube] Thumbnail upload skipped:", thumbErr.message);
+        thumbnailError = thumbErr.message || "Error desconocido";
+        console.error("[YouTube] Thumbnail upload failed:", thumbErr.message, thumbErr.code, JSON.stringify(thumbErr.errors || []));
       }
     }
 
@@ -171,7 +175,11 @@ router.post("/youtube/upload/:videoId", upload.single("video"), async (req: Requ
       success: true,
       youtubeVideoId: ytVideoId,
       youtubeUrl: `https://youtube.com/shorts/${ytVideoId}`,
-      message: `Video subido a YouTube como privado. ID: ${ytVideoId}`,
+      thumbnailSet,
+      thumbnailError: thumbnailError || undefined,
+      message: thumbnailSet
+        ? `Video subido a YouTube con portada. ID: ${ytVideoId}`
+        : `Video subido a YouTube (sin portada${thumbnailError ? `: ${thumbnailError}` : ""}). ID: ${ytVideoId}`,
     });
   } catch (error: any) {
     console.error("[YouTube] Upload error:", error.message);
@@ -248,17 +256,23 @@ router.post("/youtube/upload-from-drive/:videoId", async (req: Request, res: Res
     });
 
     const ytVideoId = uploadResponse.data.id;
+    let thumbnailSet = false;
+    let thumbnailError = "";
 
     if (video.coverImageBase64 && ytVideoId) {
       try {
         const thumbnailBuffer = Buffer.from(video.coverImageBase64, "base64");
         const thumbStream = Readable.from(thumbnailBuffer);
+        console.log(`[YouTube] Setting thumbnail for ${ytVideoId}, size: ${thumbnailBuffer.length} bytes, mime: ${video.coverMimeType || "image/png"}`);
         await youtube.thumbnails.set({
           videoId: ytVideoId,
           media: { mimeType: video.coverMimeType || "image/png", body: thumbStream },
         });
+        thumbnailSet = true;
+        console.log(`[YouTube] Thumbnail set successfully for ${ytVideoId}`);
       } catch (thumbErr: any) {
-        console.log("[YouTube] Thumbnail upload skipped:", thumbErr.message);
+        thumbnailError = thumbErr.message || "Error desconocido";
+        console.error("[YouTube] Thumbnail upload failed:", thumbErr.message, thumbErr.code, JSON.stringify(thumbErr.errors || []));
       }
     }
 
@@ -271,7 +285,11 @@ router.post("/youtube/upload-from-drive/:videoId", async (req: Request, res: Res
       success: true,
       youtubeVideoId: ytVideoId,
       youtubeUrl: `https://youtube.com/shorts/${ytVideoId}`,
-      message: `Video subido a YouTube como privado. ID: ${ytVideoId}`,
+      thumbnailSet,
+      thumbnailError: thumbnailError || undefined,
+      message: thumbnailSet
+        ? `Video subido a YouTube con portada. ID: ${ytVideoId}`
+        : `Video subido a YouTube (sin portada${thumbnailError ? `: ${thumbnailError}` : ""}). ID: ${ytVideoId}`,
     });
   } catch (error: any) {
     console.error("[YouTube] Upload from Drive error:", error.message);

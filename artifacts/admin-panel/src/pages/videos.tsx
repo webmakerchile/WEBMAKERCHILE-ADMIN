@@ -1416,7 +1416,7 @@ function StepReview({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ttFileInputRef = useRef<HTMLInputElement>(null);
   const [ytUploading, setYtUploading] = useState(false);
-  const [ytResult, setYtResult] = useState<{ success?: boolean; message?: string; youtubeUrl?: string; error?: string } | null>(null);
+  const [ytResult, setYtResult] = useState<{ success?: boolean; message?: string; youtubeUrl?: string; error?: string; thumbnailSet?: boolean; thumbnailError?: string } | null>(null);
   const [ttUploading, setTtUploading] = useState(false);
   const [ttResult, setTtResult] = useState<{ success?: boolean; message?: string; publishId?: string; error?: string } | null>(null);
   const [showYtDrivePicker, setShowYtDrivePicker] = useState(false);
@@ -1445,7 +1445,7 @@ function StepReview({
       }
       const data = await res.json();
       if (res.ok && data.success) {
-        setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl });
+        setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl, thumbnailSet: data.thumbnailSet, thumbnailError: data.thumbnailError });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
         setYtResult({ success: false, error: data.error || "Error desconocido" });
@@ -1519,7 +1519,7 @@ function StepReview({
       const data = await res.json();
 
       if (res.ok && data.success) {
-        setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl });
+        setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl, thumbnailSet: data.thumbnailSet, thumbnailError: data.thumbnailError });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
         setYtResult({ success: false, error: data.error || "Error desconocido" });
@@ -1828,6 +1828,14 @@ function StepReview({
                         <a href={ytResult.youtubeUrl} target="_blank" rel="noopener noreferrer" className="underline text-xs mt-1 block">
                           {ytResult.youtubeUrl}
                         </a>
+                      )}
+                      {ytResult.thumbnailSet === false && ytResult.thumbnailError && (
+                        <p className="text-xs text-amber-400 mt-2">
+                          ⚠ Portada no aplicada: {ytResult.thumbnailError}
+                        </p>
+                      )}
+                      {ytResult.thumbnailSet && (
+                        <p className="text-xs text-emerald-400 mt-1">✓ Portada aplicada como miniatura</p>
                       )}
                     </div>
                   ) : (
