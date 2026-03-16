@@ -216,6 +216,38 @@ export default function StudioPage() {
     },
   });
 
+  const markRecordedAndCreateVideo = async (idea: VideoIdea) => {
+    updateMutation.mutate({ id: idea.id, recordedAt: new Date().toISOString() });
+
+    try {
+      const res = await fetch(`${API_BASE}/content/videos/from-studio`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: idea.titulo,
+          description: idea.descripcion || idea.guion?.substring(0, 200) || "",
+          category: idea.category,
+          hashtags: idea.hashtags || [],
+        }),
+      });
+      if (res.ok) {
+        toast({
+          title: "Video creado en el Gestor",
+          description: "La portada se está generando automáticamente con IA",
+        });
+      } else {
+        const err = await res.json().catch(() => ({ error: "Error desconocido" }));
+        toast({
+          title: "Error al crear video",
+          description: err.error || "No se pudo crear el video en el gestor",
+          variant: "destructive",
+        });
+      }
+    } catch {
+      toast({ title: "Error al crear video en el gestor", variant: "destructive" });
+    }
+  };
+
   const copyGuion = (guion: string) => {
     navigator.clipboard.writeText(guion);
     toast({ title: "Guion copiado al portapapeles" });
@@ -228,8 +260,7 @@ export default function StudioPage() {
           idea={selectedIdea}
           onBack={() => setView("ideas")}
           onMarkRecorded={() => {
-            updateMutation.mutate({ id: selectedIdea.id, recordedAt: new Date().toISOString() });
-            toast({ title: "Listo, grabado" });
+            markRecordedAndCreateVideo(selectedIdea);
             setView("ideas");
           }}
         />
@@ -245,9 +276,8 @@ export default function StudioPage() {
           onBack={() => setView("ideas")}
           onRecorded={() => {
             if (selectedIdea) {
-              updateMutation.mutate({ id: selectedIdea.id, recordedAt: new Date().toISOString() });
+              markRecordedAndCreateVideo(selectedIdea);
             }
-            toast({ title: "Listo, grabado" });
             setView("ideas");
           }}
         />
@@ -507,8 +537,7 @@ export default function StudioPage() {
                             size="icon"
                             className="h-8 w-8 hover:bg-green-500/10 text-muted-foreground hover:text-green-400"
                             onClick={() => {
-                              updateMutation.mutate({ id: idea.id, recordedAt: new Date().toISOString() });
-                              toast({ title: "Listo, grabado" });
+                              markRecordedAndCreateVideo(idea);
                             }}
                             title="Marcar como grabado"
                           >

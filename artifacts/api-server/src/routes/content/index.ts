@@ -9,11 +9,94 @@ import {
   CreateVideoBody,
   ScheduleVideoBody,
 } from "@workspace/api-zod";
+import * as fs from "fs";
+import * as path from "path";
 
 const router: IRouter = Router();
 
 function getConnectors() {
   return new ReplitConnectors();
+}
+
+function findReferenceImage(): string {
+  const candidates = [
+    path.resolve("artifacts/api-server/assets/reference-cover.jpg"),
+    path.resolve("assets/reference-cover.jpg"),
+    path.join(process.cwd(), "assets/reference-cover.jpg"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error(`Reference cover image not found. Searched: ${candidates.join(", ")}`);
+}
+
+let _refImageCache: string | null = null;
+function getReferenceImageBase64(): string {
+  if (_refImageCache) return _refImageCache;
+  const imagePath = findReferenceImage();
+  _refImageCache = fs.readFileSync(imagePath).toString("base64");
+  return _refImageCache;
+}
+
+function buildCoverPrompt(title: string, description: string, customPrompt?: string | null): string {
+  const titleText = title.toUpperCase();
+  const titleLetterByLetter = titleText.split("").join("-");
+
+  return customPrompt || `Genera una imagen para portada de video en formato vertical (9:16) BASÁNDOTE EN LA IMAGEN DE REFERENCIA adjunta.
+
+INSTRUCCIONES DE ESTILO:
+- Usa el MISMO estilo visual de la imagen de referencia: flat vector art, fondo amarillo sólido, personaje zorro con lentes.
+- Mantén el mismo estilo de ilustración, colores y composición.
+- El zorro debe tener una expresión y pose relevante al tema del video.
+
+Título del video: "${title}"
+Descripción: "${description}"
+
+TEXTO OBLIGATORIO EN LA IMAGEN (tercio superior, blanco, mayúsculas, sans-serif gruesa y negrita, centrado):
+
+TEXTO EXACTO: "${titleText}"
+LETRA POR LETRA: ${titleLetterByLetter}
+
+ADVERTENCIA CRÍTICA SOBRE ORTOGRAFÍA:
+- El texto DEBE escribirse EXACTAMENTE como se muestra arriba, sin alterar NINGUNA letra.
+- NO inventes, NO reorganices, NO intercambies letras. Copia carácter por carácter.
+- Verifica que cada palabra esté escrita correctamente ANTES de renderizar.
+- Cada letra en su posición EXACTA. La precisión ortográfica es OBLIGATORIA.
+- Antes de generar, re-lee el texto letra por letra y confirma que cada carácter está en el orden correcto.
+
+Estilo minimalista, líneas limpias, colores planos. Formato 9:16 vertical.`;
+}
+
+async function generateCoverForVideo(videoId: number) {
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, videoId))
+    .limit(1);
+
+  if (!video) throw new Error("Video not found");
+
+  const prompt = buildCoverPrompt(video.title, video.description || "", video.coverPrompt);
+  const referenceImageBase64 = getReferenceImageBase64();
+
+  const { b64_json, mimeType } = await generateImage({
+    prompt,
+    referenceImageBase64,
+    referenceImageMimeType: "image/jpeg",
+  });
+
+  const [updated] = await db
+    .update(videos)
+    .set({
+      coverImageBase64: b64_json,
+      coverMimeType: mimeType,
+      status: "cover_generated",
+      updatedAt: new Date(),
+    })
+    .where(eq(videos.id, videoId))
+    .returning();
+
+  return updated;
 }
 
 router.get("/content/videos", async (_req, res) => {
@@ -105,57 +188,39 @@ router.delete("/content/videos/:id", async (req, res) => {
 
 router.post("/content/videos/:id/generate-cover", async (req, res) => {
   const id = Number(req.params.id);
-  const [video] = await db
-    .select()
-    .from(videos)
-    .where(eq(videos.id, id))
-    .limit(1);
-
-  if (!video) {
-    res.status(404).json({ error: "Video not found" });
-    return;
-  }
-
-  const titleText = video.title.toUpperCase();
-  const titleLetterByLetter = titleText.split("").join("-");
-
-  const prompt =
-    video.coverPrompt ||
-    `Genera una ilustración en formato vertical (9:16) con estilo flat vector art, fondo amarillo sólido, con un personaje zorro.
-
-Título: "${video.title}"
-Descripción: "${video.description}"
-
-TEXTO OBLIGATORIO EN LA IMAGEN (tercio superior, blanco, mayúsculas, sans-serif gruesa y negrita, centrado):
-
-TEXTO EXACTO: "${titleText}"
-LETRA POR LETRA: ${titleLetterByLetter}
-
-ADVERTENCIA CRÍTICA SOBRE ORTOGRAFÍA:
-- El texto DEBE escribirse EXACTAMENTE como se muestra arriba, sin alterar NINGUNA letra.
-- NO inventes, NO reorganices, NO intercambies letras. Copia carácter por carácter.
-- Verifica que cada palabra esté escrita correctamente ANTES de renderizar.
-- Cada letra en su posición EXACTA. La precisión ortográfica es OBLIGATORIA.
-- Antes de generar, re-lee el texto letra por letra y confirma que cada carácter está en el orden correcto.
-
-Estilo minimalista, líneas limpias, colores planos.`;
 
   try {
-    const { b64_json, mimeType } = await generateImage(prompt);
-    const [updated] = await db
-      .update(videos)
-      .set({
-        coverImageBase64: b64_json,
-        coverMimeType: mimeType,
-        status: "cover_generated",
-        updatedAt: new Date(),
-      })
-      .where(eq(videos.id, id))
-      .returning();
-
+    const updated = await generateCoverForVideo(id);
     res.json(updated);
   } catch (error: any) {
+    if (error.message === "Video not found") {
+      res.status(404).json({ error: "Video not found" });
+      return;
+    }
     res.status(500).json({ error: error.message || "Cover generation failed" });
+  }
+});
+
+router.post("/content/videos/from-studio", async (req, res) => {
+  const { title, description, category, hashtags } = req.body;
+
+  try {
+    const [video] = await db
+      .insert(videos)
+      .values({
+        title: title || "Sin título",
+        description: description || "",
+        status: "draft",
+      })
+      .returning();
+
+    res.status(201).json({ video, coverGenerating: true });
+
+    generateCoverForVideo(video.id).catch((err) => {
+      console.error(`[from-studio] Error generating cover for video ${video.id}:`, err.message);
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Error creating video from studio" });
   }
 });
 

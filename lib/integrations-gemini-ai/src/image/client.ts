@@ -20,12 +20,35 @@ export const ai = new GoogleGenAI({
   },
 });
 
+export interface GenerateImageOptions {
+  prompt: string;
+  referenceImageBase64?: string;
+  referenceImageMimeType?: string;
+}
+
 export async function generateImage(
-  prompt: string
+  promptOrOptions: string | GenerateImageOptions
 ): Promise<{ b64_json: string; mimeType: string }> {
+  const options = typeof promptOrOptions === "string"
+    ? { prompt: promptOrOptions }
+    : promptOrOptions;
+
+  const parts: any[] = [];
+
+  if (options.referenceImageBase64) {
+    parts.push({
+      inlineData: {
+        data: options.referenceImageBase64,
+        mimeType: options.referenceImageMimeType || "image/jpeg",
+      },
+    });
+  }
+
+  parts.push({ text: options.prompt });
+
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-image",
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [{ role: "user", parts }],
     config: {
       responseModalities: [Modality.TEXT, Modality.IMAGE],
     },
