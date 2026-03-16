@@ -36,3 +36,5 @@ GOOGLE_CLIENT_ID = "341345751156-mvvqerb1ai56v61kpg5ctmq5khu8vvnq.apps.googleuse
 GOOGLE_CLIENT_SECRET = "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"
 ALLOWED_ADMIN_EMAILS = "webmakerchile@gmail.com"
 GOOGLE_CALLBACK_URL = "https://admin.webmakerchile.com/api/auth/google/callback"
+INSTAGRAM_APP_ID = "1494052229003058"
+META_APP_ID = "1317067910325181"
