@@ -1,0 +1,699 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+Ayuda
+
+
+WebMakerChile Redes Sociales
+Identificador de la aplicación 1317067910325181
+Modo de la aplicación: En desarrollo
+
+En producción
+Tipo de aplicación: Empresa
+Guardado
+Permisos y funciones
+Para conseguir acceso avanzado deberás realizar una serie de pasos que ayudan a Meta a proteger la privacidad de las personas. Infórmate sobre los requisitos para conseguir acceso avanzado.
+​
+Busca permisos y funciones
+Permisos y funciones
+Nivel de acceso
+​
+Llamadas a la API
+​
+Estado
+Acción
+​
+Meta oEmbed Read
+La función oEmbed Read de Meta permite que se inserten en la aplicación metadatos HTML y básicos para las páginas, las publicaciones y los vídeos públicos de Facebook e Instagram.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+whatsapp_business_manage_events
+El permiso whatsapp_business_manage_events permite que una aplicación registre eventos (como compras, productos añadidos al carrito, clientes potenciales, etc.) en nombre de una cuenta de WhatsApp Business que administre un usuario de la aplicación.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_manage_upcoming_events
+The instagram_manage_upcoming_events permission allows an app to read, create, and update upcoming events on behalf of Instagram accounts administered by people using the app.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_business_manage_messages
+El permiso instagram_business_manage_messages hace posible que las aplicaciones accedan a los mensajes de una cuenta profesional de Instagram.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_business_manage_comments
+El permiso instagram_business_manage_comments permite a una aplicación acceder a los comentarios de una cuenta profesional de Instagram, así como a las historias de Instagram y publicaciones públicas en las que se menciona o etiqueta a dicha cuenta en los comentarios.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_manage_events
+The instagram_manage_events permission allows an app permission to log events (e.g., purchase, add-to-cart, leads) on behalf of Instagram accounts administered by the app’s users.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+email
+El permiso email permite que tu aplicación lea la dirección de correo electrónico principal de una persona.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+Se requiere verificación
+Business Asset User Profile Access
+La función de acceso al perfil de usuario de activos comerciales permite a tu aplicación leer los campos de usuario de aquellas personas que interactúan con tus activos comerciales: “id”, “ids_for_business”, “name” y “picture”.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+whatsapp_business_messaging
+El permiso whatsapp_business_messaging permite que una aplicación envíe mensajes de WhatsApp y realice llamadas a un número de teléfono concreto, cargue y recupere contenido multimedia de los mensajes, gestione y obtenga información del perfil de empresa de WhatsApp, y registre esos números de teléfono en Meta.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_manage_metadata
+El permiso pages_manage_metadata hace posible que tu aplicación se suscriba a webhooks sobre la actividad que tenga lugar en la página, los reciba y actualice la configuración de la página.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+commerce_account_read_settings
+El permiso commerce_account_read_settings permite que tu aplicación lea la configuración de la cuenta comercial.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+public_profile
+El permiso public_profile hace posible que una aplicación lea los campos del perfil público predeterminado en el nodo Usuario . Se concede automáticamente a todas las aplicaciones.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+Se requiere verificación
+pages_user_locale
+El permiso pages_user_locale permite que la aplicación acceda al idioma de un usuario a través de la página a la que está conectada.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_user_timezone
+El permiso pages_user_timezone concede a la aplicación acceso a la zona horaria de un usuario a través de la página a la que está conectada.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+Page Mentions
+La función menciones de página permite a la aplicación mencionar cualquier página de Facebook al realizar publicaciones en las páginas que esta administra.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+commerce_account_read_reports
+El permiso commerce_account_read_reports permite que tu aplicación lea datos de informes financieros para generar informes personalizados de impuestos, reconciliación de efectivo y reembolsos de una cuenta comercial.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+Live Video API
+La función API de vídeo en directo permite que una aplicación administre vídeos en directo en páginas, grupos y biografías de usuario si se combina con el permiso correspondiente adecuado.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+Page Public Content Access
+La función Acceso a contenido público de páginas permite a tu aplicación acceder a la API de búsqueda de páginas y leer los datos públicos de las páginas para las que no dispongas de los permisos pages_read_engagement y pages_read_user_content . Pueden leerse metadatos empresariales, comentarios públicos y publicaciones.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+commerce_account_manage_orders
+El permiso commerce_account manage_orders hace posible que tu aplicación lea y actualice los pedidos de la cuenta comercial.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+manage_fundraisers
+The manage_fundraisers permission allows an app to create, update, and read a fundraiser and its donations on behalf of a user.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_shopping_tag_products
+El permiso instagram_shopping_tag_products permite que una aplicación etiquete contenido multimedia de Instagram con etiquetas de productos y apele rechazos de productos.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+Human Agent
+La función Agente humano permite a tu aplicación contar con un agente humano que responda a mensajes de los usuarios con la etiqueta human_agent en un plazo de siete días desde su recepción.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_manage_comments
+El permiso instagram_manage_comments hace posible que tu aplicación cree, elimine y oculte comentarios en nombre de la cuenta de Instagram vinculada a una página. Tu aplicación también puede leer los comentarios y el contenido multimedia públicos en los que se haya mencionado a una empresa (usando “@”), o en cuyas fotos se la haya etiquetado, y darles respuesta.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_messaging
+El permiso pages_messaging hace posible que tu aplicación acceda a las conversaciones de la página en Messenger y las administre.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_manage_messages
+El permiso instagram_manage_messages hace posible que los usuarios empresariales lean y respondan mensajes de Instagram Direct.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+commerce_account_read_orders
+El permiso commerce_account_read_orders permite que tu aplicación lea los pedidos de la cuenta comercial.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+Instagram Public Content Access
+La función de acceso a contenido público de Instagram permite que tu aplicación acceda a los extremos de la búsqueda de hashtags de la API Graph de Instagram.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+Ads Management Standard Access
+La función Acceso estándar a la administración de anuncios permite a tu aplicación acceder a la API de marketing.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+Page Public Metadata Access
+La función Acceso a metadatos públicos de páginas permite que la aplicación acceda a la API de búsqueda de páginas y lea datos públicos de páginas para las que no dispongas de los permisos pages_read_engagement ni pages_read_user_content . El uso permitido de esta función es analizar la interacción con las páginas públicas. Para ello, se deben visualizar los recuentos de "Me gusta" y de seguidores o agregar la información de la página Información orientada al público de varias páginas diferentes. Asimismo, es posible usar este permiso con el fin de solicitar insights y análisis para fines publicitarios, de marketing o de mejora de tu aplicación mediante el uso de datos globales no identificativos o anonimizados (siempre que dichos datos no puedan desanonimizarse).
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_user_gender
+El permiso pages_user_gender permite que la aplicación acceda a datos sobre el sexo de un usuario a través de la página a la que está conectada.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+Tu aplicación solo necesita acceso avanzado a los siguientes permisos y funciones si tu empresa proporciona servicios de proveedor tecnológico. Es necesario verificar la empresa y el acceso. Información sobre la verificación de acceso | Información sobre los proveedores de tecnología
+​
+Busca permisos y funciones
+Permisos y funciones
+Nivel de acceso
+​
+Llamadas a la API
+​
+Estado
+Acción
+​
+facebook_branded_content_ads_brand
+The facebook_branded_content_ads_brand allows an app to read Facebook posts where the app user's Facebook profile is tagged as a paid partner, and an app user to read, request, and revoke permissions to run Partnership Ads.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+marketing_messages_messenger
+El permiso marketing_messages_messenger permite a las aplicaciones crear, administrar y enviar mensajes de marketing de pago en Messenger, así como consultar el rendimiento de esas campañas de mensajes de marketing en nombre del usuario de la aplicación con sus cuentas publicitarias autorizadas.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_manage_contents
+El permiso instagram_manage_contents hace posible que tu aplicación elimine publicaciones en nombre de una cuenta de Instagram vinculada a una página de Facebook.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+facebook_creator_marketplace_discovery
+El permiso facebook_creator_marketplace_discovery permite a una aplicación descubrir creadores de contenido en la plataforma de descubrimiento de creadores de Facebook.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_creator_marketplace_discovery
+El permiso instagram_creator_marketplace_discovery hace posible que tu aplicación descubra creadores de contenido en Creator Marketplace de Instagram y acceda a datos como la presentación del creador, el número de seguidores y el alcance de la cuenta de las empresas en Instagram que forman parte de la plataforma.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+paid_marketing_messages
+The paid_marketing_messages permission allows an app to create, manage, and send paid marketing messages on Messenger and to view the performance of these marketing messages campaigns on behalf of the app user.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+threads_business_basic
+The threads_business_basic permission allows a business app to fetch the Threads account ID that is associated with an Instagram account within the Business Portfolio through matching username.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_business_manage_insights
+El permiso instagram_business_manage_insights permite a una aplicación obtener insights de los metadatos, publicaciones, fotos y vídeos de la cuenta profesional de Instagram del usuario de la aplicación e insights de los metadatos y el contenido multimedia del perfil público de una cuenta profesional de Instagram.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_utility_messaging
+El permiso pages_utility_messages permite que una aplicación acceda a las plantillas de mensajes de servicio de una página.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+manage_app_solution
+The manage_app_solution permission allows an app to get a list of apps that a user can manage, and make API calls on behalf of those apps.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_business_content_publish
+The instagram_business_content_publish permission allows an app to create organic feed photo and video posts on behalf of a business user.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_business_basic
+El permiso instagram_business_basic permite que tu aplicación lea la información y el contenido multimedia del perfil de una cuenta de Instagram para empresas.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_branded_content_ads_brand
+El permiso instagram_branded_content_ads_brand posibilita que una aplicación lea las publicaciones de Instagram en las que se haya etiquetado como socio de pago a la cuenta de Instagram del usuario de la aplicación y permite que dicho usuario lea, solicite y rechace permisos para publicar anuncios con socio.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_branded_content_brand
+El permiso instagram_branded_content_brand permite a la aplicación añadir, eliminar y consultar los creadores de la lista de creadores aprobados de una marca determinada.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_branded_content_creator
+El permiso instagram_branded_content_creator permite a la aplicación leer y cambiar el estado de promoción de un elemento de contenido concreto de un creador.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+read_insights
+El permiso read_insights permite que la aplicación lea los datos de estadísticas de páginas, aplicaciones y dominios web que son propiedad de una persona.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_manage_ads
+El permiso pages_manage_ads hace posible que tu aplicación administre anuncios asociados con la página.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_read_user_content
+El permiso pages_read_user_content hace posible que tu aplicación lea el contenido de la página generado por los usuarios, como las publicaciones, los comentarios o las calificaciones de usuarios u otras páginas, y que elimine los comentarios de los usuarios en las publicaciones de la página.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_read_engagement
+El permiso pages_read_engagement hace posible que tu aplicación lea el contenido (publicaciones, fotos, vídeos o eventos) que haya publicado la página, tenga acceso a la foto del perfil y los datos de los seguidores (incluido el nombre y el PSID), y lea metadatos y otras estadísticas sobre la página.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_manage_cta
+El permiso pages_manage_cta hace posible que tu aplicación ejecute funciones “POST” y “DELETE” en los extremos que se usen para administrar los botones de llamada a la acción en una página de Facebook.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_manage_insights
+El permiso instagram_manage_insights hace posible que tu aplicación acceda a estadísticas de la cuenta de Instagram vinculada a una página de Facebook. Además, tu aplicación puede detectar y leer el contenido multimedia y la información de otros perfiles de empresa.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_manage_instant_articles
+El permiso pages_manage_instant_articles hace posible que tu aplicación administre artículos instantáneos en nombre de las páginas de Facebook que gestionen las personas que usen tu aplicación.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_content_publish
+El permiso instagram_content_publish hace posible que tu aplicación cree publicaciones orgánicas con foto o vídeo en la sección de noticias en nombre de un usuario empresarial.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_manage_posts
+El permiso pages_manage_posts hace posible que tu aplicación cree, edite o elimine tus publicaciones en la página.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_manage_engagement
+El permiso pages_manage_engagement hace posible que tu aplicación cree comentarios en la página, o que edite o elimine los que se hayan publicado en ella.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+leads_retrieval
+El permiso leads_retrieval hace posible que tu aplicación recupere y lea toda la información que se haya registrado mediante un formulario de anuncio para clientes potenciales asociado con un anuncio creado en el administrador de anuncios o la API de marketing.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+page_events
+Los permisos page_events hacen posible que tu aplicación registre eventos en nombre de las páginas de Facebook que administren las personas que usen tu aplicación, y que envíe esos eventos a Facebook con fines relacionados con la segmentación de anuncios, la optimización y los informes.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+pages_show_list
+El permiso pages_show_list permite que tu aplicación acceda a la lista de las páginas que administra una persona.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+whatsapp_business_management
+El permiso whatsapp_business_management permite que la aplicación lea o administre los activos comerciales de WhatsApp que son de tu propiedad o a los que otras empresas te han concedido acceso mediante este permiso. Se consideran activos comerciales las cuentas de WhatsApp Business, los números de teléfono de empresa, las plantillas de mensajes, los códigos QR y los mensajes asociados, y las suscripciones a webhooks.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+publish_video
+El permiso publish_video permite que la aplicación publique vídeos en directo en la biografía, un grupo, un evento o una página de uno de sus usuarios.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+instagram_basic
+El permiso instagram_basic permite que tu aplicación lea la información y el contenido multimedia del perfil de una cuenta de Instagram.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+catalog_management
+El permiso catalog_management hace posible que tu aplicación cree, lea, actualice y elimine catálogos de productos de la empresa en los que el usuario sea el administrador.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+business_management
+El permiso business_management hace posible que tu aplicación realice operaciones de lectura y escritura con la API de Business Manager.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+attribution_read
+El permiso attribution_read concede a tu aplicación acceso a la API de atribución con el fin de obtener los datos de los informes de atribución de las líneas de negocio que te pertenecen o a las que los propietarios te han concedido acceso.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+ads_read
+El permiso ads_read concede a tu aplicación acceso a la API de estadísticas de anuncios a fin de obtener informes de anuncios de cuentas publicitarias que te pertenecen o a las que los propietarios te han concedido acceso mediante este permiso. Asimismo, concede acceso a la API del servidor para permitir que los anunciantes envíen eventos web directamente desde sus servidores a Facebook.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
+ads_management
+El permiso ads_management hace posible que tu aplicación lea y administre las cuentas publicitarias que le pertenecen o a las que el propietario le ha concedido acceso.
+…
+
+Descripción completa
+Requisitos
+Standard access
+Acceso estándar
+Listas para usar (0)
+No se ha solicitado revisar la aplicación
