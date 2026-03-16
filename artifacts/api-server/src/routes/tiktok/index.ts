@@ -77,6 +77,8 @@ router.get("/tiktok/auth", (req: Request, res: Response) => {
 
   const redirectUri = getTikTokRedirectUri();
 
+  console.log(`[TikTok] Auth: client_key="${TIKTOK_CLIENT_KEY}" (len=${TIKTOK_CLIENT_KEY.length}), redirect_uri="${redirectUri}"`);
+
   const params = new URLSearchParams({
     client_key: TIKTOK_CLIENT_KEY,
     scope: "user.info.basic,video.upload",
@@ -85,7 +87,9 @@ router.get("/tiktok/auth", (req: Request, res: Response) => {
     state: csrfState,
   });
 
-  res.redirect(`https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`);
+  const authUrl = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
+  console.log(`[TikTok] Redirecting to: ${authUrl}`);
+  res.redirect(authUrl);
 });
 
 router.get("/tiktok/callback", async (req: Request, res: Response) => {
