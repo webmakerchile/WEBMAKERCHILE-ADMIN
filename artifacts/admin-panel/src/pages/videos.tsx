@@ -1720,15 +1720,21 @@ function StepReview({
           )}
 
           {isScheduled && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-start gap-3">
-              <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-emerald-400">Programado en las 3 plataformas</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {video.youtubeVideoId
-                    ? `YouTube: Subido (ID: ${video.youtubeVideoId})`
-                    : "YouTube se subirá automáticamente al ejecutar la cola, o puedes subirlo manualmente."}
-                </p>
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-emerald-400">Programado en las 3 plataformas</p>
+                  {video.scheduleHour && (
+                    <div className="flex items-center gap-2 mt-2 bg-white/5 rounded-lg px-3 py-2">
+                      <Clock className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-medium">Hora programada: <span className="text-primary">{video.scheduleHour}</span></span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({video.month} / {video.week} / {video.day})
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1752,16 +1758,21 @@ function StepReview({
               </a>
             </div>
           ) : isScheduled && video.youtubeTitle && (
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="bg-white/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
+                <span className="text-[10px] text-muted-foreground">· Se sube ahora, no en la hora programada</span>
+              </div>
               <div className="flex items-center gap-3">
                 <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center flex-shrink-0">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
                 </span>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Subir a YouTube</p>
+                  <p className="text-sm font-medium text-foreground">Subir a YouTube ahora</p>
                   <p className="text-xs text-muted-foreground">
                     {hasVideoFile
-                      ? `Subir "${video.videoFileName || "video"}" desde Drive como Short privado`
+                      ? `Subir "${video.videoFileName || "video"}" como Short privado (inmediato)`
                       : "Selecciona un video desde Google Drive para subirlo como Short privado"}
                   </p>
                 </div>
@@ -1841,17 +1852,22 @@ function StepReview({
               </span>
             </div>
           ) : isScheduled && video.tiktokDescription && (
-            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3">
+            <div className="bg-white/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertCircle className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
+                <span className="text-[10px] text-muted-foreground">· Se sube ahora, no en la hora programada</span>
+              </div>
               <div className="flex items-center gap-3">
                 <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
                 </span>
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Subir a TikTok</p>
+                  <p className="text-sm font-medium text-foreground">Subir a TikTok ahora</p>
                   <p className="text-xs text-muted-foreground">
                     {hasVideoFile
-                      ? `Subir "${video.videoFileName || "video"}" desde Drive a TikTok (privado)`
-                      : "Selecciona un video desde Google Drive para subirlo a TikTok (sandbox)"}
+                      ? `Subir "${video.videoFileName || "video"}" a TikTok como privado (inmediato)`
+                      : "Selecciona un video desde Google Drive para subirlo a TikTok"}
                   </p>
                 </div>
                 <div className="flex gap-2">
