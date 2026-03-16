@@ -15,82 +15,80 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **AI**: Gemini AI via Replit AI Integrations (gemini-2.5-flash for chat, gemini-2.5-flash-image for image generation)
+- **Google Drive**: Replit Connectors SDK (@replit/connectors-sdk)
 
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server
+│   └── admin-panel/        # React + Vite admin panel (Content Admin Panel)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
+│   ├── db/                 # Drizzle ORM schema + DB connection
+│   └── integrations-gemini-ai/  # Gemini AI integration (client, image gen, batch)
 ├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
+│   └── src/                # Individual .ts scripts
+├── pnpm-workspace.yaml     # pnpm workspace
+├── tsconfig.base.json      # Shared TS options
 ├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+└── package.json            # Root package
 ```
+
+## Features
+
+### Admin Panel (Content Admin Panel)
+- **Dashboard**: Overview of video content stats, quick actions, recent activity
+- **Video Manager**: CRUD for video content organized by month/week/day/number
+- **Cover Generator**: AI-powered cover image generation using Gemini 3.1 Pro with reference images
+- **Google Drive Browser**: Browse and manage files in connected Google Drive folder
+- **AI Chat**: Chat with Gemini for content ideas and planning
+- **Schedule Manager**: Schedule videos for automatic publishing to Google Drive
+
+### Integrations
+- **Gemini AI**: Image generation (covers/portadas) and chat via Replit AI Integrations proxy
+- **Google Drive**: File management via Replit Connectors SDK (folder: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB)
+
+### Database Tables
+- `conversations` - Gemini AI chat conversations
+- `messages` - Chat messages within conversations  
+- `videos` - Video content entries with cover images, scheduling, and Drive integration
 
 ## TypeScript & Composite Projects
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references.
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+- **Always typecheck from the root** — run `pnpm run typecheck`
+- **`emitDeclarationOnly`** — only emit `.d.ts` files during typecheck
 
 ## Root Scripts
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages
+- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly`
 
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
+Express 5 API server with routes for health, Gemini AI, Google Drive, and content management.
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
+### `artifacts/admin-panel` (`@workspace/admin-panel`)
+React + Vite admin panel. Dark mode professional UI with orange accents. All UI in Spanish.
 
 ### `lib/db` (`@workspace/db`)
+Drizzle ORM with PostgreSQL. Tables: conversations, messages, videos.
 
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
+### `lib/integrations-gemini-ai` (`@workspace/integrations-gemini-ai`)
+Gemini AI integration with client, image generation, and batch processing utilities.
 
 ### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
+OpenAPI 3.1 spec with endpoints for health, gemini, drive, and content management.
 
 ### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
+Generated Zod schemas from OpenAPI spec.
 
 ### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+Generated React Query hooks from OpenAPI spec.

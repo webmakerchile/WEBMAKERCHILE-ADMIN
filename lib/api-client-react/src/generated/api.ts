@@ -5,18 +5,42 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  CreateGeminiConversationBody,
+  CreateVideoBody,
+  DriveFile,
+  DriveFileList,
+  DriveUploadBody,
+  GeminiConversation,
+  GeminiConversationWithMessages,
+  GeminiError,
+  GeminiMessage,
+  GenerateCoverBody,
+  GenerateGeminiImageBody,
+  GenerateGeminiImageResponse,
+  HealthStatus,
+  ListDriveFilesParams,
+  ListDriveFoldersParams,
+  ScheduleCheckResult,
+  ScheduleVideoBody,
+  SendGeminiMessageBody,
+  UpdateVideoBody,
+  VideoContent,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +123,1633 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List all conversations
+ */
+export const getListGeminiConversationsUrl = () => {
+  return `/api/gemini/conversations`;
+};
+
+export const listGeminiConversations = async (
+  options?: RequestInit,
+): Promise<GeminiConversation[]> => {
+  return customFetch<GeminiConversation[]>(getListGeminiConversationsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGeminiConversationsQueryKey = () => {
+  return [`/api/gemini/conversations`] as const;
+};
+
+export const getListGeminiConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGeminiConversations>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listGeminiConversations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListGeminiConversationsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listGeminiConversations>>
+  > = ({ signal }) => listGeminiConversations({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGeminiConversations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGeminiConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGeminiConversations>>
+>;
+export type ListGeminiConversationsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all conversations
+ */
+
+export function useListGeminiConversations<
+  TData = Awaited<ReturnType<typeof listGeminiConversations>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listGeminiConversations>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGeminiConversationsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new conversation
+ */
+export const getCreateGeminiConversationUrl = () => {
+  return `/api/gemini/conversations`;
+};
+
+export const createGeminiConversation = async (
+  createGeminiConversationBody: CreateGeminiConversationBody,
+  options?: RequestInit,
+): Promise<GeminiConversation> => {
+  return customFetch<GeminiConversation>(getCreateGeminiConversationUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createGeminiConversationBody),
+  });
+};
+
+export const getCreateGeminiConversationMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGeminiConversation>>,
+    TError,
+    { data: BodyType<CreateGeminiConversationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createGeminiConversation>>,
+  TError,
+  { data: BodyType<CreateGeminiConversationBody> },
+  TContext
+> => {
+  const mutationKey = ["createGeminiConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createGeminiConversation>>,
+    { data: BodyType<CreateGeminiConversationBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createGeminiConversation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateGeminiConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createGeminiConversation>>
+>;
+export type CreateGeminiConversationMutationBody =
+  BodyType<CreateGeminiConversationBody>;
+export type CreateGeminiConversationMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new conversation
+ */
+export const useCreateGeminiConversation = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createGeminiConversation>>,
+    TError,
+    { data: BodyType<CreateGeminiConversationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createGeminiConversation>>,
+  TError,
+  { data: BodyType<CreateGeminiConversationBody> },
+  TContext
+> => {
+  return useMutation(getCreateGeminiConversationMutationOptions(options));
+};
+
+/**
+ * @summary Get conversation with messages
+ */
+export const getGetGeminiConversationUrl = (id: number) => {
+  return `/api/gemini/conversations/${id}`;
+};
+
+export const getGeminiConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GeminiConversationWithMessages> => {
+  return customFetch<GeminiConversationWithMessages>(
+    getGetGeminiConversationUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetGeminiConversationQueryKey = (id: number) => {
+  return [`/api/gemini/conversations/${id}`] as const;
+};
+
+export const getGetGeminiConversationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGeminiConversation>>,
+  TError = ErrorType<GeminiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGeminiConversation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetGeminiConversationQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGeminiConversation>>
+  > = ({ signal }) => getGeminiConversation(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGeminiConversation>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGeminiConversationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGeminiConversation>>
+>;
+export type GetGeminiConversationQueryError = ErrorType<GeminiError>;
+
+/**
+ * @summary Get conversation with messages
+ */
+
+export function useGetGeminiConversation<
+  TData = Awaited<ReturnType<typeof getGeminiConversation>>,
+  TError = ErrorType<GeminiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGeminiConversation>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGeminiConversationQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete a conversation
+ */
+export const getDeleteGeminiConversationUrl = (id: number) => {
+  return `/api/gemini/conversations/${id}`;
+};
+
+export const deleteGeminiConversation = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteGeminiConversationUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteGeminiConversationMutationOptions = <
+  TError = ErrorType<GeminiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteGeminiConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteGeminiConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteGeminiConversation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteGeminiConversation>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteGeminiConversation(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteGeminiConversationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteGeminiConversation>>
+>;
+
+export type DeleteGeminiConversationMutationError = ErrorType<GeminiError>;
+
+/**
+ * @summary Delete a conversation
+ */
+export const useDeleteGeminiConversation = <
+  TError = ErrorType<GeminiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteGeminiConversation>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteGeminiConversation>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteGeminiConversationMutationOptions(options));
+};
+
+/**
+ * @summary List messages in a conversation
+ */
+export const getListGeminiMessagesUrl = (id: number) => {
+  return `/api/gemini/conversations/${id}/messages`;
+};
+
+export const listGeminiMessages = async (
+  id: number,
+  options?: RequestInit,
+): Promise<GeminiMessage[]> => {
+  return customFetch<GeminiMessage[]>(getListGeminiMessagesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGeminiMessagesQueryKey = (id: number) => {
+  return [`/api/gemini/conversations/${id}/messages`] as const;
+};
+
+export const getListGeminiMessagesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGeminiMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGeminiMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListGeminiMessagesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listGeminiMessages>>
+  > = ({ signal }) => listGeminiMessages(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGeminiMessages>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGeminiMessagesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGeminiMessages>>
+>;
+export type ListGeminiMessagesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List messages in a conversation
+ */
+
+export function useListGeminiMessages<
+  TData = Awaited<ReturnType<typeof listGeminiMessages>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listGeminiMessages>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGeminiMessagesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Send a message and receive an AI response (SSE stream)
+ */
+export const getSendGeminiMessageUrl = (id: number) => {
+  return `/api/gemini/conversations/${id}/messages`;
+};
+
+export const sendGeminiMessage = async (
+  id: number,
+  sendGeminiMessageBody: SendGeminiMessageBody,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getSendGeminiMessageUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(sendGeminiMessageBody),
+  });
+};
+
+export const getSendGeminiMessageMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendGeminiMessage>>,
+    TError,
+    { id: number; data: BodyType<SendGeminiMessageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendGeminiMessage>>,
+  TError,
+  { id: number; data: BodyType<SendGeminiMessageBody> },
+  TContext
+> => {
+  const mutationKey = ["sendGeminiMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendGeminiMessage>>,
+    { id: number; data: BodyType<SendGeminiMessageBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return sendGeminiMessage(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendGeminiMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendGeminiMessage>>
+>;
+export type SendGeminiMessageMutationBody = BodyType<SendGeminiMessageBody>;
+export type SendGeminiMessageMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send a message and receive an AI response (SSE stream)
+ */
+export const useSendGeminiMessage = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendGeminiMessage>>,
+    TError,
+    { id: number; data: BodyType<SendGeminiMessageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendGeminiMessage>>,
+  TError,
+  { id: number; data: BodyType<SendGeminiMessageBody> },
+  TContext
+> => {
+  return useMutation(getSendGeminiMessageMutationOptions(options));
+};
+
+/**
+ * @summary Generate an image from a text prompt
+ */
+export const getGenerateGeminiImageUrl = () => {
+  return `/api/gemini/generate-image`;
+};
+
+export const generateGeminiImage = async (
+  generateGeminiImageBody: GenerateGeminiImageBody,
+  options?: RequestInit,
+): Promise<GenerateGeminiImageResponse> => {
+  return customFetch<GenerateGeminiImageResponse>(getGenerateGeminiImageUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(generateGeminiImageBody),
+  });
+};
+
+export const getGenerateGeminiImageMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateGeminiImage>>,
+    TError,
+    { data: BodyType<GenerateGeminiImageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateGeminiImage>>,
+  TError,
+  { data: BodyType<GenerateGeminiImageBody> },
+  TContext
+> => {
+  const mutationKey = ["generateGeminiImage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateGeminiImage>>,
+    { data: BodyType<GenerateGeminiImageBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return generateGeminiImage(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateGeminiImageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateGeminiImage>>
+>;
+export type GenerateGeminiImageMutationBody = BodyType<GenerateGeminiImageBody>;
+export type GenerateGeminiImageMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate an image from a text prompt
+ */
+export const useGenerateGeminiImage = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateGeminiImage>>,
+    TError,
+    { data: BodyType<GenerateGeminiImageBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateGeminiImage>>,
+  TError,
+  { data: BodyType<GenerateGeminiImageBody> },
+  TContext
+> => {
+  return useMutation(getGenerateGeminiImageMutationOptions(options));
+};
+
+/**
+ * @summary Generate a cover image based on reference image and prompts
+ */
+export const getGenerateCoverUrl = () => {
+  return `/api/gemini/generate-cover`;
+};
+
+export const generateCover = async (
+  generateCoverBody: GenerateCoverBody,
+  options?: RequestInit,
+): Promise<GenerateGeminiImageResponse> => {
+  return customFetch<GenerateGeminiImageResponse>(getGenerateCoverUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(generateCoverBody),
+  });
+};
+
+export const getGenerateCoverMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateCover>>,
+    TError,
+    { data: BodyType<GenerateCoverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateCover>>,
+  TError,
+  { data: BodyType<GenerateCoverBody> },
+  TContext
+> => {
+  const mutationKey = ["generateCover"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateCover>>,
+    { data: BodyType<GenerateCoverBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return generateCover(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateCoverMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateCover>>
+>;
+export type GenerateCoverMutationBody = BodyType<GenerateCoverBody>;
+export type GenerateCoverMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a cover image based on reference image and prompts
+ */
+export const useGenerateCover = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateCover>>,
+    TError,
+    { data: BodyType<GenerateCoverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateCover>>,
+  TError,
+  { data: BodyType<GenerateCoverBody> },
+  TContext
+> => {
+  return useMutation(getGenerateCoverMutationOptions(options));
+};
+
+/**
+ * @summary List files in a Google Drive folder
+ */
+export const getListDriveFilesUrl = (params?: ListDriveFilesParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/drive/files?${stringifiedParams}`
+    : `/api/drive/files`;
+};
+
+export const listDriveFiles = async (
+  params?: ListDriveFilesParams,
+  options?: RequestInit,
+): Promise<DriveFileList> => {
+  return customFetch<DriveFileList>(getListDriveFilesUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDriveFilesQueryKey = (params?: ListDriveFilesParams) => {
+  return [`/api/drive/files`, ...(params ? [params] : [])] as const;
+};
+
+export const getListDriveFilesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDriveFiles>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDriveFilesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDriveFiles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDriveFilesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDriveFiles>>> = ({
+    signal,
+  }) => listDriveFiles(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDriveFiles>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDriveFilesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDriveFiles>>
+>;
+export type ListDriveFilesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List files in a Google Drive folder
+ */
+
+export function useListDriveFiles<
+  TData = Awaited<ReturnType<typeof listDriveFiles>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDriveFilesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDriveFiles>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDriveFilesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List folder structure in Google Drive
+ */
+export const getListDriveFoldersUrl = (params?: ListDriveFoldersParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/drive/folders?${stringifiedParams}`
+    : `/api/drive/folders`;
+};
+
+export const listDriveFolders = async (
+  params?: ListDriveFoldersParams,
+  options?: RequestInit,
+): Promise<DriveFile[]> => {
+  return customFetch<DriveFile[]>(getListDriveFoldersUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDriveFoldersQueryKey = (
+  params?: ListDriveFoldersParams,
+) => {
+  return [`/api/drive/folders`, ...(params ? [params] : [])] as const;
+};
+
+export const getListDriveFoldersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDriveFolders>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDriveFoldersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDriveFolders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListDriveFoldersQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDriveFolders>>
+  > = ({ signal }) => listDriveFolders(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDriveFolders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDriveFoldersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDriveFolders>>
+>;
+export type ListDriveFoldersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List folder structure in Google Drive
+ */
+
+export function useListDriveFolders<
+  TData = Awaited<ReturnType<typeof listDriveFolders>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDriveFoldersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDriveFolders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDriveFoldersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Upload a file to Google Drive
+ */
+export const getUploadToDriveUrl = () => {
+  return `/api/drive/upload`;
+};
+
+export const uploadToDrive = async (
+  driveUploadBody: DriveUploadBody,
+  options?: RequestInit,
+): Promise<DriveFile> => {
+  return customFetch<DriveFile>(getUploadToDriveUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(driveUploadBody),
+  });
+};
+
+export const getUploadToDriveMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadToDrive>>,
+    TError,
+    { data: BodyType<DriveUploadBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadToDrive>>,
+  TError,
+  { data: BodyType<DriveUploadBody> },
+  TContext
+> => {
+  const mutationKey = ["uploadToDrive"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadToDrive>>,
+    { data: BodyType<DriveUploadBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return uploadToDrive(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadToDriveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadToDrive>>
+>;
+export type UploadToDriveMutationBody = BodyType<DriveUploadBody>;
+export type UploadToDriveMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upload a file to Google Drive
+ */
+export const useUploadToDrive = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadToDrive>>,
+    TError,
+    { data: BodyType<DriveUploadBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadToDrive>>,
+  TError,
+  { data: BodyType<DriveUploadBody> },
+  TContext
+> => {
+  return useMutation(getUploadToDriveMutationOptions(options));
+};
+
+/**
+ * @summary List all video content entries
+ */
+export const getListVideosUrl = () => {
+  return `/api/content/videos`;
+};
+
+export const listVideos = async (
+  options?: RequestInit,
+): Promise<VideoContent[]> => {
+  return customFetch<VideoContent[]>(getListVideosUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListVideosQueryKey = () => {
+  return [`/api/content/videos`] as const;
+};
+
+export const getListVideosQueryOptions = <
+  TData = Awaited<ReturnType<typeof listVideos>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listVideos>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListVideosQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listVideos>>> = ({
+    signal,
+  }) => listVideos({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listVideos>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListVideosQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listVideos>>
+>;
+export type ListVideosQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all video content entries
+ */
+
+export function useListVideos<
+  TData = Awaited<ReturnType<typeof listVideos>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listVideos>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListVideosQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new video content entry
+ */
+export const getCreateVideoUrl = () => {
+  return `/api/content/videos`;
+};
+
+export const createVideo = async (
+  createVideoBody: CreateVideoBody,
+  options?: RequestInit,
+): Promise<VideoContent> => {
+  return customFetch<VideoContent>(getCreateVideoUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createVideoBody),
+  });
+};
+
+export const getCreateVideoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createVideo>>,
+    TError,
+    { data: BodyType<CreateVideoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createVideo>>,
+  TError,
+  { data: BodyType<CreateVideoBody> },
+  TContext
+> => {
+  const mutationKey = ["createVideo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createVideo>>,
+    { data: BodyType<CreateVideoBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createVideo(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateVideoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createVideo>>
+>;
+export type CreateVideoMutationBody = BodyType<CreateVideoBody>;
+export type CreateVideoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new video content entry
+ */
+export const useCreateVideo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createVideo>>,
+    TError,
+    { data: BodyType<CreateVideoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createVideo>>,
+  TError,
+  { data: BodyType<CreateVideoBody> },
+  TContext
+> => {
+  return useMutation(getCreateVideoMutationOptions(options));
+};
+
+/**
+ * @summary Get a video content entry
+ */
+export const getGetVideoUrl = (id: number) => {
+  return `/api/content/videos/${id}`;
+};
+
+export const getVideo = async (
+  id: number,
+  options?: RequestInit,
+): Promise<VideoContent> => {
+  return customFetch<VideoContent>(getGetVideoUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetVideoQueryKey = (id: number) => {
+  return [`/api/content/videos/${id}`] as const;
+};
+
+export const getGetVideoQueryOptions = <
+  TData = Awaited<ReturnType<typeof getVideo>>,
+  TError = ErrorType<GeminiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVideo>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetVideoQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getVideo>>> = ({
+    signal,
+  }) => getVideo(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getVideo>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetVideoQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getVideo>>
+>;
+export type GetVideoQueryError = ErrorType<GeminiError>;
+
+/**
+ * @summary Get a video content entry
+ */
+
+export function useGetVideo<
+  TData = Awaited<ReturnType<typeof getVideo>>,
+  TError = ErrorType<GeminiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVideo>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetVideoQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update a video content entry
+ */
+export const getUpdateVideoUrl = (id: number) => {
+  return `/api/content/videos/${id}`;
+};
+
+export const updateVideo = async (
+  id: number,
+  updateVideoBody: UpdateVideoBody,
+  options?: RequestInit,
+): Promise<VideoContent> => {
+  return customFetch<VideoContent>(getUpdateVideoUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateVideoBody),
+  });
+};
+
+export const getUpdateVideoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateVideo>>,
+    TError,
+    { id: number; data: BodyType<UpdateVideoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateVideo>>,
+  TError,
+  { id: number; data: BodyType<UpdateVideoBody> },
+  TContext
+> => {
+  const mutationKey = ["updateVideo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateVideo>>,
+    { id: number; data: BodyType<UpdateVideoBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateVideo(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateVideoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateVideo>>
+>;
+export type UpdateVideoMutationBody = BodyType<UpdateVideoBody>;
+export type UpdateVideoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a video content entry
+ */
+export const useUpdateVideo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateVideo>>,
+    TError,
+    { id: number; data: BodyType<UpdateVideoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateVideo>>,
+  TError,
+  { id: number; data: BodyType<UpdateVideoBody> },
+  TContext
+> => {
+  return useMutation(getUpdateVideoMutationOptions(options));
+};
+
+/**
+ * @summary Delete a video content entry
+ */
+export const getDeleteVideoUrl = (id: number) => {
+  return `/api/content/videos/${id}`;
+};
+
+export const deleteVideo = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteVideoUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteVideoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteVideo>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteVideo>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteVideo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteVideo>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteVideo(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteVideoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteVideo>>
+>;
+
+export type DeleteVideoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a video content entry
+ */
+export const useDeleteVideo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteVideo>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteVideo>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteVideoMutationOptions(options));
+};
+
+/**
+ * @summary Generate a cover image for a video
+ */
+export const getGenerateVideoCoverUrl = (id: number) => {
+  return `/api/content/videos/${id}/generate-cover`;
+};
+
+export const generateVideoCover = async (
+  id: number,
+  options?: RequestInit,
+): Promise<VideoContent> => {
+  return customFetch<VideoContent>(getGenerateVideoCoverUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getGenerateVideoCoverMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateVideoCover>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateVideoCover>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["generateVideoCover"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateVideoCover>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return generateVideoCover(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateVideoCoverMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateVideoCover>>
+>;
+
+export type GenerateVideoCoverMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a cover image for a video
+ */
+export const useGenerateVideoCover = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateVideoCover>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateVideoCover>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getGenerateVideoCoverMutationOptions(options));
+};
+
+/**
+ * @summary Schedule a video for publishing to Drive
+ */
+export const getScheduleVideoUrl = (id: number) => {
+  return `/api/content/videos/${id}/schedule`;
+};
+
+export const scheduleVideo = async (
+  id: number,
+  scheduleVideoBody: ScheduleVideoBody,
+  options?: RequestInit,
+): Promise<VideoContent> => {
+  return customFetch<VideoContent>(getScheduleVideoUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(scheduleVideoBody),
+  });
+};
+
+export const getScheduleVideoMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleVideo>>,
+    TError,
+    { id: number; data: BodyType<ScheduleVideoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scheduleVideo>>,
+  TError,
+  { id: number; data: BodyType<ScheduleVideoBody> },
+  TContext
+> => {
+  const mutationKey = ["scheduleVideo"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scheduleVideo>>,
+    { id: number; data: BodyType<ScheduleVideoBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return scheduleVideo(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScheduleVideoMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scheduleVideo>>
+>;
+export type ScheduleVideoMutationBody = BodyType<ScheduleVideoBody>;
+export type ScheduleVideoMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Schedule a video for publishing to Drive
+ */
+export const useScheduleVideo = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scheduleVideo>>,
+    TError,
+    { id: number; data: BodyType<ScheduleVideoBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scheduleVideo>>,
+  TError,
+  { id: number; data: BodyType<ScheduleVideoBody> },
+  TContext
+> => {
+  return useMutation(getScheduleVideoMutationOptions(options));
+};
+
+/**
+ * @summary Check and process scheduled videos that are due
+ */
+export const getCheckScheduledVideosUrl = () => {
+  return `/api/content/schedule/check`;
+};
+
+export const checkScheduledVideos = async (
+  options?: RequestInit,
+): Promise<ScheduleCheckResult> => {
+  return customFetch<ScheduleCheckResult>(getCheckScheduledVideosUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCheckScheduledVideosMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkScheduledVideos>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkScheduledVideos>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["checkScheduledVideos"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkScheduledVideos>>,
+    void
+  > = () => {
+    return checkScheduledVideos(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckScheduledVideosMutationResult = NonNullable<
+  Awaited<ReturnType<typeof checkScheduledVideos>>
+>;
+
+export type CheckScheduledVideosMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Check and process scheduled videos that are due
+ */
+export const useCheckScheduledVideos = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkScheduledVideos>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof checkScheduledVideos>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getCheckScheduledVideosMutationOptions(options));
+};

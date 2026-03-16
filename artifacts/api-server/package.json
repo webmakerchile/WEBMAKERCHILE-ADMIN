@@ -11,6 +11,8 @@
   "dependencies": {
     "@workspace/db": "workspace:*",
     "@workspace/api-zod": "workspace:*",
+    "@workspace/integrations-gemini-ai": "workspace:*",
+    "@replit/connectors-sdk": "^0.3.0",
     "drizzle-orm": "catalog:",
     "express": "^5",
     "cookie-parser": "^1.4.7",

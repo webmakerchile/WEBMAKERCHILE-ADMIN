@@ -14,3 +14,357 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary List all conversations
+ */
+export const ListGeminiConversationsResponseItem = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  createdAt: zod.date(),
+});
+export const ListGeminiConversationsResponse = zod.array(
+  ListGeminiConversationsResponseItem,
+);
+
+/**
+ * @summary Create a new conversation
+ */
+export const CreateGeminiConversationBody = zod.object({
+  title: zod.string(),
+});
+
+/**
+ * @summary Get conversation with messages
+ */
+export const GetGeminiConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetGeminiConversationResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  createdAt: zod.date(),
+  messages: zod.array(
+    zod.object({
+      id: zod.number(),
+      conversationId: zod.number(),
+      role: zod.string(),
+      content: zod.string(),
+      createdAt: zod.date(),
+    }),
+  ),
+});
+
+/**
+ * @summary Delete a conversation
+ */
+export const DeleteGeminiConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List messages in a conversation
+ */
+export const ListGeminiMessagesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListGeminiMessagesResponseItem = zod.object({
+  id: zod.number(),
+  conversationId: zod.number(),
+  role: zod.string(),
+  content: zod.string(),
+  createdAt: zod.date(),
+});
+export const ListGeminiMessagesResponse = zod.array(
+  ListGeminiMessagesResponseItem,
+);
+
+/**
+ * @summary Send a message and receive an AI response (SSE stream)
+ */
+export const SendGeminiMessageParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SendGeminiMessageBody = zod.object({
+  content: zod.string(),
+});
+
+/**
+ * @summary Generate an image from a text prompt
+ */
+export const GenerateGeminiImageBody = zod.object({
+  prompt: zod.string(),
+});
+
+export const GenerateGeminiImageResponse = zod.object({
+  b64_json: zod.string(),
+  mimeType: zod.string(),
+});
+
+/**
+ * @summary Generate a cover image based on reference image and prompts
+ */
+export const GenerateCoverBody = zod.object({
+  title: zod.string(),
+  description: zod.string(),
+  referenceImageBase64: zod.string().optional(),
+  style: zod.string().optional(),
+});
+
+export const GenerateCoverResponse = zod.object({
+  b64_json: zod.string(),
+  mimeType: zod.string(),
+});
+
+/**
+ * @summary List files in a Google Drive folder
+ */
+export const ListDriveFilesQueryParams = zod.object({
+  folderId: zod.coerce.string().optional(),
+  pageToken: zod.coerce.string().optional(),
+});
+
+export const ListDriveFilesResponse = zod.object({
+  files: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      mimeType: zod.string(),
+      size: zod.string().optional(),
+      createdTime: zod.string().optional(),
+      modifiedTime: zod.string().optional(),
+      webViewLink: zod.string().optional(),
+      thumbnailLink: zod.string().optional(),
+      parents: zod.array(zod.string()).optional(),
+    }),
+  ),
+  nextPageToken: zod.string().optional(),
+});
+
+/**
+ * @summary List folder structure in Google Drive
+ */
+export const ListDriveFoldersQueryParams = zod.object({
+  parentId: zod.coerce.string().optional(),
+});
+
+export const ListDriveFoldersResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  mimeType: zod.string(),
+  size: zod.string().optional(),
+  createdTime: zod.string().optional(),
+  modifiedTime: zod.string().optional(),
+  webViewLink: zod.string().optional(),
+  thumbnailLink: zod.string().optional(),
+  parents: zod.array(zod.string()).optional(),
+});
+export const ListDriveFoldersResponse = zod.array(ListDriveFoldersResponseItem);
+
+/**
+ * @summary Upload a file to Google Drive
+ */
+export const UploadToDriveBody = zod.object({
+  name: zod.string(),
+  folderId: zod.string(),
+  base64Data: zod.string(),
+  mimeType: zod.string(),
+});
+
+export const UploadToDriveResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  mimeType: zod.string(),
+  size: zod.string().optional(),
+  createdTime: zod.string().optional(),
+  modifiedTime: zod.string().optional(),
+  webViewLink: zod.string().optional(),
+  thumbnailLink: zod.string().optional(),
+  parents: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary List all video content entries
+ */
+export const ListVideosResponseItem = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  coverPrompt: zod.string().optional(),
+  coverImageBase64: zod.string().optional(),
+  coverMimeType: zod.string().optional(),
+  driveFileId: zod.string().optional(),
+  driveFolderId: zod.string().optional(),
+  status: zod.enum(["draft", "cover_generated", "scheduled", "published"]),
+  scheduledAt: zod.date().optional(),
+  publishedAt: zod.date().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+export const ListVideosResponse = zod.array(ListVideosResponseItem);
+
+/**
+ * @summary Create a new video content entry
+ */
+export const CreateVideoBody = zod.object({
+  title: zod.string(),
+  description: zod.string(),
+  coverPrompt: zod.string().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+});
+
+/**
+ * @summary Get a video content entry
+ */
+export const GetVideoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetVideoResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  coverPrompt: zod.string().optional(),
+  coverImageBase64: zod.string().optional(),
+  coverMimeType: zod.string().optional(),
+  driveFileId: zod.string().optional(),
+  driveFolderId: zod.string().optional(),
+  status: zod.enum(["draft", "cover_generated", "scheduled", "published"]),
+  scheduledAt: zod.date().optional(),
+  publishedAt: zod.date().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+/**
+ * @summary Update a video content entry
+ */
+export const UpdateVideoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateVideoBody = zod.object({
+  title: zod.string().optional(),
+  description: zod.string().optional(),
+  coverPrompt: zod.string().optional(),
+  status: zod.string().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+});
+
+export const UpdateVideoResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  coverPrompt: zod.string().optional(),
+  coverImageBase64: zod.string().optional(),
+  coverMimeType: zod.string().optional(),
+  driveFileId: zod.string().optional(),
+  driveFolderId: zod.string().optional(),
+  status: zod.enum(["draft", "cover_generated", "scheduled", "published"]),
+  scheduledAt: zod.date().optional(),
+  publishedAt: zod.date().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+/**
+ * @summary Delete a video content entry
+ */
+export const DeleteVideoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Generate a cover image for a video
+ */
+export const GenerateVideoCoverParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GenerateVideoCoverResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  coverPrompt: zod.string().optional(),
+  coverImageBase64: zod.string().optional(),
+  coverMimeType: zod.string().optional(),
+  driveFileId: zod.string().optional(),
+  driveFolderId: zod.string().optional(),
+  status: zod.enum(["draft", "cover_generated", "scheduled", "published"]),
+  scheduledAt: zod.date().optional(),
+  publishedAt: zod.date().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+/**
+ * @summary Schedule a video for publishing to Drive
+ */
+export const ScheduleVideoParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ScheduleVideoBody = zod.object({
+  scheduledAt: zod.date(),
+  driveFolderId: zod.string(),
+});
+
+export const ScheduleVideoResponse = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  coverPrompt: zod.string().optional(),
+  coverImageBase64: zod.string().optional(),
+  coverMimeType: zod.string().optional(),
+  driveFileId: zod.string().optional(),
+  driveFolderId: zod.string().optional(),
+  status: zod.enum(["draft", "cover_generated", "scheduled", "published"]),
+  scheduledAt: zod.date().optional(),
+  publishedAt: zod.date().optional(),
+  month: zod.string().optional(),
+  week: zod.string().optional(),
+  day: zod.string().optional(),
+  videoNumber: zod.string().optional(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+/**
+ * @summary Check and process scheduled videos that are due
+ */
+export const CheckScheduledVideosResponse = zod.object({
+  processed: zod.number(),
+  errors: zod.number(),
+  details: zod.array(
+    zod.object({
+      videoId: zod.number(),
+      status: zod.string(),
+      error: zod.string().optional(),
+    }),
+  ),
+});

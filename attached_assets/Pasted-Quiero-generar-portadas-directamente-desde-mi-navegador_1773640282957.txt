@@ -1,0 +1,18 @@
+Quiero generar portadas directamente desde mi navegador a geminis, básicamente a geminis le coloco esta imágen en modo pro "
+image_1773639730177.png" le doy este texto y luego le doy el contexto por ejemplo "Título: "Tu Negocio Necesita Una Web"
+
+Descripción: "Por qué tu negocio pierde clientes cada día sin una página web profesional. El 80% de las personas busca en Google antes de comprar, y si no te encuentran, le compran a tu competencia."" y con eso me genera una imáagen.: Basándote en la imagen de referencia que te envié, genera una nueva ilustración en formato vertical (relación de aspecto 9:16). Mantén estrictamente el mismo estilo de diseño plano (flat vector art), la misma paleta de colores y el mismo personaje (zorro naranja con lentes y camiseta verde).
+
+La escena debe ser:
+
+El zorro tiene una expresión de duda y conflicto. En una mano sostiene un icono que representa el tiempo libre o la familia (como un reloj de arena con un corazón al lado), y en la otra mano sostiene una etiqueta de precio gigante y exagerada con signos de dólar ($$$) que parece muy pesada. Sus ojos se mueven entre las dos opciones, sopesando el costo frente al beneficio.
+
+Detalles importantes:
+
+1. Fondo: Amarillo sólido idéntico al de la referencia.
+
+2. Título OBLIGATORIO: En el tercio superior, agrega el texto: "QUIEREN TIEMPO PERO NO PAGAN PRECIO".
+
+3. Estilo del Texto: El texto debe ser blanco, en mayúsculas, fuente sans-serif gruesa y negrita, centrado, replicando exactamente el estilo de tipografía de la imagen de referencia.
+
+4. Estilo General: Minimalista, líneas limpias y colores planos. . Lo que quiero es automatizar el proceso, crearé videos desde mi web "webmakerchile/admin" donde se enviarán los videos de forma automatica ya que eso lo tengo automatizado, yo grabo videos desde webmakerchile/admin y con mi teleprompter digo go to drive, se sube y se sube hacía "https://drive.google.com/drive/folders/1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB?usp=sharing" el orden es mes -> semana -> día -> número de video del 1 al 5 y ahí en esas carpetas hay video, portada (que quiero que la genere este nuevo proyecto), y descripción para las redes sociales instagram, tiktok y youtube

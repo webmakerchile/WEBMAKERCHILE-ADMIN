@@ -10,6 +10,12 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: gemini
+    description: Gemini AI chat and image operations
+  - name: drive
+    description: Google Drive file operations
+  - name: content
+    description: Content management operations
 paths:
   /healthz:
     get:
@@ -24,6 +30,363 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /gemini/conversations:
+    get:
+      operationId: listGeminiConversations
+      tags: [gemini]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GeminiConversation"
+    post:
+      operationId: createGeminiConversation
+      tags: [gemini]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGeminiConversationBody"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeminiConversation"
+  /gemini/conversations/{id}:
+    get:
+      operationId: getGeminiConversation
+      tags: [gemini]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeminiConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeminiError"
+    delete:
+      operationId: deleteGeminiConversation
+      tags: [gemini]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeminiError"
+  /gemini/conversations/{id}/messages:
+    get:
+      operationId: listGeminiMessages
+      tags: [gemini]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GeminiMessage"
+    post:
+      operationId: sendGeminiMessage
+      tags: [gemini]
+      summary: Send a message and receive an AI response (SSE stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendGeminiMessageBody"
+      responses:
+        "200":
+          description: SSE stream of assistant response chunks
+          content:
+            text/event-stream: {}
+  /gemini/generate-image:
+    post:
+      operationId: generateGeminiImage
+      tags: [gemini]
+      summary: Generate an image from a text prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateGeminiImageBody"
+      responses:
+        "200":
+          description: Generated image data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateGeminiImageResponse"
+  /gemini/generate-cover:
+    post:
+      operationId: generateCover
+      tags: [gemini]
+      summary: Generate a cover image based on reference image and prompts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateCoverBody"
+      responses:
+        "200":
+          description: Generated cover image data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateGeminiImageResponse"
+  /drive/files:
+    get:
+      operationId: listDriveFiles
+      tags: [drive]
+      summary: List files in a Google Drive folder
+      parameters:
+        - name: folderId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: pageToken
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of drive files
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveFileList"
+  /drive/folders:
+    get:
+      operationId: listDriveFolders
+      tags: [drive]
+      summary: List folder structure in Google Drive
+      parameters:
+        - name: parentId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of folders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriveFile"
+  /drive/upload:
+    post:
+      operationId: uploadToDrive
+      tags: [drive]
+      summary: Upload a file to Google Drive
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriveUploadBody"
+      responses:
+        "200":
+          description: Uploaded file info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriveFile"
+  /content/videos:
+    get:
+      operationId: listVideos
+      tags: [content]
+      summary: List all video content entries
+      responses:
+        "200":
+          description: List of videos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VideoContent"
+    post:
+      operationId: createVideo
+      tags: [content]
+      summary: Create a new video content entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVideoBody"
+      responses:
+        "201":
+          description: Created video content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoContent"
+  /content/videos/{id}:
+    get:
+      operationId: getVideo
+      tags: [content]
+      summary: Get a video content entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Video content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoContent"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeminiError"
+    patch:
+      operationId: updateVideo
+      tags: [content]
+      summary: Update a video content entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVideoBody"
+      responses:
+        "200":
+          description: Updated video content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoContent"
+    delete:
+      operationId: deleteVideo
+      tags: [content]
+      summary: Delete a video content entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+  /content/videos/{id}/generate-cover:
+    post:
+      operationId: generateVideoCover
+      tags: [content]
+      summary: Generate a cover image for a video
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated video with generated cover
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoContent"
+  /content/videos/{id}/schedule:
+    post:
+      operationId: scheduleVideo
+      tags: [content]
+      summary: Schedule a video for publishing to Drive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleVideoBody"
+      responses:
+        "200":
+          description: Scheduled video
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoContent"
+  /content/schedule/check:
+    post:
+      operationId: checkScheduledVideos
+      tags: [content]
+      summary: Check and process scheduled videos that are due
+      responses:
+        "200":
+          description: Processing result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleCheckResult"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +396,286 @@ components:
           type: string
       required:
         - status
-
+    GeminiConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - createdAt
+    GeminiMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+    CreateGeminiConversationBody:
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+        - title
+    SendGeminiMessageBody:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content
+    GeminiConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeminiMessage"
+      required:
+        - id
+        - title
+        - createdAt
+        - messages
+    GenerateGeminiImageBody:
+      type: object
+      properties:
+        prompt:
+          type: string
+      required:
+        - prompt
+    GenerateGeminiImageResponse:
+      type: object
+      properties:
+        b64_json:
+          type: string
+        mimeType:
+          type: string
+      required:
+        - b64_json
+        - mimeType
+    GeminiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    GenerateCoverBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        referenceImageBase64:
+          type: string
+        style:
+          type: string
+      required:
+        - title
+        - description
+    DriveFile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: string
+        createdTime:
+          type: string
+        modifiedTime:
+          type: string
+        webViewLink:
+          type: string
+        thumbnailLink:
+          type: string
+        parents:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - name
+        - mimeType
+    DriveFileList:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriveFile"
+        nextPageToken:
+          type: string
+      required:
+        - files
+    DriveUploadBody:
+      type: object
+      properties:
+        name:
+          type: string
+        folderId:
+          type: string
+        base64Data:
+          type: string
+        mimeType:
+          type: string
+      required:
+        - name
+        - folderId
+        - base64Data
+        - mimeType
+    VideoContent:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        coverPrompt:
+          type: string
+        coverImageBase64:
+          type: string
+        coverMimeType:
+          type: string
+        driveFileId:
+          type: string
+        driveFolderId:
+          type: string
+        status:
+          type: string
+          enum: [draft, cover_generated, scheduled, published]
+        scheduledAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+        month:
+          type: string
+        week:
+          type: string
+        day:
+          type: string
+        videoNumber:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - description
+        - status
+        - createdAt
+        - updatedAt
+    CreateVideoBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        coverPrompt:
+          type: string
+        month:
+          type: string
+        week:
+          type: string
+        day:
+          type: string
+        videoNumber:
+          type: string
+      required:
+        - title
+        - description
+    UpdateVideoBody:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        coverPrompt:
+          type: string
+        status:
+          type: string
+        month:
+          type: string
+        week:
+          type: string
+        day:
+          type: string
+        videoNumber:
+          type: string
+    ScheduleVideoBody:
+      type: object
+      properties:
+        scheduledAt:
+          type: string
+          format: date-time
+        driveFolderId:
+          type: string
+      required:
+        - scheduledAt
+        - driveFolderId
+    ScheduleCheckResult:
+      type: object
+      properties:
+        processed:
+          type: integer
+        errors:
+          type: integer
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              videoId:
+                type: integer
+              status:
+                type: string
+              error:
+                type: string
+            required:
+              - videoId
+              - status
+      required:
+        - processed
+        - errors
+        - details

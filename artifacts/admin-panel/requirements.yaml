@@ -1,0 +1,20 @@
+packages:
+  "framer-motion": "For fluid page transitions and interactive animations"
+  "date-fns": "For formatting video schedule dates and creation times"
+  "clsx": "For conditional class name merging"
+  "tailwind-merge": "For merging tailwind classes safely"
+  "react-hook-form": "For robust form state management"
+  "@hookform/resolvers": "For Zod schema validation integration"
+
+images:
+  - path: "artifacts/admin-panel/public/images/auth-bg.png"
+    description: "Abstract 3D dark fluid waves with vibrant orange glowing accents, premium dark mode tech aesthetic"
+    aspect_ratio: "16:9"
+  - path: "artifacts/admin-panel/public/images/empty-state.png"
+    description: "Minimalist glowing wireframe of a folder and video icon in dark space with orange highlights"
+    aspect_ratio: "1:1"
+
+notes:
+  - Uses @workspace/api-client-react for TanStack Query hooks generated from OpenAPI
+  - SSE chat stream requires manual fetch implementation as Orval cannot generate hooks for text/event-stream
+  - Relies on default Google Drive folder ID for initial loads: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB

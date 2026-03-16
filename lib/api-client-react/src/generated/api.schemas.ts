@@ -8,3 +8,153 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface GeminiConversation {
+  id: number;
+  title: string;
+  createdAt: string;
+}
+
+export interface GeminiMessage {
+  id: number;
+  conversationId: number;
+  role: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface CreateGeminiConversationBody {
+  title: string;
+}
+
+export interface SendGeminiMessageBody {
+  content: string;
+}
+
+export interface GeminiConversationWithMessages {
+  id: number;
+  title: string;
+  createdAt: string;
+  messages: GeminiMessage[];
+}
+
+export interface GenerateGeminiImageBody {
+  prompt: string;
+}
+
+export interface GenerateGeminiImageResponse {
+  b64_json: string;
+  mimeType: string;
+}
+
+export interface GeminiError {
+  error: string;
+}
+
+export interface GenerateCoverBody {
+  title: string;
+  description: string;
+  referenceImageBase64?: string;
+  style?: string;
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  thumbnailLink?: string;
+  parents?: string[];
+}
+
+export interface DriveFileList {
+  files: DriveFile[];
+  nextPageToken?: string;
+}
+
+export interface DriveUploadBody {
+  name: string;
+  folderId: string;
+  base64Data: string;
+  mimeType: string;
+}
+
+export type VideoContentStatus =
+  (typeof VideoContentStatus)[keyof typeof VideoContentStatus];
+
+export const VideoContentStatus = {
+  draft: "draft",
+  cover_generated: "cover_generated",
+  scheduled: "scheduled",
+  published: "published",
+} as const;
+
+export interface VideoContent {
+  id: number;
+  title: string;
+  description: string;
+  coverPrompt?: string;
+  coverImageBase64?: string;
+  coverMimeType?: string;
+  driveFileId?: string;
+  driveFolderId?: string;
+  status: VideoContentStatus;
+  scheduledAt?: string;
+  publishedAt?: string;
+  month?: string;
+  week?: string;
+  day?: string;
+  videoNumber?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateVideoBody {
+  title: string;
+  description: string;
+  coverPrompt?: string;
+  month?: string;
+  week?: string;
+  day?: string;
+  videoNumber?: string;
+}
+
+export interface UpdateVideoBody {
+  title?: string;
+  description?: string;
+  coverPrompt?: string;
+  status?: string;
+  month?: string;
+  week?: string;
+  day?: string;
+  videoNumber?: string;
+}
+
+export interface ScheduleVideoBody {
+  scheduledAt: string;
+  driveFolderId: string;
+}
+
+export type ScheduleCheckResultDetailsItem = {
+  videoId: number;
+  status: string;
+  error?: string;
+};
+
+export interface ScheduleCheckResult {
+  processed: number;
+  errors: number;
+  details: ScheduleCheckResultDetailsItem[];
+}
+
+export type ListDriveFilesParams = {
+  folderId?: string;
+  pageToken?: string;
+};
+
+export type ListDriveFoldersParams = {
+  parentId?: string;
+};
