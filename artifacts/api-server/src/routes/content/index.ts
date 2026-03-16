@@ -250,6 +250,39 @@ router.post("/content/videos/:id/upload-video", videoUpload.single("video"), asy
   }
 });
 
+router.post("/content/videos/:id/link-drive-video", async (req, res) => {
+  const id = Number(req.params.id);
+  const { driveFileId, fileName } = req.body;
+
+  if (!driveFileId) {
+    res.status(400).json({ error: "Falta el ID del archivo de Drive" });
+    return;
+  }
+
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, id))
+    .limit(1);
+
+  if (!video) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(videos)
+    .set({
+      videoFileDriveId: driveFileId,
+      videoFileName: fileName || "video.mp4",
+      updatedAt: new Date(),
+    })
+    .where(eq(videos.id, id))
+    .returning();
+
+  res.json({ success: true, driveFileId, fileName: updated.videoFileName, video: updated });
+});
+
 router.get("/content/videos/:id/download-video", async (req, res) => {
   const id = Number(req.params.id);
 
