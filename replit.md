@@ -15,7 +15,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **AI**: Gemini AI via Replit AI Integrations (gemini-2.5-flash for chat, gemini-2.5-flash-image for image generation)
+- **AI**: Gemini AI via Replit AI Integrations (gemini-2.5-flash for chat, gemini-3-pro-image-preview for image generation)
 - **Authentication**: Google OAuth 2.0 (Passport.js + express-session)
 - **Google Drive**: Replit Connectors SDK (@replit/connectors-sdk)
 
@@ -51,7 +51,7 @@ artifacts-monorepo/
 - **Estudio de Trabajo (Recording Studio)**: Full video content creation workspace (migrated from webmakerchile.com)
   - AI idea generation by category (Corto Viral, Problema/Solución, Marketing, Historia, Educativo, Behind the Scenes, Opinión, Pack del Día)
   - Video ideas queue with filtering, saving, marking as recorded, bulk operations, batch date grouping
-  - AI cover image generation using Gemini 2.5-flash-image with fox mascot reference (fox-reference.png)
+  - AI cover image generation using Gemini 3-pro-image-preview with fox mascot reference (fox-reference.png)
   - Cover images saved locally to public/uploads/covers/ (served at /uploads/covers/)
   - Teleprompter with speed control, mirror mode, fullscreen, font size adjustment, voice recognition
   - Camera recording with pause/resume, camera switching, mirror, timer, video preview/download
