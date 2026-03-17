@@ -1,270 +1,1019 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { videoIdeas } from "@workspace/db/schema";
-import { eq, desc, sql, isNotNull, isNull, and } from "drizzle-orm";
-import { ai } from "@workspace/integrations-gemini-ai";
+import { eq, desc, isNotNull, isNull } from "drizzle-orm";
+import multer from "multer";
+import path from "path";
+import crypto from "crypto";
+import { mkdirSync } from "fs";
 
 const router: IRouter = Router();
 
 const VIDEO_CATEGORIES = [
-  {
-    key: "corto-viral",
-    label: "Corto Viral",
-    description: "Videos de 25-35 seg que enganchan al instante con una sola idea impactante",
-    icon: "Zap",
-  },
-  {
-    key: "problema-solucion",
-    label: "Problema / Solución",
-    description: "Identifica un dolor del emprendedor y muestra la solución directa",
-    icon: "Target",
-  },
-  {
-    key: "marketing",
-    label: "Marketing",
-    description: "Videos que posicionan y generan leads con datos concretos",
-    icon: "Megaphone",
-  },
-  {
-    key: "historia",
-    label: "Historia",
-    description: "Historias emotivas de transformación digital que conectan",
-    icon: "BookOpen",
-  },
-  {
-    key: "educativo",
-    label: "Educativo",
-    description: "Enseñar algo útil y accionable que puedan aplicar hoy",
-    icon: "Lightbulb",
-  },
-  {
-    key: "behind-scenes",
-    label: "Behind the Scenes",
-    description: "Mostrar el proceso real de trabajo para generar confianza",
-    icon: "Wrench",
-  },
-  {
-    key: "opinion",
-    label: "Opinión",
-    description: "Opinar sobre tendencias actuales de tech y negocios",
-    icon: "TrendingUp",
-  },
-  {
-    key: "pack-del-dia",
-    label: "Pack del Día",
-    description: "1 corto + 1 marketing + 1 historia + 1 problema/solución + 1 tip",
-    icon: "Package",
-    isPack: true,
-  },
+  { key: "corto-viral", label: "Corto Viral", description: "Videos de 25-35 seg que enganchan al instante con una sola idea impactante", icon: "Zap" },
+  { key: "problema-solucion", label: "Problema / Solución", description: "Identifica un dolor del emprendedor y muestra la solución directa", icon: "Target" },
+  { key: "marketing", label: "Marketing", description: "Videos que posicionan y generan leads con datos concretos", icon: "Megaphone" },
+  { key: "storytelling", label: "Historia", description: "Historias emotivas de transformación digital que conectan", icon: "BookOpen" },
+  { key: "behind-scenes", label: "Behind the Scenes", description: "Mostrar el proceso real de trabajo para generar confianza", icon: "Wrench" },
+  { key: "tutorial", label: "Tutorial / Tips", description: "Enseñar algo útil y accionable que puedan aplicar hoy", icon: "Lightbulb" },
+  { key: "tendencia", label: "Tendencia / Hot Take", description: "Opinar sobre tendencias actuales de tech y negocios", icon: "TrendingUp" },
+  { key: "pack-del-dia", label: "Pack del Día", description: "1 corto + 1 marketing + 1 historia + 1 problema/solución + 1 tip", icon: "Package", isPack: true },
 ];
+
+const VALID_CATEGORIES = ["corto-viral", "storytelling", "marketing", "behind-scenes", "tutorial", "tendencia", "problema-solucion", "pack-del-dia"];
 
 router.get("/studio/categories", async (_req, res) => {
   res.json(VIDEO_CATEGORIES);
 });
 
-router.get("/studio/ideas", async (req, res) => {
-  const { category, inStudio, recorded } = req.query;
-  const conditions = [];
-
-  if (category && category !== "all") {
-    conditions.push(eq(videoIdeas.category, category as string));
+router.get("/studio/ideas", async (_req, res) => {
+  try {
+    const allIdeas = await db
+      .select()
+      .from(videoIdeas)
+      .orderBy(desc(videoIdeas.createdAt));
+    res.json(allIdeas);
+  } catch (error) {
+    console.error("Error fetching AI video ideas:", error);
+    res.status(500).json({ error: "Error al obtener ideas" });
   }
-  if (inStudio === "true") {
-    conditions.push(eq(videoIdeas.inStudio, 1));
-  }
-  if (recorded === "true") {
-    conditions.push(isNotNull(videoIdeas.recordedAt));
-  }
-  if (recorded === "false") {
-    conditions.push(isNull(videoIdeas.recordedAt));
-  }
-
-  const rows = await db
-    .select()
-    .from(videoIdeas)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(videoIdeas.createdAt));
-
-  res.json(rows);
 });
 
 router.post("/studio/ideas/generate", async (req, res) => {
-  const { category = "corto-viral", count = 3 } = req.body;
-
-  const catInfo = VIDEO_CATEGORIES.find((c) => c.key === category);
-  const isPack = catInfo?.isPack;
-
-  let prompt: string;
-
-  if (isPack) {
-    prompt = `Eres un experto en creación de contenido para redes sociales para una agencia de desarrollo web llamada WebMakerChile.
-
-Genera un "Pack del Día" que incluya exactamente 5 ideas de video, una de cada categoría:
-1. Corto Viral (25-35 seg)
-2. Marketing (posicionamiento y leads)
-3. Historia (transformación digital emotiva)
-4. Problema/Solución (dolor del emprendedor)
-5. Tip Rápido (algo accionable)
-
-Para cada idea incluye:
-- titulo: título atractivo y conciso
-- guion: guion completo listo para leer en un teleprompter (máximo 200 palabras por guion)
-- descripcion: breve descripción del enfoque
-- category: la categoría correspondiente (corto-viral, marketing, historia, problema-solucion, educativo)
-- plataforma: "TikTok", "Instagram Reels" o "YouTube Shorts"
-- duracionSugerida: duración estimada (ej: "30 seg", "45 seg", "60 seg")
-- tendencia: tendencia o tema actual relevante (opcional)
-- hashtags: array de 3-5 hashtags relevantes
-
-Responde SOLO con un array JSON válido de 5 objetos. Sin markdown, sin explicaciones.`;
-  } else {
-    prompt = `Eres un experto en creación de contenido para redes sociales para una agencia de desarrollo web llamada WebMakerChile.
-
-Categoría: ${catInfo?.label || category}
-Descripción: ${catInfo?.description || ""}
-
-Genera exactamente ${count} ideas de video para esta categoría.
-
-Para cada idea incluye:
-- titulo: título atractivo y conciso
-- guion: guion completo listo para leer en un teleprompter (máximo 200 palabras)
-- descripcion: breve descripción del enfoque
-- category: "${category}"
-- plataforma: "TikTok", "Instagram Reels" o "YouTube Shorts" (varía entre ellas)
-- duracionSugerida: duración estimada (ej: "30 seg", "45 seg", "60 seg")
-- tendencia: tendencia o tema actual relevante (opcional)
-- hashtags: array de 3-5 hashtags relevantes
-
-Responde SOLO con un array JSON válido de ${count} objetos. Sin markdown, sin explicaciones.`;
-  }
-
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { maxOutputTokens: 4096 },
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({
+      apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
+      httpOptions: {
+        apiVersion: "",
+        baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+      },
     });
 
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const today = new Date().toLocaleDateString("es-CL", {
+      timeZone: "America/Santiago",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const batchDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
 
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      res.status(500).json({ error: "No se pudo parsear la respuesta de la IA" });
-      return;
+    const rawCategory: string = req.body.category || "corto-viral";
+    const category = VALID_CATEGORIES.includes(rawCategory) ? rawCategory : "corto-viral";
+    const userContext: string = req.body.context || "";
+
+    const BASE_IDENTITY = `Eres un creador de contenido experto que trabaja con WebMakerChile, agencia de desarrollo de software en Chile. Tu estilo es NATURAL, como si hablaras con un amigo emprendedor. NUNCA suenas como vendedor agresivo.
+
+SERVICIOS DE WEBMAKERCHILE:
+- Landing Pages (desde $200.000 + IVA) - Lista en 5-7 dias
+- Sitios Web Completos (desde $350.000 + IVA) - 10-15 dias
+- E-Commerce (desde $700.000 + IVA) - 15-20 dias
+- Apps Moviles, ERP, CRM, SaaS, POS, Software a Medida (a cotizar)
+- Chatbots con IA, Automatizaciones, Integraciones
+- Todos incluyen: 30 dias garantia + 1 mes hosting gratis
+
+IDENTIDAD DE MARCA:
+- WebMakerChile es una agencia joven, transparente y directa
+- Trabaja con PYMEs y emprendedores reales en Chile y LATAM
+- Usa tecnologia moderna (React, IA, automatizaciones)
+- El fundador graba los videos hablando a camara de forma natural
+
+PUBLICO OBJETIVO: Empresarios, emprendedores y PYMEs en Chile y LATAM que buscan digitalizarse.
+
+REGLAS UNIVERSALES:
+1. Tono CONVERSACIONAL. Como si le hablaras a un emprendedor en un cafe.
+2. NUNCA presentes personajes ficticios como clientes reales. Usa escenarios HIPOTETICOS: "Imaginate que Don Carlos tiene una panaderia..."
+3. No uses asteriscos (**), ni caracteres especiales decorativos.
+4. Hashtags: mezclar tendencias + nicho + #WebMakerChile siempre.
+5. CTA suave: "+56 9 5365 7460" o "webmakerchile.com".`;
+
+    const GUION_RULES = `REGLA CRITICA PARA EL GUION:
+El guion debe ser TEXTO LISTO PARA LEER frente a camara. Como un teleprompter.
+- SIN corchetes [asi]. PROHIBIDO.
+- SIN parentesis con indicaciones (asi). PROHIBIDO.
+- SIN "Indicacion visual", SIN "tono de voz", SIN "close-up", SIN "camara frontal". NADA de meta-instrucciones.
+- SIN timestamps como "(0:00-0:03)" ni "INTRO:" "DESARROLLO:" "CIERRE:". PROHIBIDO.
+- SOLO el texto que voy a DECIR en voz alta, separado por saltos de linea.
+- Frases CORTAS y DIRECTAS. Una oracion por linea. Sin relleno.
+- Que suene como una persona hablando natural, no como un robot leyendo instrucciones.
+- Terminar siempre con CTA: "Escribenos al +56 9 5365 7460" o "Visita webmakerchile.com"
+
+EJEMPLO CORRECTO:
+"Sabes cuantos clientes pierdes por no responder a tiempo?\\n\\nEl 78% de la gente compra al primero que le responde.\\n\\nSi tardas 2 horas en contestar un WhatsApp, tu competencia ya cerro esa venta.\\n\\nLa solucion? Un chatbot con inteligencia artificial que responde en 3 segundos. Las 24 horas. Los 7 dias.\\n\\nSin contratar a nadie. Sin pagar sueldos.\\n\\nAutomatiza tu atencion y deja de perder ventas.\\n\\nEscribenos al +56 9 5365 7460"
+
+EJEMPLO INCORRECTO (NUNCA hacer esto):
+"INTRO (0:00-0:03):\\n[Camara frontal, tono energico]\\nHook directo.\\n(pausa dramatica)\\nDESARROLLO (0:03-0:25):\\n[Mostrar pantalla]\\nExplicar beneficios..."`;
+
+    const CATEGORY_PROMPTS: Record<string, { instruction: string; count: number; duration: string }> = {
+      "corto-viral": {
+        count: 5,
+        duration: "25-35 segundos",
+        instruction: `CATEGORIA: CORTO VIRAL (25-35 segundos)
+Videos ultra-cortos con GANCHO brutal en los primeros 2 segundos.
+- UNA sola idea por video. Un dolor, una solucion, un dato impactante.
+- Ganchos: "Sabias que...", "El error del 90% de...", "POV: tienes un negocio y...", dato estadistico shocking.
+- Frases cortas. Ritmo rapido. Sin relleno. El espectador debe querer compartirlo.
+- Conectar siempre con AUTOMATIZACION como solucion.
+- Plataformas: TikTok, Instagram Reels, YouTube Shorts.`,
+      },
+      "storytelling": {
+        count: 3,
+        duration: "60-90 segundos",
+        instruction: `CATEGORIA: STORYTELLING (60-90 segundos)
+Historias con personajes ficticios que conecten emocionalmente.
+- Estructura: Problema del personaje -> Lucha -> Descubre la automatizacion -> Transformacion.
+- Personajes variados y relatables (usar los perfiles del dia si estan disponibles).
+- Detalles concretos: numeros, emociones, situaciones del dia a dia.
+- El servicio aparece como solucion natural, nunca forzado.
+- Final inspirador con resultado tangible.
+- Plataformas: Instagram Reels, YouTube, TikTok.`,
+      },
+      "marketing": {
+        count: 4,
+        duration: "30-45 segundos",
+        instruction: `CATEGORIA: MARKETING Y VENTAS (30-45 segundos)
+Videos que posicionen a WebMakerChile generando LEADS sin parecer publicidad.
+- RESULTADOS concretos: "Una landing genera 30+ contactos al mes", "Un chatbot atiende 24/7 sin sueldo".
+- Comparar costos: "Un empleado para WhatsApp cuesta $500.000/mes. Un chatbot, $0".
+- Responder objeciones: "Es muy caro", "No se de tecnologia", "Mi negocio es chico".
+- Ser TRANSPARENTE con precios y plazos reales.
+- Plataformas: Instagram Reels, TikTok, LinkedIn.`,
+      },
+      "behind-scenes": {
+        count: 3,
+        duration: "30-50 segundos",
+        instruction: `CATEGORIA: BEHIND THE SCENES (30-50 segundos)
+Narrar el proceso de trabajo como si le contaras a un amigo lo que haces.
+- Describir lo que estas haciendo: "Estoy programando un chatbot que...", "Hoy estamos terminando una tienda online para...".
+- Explicar cosas tecnicas de forma simple y natural.
+- Humanizar: mencionar el cafe, la musica, los errores, las victorias pequenas.
+- El espectador debe pensar "estos saben lo que hacen" sin que se lo digas.
+- Plataformas: TikTok, Instagram Reels.`,
+      },
+      "tutorial": {
+        count: 3,
+        duration: "35-60 segundos",
+        instruction: `CATEGORIA: TUTORIAL / TIPS (35-60 segundos)
+UN solo tip practico que el emprendedor pueda aplicar HOY.
+- Concreto y accionable. Que despues de verlo pueda hacer algo inmediatamente.
+- Temas: como elegir dominio, que necesita tu web, como usar WhatsApp Business, tips SEO, que es un chatbot, cuando necesitas una app.
+- Formato numerado funciona: "3 cosas que tu web NECESITA", "El truco que usan las empresas para...".
+- El contenido debe ser tan util que quieran guardarlo y compartirlo.
+- Plataformas: Instagram Reels, TikTok, YouTube Shorts.`,
+      },
+      "tendencia": {
+        count: 3,
+        duration: "30-45 segundos",
+        instruction: `CATEGORIA: TENDENCIA / HOT TAKE (30-45 segundos)
+Opinion fuerte sobre tendencias actuales de tecnologia y negocios.
+- Tomar posicion clara: IA, automatizacion, redes sociales, e-commerce, chatbots.
+- Provocador pero informado con datos reales cuando sea posible.
+- Conectar la tendencia con el dia a dia del emprendedor latinoamericano.
+- Generar debate: que el espectador quiera comentar su opinion.
+- Plataformas: TikTok, LinkedIn, YouTube Shorts.`,
+      },
+      "problema-solucion": {
+        count: 4,
+        duration: "25-40 segundos",
+        instruction: `CATEGORIA: PROBLEMA-SOLUCION (25-40 segundos)
+Identificar un DOLOR especifico del emprendedor y mostrar como se resuelve.
+- Empezar con el problema que el espectador vive ahora: "Te pasa que...", "Si tu negocio...".
+- Solucion clara, tangible y creible. Sin promesas vacias.
+- Dolores comunes: perder clientes por no responder, procesos manuales, no saber cuanto vende, competencia digital.
+- El espectador debe sentir "esto me pasa a mi, necesito resolverlo".
+- Plataformas: TikTok, Instagram Reels, YouTube Shorts.`,
+      },
+    };
+
+    const generateForCategory = async (cat: string, customContext: string): Promise<any[]> => {
+      const config = CATEGORY_PROMPTS[cat] || CATEGORY_PROMPTS["corto-viral"];
+      const prompt = `${BASE_IDENTITY}
+
+${config.instruction}
+
+${customContext ? `INSTRUCCION DEL USUARIO (prioridad maxima):\n"${customContext}"\n` : ""}
+Fecha: ${today}
+
+${GUION_RULES}
+
+Genera exactamente ${config.count} ideas de video.
+
+RESPONDE SOLO EN JSON valido:
+{
+  "ideas": [
+    {
+      "titulo": "Titulo CORTO y directo (5-7 palabras max, sin emojis)",
+      "descripcion": "Tendencia actual que respalda esta idea y por que funcionaria (2-3 lineas)",
+      "guion": "Texto completo listo para leer frente a camara. SIN corchetes, SIN parentesis, SIN timestamps. Solo lo que voy a DECIR.",
+      "plataforma": "TikTok|Instagram Reels|YouTube Shorts|YouTube|LinkedIn",
+      "tendencia": "Tendencia especifica de 2025/2026 que respalda esta idea",
+      "duracionSugerida": "${config.duration}",
+      "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#WebMakerChile"]
+    }
+  ]
+}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      });
+
+      const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const cleanedText = responseText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleanedText);
+      if (!parsed.ideas || !Array.isArray(parsed.ideas)) return [];
+      return parsed.ideas.slice(0, config.count);
+    };
+
+    let allIdeas: { idea: any; cat: string }[] = [];
+
+    if (category === "pack-del-dia") {
+      const packCategories = ["corto-viral", "marketing", "storytelling", "problema-solucion", "tutorial"];
+      const packPrompt = `${BASE_IDENTITY}
+
+Eres un estratega de contenido. Genera un PACK DIARIO de contenido variado con exactamente 5 ideas, una de cada tipo:
+
+1. CORTO VIRAL (25-35 seg): Hook brutal, una sola idea impactante, ritmo rapido.
+2. MARKETING (30-45 seg): Posicionar WebMakerChile, datos de costos, responder objeciones.
+3. STORYTELLING (60-90 seg): Historia hipotetica emotiva de un emprendedor que se digitaliza.
+4. PROBLEMA-SOLUCION (25-40 seg): Dolor concreto del emprendedor + solucion clara.
+5. TUTORIAL/TIP (35-60 seg): Algo util y accionable que puedan aplicar hoy.
+
+${userContext ? `INSTRUCCION DEL USUARIO (prioridad maxima):\n"${userContext}"\n` : ""}
+Fecha: ${today}
+
+${GUION_RULES}
+
+RESPONDE SOLO EN JSON valido:
+{
+  "ideas": [
+    {
+      "titulo": "Titulo",
+      "descripcion": "Descripcion",
+      "guion": "Guion listo para teleprompter",
+      "plataforma": "TikTok|Instagram Reels|YouTube Shorts|YouTube|LinkedIn",
+      "tendencia": "Tendencia",
+      "duracionSugerida": "XX-XX segundos",
+      "hashtags": ["#tag1", "#WebMakerChile"],
+      "category": "corto-viral|marketing|storytelling|problema-solucion|tutorial"
+    }
+  ]
+}`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: packPrompt }] }],
+      });
+      const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const cleanedText = responseText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      const parsed = JSON.parse(cleanedText);
+      if (parsed.ideas && Array.isArray(parsed.ideas)) {
+        parsed.ideas.slice(0, 5).forEach((idea: any, i: number) => {
+          const rawCat = idea.category || packCategories[i % packCategories.length];
+          const cat = VALID_CATEGORIES.includes(rawCat) && rawCat !== "pack-del-dia" ? rawCat : packCategories[i % packCategories.length];
+          allIdeas.push({ idea, cat });
+        });
+      }
+    } else {
+      const ideas = await generateForCategory(category, userContext);
+      allIdeas = ideas.map(idea => ({ idea, cat: category }));
     }
 
-    const ideas = JSON.parse(jsonMatch[0]);
+    const existingIdeas = await db
+      .select({ titulo: videoIdeas.titulo })
+      .from(videoIdeas);
+    const existingTitles = existingIdeas.map(e =>
+      e.titulo.toLowerCase().replace(/[^a-záéíóúñü\s]/g, "").trim()
+    );
+    const isSimilar = (newTitle: string): boolean => {
+      const normalized = newTitle.toLowerCase().replace(/[^a-záéíóúñü\s]/g, "").trim();
+      const newWords = normalized.split(/\s+/).filter((w: string) => w.length > 3);
+      return existingTitles.some(existing => {
+        if (normalized === existing) return true;
+        const existingWords = existing.split(/\s+/).filter((w: string) => w.length > 3);
+        if (existingWords.length === 0 || newWords.length === 0) return false;
+        const overlap = newWords.filter((w: string) => existingWords.includes(w)).length;
+        const similarity = overlap / Math.max(newWords.length, existingWords.length);
+        return similarity >= 0.7;
+      });
+    };
 
-    const inserted = [];
-    for (const idea of ideas) {
-      const [row] = await db
-        .insert(videoIdeas)
-        .values({
-          titulo: idea.titulo || "Sin título",
-          guion: idea.guion || "",
-          descripcion: idea.descripcion || "",
-          category: idea.category || category,
-          plataforma: idea.plataforma || "TikTok",
-          duracionSugerida: idea.duracionSugerida || null,
-          tendencia: idea.tendencia || null,
-          hashtags: idea.hashtags || [],
-          inStudio: 0,
-        })
-        .returning();
-      inserted.push(row);
+    const savedIdeas = [];
+    let skippedCount = 0;
+    for (const { idea, cat } of allIdeas) {
+      const titulo = idea.titulo || "Sin titulo";
+      if (isSimilar(titulo)) {
+        console.log(`[AI Video Ideas] Skipped similar: "${titulo}"`);
+        skippedCount++;
+        continue;
+      }
+      const [saved] = await db.insert(videoIdeas).values({
+        titulo,
+        descripcion: idea.descripcion || "",
+        guion: idea.guion || "",
+        plataforma: idea.plataforma || "TikTok",
+        tendencia: idea.tendencia || null,
+        duracionSugerida: idea.duracionSugerida || "30 segundos",
+        hashtags: idea.hashtags || [],
+        saved: false,
+        batchDate,
+        category: cat,
+      }).returning();
+      savedIdeas.push(saved);
+      existingTitles.push(titulo.toLowerCase().replace(/[^a-záéíóúñü\s]/g, "").trim());
     }
 
-    res.json({ ideas: inserted, count: inserted.length });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || "Error al generar ideas" });
+    const msg = skippedCount > 0
+      ? `${savedIdeas.length} ideas generadas (${skippedCount} repetidas descartadas)`
+      : `${savedIdeas.length} ideas generadas`;
+    res.json({ message: msg, ideas: savedIdeas, category });
+  } catch (error) {
+    console.error("Error generating AI video ideas:", error);
+    res.status(500).json({ error: "Error al generar ideas con IA" });
   }
 });
 
-router.patch("/studio/ideas/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  const { inStudio, recordedAt } = req.body;
-
-  const updates: Record<string, any> = {};
-  if (inStudio !== undefined) updates.inStudio = inStudio;
-  if (recordedAt !== undefined) updates.recordedAt = recordedAt ? new Date(recordedAt) : null;
-
-  const [updated] = await db
-    .update(videoIdeas)
-    .set(updates)
-    .where(eq(videoIdeas.id, id))
-    .returning();
-
-  if (!updated) {
-    res.status(404).json({ error: "Idea no encontrada" });
-    return;
+router.patch("/studio/ideas/:id/save", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(videoIdeas)
+      .set({ saved: true })
+      .where(eq(videoIdeas.id, id))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "Idea no encontrada" }); return; }
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "Error al guardar idea" });
   }
+});
 
-  res.json(updated);
+router.patch("/studio/ideas/:id/unsave", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(videoIdeas)
+      .set({ saved: false })
+      .where(eq(videoIdeas.id, id))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "Idea no encontrada" }); return; }
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "Error al quitar guardado" });
+  }
 });
 
 router.delete("/studio/ideas/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  const deleted = await db
-    .delete(videoIdeas)
-    .where(eq(videoIdeas.id, id))
-    .returning();
-
-  if (!deleted.length) {
-    res.status(404).json({ error: "Idea no encontrada" });
-    return;
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(videoIdeas).where(eq(videoIdeas.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Error al eliminar idea" });
   }
-
-  res.status(204).send();
 });
 
 router.delete("/studio/ideas", async (req, res) => {
-  const { keepRecorded } = req.query;
-
-  if (keepRecorded === "true") {
-    await db
-      .delete(videoIdeas)
-      .where(isNull(videoIdeas.recordedAt));
-  } else {
-    await db.delete(videoIdeas);
+  try {
+    const keepRecorded = req.query.keepRecorded === "true";
+    if (keepRecorded) {
+      await db.delete(videoIdeas).where(isNull(videoIdeas.recordedAt));
+    } else {
+      await db.delete(videoIdeas);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Error al eliminar ideas" });
   }
-
-  res.json({ message: "Ideas limpiadas" });
 });
 
-router.get("/studio/stats", async (_req, res) => {
-  const totalResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(videoIdeas);
-
-  const recordedResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(videoIdeas)
-    .where(isNotNull(videoIdeas.recordedAt));
-
-  const inStudioResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(videoIdeas)
-    .where(eq(videoIdeas.inStudio, 1));
-
-  const byCategoryResult = await db
-    .select({
-      category: videoIdeas.category,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(videoIdeas)
-    .groupBy(videoIdeas.category);
-
-  const byCategory: Record<string, number> = {};
-  for (const row of byCategoryResult) {
-    byCategory[row.category] = row.count;
+router.patch("/studio/ideas/:id/record", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(videoIdeas)
+      .set({ recordedAt: new Date() })
+      .where(eq(videoIdeas.id, id))
+      .returning();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "Error al marcar como grabado" });
   }
+});
 
-  res.json({
-    total: totalResult[0]?.count || 0,
-    recorded: recordedResult[0]?.count || 0,
-    inStudio: inStudioResult[0]?.count || 0,
-    byCategory,
+router.patch("/studio/ideas/:id/unrecord", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db
+      .update(videoIdeas)
+      .set({ recordedAt: null })
+      .where(eq(videoIdeas.id, id))
+      .returning();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "Error al desmarcar grabación" });
+  }
+});
+
+router.post("/studio/ideas/:id/generate-cover", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) { res.status(400).json({ error: "ID invalido" }); return; }
+    const [idea] = await db.select().from(videoIdeas).where(eq(videoIdeas.id, id)).limit(1);
+    if (!idea) { res.status(404).json({ error: "Idea no encontrada" }); return; }
+
+    const { generateCoverImage } = await import("./cover-generator");
+    const coverUrl = await generateCoverImage(idea.titulo, idea.descripcion || idea.titulo);
+
+    const [updated] = await db
+      .update(videoIdeas)
+      .set({ coverImageUrl: coverUrl })
+      .where(eq(videoIdeas.id, id))
+      .returning();
+
+    res.json({ success: true, coverImageUrl: coverUrl, idea: updated });
+  } catch (error: any) {
+    console.error("[CoverGen] Error:", error.message);
+    res.status(500).json({ error: error.message || "Error al generar portada" });
+  }
+});
+
+router.get("/studio/recording-stats", async (_req, res) => {
+  try {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const allRecorded = await db
+      .select({ recordedAt: videoIdeas.recordedAt })
+      .from(videoIdeas)
+      .where(isNotNull(videoIdeas.recordedAt))
+      .orderBy(desc(videoIdeas.recordedAt));
+
+    const weeklyCount = allRecorded.filter(
+      (r) => r.recordedAt && r.recordedAt >= startOfWeek
+    ).length;
+
+    const monthlyCount = allRecorded.filter(
+      (r) => r.recordedAt && r.recordedAt >= startOfMonth
+    ).length;
+
+    let streak = 0;
+    if (allRecorded.length > 0) {
+      const recordedDates = new Set(
+        allRecorded.map((r) =>
+          r.recordedAt!.toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
+        )
+      );
+      const todayStr = now.toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+      const checkDate = new Date(todayStr + "T12:00:00");
+
+      if (!recordedDates.has(todayStr)) {
+        checkDate.setDate(checkDate.getDate() - 1);
+      }
+
+      while (true) {
+        const dateStr = checkDate.toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+        if (recordedDates.has(dateStr)) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    res.json({ weeklyCount, monthlyCount, totalCount: allRecorded.length, streak });
+  } catch (error) {
+    res.status(500).json({ error: "Error al obtener estadísticas" });
+  }
+});
+
+const studioPreviewDir = path.join(process.cwd(), "public", "uploads", "studio-previews");
+try { mkdirSync(studioPreviewDir, { recursive: true }); } catch {}
+
+const studioVideoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, "/tmp"),
+    filename: (_req, file, cb) => cb(null, `studio-${Date.now()}-${file.originalname}`),
+  }),
+  limits: { fileSize: 500 * 1024 * 1024 },
+});
+
+router.post("/studio/temp-preview", (req, res, next) => {
+  studioVideoUpload.single("video")(req, res, (err: any) => {
+    if (err) {
+      console.error("[studio] Multer error (temp-preview):", err.message, "| code:", err.code);
+      return res.status(400).json({ error: "Error receiving video file" });
+    }
+    next();
   });
+}, async (req, res) => {
+  const ts = Date.now();
+  const fixedFilename = `preview-${ts}.mp4`;
+  const fixedPath = path.join(studioPreviewDir, fixedFilename);
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "No video received" });
+      return;
+    }
+    const { rename, unlink: unlinkFile, copyFile } = await import("fs/promises");
+    const uploadedPath = (req.file as any).path as string;
+    try {
+      await rename(uploadedPath, fixedPath);
+    } catch {
+      await copyFile(uploadedPath, fixedPath);
+      await unlinkFile(uploadedPath).catch(() => {});
+    }
+    console.log(`[studio] Preview saved: ${fixedFilename} (${(req.file.size / 1024 / 1024).toFixed(1)}MB)`);
+
+    setTimeout(async () => {
+      try { const { unlink } = await import("fs/promises"); await unlink(fixedPath); } catch {}
+    }, 30 * 60 * 1000);
+
+    const staticUrl = `/uploads/studio-previews/${fixedFilename}`;
+    res.json({ url: staticUrl });
+  } catch (err: any) {
+    console.error("Temp preview error:", err);
+    res.status(500).json({ error: "Error processing preview" });
+  }
+});
+
+router.delete("/studio/temp-preview/:filename", async (req, res) => {
+  try {
+    const filename = req.params.filename.replace(/[^a-zA-Z0-9\-_.]/g, "");
+    const filePath = path.join(studioPreviewDir, filename);
+    const { unlink } = await import("fs/promises");
+    await unlink(filePath);
+  } catch {}
+  res.json({ ok: true });
+});
+
+const studioChunkUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 6 * 1024 * 1024 },
+});
+
+router.post("/studio/upload-chunk", (req, res, next) => {
+  studioChunkUpload.single("chunk")(req, res, (err: any) => {
+    if (err) {
+      console.error("[studio] Multer chunk error:", err.message);
+      return res.status(400).json({ error: "Error receiving chunk" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    const { appendFile, writeFile } = await import("fs/promises");
+    const uploadId = req.body.uploadId;
+    const chunkIndex = parseInt(req.body.chunkIndex);
+    const totalChunks = parseInt(req.body.totalChunks);
+    if (!uploadId || isNaN(chunkIndex) || isNaN(totalChunks) || !req.file) {
+      res.status(400).json({ error: "Missing chunk data" });
+      return;
+    }
+    const safeId = uploadId.replace(/[^a-zA-Z0-9\-_]/g, "");
+    const tempPath = path.join("/tmp", `studio-chunked-${safeId}`);
+    if (chunkIndex === 0) {
+      await writeFile(tempPath, req.file.buffer);
+    } else {
+      await appendFile(tempPath, req.file.buffer);
+    }
+    console.log(`[Studio] Chunk ${chunkIndex + 1}/${totalChunks} received (${(req.file.size / 1024).toFixed(0)}KB) for ${safeId}`);
+    res.json({ ok: true, chunkIndex, received: true });
+  } catch (err: any) {
+    console.error("[Studio] Chunk error:", err);
+    res.status(500).json({ error: "Error saving chunk" });
+  }
+});
+
+router.post("/studio/finalize-upload", async (req, res) => {
+  const allTempFiles: string[] = [];
+  try {
+    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments } = req.body;
+    if (!uploadId) { res.status(400).json({ error: "Missing uploadId" }); return; }
+
+    const safeId = uploadId.replace(/[^a-zA-Z0-9\-_]/g, "");
+    const tempPath = path.join("/tmp", `studio-chunked-${safeId}`);
+    allTempFiles.push(tempPath);
+
+    const { stat: fsStat } = await import("fs/promises");
+    const stats = await fsStat(tempPath).catch(() => null);
+    if (!stats || stats.size < 100) {
+      res.status(400).json({ error: "No video file found. Upload chunks first." });
+      return;
+    }
+    console.log(`[Studio] Finalizing upload ${safeId}: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+
+    const ideaId = rawIdeaId ? parseInt(rawIdeaId) : null;
+    let ideaTitle = rawTitle || "Video sin titulo";
+    let ideaGuion = rawGuion || "";
+    let segmentsParam: Array<{start: number, end: number}> | null = null;
+    try {
+      if (rawSegments) {
+        const parsed = typeof rawSegments === "string" ? JSON.parse(rawSegments) : rawSegments;
+        if (Array.isArray(parsed)) {
+          segmentsParam = parsed.filter((s: any) =>
+            typeof s.start === "number" && typeof s.end === "number" &&
+            isFinite(s.start) && isFinite(s.end) && s.start >= 0 && s.end > s.start && s.end < 86400
+          ).map((s: any) => ({ start: +s.start.toFixed(2), end: +s.end.toFixed(2) }));
+          if (segmentsParam.length === 0) segmentsParam = null;
+        }
+      }
+    } catch {}
+
+    if (ideaId) {
+      const idea = await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1);
+      if (idea.length > 0) {
+        if (!rawTitle) ideaTitle = idea[0].titulo;
+        ideaGuion = idea[0].guion;
+      }
+    }
+
+    const { exec: execCb } = await import("child_process");
+    const { promisify } = await import("util");
+    const execAsync = promisify(execCb);
+
+    let hasFFmpeg = false;
+    try { await execAsync("ffmpeg -version", { timeout: 5000 }); hasFFmpeg = true; console.log("[Studio] ffmpeg available"); } catch { console.warn("[Studio] ffmpeg NOT available - video will be uploaded raw (VFR)"); }
+
+    const isMP4 = (clientMimeType || "").includes("mp4");
+    const ext = isMP4 ? "mp4" : "webm";
+    let finalVideoPath = tempPath;
+
+    if (hasFFmpeg) {
+      const ts = Date.now();
+      const rawInputPath = path.join("/tmp", `studio-raw-${ts}.${ext}`);
+      allTempFiles.push(rawInputPath);
+      const { copyFile } = await import("fs/promises");
+      await copyFile(tempPath, rawInputPath);
+
+      try {
+        if (segmentsParam && Array.isArray(segmentsParam) && segmentsParam.length > 0) {
+          const { writeFile: writeFileAsync } = await import("fs/promises");
+          const tiktokVf = `-vf "fps=60,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"`;
+          const cfrVideo = `${tiktokVf} -c:v libx264 -preset fast -crf 18 -g 60 -pix_fmt yuv420p -profile:v main -level 4.2 -vsync cfr`;
+          const cfrAudio = `-c:a aac -b:a 128k -ar 44100 -ac 2`;
+          if (segmentsParam.length === 1) {
+            const seg = segmentsParam[0];
+            const outPath = path.join("/tmp", `studio-seg-out-${ts}.mp4`);
+            allTempFiles.push(outPath);
+            await execAsync(
+              `ffmpeg -y -fflags +genpts+igndts -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -movflags +faststart -avoid_negative_ts make_zero "${outPath}"`,
+              { timeout: 240000 }
+            );
+            finalVideoPath = outPath;
+          } else {
+            const segPaths: string[] = [];
+            for (let i = 0; i < segmentsParam.length; i++) {
+              const seg = segmentsParam[i];
+              const segPath = path.join("/tmp", `studio-seg-${ts}-${i}.mp4`);
+              allTempFiles.push(segPath);
+              await execAsync(
+                `ffmpeg -y -fflags +genpts+igndts -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -avoid_negative_ts make_zero -movflags +faststart "${segPath}"`,
+                { timeout: 180000 }
+              );
+              segPaths.push(segPath);
+            }
+            const concatListPath = path.join("/tmp", `studio-concat-list-${ts}.txt`);
+            allTempFiles.push(concatListPath);
+            const concatListContent = segPaths.map(p => `file '${p}'`).join("\n");
+            await writeFileAsync(concatListPath, concatListContent);
+            const outPath = path.join("/tmp", `studio-concat-out-${ts}.mp4`);
+            allTempFiles.push(outPath);
+            await execAsync(
+              `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy -movflags +faststart "${outPath}"`,
+              { timeout: 120000 }
+            );
+            finalVideoPath = outPath;
+          }
+        } else {
+          const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
+          allTempFiles.push(outPath);
+          await execAsync(
+            `ffmpeg -y -fflags +genpts+igndts -i "${rawInputPath}" -vf "fps=60,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 60 -pix_fmt yuv420p -profile:v main -level 4.2 -vsync cfr -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+            { timeout: 180000 }
+          );
+          finalVideoPath = outPath;
+        }
+
+        const outStats = await fsStat(finalVideoPath);
+        if (!outStats.size || outStats.size < 100) throw new Error("Processed video empty");
+        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB`);
+      } catch (ffErr: any) {
+        console.warn(`[Studio] ffmpeg failed, uploading raw: ${ffErr.message}`);
+        finalVideoPath = tempPath;
+      }
+    }
+
+    const finalStats = await fsStat(finalVideoPath);
+    console.log(`[Studio] Uploading to Drive: ${ideaTitle} (${(finalStats.size / 1024 / 1024).toFixed(1)}MB) path=${finalVideoPath}`);
+    const actualMimeType = finalVideoPath.endsWith(".webm") ? "video/webm" : "video/mp4";
+
+    let fileId = "";
+    let webViewLink = "";
+    let driveFolderId = "";
+    let driveVerified = false;
+    let backupLink = "";
+    try {
+      const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
+      clearFolderCache();
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType);
+      fileId = driveResult.fileId;
+      webViewLink = driveResult.webViewLink;
+      driveFolderId = driveResult.driveFolderId;
+      driveVerified = driveResult.verified;
+      console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink}`);
+    } catch (driveErr: any) {
+      console.error(`[VideoUpload] Google Drive FAILED: ${driveErr.message}`);
+      backupLink = finalVideoPath;
+    }
+
+    if (ideaId && driveVerified) {
+      await db.update(videoIdeas).set({ recordedAt: new Date() }).where(eq(videoIdeas.id, ideaId));
+    }
+
+    let coverDriveLink = "";
+    if (driveVerified) {
+      try {
+        const ideaDesc = ideaId
+          ? (await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1))?.[0]?.descripcion || ideaTitle
+          : ideaTitle;
+        console.log(`[Studio] Generating cover image for: "${ideaTitle}"`);
+        const { generateCoverImage } = await import("./cover-generator");
+        const coverResult = await generateCoverImage(ideaTitle, ideaDesc, true);
+        if (typeof coverResult !== "string") {
+          if (ideaId) {
+            await db.update(videoIdeas).set({ coverImageUrl: coverResult.servePath }).where(eq(videoIdeas.id, ideaId));
+          }
+          try {
+            const { uploadCoverToDriveFromBuffer } = await import("./google-drive");
+            const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, coverResult.mimeType, driveFolderId);
+            coverDriveLink = coverUpload.webViewLink;
+            console.log(`[Studio] Cover uploaded to Drive: ${coverDriveLink}`);
+          } catch (coverDriveErr: any) {
+            console.warn(`[Studio] Cover Drive upload failed (saved locally): ${coverDriveErr.message}`);
+          }
+        }
+      } catch (coverErr: any) {
+        console.warn(`[Studio] Cover generation failed (non-blocking): ${coverErr.message}`);
+      }
+    }
+
+    let descDriveLink = "";
+    if (driveVerified && driveFolderId) {
+      try {
+        console.log(`[Studio] Generating social media descriptions for: "${ideaTitle}"`);
+        const ideaDataForDesc = ideaId ? (await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1))?.[0] : null;
+        const vidDescText = ideaDataForDesc?.descripcion || ideaTitle;
+        const vidGuionText = ideaDataForDesc?.guion || ideaGuion || "";
+
+        const { GoogleGenAI: DescGenAI } = await import("@google/genai");
+        const descAiClient = new DescGenAI({
+          apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY!,
+          httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
+        });
+
+        const descPromptText = `Genera descripciones para redes sociales de un video de WebMakerChile (empresa de desarrollo web/software en Chile).
+
+TITULO DEL VIDEO: "${ideaTitle}"
+DESCRIPCION: "${vidDescText}"
+${vidGuionText ? `GUION/CONTENIDO: "${vidGuionText.substring(0, 500)}"` : ""}
+
+Genera UN archivo de texto con descripciones para 3 plataformas, separadas claramente.
+
+FORMATO EXACTO:
+
+========================================
+TIKTOK
+========================================
+
+[Descripcion corta, 1-2 lineas, emojis, 4-6 hashtags + #webmakerchile #desarrolloweb]
+
+========================================
+INSTAGRAM
+========================================
+
+[Descripcion 2-3 lineas, emojis, CTA, 10-15 hashtags + #webmakerchile #desarrolloweb #chile]
+
+========================================
+YOUTUBE SHORTS
+========================================
+
+[Descripcion 2-3 lineas, emojis, suscribirse, 5-8 hashtags + #webmakerchile #shorts]
+
+REGLAS:
+- NO uses markdown. Solo texto plano con emojis
+- Hashtags en minusculas sin espacios
+- Cada descripcion UNICA y adaptada a cada plataforma`;
+
+        const descResp = await descAiClient.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [{ role: "user", parts: [{ text: descPromptText }] }],
+        });
+
+        const descRaw = descResp.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (descRaw.trim()) {
+          const cleanDescTxt = descRaw.replace(/\*\*/g, "").trim();
+          const { uploadDescriptionsToDrive } = await import("./google-drive");
+          const descUploadResult = await uploadDescriptionsToDrive(cleanDescTxt, ideaTitle, driveFolderId);
+          descDriveLink = descUploadResult.webViewLink;
+          console.log(`[Studio] Descriptions uploaded to Drive: ${descDriveLink}`);
+        }
+      } catch (descGenErr: any) {
+        console.warn(`[Studio] Description generation/upload failed (non-blocking): ${descGenErr.message}`);
+      }
+    }
+
+    if (driveVerified) {
+      res.json({
+        success: true,
+        fileId,
+        driveLink: webViewLink,
+        driveVerified: true,
+        coverDriveLink: coverDriveLink || undefined,
+        descriptionsDriveLink: descDriveLink || undefined,
+        message: "Video subido y verificado en Google Drive" + (coverDriveLink ? " con portada" : ""),
+      });
+    } else {
+      res.json({
+        success: false,
+        driveVerified: false,
+        backupLink: backupLink || undefined,
+        message: backupLink ? "Drive fallo - video guardado en respaldo" : "ERROR: Drive fallo y no se pudo guardar el video.",
+      });
+    }
+  } catch (error: any) {
+    console.error("[Studio] Finalize error:", error);
+    res.status(500).json({ error: error.message || "Error al subir el video" });
+  } finally {
+    const { unlink } = await import("fs/promises");
+    for (const f of allTempFiles) { await unlink(f).catch(() => {}); }
+  }
+});
+
+router.get("/studio/drive-structure", async (_req, res) => {
+  try {
+    const { listDriveStudioStructure } = await import("./google-drive");
+    const structure = await listDriveStudioStructure();
+    res.json(structure);
+  } catch (err: any) {
+    console.error("[Studio] Drive structure error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/studio/drive-folder/:folderId", async (req, res) => {
+  try {
+    const { listFilesInDriveFolder } = await import("./google-drive");
+    const files = await listFilesInDriveFolder(req.params.folderId);
+    res.json({ folderId: req.params.folderId, files });
+  } catch (err: any) {
+    console.error("[Studio] Drive list error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/studio/drive-file/:fileId", async (req, res) => {
+  try {
+    const { trashDriveFile } = await import("./google-drive");
+    const ok = await trashDriveFile(req.params.fileId);
+    res.json({ success: ok, fileId: req.params.fileId });
+  } catch (err: any) {
+    console.error("[Studio] Drive delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/studio/upload-video", (req, res, next) => {
+  studioVideoUpload.single("video")(req, res, (err: any) => {
+    if (err) {
+      console.error("[studio] Multer error (upload-video):", err.message, "| code:", err.code);
+      return res.status(400).json({ error: "Error al recibir el archivo de video" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const allTempFiles: string[] = [];
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "No se recibio ningun video" });
+      return;
+    }
+    const uploadedFilePath = (req.file as any).path as string;
+    allTempFiles.push(uploadedFilePath);
+    console.log(`[Studio] Received video: ${(req.file.size / 1024 / 1024).toFixed(1)}MB, mime=${req.file.mimetype}, name=${req.file.originalname}`);
+
+    const ideaId = req.body.ideaId ? parseInt(req.body.ideaId) : null;
+    let ideaTitle = req.body.ideaTitle || "Video sin titulo";
+    let ideaGuion = req.body.ideaGuion || "";
+
+    if (ideaId) {
+      const idea = await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1);
+      if (idea.length > 0) {
+        if (!req.body.ideaTitle) ideaTitle = idea[0].titulo;
+        ideaGuion = idea[0].guion;
+      }
+    }
+
+    const { exec: execCb } = await import("child_process");
+    const { promisify } = await import("util");
+    const execAsync = promisify(execCb);
+    const { stat: fsStat } = await import("fs/promises");
+
+    let hasFFmpeg = false;
+    try { await execAsync("ffmpeg -version", { timeout: 5000 }); hasFFmpeg = true; } catch {}
+
+    let finalVideoPath = uploadedFilePath;
+
+    if (hasFFmpeg) {
+      const ts = Date.now();
+      try {
+        const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
+        allTempFiles.push(outPath);
+        await execAsync(
+          `ffmpeg -y -fflags +genpts+igndts -i "${uploadedFilePath}" -vf "fps=60,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 60 -pix_fmt yuv420p -profile:v main -level 4.2 -vsync cfr -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+          { timeout: 180000 }
+        );
+        const outStats = await fsStat(outPath);
+        if (!outStats.size || outStats.size < 100) throw new Error("Processed video empty");
+        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB`);
+        finalVideoPath = outPath;
+      } catch (ffErr: any) {
+        console.warn(`[Studio] ffmpeg failed, uploading raw: ${ffErr.message}`);
+        finalVideoPath = uploadedFilePath;
+      }
+    }
+
+    const actualMimeType = finalVideoPath.endsWith(".webm") ? "video/webm" : "video/mp4";
+
+    let fileId = "";
+    let webViewLink = "";
+    let driveFolderId = "";
+    let driveVerified = false;
+    try {
+      const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
+      clearFolderCache();
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType);
+      fileId = driveResult.fileId;
+      webViewLink = driveResult.webViewLink;
+      driveFolderId = driveResult.driveFolderId;
+      driveVerified = driveResult.verified;
+      console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink}`);
+    } catch (driveErr: any) {
+      console.error(`[VideoUpload] Google Drive FAILED: ${driveErr.message}`);
+    }
+
+    if (ideaId && driveVerified) {
+      await db.update(videoIdeas).set({ recordedAt: new Date() }).where(eq(videoIdeas.id, ideaId));
+    }
+
+    let coverDriveLink = "";
+    if (driveVerified) {
+      try {
+        const ideaDesc = ideaId
+          ? (await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1))?.[0]?.descripcion || ideaTitle
+          : ideaTitle;
+        const { generateCoverImage } = await import("./cover-generator");
+        const coverResult = await generateCoverImage(ideaTitle, ideaDesc, true);
+        if (typeof coverResult !== "string") {
+          if (ideaId) {
+            await db.update(videoIdeas).set({ coverImageUrl: coverResult.servePath }).where(eq(videoIdeas.id, ideaId));
+          }
+          try {
+            const { uploadCoverToDriveFromBuffer } = await import("./google-drive");
+            const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, coverResult.mimeType, driveFolderId);
+            coverDriveLink = coverUpload.webViewLink;
+          } catch {}
+        }
+      } catch {}
+    }
+
+    if (driveVerified) {
+      res.json({
+        success: true,
+        fileId,
+        driveLink: webViewLink,
+        driveVerified: true,
+        coverDriveLink: coverDriveLink || undefined,
+        message: "Video subido y verificado en Google Drive",
+      });
+    } else {
+      res.json({
+        success: false,
+        driveVerified: false,
+        message: "ERROR: Drive fallo. Reconectar Google Drive.",
+      });
+    }
+  } catch (error: any) {
+    console.error("[Studio] Upload error:", error);
+    res.status(500).json({ error: error.message || "Error al subir el video" });
+  } finally {
+    const { unlink } = await import("fs/promises");
+    for (const f of allTempFiles) { await unlink(f).catch(() => {}); }
+  }
 });
 
 export default router;

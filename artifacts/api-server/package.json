@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^1.45.0",
     "@replit/connectors-sdk": "^0.3.0",
     "@types/multer": "^2.1.0",
     "@workspace/api-zod": "workspace:*",
@@ -22,7 +23,8 @@
     "googleapis": "^171.4.0",
     "multer": "^2.1.1",
     "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0"
+    "passport-google-oauth20": "^2.0.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

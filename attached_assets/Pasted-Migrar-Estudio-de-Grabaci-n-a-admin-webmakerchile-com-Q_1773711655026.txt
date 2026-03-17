@@ -1,0 +1,139 @@
+Migrar Estudio de Grabación a admin.webmakerchile.com
+QUÉ ES
+Un estudio de grabación completo dentro del panel admin que incluye:
+
+Teleprompter con velocidad ajustable, tamaño de fuente, progreso por secciones, y reconocimiento de voz (Web Speech API) para comandos: Play, Stop, Reset, Try out, Go to Drive
+Modo Cámara que combina la cámara del celular con el texto del teleprompter superpuesto, con cambio de cámara frontal/trasera, pinch-to-zoom
+Editor de Segmentos estilo CapCut para cortar, seleccionar y concatenar segmentos de video con procesamiento ffmpeg en el servidor
+Pipeline Auto-Edit que automáticamente: (1) transcribe con OpenAI Whisper, (2) recorta silencios al inicio/final, (3) agrega subtítulos con ffmpeg drawtext
+Generador de Portadas con Gemini AI que crea ilustraciones del zorro mascota + texto superpuesto con la fuente LuckiestGuy
+Descripciones para Redes generadas con Gemini (TikTok, Instagram, YouTube Shorts con emojis y hashtags)
+Subida a Google Drive organizada: Mes → Semana X → Día (Lunes-Domingo) → número (1-5 max por día)
+Ideas de Video con IA que genera ideas diarias por categoría con títulos, descripciones y guiones listos para teleprompter
+Notificación WhatsApp después de cada subida exitosa
+ARCHIVOS QUE NECESITAS
+Te adjunto un archivo studio-export.tar.gz que contiene TODOS los archivos fuente. Extráelos y adáptalos a tu proyecto:
+
+Frontend (React + Vite + TailwindCSS + Shadcn/UI):
+recording-studio.tsx → Página principal del estudio (2926 líneas) - va en pages/
+ai-video-ideas-tab.tsx → Tab de ideas de video con IA (749 líneas) - va en components/
+Backend (Express + TypeScript):
+studio-routes-extract.ts → Todas las rutas del estudio (1310 líneas) - integrar en tu routes.ts
+studio-multer-config.ts → Configuración de multer para uploads
+cover-generator.ts → Generador de portadas con Gemini + Sharp (435 líneas)
+google-drive.ts → Todo el manejo de Google Drive (663 líneas)
+scheduler.ts → Generador automático de ideas diarias (610 líneas)
+Assets:
+LuckiestGuy-Regular.ttf → Fuente para las portadas (va en public/fonts/)
+fox-reference.png → Imagen de referencia del zorro para Gemini (va en public/)
+Schema (Drizzle ORM + PostgreSQL):
+schema-video-ideas.ts → Tabla ai_video_ideas para la base de datos
+SCHEMA DE BASE DE DATOS
+Agregar esta tabla:
+
+export const aiVideoIdeas = pgTable("ai_video_ideas", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  titulo: text("titulo").notNull(),
+  descripcion: text("descripcion").notNull(),
+  guion: text("guion"),
+  categoria: text("categoria").notNull(),
+  hashtags: text("hashtags").array(),
+  portadaUrl: text("portada_url"),
+  grabado: integer("grabado").default(0),
+  guardado: integer("guardado").default(0),
+  aiGenerated: integer("ai_generated").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+DEPENDENCIAS NECESARIAS
+sharp
+@google/genai
+openai (para Whisper transcription)
+multer
+googleapis (para Google Drive)
+VARIABLES DE ENTORNO / SECRETOS NECESARIOS
+# Google Drive (OAuth o Service Account)
+GOOGLE_DRIVE_CREDENTIALS=... (credenciales de Google)
+# Gemini AI (para portadas e ideas)
+AI_INTEGRATIONS_GEMINI_API_KEY=tu_api_key
+AI_INTEGRATIONS_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+# OpenAI (para Whisper transcription en auto-edit)
+OPENAI_API_KEY=tu_api_key
+# WhatsApp notification (número)
+WHATSAPP_NUMBER=56953657460
+ESTRUCTURA DE GOOGLE DRIVE
+Carpeta raíz del estudio: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB El sistema crea automáticamente: Mes → Semana X → Día → slots (1-5) Cuando un día tiene 5 videos, pasa al siguiente día. Cuando el domingo está lleno, crea la siguiente semana.
+
+CALIDAD DE VIDEO (CRÍTICO)
+Todos los videos procesados con ffmpeg deben usar:
+
+60fps, CRF 18, H.264 Main profile Level 4.2
+GOP 60, constant frame rate (cfr), yuv420p
+CapCut-compatible
+Preset: fast
+REGLAS DEL GUION (CRÍTICO)
+Los guiones generados por IA para el teleprompter deben ser TEXTO PURO para leer frente a cámara:
+
+SIN corchetes [así]
+SIN paréntesis (así)
+SIN timestamps
+SIN indicaciones de cámara
+Solo texto natural hablado
+PORTADAS - REGLAS DE DISEÑO
+Nombre del archivo: {número}_{timestamp}.png (ej: 66_1773639245792.png)
+Estructura visual (1080x1920):
+Zona de texto: 60px a 630px desde arriba (570px de alto)
+Zona limpia: 0 a 670px cubierta con amarillo sólido #FFB800 antes de componer texto
+Ilustración del zorro: 65% inferior
+Texto sobre la portada:
+Fuente: LuckiestGuy-Regular.ttf
+Color: Blanco puro, SIN stroke/borde negro
+Sombra: Naranja #E86A30, offset 4-5px, opacity 85%
+Máximo 13 caracteres por línea
+Tamaños: 2 líneas=115px, 3=100px, 4=85px, 5=72px
+Texto siempre en MAYÚSCULAS
+Categorías de escenas (el zorro cambia según el tema):
+peligro/error/perder → Zorro preocupado
+tienda/venta/commerce → Zorro con carrito de compras
+chat/bot/whatsapp → Zorro con robot
+web/landing/sitio → Zorro con monitor
+marketing/publicidad → Zorro con megáfono
+automatización → Zorro relajado con engranajes
+IA/inteligencia → Zorro con cerebro digital
+negocio/crecer → Zorro superhéroe
+app/móvil → Zorro con smartphone
+contabilidad → Zorro contador
+agenda/calendario → Zorro con calendario
+FLUJO COMPLETO DEL ESTUDIO
+El usuario abre /admin/studio
+Ve las ideas de video generadas por IA (o crea una propia)
+Selecciona una idea → el guion aparece en el teleprompter
+Abre modo cámara → graba el video mientras lee
+Puede grabar múltiples segmentos y editarlos (cortar, reordenar)
+Al finalizar, dice "Go to Drive" o presiona el botón de subir
+El sistema: a. Concatena los segmentos con ffmpeg b. (Opcional) Auto-edit: transcribe → recorta silencios → agrega subtítulos c. Sube el video a Google Drive en la carpeta correcta d. Genera portada con Gemini + Sharp y la sube a Drive e. Genera descripciones para redes y las sube a Drive f. Envía notificación por WhatsApp con el link
+FASE 2: SUBIDA AUTOMÁTICA A REDES SOCIALES
+Después de subir a Drive, publicar automáticamente en:
+
+TikTok (Content Posting API - client key: awh40q6nqzbcnqfq)
+Instagram Reels (Instagram Graph API)
+YouTube Shorts (YouTube Data API v3)
+Usar las descripciones y portadas ya generadas.
+
+RUTAS DEL API
+GET    /api/admin/ai-video-ideas              → Lista ideas
+POST   /api/admin/ai-video-ideas/generate     → Genera nuevas ideas con IA
+PATCH  /api/admin/ai-video-ideas/:id/save     → Guardar idea
+PATCH  /api/admin/ai-video-ideas/:id/unsave   → Desguardar idea
+DELETE /api/admin/ai-video-ideas/:id           → Eliminar idea
+DELETE /api/admin/ai-video-ideas              → Eliminar varias (bulk)
+PATCH  /api/admin/ai-video-ideas/:id/record   → Marcar como grabada
+PATCH  /api/admin/ai-video-ideas/:id/unrecord → Desmarcar grabada
+POST   /api/admin/ai-video-ideas/:id/generate-cover → Generar portada
+POST   /api/admin/studio/temp-preview         → Preview temporal de video
+DELETE /api/admin/studio/temp-preview/:file    → Eliminar preview
+POST   /api/admin/studio/upload-chunk         → Subir chunk de video
+POST   /api/admin/studio/finalize-upload      → Finalizar y procesar video
+POST   /api/admin/studio/upload-video         → Subir video completo
+GET    /api/admin/studio/drive-structure      → Ver estructura de Drive
+GET    /api/admin/studio/drive-folder/:id     → Ver archivos en carpeta
+DELETE /api/admin/studio/drive-file/:id       → Eliminar archivo de Drive

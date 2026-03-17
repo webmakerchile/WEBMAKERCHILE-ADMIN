@@ -48,13 +48,19 @@ artifacts-monorepo/
 - **Video Manager**: Guided step-by-step wizard for the editor to complete each video without leaving the page. Steps: Basic Info → Cover (AI generation) → TikTok & Instagram descriptions → YouTube title & description → Review & Schedule to all 3 platforms. Each video shows progress percentage. DB includes per-platform status fields (tiktokStatus, instagramStatus, youtubeStatus) ready for API integration. Step 1 includes Drive file picker modal to select video files directly from Google Drive (browsable with folder navigation).
 - **Cover Generator**: AI-powered cover image generation using Gemini with reference images
 - **Google Drive Browser**: Browse and manage files in connected Google Drive folder
-- **Estudio de Trabajo (Recording Studio)**: Full video content creation workspace
+- **Estudio de Trabajo (Recording Studio)**: Full video content creation workspace (migrated from webmakerchile.com)
   - AI idea generation by category (Corto Viral, Problema/Solución, Marketing, Historia, Educativo, Behind the Scenes, Opinión, Pack del Día)
-  - Video ideas queue with filtering, marking as recorded, bulk operations
-  - Auto-creates video in Gestor de Videos when marking ideas as recorded, with automatic AI cover generation using reference image
-  - Teleprompter with speed control, mirror mode, fullscreen, font size adjustment
+  - Video ideas queue with filtering, saving, marking as recorded, bulk operations, batch date grouping
+  - AI cover image generation using Gemini 2.5-flash-image with fox mascot reference (fox-reference.png)
+  - Cover images saved locally to public/uploads/covers/ (served at /uploads/covers/)
+  - Teleprompter with speed control, mirror mode, fullscreen, font size adjustment, voice recognition
   - Camera recording with pause/resume, camera switching, mirror, timer, video preview/download
+  - Chunked video upload with ffmpeg CFR pipeline (finalize-upload)
+  - Google Drive upload with year/month/week/day folder structure (max 5 videos/day)
   - Recording stats dashboard
+  - Backend routes at /api/studio/* (ideas CRUD, generate, cover gen, recording stats, upload, Drive ops)
+  - Frontend: studio.tsx (recording studio page) + ai-video-ideas-tab.tsx (ideas management component)
+  - Uses inline apiFetch (fetch with credentials: "include") instead of apiRequest
 - **Schedule Manager**: Schedule videos for automatic publishing to Google Drive
 
 ### Integrations

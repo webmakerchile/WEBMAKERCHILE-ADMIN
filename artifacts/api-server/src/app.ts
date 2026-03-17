@@ -2,10 +2,13 @@ import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import session from "express-session";
+import path from "path";
 import router from "./routes";
 import authRouter, { passport, requireAuth } from "./routes/auth";
 
 const app: Express = express();
+
+app.use("/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
 
 app.use(cors({
   origin: true,
