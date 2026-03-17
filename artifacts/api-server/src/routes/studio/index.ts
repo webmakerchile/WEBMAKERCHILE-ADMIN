@@ -87,19 +87,28 @@ REGLAS UNIVERSALES:
 4. Hashtags: mezclar tendencias + nicho + #WebMakerChile siempre.
 5. CTA suave: "+56 9 5365 7460" o "webmakerchile.com".`;
 
-    const GUION_RULES = `REGLA CRITICA PARA EL GUION:
-El guion debe ser TEXTO LISTO PARA LEER frente a camara. Como un teleprompter.
-- SIN corchetes [asi]. PROHIBIDO.
-- SIN parentesis con indicaciones (asi). PROHIBIDO.
-- SIN "Indicacion visual", SIN "tono de voz", SIN "close-up", SIN "camara frontal". NADA de meta-instrucciones.
-- SIN timestamps como "(0:00-0:03)" ni "INTRO:" "DESARROLLO:" "CIERRE:". PROHIBIDO.
-- SOLO el texto que voy a DECIR en voz alta, separado por saltos de linea.
-- Frases CORTAS y DIRECTAS. Una oracion por linea. Sin relleno.
-- Que suene como una persona hablando natural, no como un robot leyendo instrucciones.
-- Terminar siempre con CTA: "Escribenos al +56 9 5365 7460" o "Visita webmakerchile.com"
+    const GUION_RULES = `REGLAS DEL GUION (CRITICO - CUMPLIR AL 100%):
+El guion es TEXTO PURO para leer frente a camara. El creador LEE TODO DE CORRIDO frente a la camara.
+El guion debe fluir como una conversacion natural, SIN separaciones ni secciones.
+
+PROHIBIDO (NUNCA incluir esto en un guion):
+- SIN corchetes [asi] → PROHIBIDO
+- SIN parentesis con indicaciones (asi) → PROHIBIDO
+- SIN "Indicacion visual", "tono de voz", "close-up", "camara frontal" → NADA de meta-instrucciones
+- SIN timestamps como "(0:00-0:03)" → PROHIBIDO
+- SIN secciones como "INTRO:" "DESARROLLO:" "CIERRE:" → PROHIBIDO
+- SIN saltos de seccion ni divisiones → TODO CORRIDO
+- SIN asteriscos ** ni caracteres decorativos
+
+ESTILO OBLIGATORIO:
+- Frases CORTAS y DIRECTAS. Una oracion por linea.
+- Que suene como una persona hablando natural, NO como un robot leyendo instrucciones.
+- Ganchos POTENTES en los primeros 2 segundos: "Sabias que...", "El error del 90% de...", "POV: tienes un negocio y...", dato estadistico impactante.
+- Siempre terminar con CTA: "Escribenos al +56 9 5365 7460" o "Visita webmakerchile.com"
+- El texto se lee TODO DE CORRIDO, de principio a fin, sin pausas artificiales ni secciones.
 
 EJEMPLO CORRECTO:
-"Sabes cuantos clientes pierdes por no responder a tiempo?\\n\\nEl 78% de la gente compra al primero que le responde.\\n\\nSi tardas 2 horas en contestar un WhatsApp, tu competencia ya cerro esa venta.\\n\\nLa solucion? Un chatbot con inteligencia artificial que responde en 3 segundos. Las 24 horas. Los 7 dias.\\n\\nSin contratar a nadie. Sin pagar sueldos.\\n\\nAutomatiza tu atencion y deja de perder ventas.\\n\\nEscribenos al +56 9 5365 7460"
+"Sabes cuantos clientes pierdes por no responder a tiempo?\\nEl 78% de la gente compra al primero que le responde.\\nSi tardas 2 horas en contestar un WhatsApp, tu competencia ya cerro esa venta.\\nLa solucion? Un chatbot con inteligencia artificial que responde en 3 segundos. Las 24 horas. Los 7 dias.\\nSin contratar a nadie. Sin pagar sueldos.\\nAutomatiza tu atencion y deja de perder ventas.\\nEscribenos al +56 9 5365 7460"
 
 EJEMPLO INCORRECTO (NUNCA hacer esto):
 "INTRO (0:00-0:03):\\n[Camara frontal, tono energico]\\nHook directo.\\n(pausa dramatica)\\nDESARROLLO (0:03-0:25):\\n[Mostrar pantalla]\\nExplicar beneficios..."`;
@@ -204,7 +213,7 @@ RESPONDE SOLO EN JSON valido:
     {
       "titulo": "Titulo CORTO y directo (5-7 palabras max, sin emojis)",
       "descripcion": "Tendencia actual que respalda esta idea y por que funcionaria (2-3 lineas)",
-      "guion": "Texto completo listo para leer frente a camara. SIN corchetes, SIN parentesis, SIN timestamps. Solo lo que voy a DECIR.",
+      "guion": "TEXTO PURO para leer de corrido frente a camara. SIN corchetes, SIN parentesis, SIN timestamps, SIN secciones. Solo frases cortas que voy a DECIR en voz alta, separadas por salto de linea.",
       "plataforma": "TikTok|Instagram Reels|YouTube Shorts|YouTube|LinkedIn",
       "tendencia": "Tendencia especifica de 2025/2026 que respalda esta idea",
       "duracionSugerida": "${config.duration}",
@@ -250,7 +259,7 @@ RESPONDE SOLO EN JSON valido:
     {
       "titulo": "Titulo",
       "descripcion": "Descripcion",
-      "guion": "Guion listo para teleprompter",
+      "guion": "TEXTO PURO para leer de corrido frente a camara. SIN corchetes, SIN parentesis, SIN timestamps, SIN secciones. Solo frases cortas separadas por salto de linea.",
       "plataforma": "TikTok|Instagram Reels|YouTube Shorts|YouTube|LinkedIn",
       "tendencia": "Tendencia",
       "duracionSugerida": "XX-XX segundos",
