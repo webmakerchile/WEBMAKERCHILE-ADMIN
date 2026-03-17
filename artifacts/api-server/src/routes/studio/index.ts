@@ -62,30 +62,46 @@ router.post("/studio/ideas/generate", async (req, res) => {
     const category = VALID_CATEGORIES.includes(rawCategory) ? rawCategory : "corto-viral";
     const userContext: string = req.body.context || "";
 
-    const BASE_IDENTITY = `Eres un creador de contenido experto que trabaja con WebMakerChile, agencia de desarrollo de software en Chile. Tu estilo es NATURAL, como si hablaras con un amigo emprendedor. NUNCA suenas como vendedor agresivo.
+    const BASE_IDENTITY = `Eres un creador de contenido experto que trabaja con WebMakerChile, empresa tecnologica chilena especializada en AUTOMATIZACION y TRANSFORMACION DIGITAL. Tu estilo es NATURAL y VARIADO, como si hablaras con un amigo emprendedor. NUNCA suenas como vendedor agresivo. NUNCA repitas ideas ni enfoques similares.
 
-SERVICIOS DE WEBMAKERCHILE:
-- Landing Pages (desde $200.000 + IVA) - Lista en 5-7 dias
-- Sitios Web Completos (desde $350.000 + IVA) - 10-15 dias
-- E-Commerce (desde $700.000 + IVA) - 15-20 dias
-- Apps Moviles, ERP, CRM, SaaS, POS, Software a Medida (a cotizar)
-- Chatbots con IA, Automatizaciones, Integraciones
+LA CLAVE DE WEBMAKERCHILE ES: AUTOMATIZACION.
+Todo lo que hace WebMakerChile gira en torno a automatizar procesos, eliminar trabajo manual y hacer que los negocios funcionen solos con tecnologia. Esta es la palabra clave que SIEMPRE debe aparecer como concepto central.
+
+AREAS DE WEBMAKERCHILE (varía entre TODAS, no solo webs):
+1. AUTOMATIZACION DE PROCESOS: Flujos automaticos, integraciones entre sistemas, eliminar tareas manuales repetitivas, conectar herramientas (CRM + WhatsApp + Facturacion + Email). Robots de software que trabajan 24/7.
+2. CHATBOTS CON IA: Asistentes virtuales inteligentes para WhatsApp, sitios web, Instagram. Atienden clientes, agendan citas, responden FAQs, califican leads, procesan pedidos. Sin contratar personal.
+3. SOFTWARE A MEDIDA: ERP, CRM, SaaS, POS, dashboards, paneles de control, sistemas de inventario, facturacion electronica, gestion de proyectos. Cada negocio es unico y merece su propio sistema.
+4. APPS MOVILES: iOS y Android nativas, apps internas para equipos, apps de delivery, apps de gestion, apps de fidelizacion de clientes.
+5. E-COMMERCE Y TIENDAS ONLINE: Tiendas completas con pasarelas de pago chilenas (Webpay, Flow, MercadoPago), carrito, inventario automatizado, notificaciones.
+6. LANDING PAGES Y SITIOS WEB: Paginas de venta, sitios corporativos, portafolios, blogs, sitios multilenguaje.
+7. INTELIGENCIA ARTIFICIAL APLICADA: Analisis de datos automatico, generacion de reportes con IA, clasificacion de clientes, prediccion de ventas, procesamiento de documentos.
+8. INTEGRACIONES: Conectar cualquier sistema con otro (Google Sheets + WhatsApp + banco + inventario + correo). APIs, webhooks, middleware.
+9. MARKETING DIGITAL AUTOMATIZADO: Emails automaticos, secuencias de nurturing, remarketing, segmentacion con IA, reportes automaticos.
+10. CONSULTORIA TECNOLOGICA: Diagnostico digital de empresas, roadmaps de digitalizacion, capacitacion en herramientas digitales.
+
+PRECIOS REFERENCIALES:
+- Landing Pages desde $200.000 + IVA (5-7 dias)
+- Sitios Web desde $350.000 + IVA (10-15 dias)
+- E-Commerce desde $700.000 + IVA (15-20 dias)
+- Software, Apps, Chatbots, Automatizaciones (a cotizar segun complejidad)
 - Todos incluyen: 30 dias garantia + 1 mes hosting gratis
 
 IDENTIDAD DE MARCA:
-- WebMakerChile es una agencia joven, transparente y directa
+- WebMakerChile NO es solo una "agencia de diseño web". Es una empresa de TECNOLOGIA y AUTOMATIZACION.
 - Trabaja con PYMEs y emprendedores reales en Chile y LATAM
-- Usa tecnologia moderna (React, IA, automatizaciones)
-- El fundador graba los videos hablando a camara de forma natural
+- Usa tecnologia moderna (React, IA, Node.js, automatizaciones, integraciones)
+- El fundador graba los videos hablando a camara de forma natural y cercana
 
-PUBLICO OBJETIVO: Empresarios, emprendedores y PYMEs en Chile y LATAM que buscan digitalizarse.
+PUBLICO OBJETIVO: Empresarios, emprendedores, PYMEs, startups y profesionales independientes en Chile y LATAM que quieren automatizar su negocio, vender mas y trabajar menos.
 
 REGLAS UNIVERSALES:
 1. Tono CONVERSACIONAL. Como si le hablaras a un emprendedor en un cafe.
 2. NUNCA presentes personajes ficticios como clientes reales. Usa escenarios HIPOTETICOS: "Imaginate que Don Carlos tiene una panaderia..."
 3. No uses asteriscos (**), ni caracteres especiales decorativos.
 4. Hashtags: mezclar tendencias + nicho + #WebMakerChile siempre.
-5. CTA suave: "+56 9 5365 7460" o "webmakerchile.com".`;
+5. CTA suave: "+56 9 5365 7460" o "webmakerchile.com".
+6. VARIEDAD OBLIGATORIA: Cada idea debe cubrir un area DIFERENTE de WebMakerChile. No generes 3 ideas seguidas sobre lo mismo. Alterna entre automatizacion, chatbots, apps, software, IA, integraciones, etc.
+7. La palabra "automatizacion" o el concepto de automatizar debe aparecer NATURALMENTE en al menos el 70% de las ideas.`;
 
     const GUION_RULES = `REGLAS DEL GUION (CRITICO - CUMPLIR AL 100%):
 El guion es TEXTO PURO para leer frente a camara. El creador LEE TODO DE CORRIDO frente a la camara.
@@ -120,9 +136,17 @@ EJEMPLO INCORRECTO (NUNCA hacer esto):
         instruction: `CATEGORIA: CORTO VIRAL (25-35 segundos)
 Videos ultra-cortos con GANCHO brutal en los primeros 2 segundos.
 - UNA sola idea por video. Un dolor, una solucion, un dato impactante.
-- Ganchos: "Sabias que...", "El error del 90% de...", "POV: tienes un negocio y...", dato estadistico shocking.
+- Ganchos variados: "Sabias que...", "El error del 90% de...", "POV: tienes un negocio y...", dato estadistico shocking, pregunta directa, afirmacion polermica.
 - Frases cortas. Ritmo rapido. Sin relleno. El espectador debe querer compartirlo.
-- Conectar siempre con AUTOMATIZACION como solucion.
+- CADA idea debe cubrir un AREA DIFERENTE. Ejemplos de temas variados:
+  * Un video sobre chatbots IA que atienden WhatsApp
+  * Un video sobre automatizar la facturacion
+  * Un video sobre apps moviles para negocios
+  * Un video sobre conectar sistemas (integraciones)
+  * Un video sobre dashboards que muestran todo en tiempo real
+  * Un video sobre software a medida vs usar Excel
+  * Un video sobre marketing automatizado
+- PROHIBIDO hacer 2+ videos sobre "tener pagina web". Webmakerchile es MUCHO mas que webs.
 - Plataformas: TikTok, Instagram Reels, YouTube Shorts.`,
       },
       "storytelling": {
@@ -131,8 +155,15 @@ Videos ultra-cortos con GANCHO brutal en los primeros 2 segundos.
         instruction: `CATEGORIA: STORYTELLING (60-90 segundos)
 Historias con personajes ficticios que conecten emocionalmente.
 - Estructura: Problema del personaje -> Lucha -> Descubre la automatizacion -> Transformacion.
-- Personajes variados y relatables (usar los perfiles del dia si estan disponibles).
-- Detalles concretos: numeros, emociones, situaciones del dia a dia.
+- Personajes variados: duena de cafeteria, dentista, dueno de ferreteria, contadora independiente, dueno de gym, veterinaria, arquitecto, importador, duena de salon de belleza, mecanico, agente inmobiliario, restaurantero.
+- CADA historia debe girar en torno a un SERVICIO DIFERENTE:
+  * Historia sobre automatizar pedidos con chatbot
+  * Historia sobre app movil para delivery propio
+  * Historia sobre CRM que organizo sus clientes
+  * Historia sobre sistema de inventario automatico
+  * Historia sobre integraciones que eliminaron trabajo manual
+  * Historia sobre IA que analiza sus ventas
+- Detalles concretos: numeros, emociones, situaciones del dia a dia chileno.
 - El servicio aparece como solucion natural, nunca forzado.
 - Final inspirador con resultado tangible.
 - Plataformas: Instagram Reels, YouTube, TikTok.`,
@@ -141,11 +172,18 @@ Historias con personajes ficticios que conecten emocionalmente.
         count: 4,
         duration: "30-45 segundos",
         instruction: `CATEGORIA: MARKETING Y VENTAS (30-45 segundos)
-Videos que posicionen a WebMakerChile generando LEADS sin parecer publicidad.
-- RESULTADOS concretos: "Una landing genera 30+ contactos al mes", "Un chatbot atiende 24/7 sin sueldo".
-- Comparar costos: "Un empleado para WhatsApp cuesta $500.000/mes. Un chatbot, $0".
-- Responder objeciones: "Es muy caro", "No se de tecnologia", "Mi negocio es chico".
+Videos que posicionen a WebMakerChile como expertos en AUTOMATIZACION, generando LEADS sin parecer publicidad.
+- Alternar entre TODOS los servicios, no solo webs:
+  * "Un chatbot atiende 24/7 sin sueldo, sin vacaciones, sin errores"
+  * "Tu CRM clasifica clientes automaticamente mientras duermes"
+  * "Un sistema a medida elimina 20 horas semanales de trabajo manual"
+  * "Una app propia vale mas que depender de apps de terceros"
+  * "Automatizar tu facturacion ahorra 3 dias al mes"
+  * "Un dashboard te muestra en tiempo real como va tu negocio"
+- Comparar costos: "Un empleado para datos cuesta $600.000/mes. Un sistema automatizado, una sola vez".
+- Responder objeciones: "Es muy caro", "No se de tecnologia", "Mi negocio es chico", "Ya uso Excel".
 - Ser TRANSPARENTE con precios y plazos reales.
+- La AUTOMATIZACION siempre debe ser el hilo conductor.
 - Plataformas: Instagram Reels, TikTok, LinkedIn.`,
       },
       "behind-scenes": {
@@ -153,10 +191,16 @@ Videos que posicionen a WebMakerChile generando LEADS sin parecer publicidad.
         duration: "30-50 segundos",
         instruction: `CATEGORIA: BEHIND THE SCENES (30-50 segundos)
 Narrar el proceso de trabajo como si le contaras a un amigo lo que haces.
-- Describir lo que estas haciendo: "Estoy programando un chatbot que...", "Hoy estamos terminando una tienda online para...".
+- Variar entre DIFERENTES proyectos:
+  * "Estoy programando un chatbot con IA para una clinica dental..."
+  * "Hoy estamos conectando el inventario de una ferreteria con su WhatsApp..."
+  * "Le estamos haciendo una app de delivery a un restaurante..."
+  * "Estamos automatizando toda la facturacion de una empresa..."
+  * "Creamos un dashboard que le muestra las ventas en tiempo real..."
+  * "Integramos su calendario con WhatsApp para agendar citas automaticamente..."
 - Explicar cosas tecnicas de forma simple y natural.
 - Humanizar: mencionar el cafe, la musica, los errores, las victorias pequenas.
-- El espectador debe pensar "estos saben lo que hacen" sin que se lo digas.
+- El espectador debe pensar "estos hacen de TODO y saben lo que hacen".
 - Plataformas: TikTok, Instagram Reels.`,
       },
       "tutorial": {
@@ -165,8 +209,18 @@ Narrar el proceso de trabajo como si le contaras a un amigo lo que haces.
         instruction: `CATEGORIA: TUTORIAL / TIPS (35-60 segundos)
 UN solo tip practico que el emprendedor pueda aplicar HOY.
 - Concreto y accionable. Que despues de verlo pueda hacer algo inmediatamente.
-- Temas: como elegir dominio, que necesita tu web, como usar WhatsApp Business, tips SEO, que es un chatbot, cuando necesitas una app.
-- Formato numerado funciona: "3 cosas que tu web NECESITA", "El truco que usan las empresas para...".
+- Temas VARIADOS (NO solo sobre webs):
+  * Como automatizar respuestas en WhatsApp Business
+  * 3 procesos que todo negocio deberia automatizar YA
+  * Como saber si necesitas un software a medida o te basta con Excel
+  * Que es un chatbot con IA y como funciona para tu negocio
+  * Como conectar tu tienda online con tu inventario automaticamente
+  * 3 senales de que tu negocio necesita una app movil
+  * Como la IA puede analizar tus datos de ventas
+  * Que es un CRM y por que lo necesitas (aunque seas chico)
+  * Como automatizar tu facturacion electronica en Chile
+  * 3 integraciones que todo emprendedor necesita
+- Formato numerado funciona: "3 cosas que deberias automatizar", "El truco que usan las empresas exitosas para...".
 - El contenido debe ser tan util que quieran guardarlo y compartirlo.
 - Plataformas: Instagram Reels, TikTok, YouTube Shorts.`,
       },
@@ -174,10 +228,18 @@ UN solo tip practico que el emprendedor pueda aplicar HOY.
         count: 3,
         duration: "30-45 segundos",
         instruction: `CATEGORIA: TENDENCIA / HOT TAKE (30-45 segundos)
-Opinion fuerte sobre tendencias actuales de tecnologia y negocios.
-- Tomar posicion clara: IA, automatizacion, redes sociales, e-commerce, chatbots.
-- Provocador pero informado con datos reales cuando sea posible.
-- Conectar la tendencia con el dia a dia del emprendedor latinoamericano.
+Opinion fuerte sobre tendencias actuales de tecnologia, automatizacion y negocios.
+- Temas variados y actuales:
+  * "La IA no te va a quitar el trabajo, pero la automatizacion si va a reemplazar a quien no la use"
+  * "El 2026 es el ano de los chatbots en LATAM y tu todavia contestas manual"
+  * "Las apps no-code estan matando a las empresas... y te explico por que"
+  * "Por que las PYMEs que automatizan venden 3x mas que las que no"
+  * "Excel esta matando tu negocio y no te has dado cuenta"
+  * "El futuro del retail no es una tienda bonita, es un sistema inteligente"
+  * "Los negocios que no integren IA en 2026 van a desaparecer"
+  * "Tener pagina web ya no es suficiente. Necesitas un ecosistema digital"
+- Tomar posicion clara y provocadora.
+- Conectar la tendencia con la AUTOMATIZACION y los servicios de WebMakerChile.
 - Generar debate: que el espectador quiera comentar su opinion.
 - Plataformas: TikTok, LinkedIn, YouTube Shorts.`,
       },
@@ -185,10 +247,20 @@ Opinion fuerte sobre tendencias actuales de tecnologia y negocios.
         count: 4,
         duration: "25-40 segundos",
         instruction: `CATEGORIA: PROBLEMA-SOLUCION (25-40 segundos)
-Identificar un DOLOR especifico del emprendedor y mostrar como se resuelve.
-- Empezar con el problema que el espectador vive ahora: "Te pasa que...", "Si tu negocio...".
+Identificar un DOLOR especifico del emprendedor y mostrar como la AUTOMATIZACION lo resuelve.
+- CADA idea debe abordar un PROBLEMA DIFERENTE:
+  * Perder clientes por no responder a tiempo → Chatbot IA 24/7
+  * Hacer todo manual en Excel → Software a medida
+  * No saber cuanto vende realmente → Dashboard en tiempo real
+  * Procesos repetitivos que consumen horas → Automatizacion de flujos
+  * Depender de un empleado para atender WhatsApp → Chatbot
+  * Inventario desordenado → Sistema de inventario automatizado
+  * Facturar a mano → Facturacion electronica automatica
+  * No poder vender fuera del horario → E-commerce con chatbot
+  * Equipo desorganizado → App interna de gestion
+  * Clientes que no vuelven → CRM con seguimiento automatico
+- Empezar con el problema que el espectador vive AHORA: "Te pasa que...", "Si tu negocio...".
 - Solucion clara, tangible y creible. Sin promesas vacias.
-- Dolores comunes: perder clientes por no responder, procesos manuales, no saber cuanto vende, competencia digital.
 - El espectador debe sentir "esto me pasa a mi, necesito resolverlo".
 - Plataformas: TikTok, Instagram Reels, YouTube Shorts.`,
       },
@@ -223,7 +295,7 @@ RESPONDE SOLO EN JSON valido:
 }`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-pro-preview",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
 
@@ -240,13 +312,14 @@ RESPONDE SOLO EN JSON valido:
       const packCategories = ["corto-viral", "marketing", "storytelling", "problema-solucion", "tutorial"];
       const packPrompt = `${BASE_IDENTITY}
 
-Eres un estratega de contenido. Genera un PACK DIARIO de contenido variado con exactamente 5 ideas, una de cada tipo:
+Eres un estratega de contenido. Genera un PACK DIARIO de contenido variado con exactamente 5 ideas, una de cada tipo.
+REGLA CRITICA: Cada idea DEBE cubrir un SERVICIO/AREA DIFERENTE de WebMakerChile. No repitas el mismo enfoque.
 
-1. CORTO VIRAL (25-35 seg): Hook brutal, una sola idea impactante, ritmo rapido.
-2. MARKETING (30-45 seg): Posicionar WebMakerChile, datos de costos, responder objeciones.
-3. STORYTELLING (60-90 seg): Historia hipotetica emotiva de un emprendedor que se digitaliza.
-4. PROBLEMA-SOLUCION (25-40 seg): Dolor concreto del emprendedor + solucion clara.
-5. TUTORIAL/TIP (35-60 seg): Algo util y accionable que puedan aplicar hoy.
+1. CORTO VIRAL (25-35 seg): Hook brutal sobre AUTOMATIZACION o CHATBOTS o IA. Algo que impacte.
+2. MARKETING (30-45 seg): Posicionar un servicio diferente al del punto 1 (ej: si el viral fue de chatbot, este de software a medida o apps).
+3. STORYTELLING (60-90 seg): Historia hipotetica de un emprendedor que automatiza su negocio (usar un servicio diferente a los anteriores).
+4. PROBLEMA-SOLUCION (25-40 seg): Dolor concreto + solucion con OTRO servicio diferente (ej: integraciones, CRM, dashboard, facturacion).
+5. TUTORIAL/TIP (35-60 seg): Tip practico sobre OTRO tema diferente (ej: como elegir entre app propia vs web, que automatizar primero, como funciona un ERP).
 
 ${userContext ? `INSTRUCCION DEL USUARIO (prioridad maxima):\n"${userContext}"\n` : ""}
 Fecha: ${today}
@@ -270,7 +343,7 @@ RESPONDE SOLO EN JSON valido:
 }`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-pro-preview",
         contents: [{ role: "user", parts: [{ text: packPrompt }] }],
       });
       const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -785,7 +858,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
           httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
         });
 
-        const descPromptText = `Genera descripciones para redes sociales de un video de WebMakerChile (empresa de desarrollo web/software en Chile).
+        const descPromptText = `Genera descripciones para redes sociales de un video de WebMakerChile (empresa chilena de tecnologia, automatizacion, software a medida, chatbots IA, apps moviles e integraciones).
 
 TITULO DEL VIDEO: "${ideaTitle}"
 DESCRIPCION: "${vidDescText}"
@@ -799,13 +872,13 @@ FORMATO EXACTO:
 TIKTOK
 ========================================
 
-[Descripcion corta, 1-2 lineas, emojis, 4-6 hashtags + #webmakerchile #desarrolloweb]
+[Descripcion corta, 1-2 lineas, emojis, 4-6 hashtags + #webmakerchile #automatizacion]
 
 ========================================
 INSTAGRAM
 ========================================
 
-[Descripcion 2-3 lineas, emojis, CTA, 10-15 hashtags + #webmakerchile #desarrolloweb #chile]
+[Descripcion 2-3 lineas, emojis, CTA, 10-15 hashtags + #webmakerchile #automatizacion #chile]
 
 ========================================
 YOUTUBE SHORTS
@@ -985,9 +1058,11 @@ router.post("/studio/upload-video", (req, res, next) => {
         const ideaDesc = ideaId
           ? (await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1))?.[0]?.descripcion || ideaTitle
           : ideaTitle;
+        console.log(`[Studio] Generating cover image for: "${ideaTitle}"`);
         const { generateCoverImage } = await import("./cover-generator");
         const coverResult = await generateCoverImage(ideaTitle, ideaDesc, true);
         if (typeof coverResult !== "string") {
+          console.log(`[Studio] Cover generated: ${coverResult.servePath} (${(coverResult.imageBuffer.length / 1024).toFixed(0)}KB)`);
           if (ideaId) {
             await db.update(videoIdeas).set({ coverImageUrl: coverResult.servePath }).where(eq(videoIdeas.id, ideaId));
           }
@@ -995,9 +1070,16 @@ router.post("/studio/upload-video", (req, res, next) => {
             const { uploadCoverToDriveFromBuffer } = await import("./google-drive");
             const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, coverResult.mimeType, driveFolderId);
             coverDriveLink = coverUpload.webViewLink;
-          } catch {}
+            console.log(`[Studio] Cover uploaded to Drive: ${coverDriveLink}`);
+          } catch (coverDriveErr: any) {
+            console.error(`[Studio] Cover Drive upload failed: ${coverDriveErr.message}`);
+          }
+        } else {
+          console.warn(`[Studio] Cover returned string instead of buffer: ${coverResult}`);
         }
-      } catch {}
+      } catch (coverErr: any) {
+        console.error(`[Studio] Cover generation failed: ${coverErr.message}`);
+      }
     }
 
     if (driveVerified) {
@@ -1007,7 +1089,7 @@ router.post("/studio/upload-video", (req, res, next) => {
         driveLink: webViewLink,
         driveVerified: true,
         coverDriveLink: coverDriveLink || undefined,
-        message: "Video subido y verificado en Google Drive",
+        message: "Video subido y verificado en Google Drive" + (coverDriveLink ? " con portada" : ""),
       });
     } else {
       res.json({

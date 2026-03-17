@@ -315,7 +315,7 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
       },
     ],
     config: {
-      responseModalities: [Modality.IMAGE],
+      responseModalities: [Modality.TEXT, Modality.IMAGE],
     },
   });
 

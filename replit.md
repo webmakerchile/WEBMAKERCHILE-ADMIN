@@ -15,7 +15,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **AI**: Gemini AI via Replit AI Integrations (gemini-2.5-flash for chat, gemini-3-pro-image-preview for image generation)
+- **AI**: Gemini AI via Replit AI Integrations (gemini-3.1-pro-preview for idea generation, gemini-2.5-flash for descriptions/chat, gemini-3-pro-image-preview for image generation)
 - **Authentication**: Google OAuth 2.0 (Passport.js + express-session)
 - **Google Drive**: Replit Connectors SDK (@replit/connectors-sdk)
 
