@@ -476,30 +476,38 @@ function VideoWizard({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Volver al listado
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-display font-bold">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
+            <ArrowLeft className="w-4 h-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Volver al listado</span>
+            <span className="sm:hidden">Volver</span>
+          </Button>
+          {video && (
+            <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 sm:hidden shrink-0 ml-auto">
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg sm:text-2xl font-display font-bold truncate">
             {isCreating ? "Nuevo Video" : video?.title}
           </h1>
           {video && (
-            <p className="text-sm text-muted-foreground mt-0.5">
+            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-1">
               Completa todos los pasos para programar en las 3 plataformas
             </p>
           )}
         </div>
         {video && (
-          <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
+          <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 hidden sm:flex shrink-0">
             <Trash2 className="w-4 h-4 mr-1" />
             Eliminar
           </Button>
         )}
       </div>
 
-      <div className="flex items-center gap-1 bg-card/30 rounded-2xl p-2 border border-white/5">
+      <div className="flex items-center gap-1 bg-card/30 rounded-2xl p-1.5 sm:p-2 border border-white/5 overflow-x-auto">
         {STEPS.map((step, i) => {
           const isActive = step.key === currentStep;
           const isComplete = isStepComplete(video, step.key);
@@ -510,7 +518,7 @@ function VideoWizard({
               key={step.key}
               onClick={() => isClickable && onStepChange(step.key)}
               disabled={!isClickable}
-              className={`flex-1 flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+              className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 min-w-0 ${
                 isActive
                   ? "bg-primary text-white shadow-lg shadow-primary/20"
                   : isComplete
@@ -519,15 +527,15 @@ function VideoWizard({
               } ${!isClickable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
             >
               {isComplete && !isActive ? (
-                <Check className="w-4 h-4" />
+                <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               ) : (
-                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold shrink-0 ${
                   isActive ? "bg-white/20" : "bg-white/5"
                 }`}>
                   {i + 1}
                 </span>
               )}
-              <span className="hidden md:inline">{step.shortLabel}</span>
+              <span className="hidden sm:inline">{step.shortLabel}</span>
             </button>
           );
         })}
@@ -690,8 +698,8 @@ function DriveVideoPicker({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-card border border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-card border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl sm:mx-4">
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <HardDrive className="w-5 h-5 text-primary" />
@@ -1701,9 +1709,9 @@ function StepReview({
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex gap-6">
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
             {video.coverImageBase64 && (
-              <div className="w-28 flex-shrink-0">
+              <div className="w-20 sm:w-28 flex-shrink-0 mx-auto sm:mx-0">
                 <img
                   src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
                   className="w-full aspect-[9/16] object-cover rounded-xl border border-white/10"
@@ -1711,12 +1719,12 @@ function StepReview({
                 />
               </div>
             )}
-            <div className="flex-1">
-              <h3 className="text-lg font-bold">{video.title}</h3>
-              <p className="text-sm text-muted-foreground mt-1">{video.description}</p>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base sm:text-lg font-bold">{video.title}</h3>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">{video.description}</p>
               {video.month && (
                 <div className="flex items-center gap-2 mt-3">
-                  <Badge variant="outline" className="border-white/10">
+                  <Badge variant="outline" className="border-white/10 text-[10px] sm:text-xs">
                     <Folder className="w-3 h-3 mr-1" />
                     {video.month}/{video.week}/{video.day}/#{video.videoNumber}{video.scheduleHour ? ` · ${video.scheduleHour}` : ""}
                   </Badge>
@@ -1832,24 +1840,26 @@ function StepReview({
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
                 <span className="text-[10px] text-muted-foreground">· Se sube ahora, no en la hora programada</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center flex-shrink-0">
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Subir a YouTube ahora</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasVideoFile
-                      ? `Subir "${video.videoFileName || "video"}" como Short privado (inmediato)`
-                      : "Selecciona un video desde Google Drive para subirlo como Short privado"}
-                  </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center flex-shrink-0">
+                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">Subir a YouTube ahora</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {hasVideoFile
+                        ? `Subir "${video.videoFileName || "video"}" como Short privado`
+                        : "Selecciona un video desde Drive"}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex">
                   {hasVideoFile ? (
                     <Button
                       onClick={() => handleYouTubeUpload()}
                       disabled={ytUploading}
-                      className="bg-red-600 hover:bg-red-500 text-white"
+                      className="bg-red-600 hover:bg-red-500 text-white w-full sm:w-auto"
                       size="sm"
                     >
                       {ytUploading ? (
@@ -1863,7 +1873,7 @@ function StepReview({
                     <Button
                       onClick={() => setShowYtDrivePicker(true)}
                       disabled={ytUploading}
-                      className="bg-red-600 hover:bg-red-500 text-white"
+                      className="bg-red-600 hover:bg-red-500 text-white w-full sm:w-auto"
                       size="sm"
                     >
                       {ytUploading ? (
@@ -1934,24 +1944,26 @@ function StepReview({
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
                 <span className="text-[10px] text-muted-foreground">· Se sube ahora, no en la hora programada</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Subir a TikTok ahora</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasVideoFile
-                      ? `Subir "${video.videoFileName || "video"}" a TikTok como privado (inmediato)`
-                      : "Selecciona un video desde Google Drive para subirlo a TikTok"}
-                  </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
+                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">Subir a TikTok ahora</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {hasVideoFile
+                        ? `Subir "${video.videoFileName || "video"}" como privado`
+                        : "Selecciona un video desde Drive"}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex">
                   {hasVideoFile ? (
                     <Button
                       onClick={() => handleTikTokUpload()}
                       disabled={ttUploading}
-                      className="bg-black hover:bg-zinc-800 text-white border border-white/10"
+                      className="bg-black hover:bg-zinc-800 text-white border border-white/10 w-full sm:w-auto"
                       size="sm"
                     >
                       {ttUploading ? (
@@ -1965,7 +1977,7 @@ function StepReview({
                     <Button
                       onClick={() => setShowTtDrivePicker(true)}
                       disabled={ttUploading}
-                      className="bg-black hover:bg-zinc-800 text-white border border-white/10"
+                      className="bg-black hover:bg-zinc-800 text-white border border-white/10 w-full sm:w-auto"
                       size="sm"
                     >
                       {ttUploading ? (
@@ -2030,24 +2042,26 @@ function StepReview({
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
                 <span className="text-[10px] text-muted-foreground">· Se sube ahora como Reel público</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 flex items-center justify-center flex-shrink-0">
-                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
-                </span>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Subir a Instagram ahora</p>
-                  <p className="text-xs text-muted-foreground">
-                    {hasVideoFile
-                      ? `Subir "${video.videoFileName || "video"}" como Reel público (inmediato)`
-                      : "Selecciona un video desde Google Drive para publicar como Reel"}
-                  </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400 flex items-center justify-center flex-shrink-0">
+                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">Subir a Instagram ahora</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">
+                      {hasVideoFile
+                        ? `Subir "${video.videoFileName || "video"}" como Reel`
+                        : "Selecciona un video desde Drive"}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex">
                   {hasVideoFile ? (
                     <Button
                       onClick={() => handleInstagramUpload()}
                       disabled={igUploading}
-                      className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 hover:from-purple-500 hover:via-pink-400 hover:to-orange-300 text-white"
+                      className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 hover:from-purple-500 hover:via-pink-400 hover:to-orange-300 text-white w-full sm:w-auto"
                       size="sm"
                     >
                       {igUploading ? (
@@ -2061,7 +2075,7 @@ function StepReview({
                     <Button
                       onClick={() => setShowIgDrivePicker(true)}
                       disabled={igUploading}
-                      className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 hover:from-purple-500 hover:via-pink-400 hover:to-orange-300 text-white"
+                      className="bg-gradient-to-r from-purple-600 via-pink-500 to-orange-400 hover:from-purple-500 hover:via-pink-400 hover:to-orange-300 text-white w-full sm:w-auto"
                       size="sm"
                     >
                       {igUploading ? (
