@@ -2827,10 +2827,14 @@ export default function RecordingStudio() {
             onChange={(e) => setTargetDay(e.target.value)}
             className="bg-background/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
           >
-            <option value="auto">Auto ({suggestedDayData?.suggestedDay || "..."})</option>
-            {(suggestedDayData?.availableDays || ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]).map(day => (
-              <option key={day} value={day}>{day}</option>
-            ))}
+            <option value="auto">Automatico</option>
+            <option value="Lunes">Lunes</option>
+            <option value="Martes">Martes</option>
+            <option value="Miercoles">Miercoles</option>
+            <option value="Jueves">Jueves</option>
+            <option value="Viernes">Viernes</option>
+            <option value="Sabado">Sabado</option>
+            <option value="Domingo">Domingo</option>
           </select>
         </div>
 
