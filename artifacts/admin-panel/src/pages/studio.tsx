@@ -842,12 +842,12 @@ function CameraRecordingView({
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing },
+          video: { facingMode: facing, frameRate: { ideal: 30, max: 30 }, width: { ideal: 1080 }, height: { ideal: 1920 } },
           audio: true,
         });
       } catch (audioErr) {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing },
+          video: { facingMode: facing, frameRate: { ideal: 30, max: 30 }, width: { ideal: 1080 }, height: { ideal: 1920 } },
           audio: false,
         });
         try {

@@ -746,15 +746,15 @@ router.post("/studio/finalize-upload", async (req, res) => {
       try {
         if (segmentsParam && Array.isArray(segmentsParam) && segmentsParam.length > 0) {
           const { writeFile: writeFileAsync } = await import("fs/promises");
-          const tiktokVf = `-vf "fps=60,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"`;
-          const cfrVideo = `${tiktokVf} -c:v libx264 -preset fast -crf 18 -g 60 -pix_fmt yuv420p -profile:v main -level 4.2 -vsync cfr`;
+          const cfrVf = `-vf "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"`;
+          const cfrVideo = `${cfrVf} -c:v libx264 -preset fast -crf 18 -g 30 -bf 0 -pix_fmt yuv420p -profile:v main -level 4.2 -fps_mode cfr -video_track_timescale 30000`;
           const cfrAudio = `-c:a aac -b:a 128k -ar 44100 -ac 2`;
           if (segmentsParam.length === 1) {
             const seg = segmentsParam[0];
             const outPath = path.join("/tmp", `studio-seg-out-${ts}.mp4`);
             allTempFiles.push(outPath);
             await execAsync(
-              `ffmpeg -y -fflags +genpts+igndts -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -movflags +faststart -avoid_negative_ts make_zero "${outPath}"`,
+              `ffmpeg -y -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -movflags +faststart -avoid_negative_ts make_zero "${outPath}"`,
               { timeout: 240000 }
             );
             finalVideoPath = outPath;
@@ -765,7 +765,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
               const segPath = path.join("/tmp", `studio-seg-${ts}-${i}.mp4`);
               allTempFiles.push(segPath);
               await execAsync(
-                `ffmpeg -y -fflags +genpts+igndts -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -avoid_negative_ts make_zero -movflags +faststart "${segPath}"`,
+                `ffmpeg -y -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -avoid_negative_ts make_zero -movflags +faststart "${segPath}"`,
                 { timeout: 180000 }
               );
               segPaths.push(segPath);
@@ -786,7 +786,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
           const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
           allTempFiles.push(outPath);
           await execAsync(
-            `ffmpeg -y -fflags +genpts+igndts -i "${rawInputPath}" -vf "fps=60,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 60 -pix_fmt yuv420p -profile:v main -level 4.2 -vsync cfr -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+            `ffmpeg -y -i "${rawInputPath}" -vf "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 30 -bf 0 -pix_fmt yuv420p -profile:v main -level 4.2 -fps_mode cfr -video_track_timescale 30000 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
             { timeout: 180000 }
           );
           finalVideoPath = outPath;
@@ -1032,7 +1032,7 @@ router.post("/studio/upload-video", (req, res, next) => {
         const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
         allTempFiles.push(outPath);
         await execAsync(
-          `ffmpeg -y -fflags +genpts+igndts -i "${uploadedFilePath}" -vf "fps=60,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 60 -pix_fmt yuv420p -profile:v main -level 4.2 -vsync cfr -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+          `ffmpeg -y -i "${uploadedFilePath}" -vf "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 30 -bf 0 -pix_fmt yuv420p -profile:v main -level 4.2 -fps_mode cfr -video_track_timescale 30000 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
           { timeout: 180000 }
         );
         const outStats = await fsStat(outPath);
