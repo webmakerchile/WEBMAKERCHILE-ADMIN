@@ -1,37 +1,73 @@
-import { useState } from "react";
-import { useGenerateCover, useListVideos } from "@workspace/api-client-react";
+import { useState, useEffect, useRef } from "react";
+import { useGenerateCover } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Image as ImageIcon, Upload, Loader2, Download
+  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X
 } from "lucide-react";
 import { motion } from "framer-motion";
+
+const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.jpg`;
 
 export default function CoverGeneratorPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [style, setStyle] = useState("Youtube Gaming Thumbnail, high contrast, vibrant colors");
-  const [referenceFile, setReferenceFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  
+  const [previewUrl, setPreviewUrl] = useState<string | null>(DEFAULT_REFERENCE_URL);
+  const [isDefaultRef, setIsDefaultRef] = useState(true);
+  const [customRefBase64, setCustomRefBase64] = useState<string | null>(null);
+  const [defaultRefBase64, setDefaultRefBase64] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const generateCover = useGenerateCover();
+
+  useEffect(() => {
+    fetch(DEFAULT_REFERENCE_URL)
+      .then(r => r.blob())
+      .then(blob => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          setDefaultRefBase64(result.split(",")[1]);
+        };
+        reader.readAsDataURL(blob);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setReferenceFile(file);
       setPreviewUrl(URL.createObjectURL(file));
+      setIsDefaultRef(false);
+      fileToBase64(file).then(b64 => {
+        setCustomRefBase64(b64.split(",")[1]);
+      });
     }
+  };
+
+  const handleRemoveRef = () => {
+    setPreviewUrl(null);
+    setIsDefaultRef(false);
+    setCustomRefBase64(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleRestoreDefault = () => {
+    setPreviewUrl(DEFAULT_REFERENCE_URL);
+    setIsDefaultRef(true);
+    setCustomRefBase64(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleGenerate = async () => {
     if (!title) return alert("El título es requerido");
-    
-    let base64 = undefined;
-    if (referenceFile) {
-      const b64Full = await fileToBase64(referenceFile);
-      // Remove data:image/png;base64, prefix
-      base64 = b64Full.split(',')[1];
+
+    let base64: string | undefined = undefined;
+    if (isDefaultRef && defaultRefBase64) {
+      base64 = defaultRefBase64;
+    } else if (!isDefaultRef && customRefBase64) {
+      base64 = customRefBase64;
     }
 
     generateCover.mutate({
@@ -39,8 +75,8 @@ export default function CoverGeneratorPage() {
         title,
         description,
         style,
-        referenceImageBase64: base64
-      }
+        referenceImageBase64: base64,
+      },
     });
   };
 
@@ -53,7 +89,6 @@ export default function CoverGeneratorPage() {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Controls */}
           <div className="lg:col-span-5 space-y-6">
             <div className="glass-card p-6 rounded-3xl space-y-5 border border-white/5">
               <div className="space-y-2">
@@ -86,24 +121,43 @@ export default function CoverGeneratorPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Imagen de Referencia (Opcional)</label>
-                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group overflow-hidden relative">
-                  {previewUrl ? (
-                    <>
-                      <img src={previewUrl} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-30 transition-opacity" />
-                      <div className="relative z-10 flex flex-col items-center">
-                         <ImageIcon className="w-6 h-6 text-white mb-2" />
-                         <span className="text-sm text-white font-medium">Cambiar imagen</span>
+                <label className="text-sm font-medium text-foreground">Imagen de Referencia</label>
+                {previewUrl ? (
+                  <div className="relative rounded-xl overflow-hidden border border-white/10">
+                    <img src={previewUrl} alt="Referencia" className="w-full h-32 object-cover" />
+                    <button
+                      type="button"
+                      onClick={handleRemoveRef}
+                      className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
+                    >
+                      <X className="w-4 h-4 text-white" />
+                    </button>
+                    {isDefaultRef && (
+                      <div className="absolute bottom-2 left-2 bg-black/60 text-xs text-white/80 px-2 py-0.5 rounded-full">
+                        Zorro predeterminado
                       </div>
-                    </>
-                  ) : (
-                    <>
+                    )}
+                    <label className="absolute inset-0 cursor-pointer opacity-0 hover:opacity-100 bg-black/40 flex items-center justify-center transition-opacity">
+                      <span className="text-sm text-white font-medium">Cambiar imagen</span>
+                      <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                    </label>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group">
                       <Upload className="w-8 h-8 text-muted-foreground group-hover:text-primary mb-2 transition-colors" />
                       <span className="text-sm text-muted-foreground font-medium">Subir foto o captura</span>
-                    </>
-                  )}
-                  <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-                </label>
+                      <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleRestoreDefault}
+                      className="w-full text-xs text-primary hover:text-orange-400 transition-colors py-1"
+                    >
+                      Restaurar imagen del zorro predeterminada
+                    </button>
+                  </div>
+                )}
               </div>
 
               <button
@@ -121,10 +175,8 @@ export default function CoverGeneratorPage() {
             </div>
           </div>
 
-          {/* Result */}
           <div className="lg:col-span-7">
             <div className="glass-card rounded-3xl h-full min-h-[500px] border border-white/5 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-              {/* Fallback image from requirements if no generation yet */}
               {!generateCover.data && !generateCover.isPending && (
                 <div className="absolute inset-0 z-0 opacity-20 pointer-events-none flex items-center justify-center">
                   <img src={`${import.meta.env.BASE_URL}images/auth-bg.png`} alt="Background" className="w-full h-full object-cover" />
