@@ -27,6 +27,7 @@ type AiVideoIdea = {
   recordedAt: string | null;
   createdAt: string;
 };
+import { Layout } from "@/components/layout";
 import {
   Video,
   VideoOff,
@@ -2689,8 +2690,8 @@ export default function RecordingStudio() {
   }
 
   return (
-    <div className="min-h-screen pb-24 lg:pb-8">
-      <div className="max-w-2xl mx-auto px-4 py-5 space-y-5">
+    <Layout>
+      <div className="max-w-2xl mx-auto space-y-5">
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-600/15 via-pink-600/8 to-purple-600/10 border border-orange-500/15 p-5">
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-orange-500/5 rounded-full blur-3xl" />
           <div className="relative flex items-center gap-3">
@@ -2952,6 +2953,6 @@ export default function RecordingStudio() {
           </div>
         )}
       </div>
-    </div>
+    </Layout>
   );
 }
