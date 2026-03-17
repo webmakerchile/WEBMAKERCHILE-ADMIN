@@ -2,9 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import {
   Zap,
@@ -21,29 +19,18 @@ import {
   Square,
   Video,
   Camera,
-  ChevronDown,
-  ChevronUp,
   ArrowLeft,
   Copy,
   Trash2,
-  Eye,
-  EyeOff,
   Loader2,
   Check,
-  Mic,
-  MicOff,
-  Maximize2,
-  Minimize2,
-  RotateCcw,
-  SwitchCamera,
-  Filter,
-  Clapperboard,
-  Send,
-  Flame,
-  BookmarkCheck,
-  Bookmark,
+  X,
   Clock,
   FileText,
+  SwitchCamera,
+  RotateCcw,
+  Send,
+  Flame,
 } from "lucide-react";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -63,27 +50,27 @@ const CATEGORY_ICONS: Record<string, any> = {
   "pack-del-dia": Package,
 };
 
-const CATEGORY_COLORS: Record<string, { color: string; bgClass: string; progressColor: string }> = {
-  "corto-viral": { color: "text-red-400", bgClass: "bg-red-500/10 text-red-400 border-red-500/20", progressColor: "bg-red-500" },
-  "problema-solucion": { color: "text-blue-400", bgClass: "bg-blue-500/10 text-blue-400 border-blue-500/20", progressColor: "bg-blue-500" },
-  marketing: { color: "text-purple-400", bgClass: "bg-purple-500/10 text-purple-400 border-purple-500/20", progressColor: "bg-purple-500" },
-  historia: { color: "text-amber-400", bgClass: "bg-amber-500/10 text-amber-400 border-amber-500/20", progressColor: "bg-amber-500" },
-  educativo: { color: "text-green-400", bgClass: "bg-green-500/10 text-green-400 border-green-500/20", progressColor: "bg-green-500" },
-  "behind-scenes": { color: "text-cyan-400", bgClass: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20", progressColor: "bg-cyan-500" },
-  opinion: { color: "text-pink-400", bgClass: "bg-pink-500/10 text-pink-400 border-pink-500/20", progressColor: "bg-pink-500" },
-  "pack-del-dia": { color: "text-orange-400", bgClass: "bg-gradient-to-r from-amber-500/10 to-orange-500/10 text-orange-400 border-orange-500/20", progressColor: "bg-orange-500" },
+const CATEGORY_COLORS: Record<string, { dot: string; text: string }> = {
+  "corto-viral": { dot: "bg-red-500", text: "text-red-400" },
+  "problema-solucion": { dot: "bg-blue-500", text: "text-blue-400" },
+  marketing: { dot: "bg-purple-500", text: "text-purple-400" },
+  historia: { dot: "bg-amber-500", text: "text-amber-400" },
+  educativo: { dot: "bg-green-500", text: "text-green-400" },
+  "behind-scenes": { dot: "bg-cyan-500", text: "text-cyan-400" },
+  opinion: { dot: "bg-pink-500", text: "text-pink-400" },
+  "pack-del-dia": { dot: "bg-orange-500", text: "text-orange-400" },
 };
 
 const PLATFORM_COLORS: Record<string, string> = {
-  TikTok: "bg-black/50 text-white border-white/10",
-  "Instagram Reels": "bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-pink-300 border-pink-500/20",
-  "YouTube Shorts": "bg-red-500/10 text-red-400 border-red-500/20",
+  TikTok: "bg-black text-white",
+  "Instagram Reels": "bg-gradient-to-r from-purple-600 to-pink-500 text-white",
+  "YouTube Shorts": "bg-red-600 text-white",
 };
 
 const MOTIVATIONAL = [
+  "El contenido que creas hoy, vende mañana",
   "Hoy es un gran día para crear contenido",
   "Cada video te acerca a más clientes",
-  "El contenido que creas hoy, vende mañana",
 ];
 
 type VideoIdea = {
@@ -108,51 +95,37 @@ type StudioStats = {
   byCategory: Record<string, number>;
 };
 
-type StudioView = "ideas" | "teleprompter" | "camera";
-
-function truncateText(text: string, maxLen = 150) {
-  if (text.length <= maxLen) return text;
-  return text.substring(0, maxLen) + "...";
-}
-
-function CategoryBadge({ category }: { category: string }) {
-  const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS["corto-viral"];
-  const Icon = CATEGORY_ICONS[category] || Zap;
-  const label = category.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
-
-  return (
-    <Badge variant="outline" className={`text-[10px] font-bold uppercase tracking-[0.15em] ${colors.bgClass}`}>
-      <Icon className="w-3 h-3 mr-1" />
-      {label}
-    </Badge>
-  );
-}
+type StudioView = "main" | "ideas" | "camera" | "teleprompter";
 
 export default function StudioPage() {
-  const [view, setView] = useState<StudioView>("ideas");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [showRecorded, setShowRecorded] = useState(false);
+  const [view, setView] = useState<StudioView>("main");
   const [selectedIdea, setSelectedIdea] = useState<VideoIdea | null>(null);
-  const [expandedGuion, setExpandedGuion] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"estudio" | "ideas">("estudio");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const { data: ideas = [], isLoading: ideasLoading } = useQuery({
+    queryKey: ["studio-ideas", false],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("recorded", "false");
+      const res = await apiFetch(`${API_BASE}/studio/ideas?${params}`);
+      return res.json();
+    },
+  });
+
+  const { data: allIdeas = [] } = useQuery({
+    queryKey: ["studio-ideas-all"],
+    queryFn: async () => {
+      const res = await apiFetch(`${API_BASE}/studio/ideas`);
+      return res.json();
+    },
+  });
 
   const { data: categories = [] } = useQuery({
     queryKey: ["studio-categories"],
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/studio/categories`);
-      return res.json();
-    },
-  });
-
-  const { data: ideas = [], isLoading: ideasLoading } = useQuery({
-    queryKey: ["studio-ideas", selectedCategory, showRecorded],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedCategory !== "all") params.set("category", selectedCategory);
-      if (showRecorded) params.set("recorded", "true");
-      else params.set("recorded", "false");
-      const res = await apiFetch(`${API_BASE}/studio/ideas?${params}`);
       return res.json();
     },
   });
@@ -177,6 +150,7 @@ export default function StudioPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["studio-ideas"] });
+      queryClient.invalidateQueries({ queryKey: ["studio-ideas-all"] });
       queryClient.invalidateQueries({ queryKey: ["studio-stats"] });
       toast({ title: "Ideas generadas", description: `${data.count} ideas creadas` });
     },
@@ -194,6 +168,7 @@ export default function StudioPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["studio-ideas"] });
+      queryClient.invalidateQueries({ queryKey: ["studio-ideas-all"] });
       queryClient.invalidateQueries({ queryKey: ["studio-stats"] });
     },
   });
@@ -204,25 +179,14 @@ export default function StudioPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["studio-ideas"] });
+      queryClient.invalidateQueries({ queryKey: ["studio-ideas-all"] });
       queryClient.invalidateQueries({ queryKey: ["studio-stats"] });
       toast({ title: "Idea eliminada" });
     },
   });
 
-  const clearMutation = useMutation({
-    mutationFn: async (keepRecorded: boolean) => {
-      await apiFetch(`${API_BASE}/studio/ideas?keepRecorded=${keepRecorded}`, { method: "DELETE" });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["studio-ideas"] });
-      queryClient.invalidateQueries({ queryKey: ["studio-stats"] });
-      toast({ title: "Ideas limpiadas" });
-    },
-  });
-
   const markRecordedAndCreateVideo = async (idea: VideoIdea) => {
     updateMutation.mutate({ id: idea.id, recordedAt: new Date().toISOString() });
-
     try {
       const res = await apiFetch(`${API_BASE}/content/videos/from-studio`, {
         method: "POST",
@@ -239,524 +203,327 @@ export default function StudioPage() {
           title: "Video creado en el Gestor",
           description: "La portada se está generando automáticamente con IA",
         });
-      } else {
-        const err = await res.json().catch(() => ({ error: "Error desconocido" }));
-        toast({
-          title: "Error al crear video",
-          description: err.error || "No se pudo crear el video en el gestor",
-          variant: "destructive",
-        });
       }
     } catch {
       toast({ title: "Error al crear video en el gestor", variant: "destructive" });
     }
   };
 
-  const copyGuion = (guion: string) => {
-    navigator.clipboard.writeText(guion);
-    toast({ title: "Guion copiado al portapapeles" });
-  };
+  const motivation = MOTIVATIONAL[Math.floor(Date.now() / 86400000) % MOTIVATIONAL.length];
 
-  if (view === "teleprompter" && selectedIdea) {
-    return (
-      <Layout>
-        <TeleprompterView
-          idea={selectedIdea}
-          onBack={() => setView("ideas")}
-          onMarkRecorded={() => {
-            markRecordedAndCreateVideo(selectedIdea);
-            setView("ideas");
-          }}
-        />
-      </Layout>
+  const readyToRecord = ideas.filter((i: VideoIdea) => !i.recordedAt);
+  const totalIdeas = stats?.total || allIdeas.length || 0;
+
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const startOfWeek = new Date(today);
+  startOfWeek.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+  startOfWeek.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const recordedAll = allIdeas.filter((i: VideoIdea) => i.recordedAt);
+  const recordedWeek = recordedAll.filter((i: VideoIdea) => new Date(i.recordedAt!) >= startOfWeek).length;
+  const recordedMonth = recordedAll.filter((i: VideoIdea) => new Date(i.recordedAt!) >= startOfMonth).length;
+
+  let streak = 0;
+  if (recordedAll.length > 0) {
+    const sortedDates = [...new Set(recordedAll.map((i: VideoIdea) => new Date(i.recordedAt!).toDateString()))].sort(
+      (a, b) => new Date(b).getTime() - new Date(a).getTime()
     );
+    const todayStr = today.toDateString();
+    const yesterdayStr = new Date(today.getTime() - 86400000).toDateString();
+    if (sortedDates[0] === todayStr || sortedDates[0] === yesterdayStr) {
+      streak = 1;
+      for (let i = 1; i < sortedDates.length; i++) {
+        const prev = new Date(sortedDates[i - 1]);
+        const curr = new Date(sortedDates[i]);
+        const diffDays = Math.round((prev.getTime() - curr.getTime()) / 86400000);
+        if (diffDays === 1) streak++;
+        else break;
+      }
+    }
   }
 
   if (view === "camera") {
     return (
-      <Layout>
-        <CameraView
-          idea={selectedIdea}
-          onBack={() => setView("ideas")}
-          onRecorded={() => {
-            if (selectedIdea) {
-              markRecordedAndCreateVideo(selectedIdea);
-            }
-            setView("ideas");
-          }}
-        />
-      </Layout>
+      <CameraRecorder
+        idea={selectedIdea}
+        onBack={() => setView("main")}
+        onRecorded={() => {
+          if (selectedIdea) markRecordedAndCreateVideo(selectedIdea);
+          setView("main");
+        }}
+      />
     );
   }
 
-  const motivation = MOTIVATIONAL[Math.floor(Math.random() * MOTIVATIONAL.length)];
+  if (view === "teleprompter" && selectedIdea) {
+    return (
+      <TeleprompterRecorder
+        idea={selectedIdea}
+        onBack={() => setView("main")}
+        onRecorded={() => {
+          markRecordedAndCreateVideo(selectedIdea);
+          setView("main");
+        }}
+      />
+    );
+  }
 
   return (
     <Layout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-display font-bold text-gradient flex items-center gap-3">
-              <Clapperboard className="w-8 h-8 text-primary" />
-              Estudio de Trabajo
-            </h1>
-            <p className="text-muted-foreground mt-1">{motivation}</p>
+      <div className="space-y-5 pb-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center shadow-lg shadow-orange-500/20">
+            <Video className="w-6 h-6 text-white" />
           </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { setSelectedIdea(null); setView("camera"); }}
-              className="border-primary/30 hover:bg-primary/10"
-            >
-              <Camera className="w-4 h-4 mr-2" />
-              Grabación Libre
-            </Button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground">Estudio</h1>
+            <p className="text-sm text-muted-foreground">{motivation}</p>
+          </div>
+          <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-full px-3 py-1.5">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="text-sm font-bold text-primary">{totalIdeas}</span>
           </div>
         </div>
 
-        {stats && (
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="bg-card/50 border-white/5">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="w-5 h-5 text-primary" />
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab("estudio")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              activeTab === "estudio"
+                ? "bg-primary text-white shadow-lg shadow-primary/25"
+                : "bg-white/5 text-muted-foreground hover:bg-white/10"
+            }`}
+          >
+            <Video className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+            Estudio
+          </button>
+          <button
+            onClick={() => setActiveTab("ideas")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              activeTab === "ideas"
+                ? "bg-primary text-white shadow-lg shadow-primary/25"
+                : "bg-white/5 text-muted-foreground hover:bg-white/10"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+            Ideas IA
+          </button>
+        </div>
+
+        {activeTab === "estudio" && (
+          <>
+            <button
+              onClick={() => { setSelectedIdea(null); setView("camera"); }}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-blue-500/20 hover:border-blue-500/40 transition-all group"
+            >
+              <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                <Camera className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="flex-1 text-left">
+                <p className="font-semibold text-foreground">Grabar libre</p>
+                <p className="text-xs text-muted-foreground">Sin guion, solo tú y la cámara</p>
+              </div>
+              <Play className="w-5 h-5 text-blue-400 group-hover:translate-x-1 transition-transform" />
+            </button>
+
+            <div className="grid grid-cols-4 gap-3">
+              <StatCircle value={streak} label="Racha" color="border-orange-500" textColor="text-orange-400" />
+              <StatCircle value={recordedWeek} label="Semana" color="border-blue-500" textColor="text-blue-400" />
+              <StatCircle value={recordedMonth} label="Mes" color="border-green-500" textColor="text-green-400" />
+              <StatCircle value={recordedAll.length} label="Total" color="border-white/20" textColor="text-foreground" plain />
+            </div>
+
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3 flex items-center gap-2">
+                <Flame className="w-3.5 h-3.5 text-orange-400" />
+                Listos para grabar
+              </p>
+
+              {ideasLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.total}</p>
-                  <p className="text-xs text-muted-foreground">Ideas totales</p>
+              ) : readyToRecord.length === 0 ? (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Video className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">No hay ideas pendientes.</p>
+                  <p className="text-xs mt-1">Ve a "Ideas IA" para generar nuevas</p>
                 </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card/50 border-white/5">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-green-500/10 flex items-center justify-center">
-                  <Check className="w-5 h-5 text-green-400" />
+              ) : (
+                <div className="space-y-3">
+                  {readyToRecord.map((idea: VideoIdea) => (
+                    <IdeaCard
+                      key={idea.id}
+                      idea={idea}
+                      onPlay={() => { setSelectedIdea(idea); setView("teleprompter"); }}
+                      onCamera={() => { setSelectedIdea(idea); setView("camera"); }}
+                      onDelete={() => deleteMutation.mutate(idea.id)}
+                    />
+                  ))}
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.recorded}</p>
-                  <p className="text-xs text-muted-foreground">Grabados</p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card/50 border-white/5">
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center">
-                  <Video className="w-5 h-5 text-orange-400" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.inStudio}</p>
-                  <p className="text-xs text-muted-foreground">En cola</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+              )}
+            </div>
+          </>
         )}
 
-        <div className="flex flex-wrap gap-2 items-center">
-          <Button
-            variant={selectedCategory === "all" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setSelectedCategory("all")}
-            className={selectedCategory === "all" ? "" : "border-white/10"}
-          >
-            Todas
-          </Button>
-          {categories.map((cat: any) => {
-            const Icon = CATEGORY_ICONS[cat.key] || Zap;
-            const isActive = selectedCategory === cat.key;
-            return (
-              <Button
-                key={cat.key}
-                variant={isActive ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(cat.key)}
-                className={isActive ? "" : "border-white/10"}
-              >
-                <Icon className="w-3.5 h-3.5 mr-1.5" />
-                {cat.label}
-                {stats?.byCategory[cat.key] ? (
-                  <span className="ml-1.5 text-[10px] opacity-70">
-                    {stats.byCategory[cat.key]}
-                  </span>
-                ) : null}
-              </Button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() =>
-              generateMutation.mutate({
-                category: selectedCategory === "all" ? "corto-viral" : selectedCategory,
-              })
-            }
-            disabled={generateMutation.isPending}
-            className="bg-gradient-to-r from-orange-600 to-pink-600 shadow-orange-900/25"
-          >
-            {generateMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4 mr-2" />
-            )}
-            {selectedCategory === "pack-del-dia" ? "Generar Pack del Día" : "Generar Ideas IA"}
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowRecorded(!showRecorded)}
-            className="border-white/10"
-          >
-            {showRecorded ? <EyeOff className="w-4 h-4 mr-1.5" /> : <Eye className="w-4 h-4 mr-1.5" />}
-            {showRecorded ? "Ocultar grabados" : "Ver grabados"}
-          </Button>
-
-          {ideas.length > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => clearMutation.mutate(true)}
-              className="border-red-500/20 text-red-400 hover:bg-red-500/10"
-            >
-              <Trash2 className="w-4 h-4 mr-1.5" />
-              Limpiar
-            </Button>
-          )}
-        </div>
-
-        {ideasLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          </div>
-        ) : ideas.length === 0 ? (
-          <Card className="bg-card/30 border-white/5">
-            <CardContent className="p-12 text-center">
-              <Sparkles className="w-12 h-12 text-primary/30 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Sin ideas aún</h3>
-              <p className="text-muted-foreground text-sm">
-                Selecciona una categoría y genera tus primeras ideas
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-3">
-            {ideas.map((idea: VideoIdea) => {
-              const isExpanded = expandedGuion === idea.id;
-              return (
-                <Card key={idea.id} className="bg-card/50 border-white/5 hover:border-white/10 transition-colors">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <CategoryBadge category={idea.category} />
-                          <Badge variant="outline" className={`text-[10px] border ${PLATFORM_COLORS[idea.plataforma] || ""}`}>
-                            {idea.plataforma}
-                          </Badge>
-                          {idea.duracionSugerida && (
-                            <Badge variant="outline" className="text-[10px] border-white/10">
-                              <Clock className="w-3 h-3 mr-1" />
-                              {idea.duracionSugerida}
-                            </Badge>
-                          )}
-                          {idea.recordedAt && (
-                            <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px]">
-                              <Check className="w-3 h-3 mr-1" />
-                              Grabado
-                            </Badge>
-                          )}
-                        </div>
-
-                        <h3 className="font-semibold text-sm text-foreground leading-tight mb-1.5">
-                          {idea.titulo}
-                        </h3>
-
-                        {idea.descripcion && (
-                          <p className="text-xs text-muted-foreground/70 mb-2">{idea.descripcion}</p>
-                        )}
-
-                        {idea.tendencia && (
-                          <div className="flex items-center gap-1.5 mb-2">
-                            <Flame className="w-3 h-3 text-orange-400" />
-                            <span className="text-[10px] font-semibold text-orange-400/80">{idea.tendencia}</span>
-                          </div>
-                        )}
-
-                        <button
-                          onClick={() => setExpandedGuion(isExpanded ? null : idea.id)}
-                          className="text-xs text-primary/70 hover:text-primary flex items-center gap-1 mb-2"
-                        >
-                          <FileText className="w-3 h-3" />
-                          {isExpanded ? "Ocultar" : "Ver guion"}
-                          {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                        </button>
-
-                        {isExpanded && (
-                          <div className="bg-black/20 rounded-lg p-3 mb-2 border border-white/5">
-                            <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{idea.guion}</p>
-                          </div>
-                        )}
-
-                        {idea.hashtags && idea.hashtags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {idea.hashtags.map((tag, i) => (
-                              <span key={i} className="text-[10px] text-primary/60">#{tag}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex flex-col gap-1.5 shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:bg-primary/10"
-                          onClick={() => copyGuion(idea.guion)}
-                          title="Copiar guion"
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:bg-primary/10"
-                          onClick={() => { setSelectedIdea(idea); setView("teleprompter"); }}
-                          title="Teleprompter"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:bg-primary/10"
-                          onClick={() => { setSelectedIdea(idea); setView("camera"); }}
-                          title="Grabar"
-                        >
-                          <Video className="w-4 h-4" />
-                        </Button>
-                        {!idea.recordedAt ? (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 hover:bg-green-500/10 text-muted-foreground hover:text-green-400"
-                            onClick={() => {
-                              markRecordedAndCreateVideo(idea);
-                            }}
-                            title="Marcar como grabado"
-                          >
-                            <Bookmark className="w-4 h-4" />
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-green-400"
-                            onClick={() => {
-                              updateMutation.mutate({ id: idea.id, recordedAt: null });
-                            }}
-                            title="Desmarcar grabado"
-                          >
-                            <BookmarkCheck className="w-4 h-4" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 hover:bg-red-500/10 text-muted-foreground hover:text-red-400"
-                          onClick={() => deleteMutation.mutate(idea.id)}
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+        {activeTab === "ideas" && (
+          <IdeasTab
+            categories={categories}
+            stats={stats}
+            onGenerate={(category: string) => generateMutation.mutate({ category })}
+            isGenerating={generateMutation.isPending}
+          />
         )}
       </div>
     </Layout>
   );
 }
 
-function TeleprompterView({ idea, onBack, onMarkRecorded }: {
-  idea: VideoIdea;
-  onBack: () => void;
-  onMarkRecorded: () => void;
+function StatCircle({ value, label, color, textColor, plain }: {
+  value: number;
+  label: string;
+  color: string;
+  textColor: string;
+  plain?: boolean;
 }) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState([50]);
-  const [fontSize, setFontSize] = useState(24);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const [isMirrored, setIsMirrored] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const animRef = useRef<number | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="flex flex-col items-center gap-1.5">
+      <div className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center ${
+        plain
+          ? "border-2 border-white/10"
+          : `border-[3px] ${color}`
+      }`}>
+        <span className={`text-xl sm:text-2xl font-bold ${textColor}`}>{value}</span>
+      </div>
+      <span className="text-[10px] text-muted-foreground font-medium">{label}</span>
+    </div>
+  );
+}
 
-  const words = idea.guion.split(/\s+/).filter(w => w.length > 0);
-
-  const scrollTeleprompter = useCallback(() => {
-    if (!scrollRef.current || !isPlaying) return;
-    const scrollSpeed = (speed[0] / 100) * 3;
-    scrollRef.current.scrollTop += scrollSpeed;
-    animRef.current = requestAnimationFrame(scrollTeleprompter);
-  }, [isPlaying, speed]);
-
-  useEffect(() => {
-    if (isPlaying) {
-      animRef.current = requestAnimationFrame(scrollTeleprompter);
-    } else if (animRef.current) {
-      cancelAnimationFrame(animRef.current);
-    }
-    return () => {
-      if (animRef.current) cancelAnimationFrame(animRef.current);
-    };
-  }, [isPlaying, scrollTeleprompter]);
-
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
-
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
-  }, []);
-
-  const resetScroll = () => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    setHighlightIndex(-1);
-    setIsPlaying(false);
-  };
-
-  const categoryColors = CATEGORY_COLORS[idea.category] || CATEGORY_COLORS["corto-viral"];
+function IdeaCard({ idea, onPlay, onCamera, onDelete }: {
+  idea: VideoIdea;
+  onPlay: () => void;
+  onCamera: () => void;
+  onDelete: () => void;
+}) {
+  const colors = CATEGORY_COLORS[idea.category] || CATEGORY_COLORS["corto-viral"];
+  const platformColor = PLATFORM_COLORS[idea.plataforma] || "bg-zinc-700 text-white";
+  const progress = Math.random() * 60 + 20;
 
   return (
-    <div ref={containerRef} className="space-y-4">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Volver
-        </Button>
-        <div className="flex-1">
-          <h2 className="text-lg font-bold text-foreground">{idea.titulo}</h2>
-          <div className="flex items-center gap-2 mt-1">
-            <CategoryBadge category={idea.category} />
-            <Badge variant="outline" className="text-[10px]">{idea.plataforma}</Badge>
+    <div className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 space-y-3 hover:border-white/10 transition-colors">
+      <div className="flex items-start gap-3">
+        <button
+          onClick={onPlay}
+          className="w-10 h-10 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-red-600/20 transition-colors"
+        >
+          <Play className="w-4 h-4 text-white ml-0.5" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-sm text-foreground leading-snug">{idea.titulo}</h3>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${platformColor}`}>
+              {idea.plataforma}
+            </span>
+            {idea.duracionSugerida && (
+              <span className="text-[10px] text-muted-foreground">{idea.duracionSugerida}</span>
+            )}
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={toggleFullscreen} className="border-white/10">
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </Button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={onCamera}
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            title="Grabar con cámara"
+          >
+            <Camera className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="w-8 h-8 rounded-full bg-white/5 hover:bg-red-500/10 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-colors"
+            title="Eliminar"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
-
-      <div className="bg-black/40 rounded-2xl border border-white/5 overflow-hidden">
-        <div className="flex items-center gap-4 p-4 border-b border-white/5 bg-black/20">
-          <Button
-            size="sm"
-            variant={isPlaying ? "destructive" : "default"}
-            onClick={() => setIsPlaying(!isPlaying)}
-          >
-            {isPlaying ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
-            {isPlaying ? "Pausar" : "Iniciar"}
-          </Button>
-          <Button size="sm" variant="outline" onClick={resetScroll} className="border-white/10">
-            <RotateCcw className="w-4 h-4 mr-2" />
-            Reiniciar
-          </Button>
-
-          <div className="flex items-center gap-2 flex-1 max-w-xs">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Velocidad</span>
-            <Slider
-              value={speed}
-              onValueChange={setSpeed}
-              min={10}
-              max={100}
-              step={5}
-              className="flex-1"
-            />
-            <span className="text-xs text-muted-foreground w-8">{speed[0]}%</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Tamaño</span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-7 w-7 border-white/10"
-              onClick={() => setFontSize(Math.max(16, fontSize - 2))}
-            >
-              -
-            </Button>
-            <span className="text-xs w-6 text-center">{fontSize}</span>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-7 w-7 border-white/10"
-              onClick={() => setFontSize(Math.min(48, fontSize + 2))}
-            >
-              +
-            </Button>
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsMirrored(!isMirrored)}
-            className={`border-white/10 ${isMirrored ? "bg-primary/10 text-primary" : ""}`}
-          >
-            Espejo
-          </Button>
-        </div>
-
+      <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
         <div
-          ref={scrollRef}
-          className="h-[60vh] overflow-y-auto p-8 md:p-12"
-          style={{ transform: isMirrored ? "scaleX(-1)" : "none" }}
-        >
-          <div className="max-w-2xl mx-auto text-center">
-            <p style={{ fontSize: fontSize * 0.75, lineHeight: 1.9 }} className="font-normal text-white/95">
-              {words.map((word, i) => (
-                <span
-                  key={i}
-                  className={`${highlightIndex >= 0 && i === highlightIndex ? "text-primary font-bold bg-primary/20 rounded px-1" : ""}`}
-                >
-                  {word}{" "}
-                </span>
-              ))}
-            </p>
-            <p className="mt-16 text-sm font-bold uppercase tracking-[0.2em] text-muted-foreground/50">
-              FIN DEL GUION
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-center">
-        <Button
-          onClick={onMarkRecorded}
-          className="bg-gradient-to-r from-green-600 to-emerald-600"
-        >
-          <Check className="w-4 h-4 mr-2" />
-          Marcar como Grabado
-        </Button>
+          className={`h-full rounded-full ${colors.dot}`}
+          style={{ width: `${progress}%` }}
+        />
       </div>
     </div>
   );
 }
 
-function CameraView({ idea, onBack, onRecorded }: {
+function IdeasTab({ categories, stats, onGenerate, isGenerating }: {
+  categories: any[];
+  stats: StudioStats | undefined;
+  onGenerate: (category: string) => void;
+  isGenerating: boolean;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Selecciona una categoría para generar ideas con IA.
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {categories.map((cat: any) => {
+          const Icon = CATEGORY_ICONS[cat.key] || Zap;
+          const colors = CATEGORY_COLORS[cat.key] || CATEGORY_COLORS["corto-viral"];
+          const isActive = selected === cat.key;
+          const count = stats?.byCategory[cat.key] || 0;
+
+          return (
+            <button
+              key={cat.key}
+              onClick={() => setSelected(isActive ? null : cat.key)}
+              className={`relative p-4 rounded-2xl border transition-all text-left ${
+                isActive
+                  ? "border-primary/50 bg-primary/5 shadow-lg shadow-primary/10"
+                  : "border-white/5 bg-white/[0.02] hover:border-white/10"
+              }`}
+            >
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center mb-2 ${
+                isActive ? "bg-primary/20 text-primary" : `bg-white/5 ${colors.text}`
+              }`}>
+                <Icon className="w-4 h-4" />
+              </div>
+              <p className="text-xs font-semibold text-foreground">{cat.label}</p>
+              {count > 0 && (
+                <span className="absolute top-2 right-2 text-[10px] bg-white/5 text-muted-foreground px-1.5 py-0.5 rounded-full">
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {selected && (
+        <Button
+          onClick={() => onGenerate(selected)}
+          disabled={isGenerating}
+          className="w-full bg-gradient-to-r from-orange-600 to-pink-600 shadow-lg shadow-orange-900/25 py-6 text-base"
+        >
+          {isGenerating ? (
+            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+          ) : (
+            <Sparkles className="w-5 h-5 mr-2" />
+          )}
+          {isGenerating ? "Generando..." : `Generar ideas de ${categories.find((c: any) => c.key === selected)?.label || selected}`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CameraRecorder({ idea, onBack, onRecorded }: {
   idea: VideoIdea | null;
   onBack: () => void;
   onRecorded: () => void;
@@ -775,9 +542,8 @@ function CameraView({ idea, onBack, onRecorded }: {
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
   const [isMirrored, setIsMirrored] = useState(true);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fontSize, setFontSize] = useState(16);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const startCamera = useCallback(async () => {
@@ -816,10 +582,9 @@ function CameraView({ idea, onBack, onRecorded }: {
     chunksRef.current = [];
     setRecordedBlob(null);
 
-    const options = { mimeType: "video/webm;codecs=vp9,opus" };
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(streamRef.current, options);
+      recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm;codecs=vp9,opus" });
     } catch {
       try {
         recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm" });
@@ -831,13 +596,10 @@ function CameraView({ idea, onBack, onRecorded }: {
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
     };
-
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: "video/webm" });
       setRecordedBlob(blob);
-      if (previewRef.current) {
-        previewRef.current.src = URL.createObjectURL(blob);
-      }
+      if (previewRef.current) previewRef.current.src = URL.createObjectURL(blob);
     };
 
     recorder.start(1000);
@@ -870,7 +632,7 @@ function CameraView({ idea, onBack, onRecorded }: {
     }
   };
 
-  const switchCamera = async () => {
+  const switchCamera = () => {
     setFacingMode(prev => prev === "user" ? "environment" : "user");
   };
 
@@ -890,187 +652,505 @@ function CameraView({ idea, onBack, onRecorded }: {
     return `${m}:${s}`;
   };
 
-  const toggleFullscreen = () => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  };
+  if (cameraError) {
+    return (
+      <div className="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center p-8">
+        <Camera className="w-16 h-16 text-red-400 mb-4" />
+        <h3 className="text-lg font-semibold text-red-400 mb-2">Cámara no disponible</h3>
+        <p className="text-sm text-muted-foreground text-center mb-4">{cameraError}</p>
+        <div className="flex gap-3">
+          <Button onClick={startCamera} variant="outline">
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Reintentar
+          </Button>
+          <Button onClick={onBack} variant="ghost">Volver</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div ref={containerRef} className="space-y-4">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Volver
-        </Button>
-        <div className="flex-1">
-          <h2 className="text-lg font-bold">
-            {idea ? idea.titulo : "Grabación Libre"}
-          </h2>
-          {idea && (
-            <div className="flex items-center gap-2 mt-1">
-              <CategoryBadge category={idea.category} />
-            </div>
-          )}
-        </div>
-        <Button variant="outline" size="sm" onClick={toggleFullscreen} className="border-white/10">
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-        </Button>
-      </div>
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      {!recordedBlob ? (
+        <>
+          <div className="flex-1 relative overflow-hidden">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ transform: isMirrored ? "scaleX(-1)" : "none" }}
+            />
 
-      {cameraError ? (
-        <Card className="bg-card/50 border-red-500/20">
-          <CardContent className="p-8 text-center">
-            <Camera className="w-12 h-12 text-red-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-red-400 mb-2">Cámara no disponible</h3>
-            <p className="text-sm text-muted-foreground">{cameraError}</p>
-            <Button onClick={startCamera} className="mt-4" variant="outline">
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Reintentar
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <div className="relative bg-black rounded-2xl overflow-hidden border border-white/5">
-              {!recordedBlob ? (
-                <>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full aspect-[9/16] max-h-[70vh] object-cover"
-                    style={{ transform: isMirrored ? "scaleX(-1)" : "none" }}
-                  />
-                  {isRecording && (
-                    <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-md border border-white/10">
-                      <div className={`w-2.5 h-2.5 rounded-full ${isPaused ? "bg-yellow-500" : "bg-red-500 animate-pulse"}`} />
-                      <span className="text-sm font-semibold text-white tracking-widest">
-                        {formatTime(recordingTime)}
-                      </span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <video
-                  ref={previewRef}
-                  controls
-                  className="w-full aspect-[9/16] max-h-[70vh] object-cover"
-                />
-              )}
-            </div>
+            <button
+              onClick={onBack}
+              className="absolute top-4 left-4 z-10 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
 
-            <div className="flex items-center justify-center gap-3 mt-4">
-              {!recordedBlob ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-12 w-12 rounded-full border-white/10"
-                    onClick={switchCamera}
-                    disabled={isRecording}
-                  >
-                    <SwitchCamera className="w-5 h-5" />
-                  </Button>
+            <button
+              onClick={switchCamera}
+              className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10"
+              disabled={isRecording}
+            >
+              <SwitchCamera className="w-5 h-5 text-white" />
+            </button>
 
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-12 w-12 rounded-full border-white/10"
-                    onClick={() => setIsMirrored(!isMirrored)}
-                  >
-                    <span className="text-xs font-bold">↔</span>
-                  </Button>
+            {isRecording && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 backdrop-blur-md border border-white/10">
+                <div className={`w-2.5 h-2.5 rounded-full ${isPaused ? "bg-yellow-500" : "bg-red-500 animate-pulse"}`} />
+                <span className="text-sm font-mono font-semibold text-white tracking-widest">
+                  {formatTime(recordingTime)}
+                </span>
+              </div>
+            )}
 
-                  {!isRecording ? (
-                    <Button
-                      className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-500 border-4 border-white/20"
-                      onClick={startRecording}
-                      disabled={!cameraReady}
-                    >
-                      <div className="w-8 h-8 rounded-full bg-white" />
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-12 w-12 rounded-full border-white/10"
-                        onClick={pauseRecording}
-                      >
-                        {isPaused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
-                      </Button>
-                      <Button
-                        className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-500 border-4 border-white/20"
-                        onClick={stopRecording}
-                      >
-                        <Square className="w-8 h-8 fill-white text-white" />
-                      </Button>
-                    </>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Button variant="outline" onClick={() => { setRecordedBlob(null); }} className="border-white/10">
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Grabar de nuevo
-                  </Button>
-                  <Button onClick={downloadVideo} className="bg-primary">
-                    <Send className="w-4 h-4 mr-2" />
-                    Descargar Video
-                  </Button>
-                  <Button
-                    onClick={onRecorded}
-                    className="bg-gradient-to-r from-green-600 to-emerald-600"
-                  >
-                    <Check className="w-4 h-4 mr-2" />
-                    Listo
-                  </Button>
-                </>
-              )}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-3">
+              <button
+                onClick={() => setIsMirrored(!isMirrored)}
+                className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 text-white text-xs font-bold"
+              >
+                ↔
+              </button>
+              <button
+                className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 text-white text-[10px] font-medium"
+              >
+                {fontSize === 16 ? "1.0x" : `${(fontSize / 16).toFixed(1)}x`}
+              </button>
             </div>
           </div>
 
-          {idea && (
-            <div className="space-y-4">
-              <Card className="bg-card/50 border-white/5">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-primary" />
-                    Guion
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed max-h-[50vh] overflow-y-auto">
-                    {idea.guion}
-                  </p>
-                </CardContent>
-              </Card>
+          <div className="bg-black/80 backdrop-blur-xl border-t border-white/5 safe-bottom">
+            <div className="flex items-center justify-center gap-2 py-2">
+              <button
+                onClick={() => setFontSize(Math.max(12, fontSize - 2))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+              >
+                A-
+              </button>
+              <span className="text-xs text-muted-foreground">{fontSize}px</span>
+              <button
+                onClick={() => setFontSize(Math.min(32, fontSize + 2))}
+                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+              >
+                A+
+              </button>
+            </div>
 
-              {idea.hashtags && idea.hashtags.length > 0 && (
-                <Card className="bg-card/50 border-white/5">
-                  <CardContent className="p-4">
-                    <div className="flex flex-wrap gap-2">
-                      {idea.hashtags.map((tag, i) => (
-                        <Badge key={i} variant="outline" className="text-xs border-primary/20 text-primary/80">
-                          #{tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+            <div className="flex items-center justify-center gap-6 pb-6 pt-2">
+              {isRecording && (
+                <button
+                  onClick={pauseRecording}
+                  className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center border border-white/20"
+                >
+                  {isPaused ? <Play className="w-5 h-5 text-white" /> : <Pause className="w-5 h-5 text-white" />}
+                </button>
+              )}
+
+              {!isRecording ? (
+                <button
+                  onClick={startRecording}
+                  disabled={!cameraReady}
+                  className="w-[72px] h-[72px] rounded-full border-4 border-white/30 flex items-center justify-center bg-transparent hover:border-white/50 transition-colors disabled:opacity-50"
+                >
+                  <div className="w-14 h-14 rounded-full bg-red-600" />
+                </button>
+              ) : (
+                <button
+                  onClick={stopRecording}
+                  className="w-[72px] h-[72px] rounded-full border-4 border-white/30 flex items-center justify-center bg-transparent"
+                >
+                  <Square className="w-7 h-7 fill-red-600 text-red-600" />
+                </button>
+              )}
+
+              {isRecording && (
+                <div className="w-12 h-12" />
               )}
             </div>
-          )}
-        </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex-1 relative overflow-hidden bg-black">
+            <video
+              ref={previewRef}
+              controls
+              className="absolute inset-0 w-full h-full object-contain"
+            />
+            <button
+              onClick={onBack}
+              className="absolute top-4 left-4 z-10 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+          </div>
+
+          <div className="bg-black/80 backdrop-blur-xl border-t border-white/5 safe-bottom">
+            <div className="flex items-center justify-center gap-3 p-4 pb-6">
+              <Button
+                variant="outline"
+                onClick={() => setRecordedBlob(null)}
+                className="border-white/10 text-white"
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />
+                De nuevo
+              </Button>
+              <Button onClick={downloadVideo} className="bg-white/10 text-white hover:bg-white/20">
+                <Send className="w-4 h-4 mr-2" />
+                Descargar
+              </Button>
+              <Button
+                onClick={onRecorded}
+                className="bg-gradient-to-r from-green-600 to-emerald-600 text-white"
+              >
+                <Check className="w-4 h-4 mr-2" />
+                Listo
+              </Button>
+            </div>
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+function TeleprompterRecorder({ idea, onBack, onRecorded }: {
+  idea: VideoIdea;
+  onBack: () => void;
+  onRecorded: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const animRef = useRef<number | null>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [isMirrored, setIsMirrored] = useState(true);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [fontSize, setFontSize] = useState(18);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
+  const [showScript, setShowScript] = useState(true);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const { toast } = useToast();
+
+  const colors = CATEGORY_COLORS[idea.category] || CATEGORY_COLORS["corto-viral"];
+  const categoryLabel = idea.category.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+  const startCamera = useCallback(async () => {
+    try {
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1080 }, height: { ideal: 1920 } },
+        audio: true,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) videoRef.current.srcObject = stream;
+      setCameraReady(true);
+    } catch {}
+  }, [facingMode]);
+
+  useEffect(() => {
+    startCamera();
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, [startCamera]);
+
+  const doScroll = useCallback(() => {
+    if (!scrollRef.current || !isScrolling) return;
+    scrollRef.current.scrollTop += scrollSpeed * 0.8;
+    animRef.current = requestAnimationFrame(doScroll);
+  }, [isScrolling, scrollSpeed]);
+
+  useEffect(() => {
+    if (isScrolling) {
+      animRef.current = requestAnimationFrame(doScroll);
+    } else if (animRef.current) {
+      cancelAnimationFrame(animRef.current);
+    }
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+  }, [isScrolling, doScroll]);
+
+  const startRecording = () => {
+    if (!streamRef.current) return;
+    chunksRef.current = [];
+    setRecordedBlob(null);
+
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm;codecs=vp9,opus" });
+    } catch {
+      try {
+        recorder = new MediaRecorder(streamRef.current, { mimeType: "video/webm" });
+      } catch {
+        recorder = new MediaRecorder(streamRef.current);
+      }
+    }
+
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunksRef.current, { type: "video/webm" });
+      setRecordedBlob(blob);
+      if (previewRef.current) previewRef.current.src = URL.createObjectURL(blob);
+    };
+
+    recorder.start(1000);
+    mediaRecorderRef.current = recorder;
+    setIsRecording(true);
+    setIsPaused(false);
+    setRecordingTime(0);
+    setIsScrolling(true);
+    timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+  };
+
+  const pauseRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      if (isPaused) {
+        mediaRecorderRef.current.resume();
+        timerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+        setIsScrolling(true);
+      } else {
+        mediaRecorderRef.current.pause();
+        if (timerRef.current) clearInterval(timerRef.current);
+        setIsScrolling(false);
+      }
+      setIsPaused(!isPaused);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setIsPaused(false);
+      setIsScrolling(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const switchCamera = () => setFacingMode(prev => prev === "user" ? "environment" : "user");
+
+  const downloadVideo = () => {
+    if (!recordedBlob) return;
+    const url = URL.createObjectURL(recordedBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grabacion-${Date.now()}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  const guionLines = idea.guion.split("\n").filter(l => l.trim());
+
+  if (recordedBlob) {
+    return (
+      <div className="fixed inset-0 bg-black z-50 flex flex-col">
+        <div className="flex-1 relative overflow-hidden">
+          <video ref={previewRef} controls className="absolute inset-0 w-full h-full object-contain" />
+          <button
+            onClick={onBack}
+            className="absolute top-4 left-4 z-10 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10"
+          >
+            <ArrowLeft className="w-5 h-5 text-white" />
+          </button>
+        </div>
+        <div className="bg-black/80 backdrop-blur-xl border-t border-white/5 safe-bottom">
+          <div className="flex items-center justify-center gap-3 p-4 pb-6">
+            <Button variant="outline" onClick={() => setRecordedBlob(null)} className="border-white/10 text-white">
+              <RotateCcw className="w-4 h-4 mr-2" />
+              De nuevo
+            </Button>
+            <Button onClick={downloadVideo} className="bg-white/10 text-white hover:bg-white/20">
+              <Send className="w-4 h-4 mr-2" />
+              Descargar
+            </Button>
+            <Button onClick={onRecorded} className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+              <Check className="w-4 h-4 mr-2" />
+              Listo
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black z-50 flex flex-col">
+      <div className="flex-1 relative overflow-hidden">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="absolute inset-0 w-full h-full object-cover"
+          style={{ transform: isMirrored ? "scaleX(-1)" : "none" }}
+        />
+
+        {showScript && (
+          <div className="absolute inset-0 bg-black/60 z-10">
+            <div
+              ref={scrollRef}
+              className="absolute inset-0 overflow-y-auto px-6 sm:px-10 pt-20 pb-40"
+            >
+              <div className="max-w-xl mx-auto">
+                <div className="flex items-center gap-2 mb-6">
+                  <div className={`w-2.5 h-2.5 rounded-full ${colors.dot}`} />
+                  <span className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                    {categoryLabel}
+                  </span>
+                </div>
+
+                {guionLines.map((line, i) => (
+                  <p
+                    key={i}
+                    className="text-white font-semibold leading-relaxed mb-5"
+                    style={{ fontSize: `${fontSize}px` }}
+                  >
+                    {line}
+                  </p>
+                ))}
+
+                <p className="text-center text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground/40 mt-16">
+                  FIN DEL GUION
+                </p>
+                <div className="h-[50vh]" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={onBack}
+          className="absolute top-4 left-4 z-20 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10"
+        >
+          <ArrowLeft className="w-5 h-5 text-white" />
+        </button>
+
+        <button
+          onClick={switchCamera}
+          disabled={isRecording}
+          className="absolute top-4 right-4 z-20 w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10"
+        >
+          <SwitchCamera className="w-5 h-5 text-white" />
+        </button>
+
+        {isRecording && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 rounded-full bg-black/50 backdrop-blur-md border border-white/10">
+            <div className={`w-2.5 h-2.5 rounded-full ${isPaused ? "bg-yellow-500" : "bg-red-500 animate-pulse"}`} />
+            <span className="text-sm font-mono font-semibold text-white tracking-widest">
+              {formatTime(recordingTime)}
+            </span>
+          </div>
+        )}
+
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-3">
+          <button
+            onClick={() => setIsMirrored(!isMirrored)}
+            className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 text-white text-xs font-bold"
+          >
+            ↔
+          </button>
+          <button
+            onClick={() => setShowScript(!showScript)}
+            className={`w-9 h-9 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 ${showScript ? "text-primary" : "text-white"}`}
+          >
+            <FileText className="w-4 h-4" />
+          </button>
+          <button
+            className="w-9 h-9 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/10 text-white text-[10px] font-medium"
+          >
+            {scrollSpeed.toFixed(1)}x
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-black/80 backdrop-blur-xl border-t border-white/5 z-20 safe-bottom">
+        {showScript && (
+          <div className="flex items-center justify-center gap-4 py-2">
+            <button
+              onClick={() => { setScrollSpeed(1); setIsScrolling(false); }}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                scrollSpeed === 1 && !isScrolling ? "bg-white/10 border-white/20 text-foreground" : "border-white/5 text-muted-foreground"
+              }`}
+            >
+              CERCA
+            </button>
+            <button
+              onClick={() => { setScrollSpeed(2); if (!isRecording) setIsScrolling(true); }}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                scrollSpeed === 2 ? "bg-white/10 border-white/20 text-foreground" : "border-white/5 text-muted-foreground"
+              }`}
+            >
+              LEJOS
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center justify-center gap-2 py-1">
+          <button
+            onClick={() => setFontSize(Math.max(12, fontSize - 2))}
+            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+          >
+            A-
+          </button>
+          <span className="text-xs text-muted-foreground">{fontSize}px</span>
+          <button
+            onClick={() => setFontSize(Math.min(32, fontSize + 2))}
+            className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+          >
+            A+
+          </button>
+        </div>
+
+        <div className="flex items-center justify-center gap-6 pb-6 pt-2">
+          {isRecording && (
+            <button
+              onClick={pauseRecording}
+              className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center border border-white/20"
+            >
+              {isPaused ? <Play className="w-5 h-5 text-white" /> : <Pause className="w-5 h-5 text-white" />}
+            </button>
+          )}
+
+          {!isRecording ? (
+            <button
+              onClick={startRecording}
+              disabled={!cameraReady}
+              className="w-[72px] h-[72px] rounded-full border-4 border-white/30 flex items-center justify-center bg-transparent hover:border-white/50 transition-colors disabled:opacity-50"
+            >
+              <div className="w-14 h-14 rounded-full bg-red-600" />
+            </button>
+          ) : (
+            <button
+              onClick={stopRecording}
+              className="w-[72px] h-[72px] rounded-full border-4 border-white/30 flex items-center justify-center bg-transparent"
+            >
+              <Square className="w-7 h-7 fill-red-600 text-red-600" />
+            </button>
+          )}
+
+          {isRecording && <div className="w-12 h-12" />}
+        </div>
+      </div>
     </div>
   );
 }
