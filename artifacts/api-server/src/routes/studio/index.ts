@@ -520,6 +520,17 @@ router.post("/studio/ideas/:id/generate-cover", async (req, res) => {
   }
 });
 
+router.get("/studio/suggested-day", async (_req, res) => {
+  try {
+    const { getSuggestedDay } = await import("./google-drive");
+    const result = getSuggestedDay();
+    res.json(result);
+  } catch (err: any) {
+    console.error("[Studio] Suggested day error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/studio/recording-stats", async (_req, res) => {
   try {
     const now = new Date();
@@ -674,7 +685,7 @@ router.post("/studio/upload-chunk", (req, res, next) => {
 router.post("/studio/finalize-upload", async (req, res) => {
   const allTempFiles: string[] = [];
   try {
-    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments } = req.body;
+    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments, targetDay: rawTargetDay } = req.body;
     if (!uploadId) { res.status(400).json({ error: "Missing uploadId" }); return; }
 
     const safeId = uploadId.replace(/[^a-zA-Z0-9\-_]/g, "");
@@ -794,20 +805,23 @@ router.post("/studio/finalize-upload", async (req, res) => {
     console.log(`[Studio] Uploading to Drive: ${ideaTitle} (${(finalStats.size / 1024 / 1024).toFixed(1)}MB) path=${finalVideoPath}`);
     const actualMimeType = finalVideoPath.endsWith(".webm") ? "video/webm" : "video/mp4";
 
+    const targetDay = typeof rawTargetDay === "string" && rawTargetDay.trim() ? rawTargetDay.trim() : undefined;
     let fileId = "";
     let webViewLink = "";
     let driveFolderId = "";
     let driveVerified = false;
     let backupLink = "";
+    let uploadedDayName = "";
     try {
       const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
       clearFolderCache();
-      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType);
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay);
       fileId = driveResult.fileId;
       webViewLink = driveResult.webViewLink;
       driveFolderId = driveResult.driveFolderId;
       driveVerified = driveResult.verified;
-      console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink}`);
+      uploadedDayName = driveResult.dayName;
+      console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink} (day: ${uploadedDayName})`);
     } catch (driveErr: any) {
       console.error(`[VideoUpload] Google Drive FAILED: ${driveErr.message}`);
       backupLink = finalVideoPath;
@@ -915,9 +929,10 @@ REGLAS:
         fileId,
         driveLink: webViewLink,
         driveVerified: true,
+        dayName: uploadedDayName || undefined,
         coverDriveLink: coverDriveLink || undefined,
         descriptionsDriveLink: descDriveLink || undefined,
-        message: "Video subido y verificado en Google Drive" + (coverDriveLink ? " con portada" : ""),
+        message: `Video subido a carpeta ${uploadedDayName || "Drive"}` + (coverDriveLink ? " con portada" : ""),
       });
     } else {
       res.json({
@@ -991,6 +1006,7 @@ router.post("/studio/upload-video", (req, res, next) => {
     const ideaId = req.body.ideaId ? parseInt(req.body.ideaId) : null;
     let ideaTitle = req.body.ideaTitle || "Video sin titulo";
     let ideaGuion = req.body.ideaGuion || "";
+    const targetDay = typeof req.body.targetDay === "string" && req.body.targetDay.trim() ? req.body.targetDay.trim() : undefined;
 
     if (ideaId) {
       const idea = await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1);
@@ -1035,15 +1051,17 @@ router.post("/studio/upload-video", (req, res, next) => {
     let webViewLink = "";
     let driveFolderId = "";
     let driveVerified = false;
+    let uploadedDayName = "";
     try {
       const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
       clearFolderCache();
-      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType);
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay);
       fileId = driveResult.fileId;
       webViewLink = driveResult.webViewLink;
       driveFolderId = driveResult.driveFolderId;
       driveVerified = driveResult.verified;
-      console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink}`);
+      uploadedDayName = driveResult.dayName;
+      console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink} (day: ${uploadedDayName})`);
     } catch (driveErr: any) {
       console.error(`[VideoUpload] Google Drive FAILED: ${driveErr.message}`);
     }
@@ -1088,8 +1106,9 @@ router.post("/studio/upload-video", (req, res, next) => {
         fileId,
         driveLink: webViewLink,
         driveVerified: true,
+        dayName: uploadedDayName || undefined,
         coverDriveLink: coverDriveLink || undefined,
-        message: "Video subido y verificado en Google Drive" + (coverDriveLink ? " con portada" : ""),
+        message: `Video subido a carpeta ${uploadedDayName || "Drive"}` + (coverDriveLink ? " con portada" : ""),
       });
     } else {
       res.json({

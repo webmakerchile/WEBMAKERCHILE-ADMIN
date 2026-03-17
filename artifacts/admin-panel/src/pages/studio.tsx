@@ -2430,6 +2430,7 @@ export default function RecordingStudio() {
   const [celebrateId, setCelebrateId] = useState<number | null>(null);
   const [studioTab, setStudioTab] = useState<"estudio" | "ideas">("estudio");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [targetDay, setTargetDay] = useState<string>("auto");
 
   const [bgUploads, setBgUploads] = useState<BgUpload[]>([]);
   const studioMountedRef = useRef(true);
@@ -2448,7 +2449,11 @@ export default function RecordingStudio() {
     setBgUploads(prev => [...prev, upload]);
   }, []);
 
+  const targetDayRef = useRef(targetDay);
+  targetDayRef.current = targetDay;
+
   const runBgUploadFn = useCallback(async (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean = true) => {
+    const resolvedDay = targetDayRef.current === "auto" ? undefined : targetDayRef.current;
     const safeUpdate = (updates: Partial<BgUpload>) => {
       if (studioMountedRef.current) setBgUploads(prev => prev.map(u => u.id === bgId ? { ...u, ...updates } : u));
     };
@@ -2499,6 +2504,7 @@ export default function RecordingStudio() {
           segments: uploadSegs,
           autoEdit: uploadAutoEdit,
           enableSubtitles: uploadEnableSubtitles,
+          targetDay: resolvedDay,
         }),
       });
 
@@ -2507,15 +2513,16 @@ export default function RecordingStudio() {
       const data = await finalRes.json();
       if (!finalRes.ok) throw new Error(data.error || "Upload failed");
 
+      const dayMsg = data.dayName ? ` → ${data.dayName}` : "";
       safeUpdate({
         status: "done",
         progress: 100,
-        message: data.driveVerified ? "Subido a Drive" : "Error Drive",
+        message: data.driveVerified ? `Subido a Drive${dayMsg}` : "Error Drive",
         driveVerified: !!data.driveVerified,
         driveLink: data.driveVerified ? (data.driveLink || "") : (data.backupLink || ""),
       });
       if (studioMountedRef.current) {
-        toast({ title: `"${uploadTitle}" ${data.driveVerified ? "subido a Drive" : "ERROR subiendo"}`, variant: data.driveVerified ? "default" : "destructive" });
+        toast({ title: `"${uploadTitle}" ${data.driveVerified ? `subido${dayMsg}` : "ERROR subiendo"}`, variant: data.driveVerified ? "default" : "destructive" });
         queryClient.invalidateQueries({ queryKey: ["/api/studio/ideas"] });
         queryClient.invalidateQueries({ queryKey: ["/api/studio/recording-stats"] });
       }
@@ -2542,6 +2549,16 @@ export default function RecordingStudio() {
       if (!res.ok) throw new Error("Error al cargar stats");
       return res.json();
     },
+  });
+
+  const { data: suggestedDayData } = useQuery<{ suggestedDay: string; currentDay: string; hour: number; availableDays: string[] }>({
+    queryKey: ["/api/studio/suggested-day"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/studio/suggested-day");
+      if (!res.ok) throw new Error("Error");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
   });
 
   const recordMutation = useMutation({
@@ -2791,6 +2808,31 @@ export default function RecordingStudio() {
           </div>
           <Play className="w-4 h-4 text-blue-400/60" />
         </button>
+
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-card/40 border border-border/50">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4 text-purple-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-foreground">Dia destino en Drive</p>
+            {suggestedDayData && (
+              <p className="text-[10px] text-muted-foreground/60">
+                Hoy: {suggestedDayData.currentDay} ({suggestedDayData.hour}:00 hrs)
+                {suggestedDayData.hour < 10 && " - antes de las 10 AM"}
+              </p>
+            )}
+          </div>
+          <select
+            value={targetDay}
+            onChange={(e) => setTargetDay(e.target.value)}
+            className="bg-background/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
+          >
+            <option value="auto">Auto ({suggestedDayData?.suggestedDay || "..."})</option>
+            {(suggestedDayData?.availableDays || ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]).map(day => (
+              <option key={day} value={day}>{day}</option>
+            ))}
+          </select>
+        </div>
 
         {stats && (stats.totalCount > 0 || stats.streak > 0) && (
           <div className="flex items-center justify-around py-3 rounded-xl bg-card/30 border border-border/50">

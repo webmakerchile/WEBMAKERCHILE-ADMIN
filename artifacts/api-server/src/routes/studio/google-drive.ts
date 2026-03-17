@@ -164,6 +164,38 @@ const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes
 const DAY_ORDER = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"];
 const MAX_VIDEOS_PER_DAY = 5;
 
+function getSmartStartDay(): string {
+  const chile = getChileDate();
+  const hour = chile.getHours();
+  const currentDayIndex = chile.getDay();
+  const currentDayName = DAY_NAMES[currentDayIndex];
+
+  if (hour < 10) {
+    const yesterdayIndex = currentDayIndex === 0 ? 6 : currentDayIndex - 1;
+    const yesterdayName = DAY_NAMES[yesterdayIndex];
+    console.log(`[GoogleDrive] Before 10 AM (${hour}:xx) - allowing yesterday (${yesterdayName}) as start day`);
+    return yesterdayName;
+  }
+
+  console.log(`[GoogleDrive] After 10 AM (${hour}:xx) - start day: ${currentDayName}`);
+  return currentDayName;
+}
+
+export function getSuggestedDay(): { suggestedDay: string; currentDay: string; hour: number; availableDays: string[] } {
+  const chile = getChileDate();
+  const hour = chile.getHours();
+  const currentDayIndex = chile.getDay();
+  const currentDayName = DAY_NAMES[currentDayIndex];
+  const smartStart = getSmartStartDay();
+
+  const smartStartOrderIdx = DAY_ORDER.indexOf(smartStart);
+  const availableDays = smartStartOrderIdx >= 0
+    ? DAY_ORDER.slice(smartStartOrderIdx)
+    : DAY_ORDER;
+
+  return { suggestedDay: smartStart, currentDay: currentDayName, hour, availableDays };
+}
+
 async function countSubfoldersInFolder(
   connectors: ReplitConnectors,
   folderId: string
@@ -181,9 +213,17 @@ async function countSubfoldersInFolder(
 
 async function findAvailableDaySlot(
   connectors: ReplitConnectors,
-  weekFolderId: string
+  weekFolderId: string,
+  startFromDay?: string
 ): Promise<{ dayName: string; dayFolderId: string; slotNumber: number } | null> {
-  for (const dayName of DAY_ORDER) {
+  let startIdx = 0;
+  if (startFromDay) {
+    const idx = DAY_ORDER.indexOf(startFromDay);
+    if (idx >= 0) startIdx = idx;
+  }
+
+  for (let i = startIdx; i < DAY_ORDER.length; i++) {
+    const dayName = DAY_ORDER[i];
     const dayFolderId = await findOrCreateFolder(connectors, weekFolderId, dayName);
     const usedSlots = await countSubfoldersInFolder(connectors, dayFolderId);
     if (usedSlots < MAX_VIDEOS_PER_DAY) {
@@ -196,11 +236,17 @@ async function findAvailableDaySlot(
   return null;
 }
 
-async function getTargetFolderId(connectors: ReplitConnectors): Promise<{ folderId: string; fileNumber: number }> {
+async function getTargetFolderId(connectors: ReplitConnectors, targetDay?: string): Promise<{ folderId: string; fileNumber: number; dayName: string }> {
   const chile = getChileDate();
   let monthIndex = chile.getMonth();
   let year = chile.getFullYear();
   let weekNum = getWeekOfMonth(chile);
+
+  const startFromDay = targetDay && DAY_ORDER.includes(targetDay)
+    ? targetDay
+    : getSmartStartDay();
+
+  console.log(`[GoogleDrive] Target day logic: requested=${targetDay || "auto"}, resolved=${startFromDay}`);
 
   for (let monthAttempt = 0; monthAttempt < 3; monthAttempt++) {
     const actualMonthIndex = (monthIndex + monthAttempt) % 12;
@@ -214,14 +260,15 @@ async function getTargetFolderId(connectors: ReplitConnectors): Promise<{ folder
       console.log(`[GoogleDrive] Checking: ${monthName} > ${weekName}`);
       const weekFolderId = await findOrCreateFolder(connectors, monthFolderId, weekName);
 
-      const slot = await findAvailableDaySlot(connectors, weekFolderId);
+      const dayFilter = (monthAttempt === 0 && w === weekNum) ? startFromDay : undefined;
+      const slot = await findAvailableDaySlot(connectors, weekFolderId, dayFilter);
       if (slot) {
         const videoFolderName = String(slot.slotNumber);
         const videoFolderId = await findOrCreateFolder(connectors, slot.dayFolderId, videoFolderName);
         const globalNumber = (w - 1) * MAX_VIDEOS_PER_DAY * 7 + DAY_ORDER.indexOf(slot.dayName) * MAX_VIDEOS_PER_DAY + slot.slotNumber;
 
         console.log(`[GoogleDrive] Target: ${monthName}/${weekName}/${slot.dayName}/${videoFolderName}`);
-        return { folderId: videoFolderId, fileNumber: globalNumber };
+        return { folderId: videoFolderId, fileNumber: globalNumber, dayName: slot.dayName };
       }
       console.log(`[GoogleDrive] ${monthName}/${weekName} completely full, checking next week...`);
     }
@@ -393,8 +440,9 @@ async function verifyDriveFile(fileId: string): Promise<{ exists: boolean; name?
 export async function uploadVideoToDriveFromFile(
   filePath: string,
   ideaTitle: string,
-  actualMimeType: string = "video/mp4"
-): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean }> {
+  actualMimeType: string = "video/mp4",
+  targetDay?: string
+): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean; dayName: string }> {
   const ext = actualMimeType.includes("mp4") ? "mp4" : "webm";
   const MAX_ATTEMPTS = 3;
   const errors: string[] = [];
@@ -407,7 +455,7 @@ export async function uploadVideoToDriveFromFile(
       }
 
       const connectors = getConnectors();
-      const { folderId, fileNumber } = await getTargetFolderId(connectors);
+      const { folderId, fileNumber, dayName } = await getTargetFolderId(connectors, targetDay);
       const fileName = buildFileName(fileNumber, ideaTitle, ext);
 
       console.log(`[VideoUpload] Attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${fileName} (${actualMimeType})`);
@@ -424,8 +472,8 @@ export async function uploadVideoToDriveFromFile(
         continue;
       }
 
-      console.log(`[VideoUpload] VERIFIED in Drive: "${verification.name}" (${((verification.size || 0) / 1024 / 1024).toFixed(1)}MB)`);
-      return { ...result, driveFolderId: folderId, verified: true };
+      console.log(`[VideoUpload] VERIFIED in Drive: "${verification.name}" (${((verification.size || 0) / 1024 / 1024).toFixed(1)}MB) -> ${dayName}`);
+      return { ...result, driveFolderId: folderId, verified: true, dayName };
     } catch (driveErr: any) {
       const msg = driveErr.message || "Unknown error";
       console.error(`[VideoUpload] Attempt ${attempt + 1} failed: ${msg}`);
@@ -439,12 +487,13 @@ export async function uploadVideoToDriveFromFile(
 export async function uploadVideoToDrive(
   videoBuffer: Buffer,
   ideaTitle: string,
-  actualMimeType: string = "video/mp4"
-): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean }> {
+  actualMimeType: string = "video/mp4",
+  targetDay?: string
+): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean; dayName: string }> {
   const tmpPath = path.join("/tmp", `drive-upload-${Date.now()}.tmp`);
   await writeFile(tmpPath, videoBuffer);
   try {
-    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, actualMimeType);
+    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, actualMimeType, targetDay);
   } finally {
     await unlink(tmpPath).catch(() => {});
   }
