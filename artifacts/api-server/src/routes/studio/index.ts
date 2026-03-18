@@ -746,8 +746,8 @@ router.post("/studio/finalize-upload", async (req, res) => {
       try {
         if (segmentsParam && Array.isArray(segmentsParam) && segmentsParam.length > 0) {
           const { writeFile: writeFileAsync } = await import("fs/promises");
-          const cfrVf = `-vf "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"`;
-          const cfrVideo = `${cfrVf} -c:v libx264 -preset fast -crf 18 -g 30 -bf 0 -pix_fmt yuv420p -profile:v main -level 4.2 -fps_mode cfr -video_track_timescale 30000`;
+          const cfrVf = `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"`;
+          const cfrVideo = `${cfrVf} -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2`;
           const cfrAudio = `-c:a aac -b:a 128k -ar 44100 -ac 2`;
           if (segmentsParam.length === 1) {
             const seg = segmentsParam[0];
@@ -786,7 +786,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
           const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
           allTempFiles.push(outPath);
           await execAsync(
-            `ffmpeg -y -i "${rawInputPath}" -vf "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 30 -bf 0 -pix_fmt yuv420p -profile:v main -level 4.2 -fps_mode cfr -video_track_timescale 30000 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+            `ffmpeg -y -i "${rawInputPath}" -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
             { timeout: 180000 }
           );
           finalVideoPath = outPath;
@@ -796,7 +796,8 @@ router.post("/studio/finalize-upload", async (req, res) => {
         if (!outStats.size || outStats.size < 100) throw new Error("Processed video empty");
         console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB`);
       } catch (ffErr: any) {
-        console.warn(`[Studio] ffmpeg failed, uploading raw: ${ffErr.message}`);
+        console.error(`[Studio] ffmpeg FAILED - uploading raw VFR video. Error: ${ffErr.message}`);
+        if (ffErr.stderr) console.error(`[Studio] ffmpeg stderr: ${ffErr.stderr}`);
         finalVideoPath = tempPath;
       }
     }
@@ -1032,7 +1033,7 @@ router.post("/studio/upload-video", (req, res, next) => {
         const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
         allTempFiles.push(outPath);
         await execAsync(
-          `ffmpeg -y -i "${uploadedFilePath}" -vf "fps=30,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -c:v libx264 -preset fast -crf 18 -g 30 -bf 0 -pix_fmt yuv420p -profile:v main -level 4.2 -fps_mode cfr -video_track_timescale 30000 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+          `ffmpeg -y -i "${uploadedFilePath}" -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
           { timeout: 180000 }
         );
         const outStats = await fsStat(outPath);
