@@ -839,29 +839,68 @@ function CameraRecordingView({
     setZoomLevel(1);
     hasNativeZoomRef.current = false;
     try {
+      const portraitVideo: MediaTrackConstraints = {
+        facingMode: facing,
+        frameRate: { ideal: 30, max: 30 },
+        width: { ideal: 1080, max: 1920 },
+        height: { ideal: 1920, max: 2560 },
+        aspectRatio: { ideal: 9 / 16 },
+      };
+      const fallbackVideo: MediaTrackConstraints = {
+        facingMode: facing,
+        frameRate: { ideal: 30, max: 30 },
+      };
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, frameRate: { ideal: 30, max: 30 } },
+          video: portraitVideo,
           audio: true,
         });
-      } catch (audioErr) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: facing, frameRate: { ideal: 30, max: 30 } },
-          audio: false,
-        });
+      } catch (firstErr) {
         try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
-        } catch {}
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: fallbackVideo,
+            audio: true,
+          });
+        } catch (audioErr) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: fallbackVideo,
+            audio: false,
+          });
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
+          } catch {}
+        }
       }
       if (!mountedRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
       streamRef.current = stream;
+
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        const settings = videoTrack.getSettings();
+        const trackW = settings.width || 0;
+        const trackH = settings.height || 0;
+        console.log(`[Camera] Track dimensions: ${trackW}x${trackH}`);
+        if (trackW > trackH) {
+          try {
+            await videoTrack.applyConstraints({
+              width: { ideal: trackH, max: trackH },
+              height: { ideal: trackW, max: trackW },
+              aspectRatio: { ideal: 9 / 16 },
+            });
+            const newSettings = videoTrack.getSettings();
+            console.log(`[Camera] After re-constraint: ${newSettings.width}x${newSettings.height}`);
+          } catch (e) {
+            console.log("[Camera] Could not re-constrain to portrait, will use CSS rotation");
+          }
+        }
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
       }
-      const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
         try {
           const caps = videoTrack.getCapabilities() as any;
