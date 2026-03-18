@@ -296,7 +296,14 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
   const refImageBase64 = refImageBuffer.toString("base64");
   const prompt = buildIllustrationPrompt(videoDescription);
 
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 4;
+  const RETRY_DELAYS = [5000, 15000, 30000];
+
+  function isRateLimitError(err: any): boolean {
+    const msg = typeof err?.message === "string" ? err.message : "";
+    return msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Resource exhausted");
+  }
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`[CoverGen] Generating fox illustration via Gemini (attempt ${attempt}/${MAX_RETRIES})...`);
     try {
@@ -333,10 +340,18 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
       console.log(`[CoverGen] Fox illustration generated successfully`);
       return Buffer.from(imagePart.inlineData.data, "base64");
     } catch (err: any) {
-      console.warn(`[CoverGen] Attempt ${attempt} failed: ${err.message}`);
+      const rateLimited = isRateLimitError(err);
+      console.warn(`[CoverGen] Attempt ${attempt} failed (rate_limit=${rateLimited}): ${err.message}`);
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 1500 * attempt));
+        const delay = rateLimited
+          ? RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)]
+          : 2000 * attempt;
+        console.log(`[CoverGen] Waiting ${delay / 1000}s before retry...`);
+        await new Promise(r => setTimeout(r, delay));
       } else {
+        if (rateLimited) {
+          throw new Error("El servicio de IA está saturado. Espera 1-2 minutos e intenta de nuevo.");
+        }
         throw new Error("No se pudo generar la imagen después de varios intentos. Intenta de nuevo.");
       }
     }

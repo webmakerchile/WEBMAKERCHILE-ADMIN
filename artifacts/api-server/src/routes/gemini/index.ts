@@ -172,7 +172,13 @@ Detalles importantes:
 4. Estilo General: Minimalista, líneas limpias y colores planos.
 5. REGLA FINAL: Antes de generar, re-lee el texto letra por letra y confirma que cada carácter está en el orden correcto. La ortografía correcta es la MÁXIMA PRIORIDAD.`;
 
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 4;
+  const RETRY_DELAYS = [5000, 15000, 30000];
+
+  function isRateLimitError(err: any): boolean {
+    const msg = typeof err?.message === "string" ? err.message : "";
+    return msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Resource exhausted");
+  }
 
   async function attemptGenerate(attempt: number): Promise<{ b64_json: string; mimeType: string }> {
     console.log(`[CoverGen] Attempt ${attempt}/${MAX_RETRIES}...`);
@@ -216,10 +222,18 @@ Detalles importantes:
         return await generateImage(basePrompt);
       }
     } catch (err: any) {
-      console.warn(`[CoverGen] Attempt ${attempt} failed: ${err.message}`);
+      const rateLimited = isRateLimitError(err);
+      console.warn(`[CoverGen] Attempt ${attempt} failed (rate_limit=${rateLimited}): ${err.message}`);
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 1500 * attempt));
+        const delay = rateLimited
+          ? RETRY_DELAYS[Math.min(attempt - 1, RETRY_DELAYS.length - 1)]
+          : 2000 * attempt;
+        console.log(`[CoverGen] Waiting ${delay / 1000}s before retry...`);
+        await new Promise(r => setTimeout(r, delay));
         return attemptGenerate(attempt + 1);
+      }
+      if (rateLimited) {
+        throw new Error("RATE_LIMIT");
       }
       throw err;
     }
@@ -231,7 +245,11 @@ Detalles importantes:
     res.json(result);
   } catch (error: any) {
     console.error(`[CoverGen] All ${MAX_RETRIES} attempts failed: ${error.message}`);
-    res.status(500).json({ error: "No se pudo generar la portada después de varios intentos. Intenta de nuevo." });
+    if (error.message === "RATE_LIMIT") {
+      res.status(429).json({ error: "El servicio de IA está saturado en este momento. Espera 1-2 minutos e intenta de nuevo." });
+    } else {
+      res.status(500).json({ error: "No se pudo generar la portada. Intenta de nuevo en unos momentos." });
+    }
   }
 });
 
