@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import path from "path";
 import router from "./routes";
 import authRouter, { passport, requireAuth } from "./routes/auth";
@@ -20,15 +21,23 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.set("trust proxy", 1);
 
+const PgStore = connectPgSimple(session);
+
 app.use(
   session({
+    store: new PgStore({
+      conString: process.env.DATABASE_URL,
+      tableName: "session",
+      createTableIfMissing: true,
+      pruneSessionInterval: 60 * 15,
+    }),
     secret: process.env.SESSION_SECRET || "webmaker-admin-secret-key-change-in-production",
     resave: false,
     saveUninitialized: false,
     cookie: {
       secure: true,
       httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: "lax",
     },
   })
