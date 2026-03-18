@@ -436,8 +436,8 @@ function VideoWizard({
   };
 
   const handleSaveInfo = () => {
-    if (!formData.title || !formData.description) {
-      toast({ title: "Completa título y descripción", variant: "destructive" });
+    if (!formData.title) {
+      toast({ title: "Completa el título del video", variant: "destructive" });
       return;
     }
     if (isCreating) {
