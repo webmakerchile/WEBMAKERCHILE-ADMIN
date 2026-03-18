@@ -3,7 +3,7 @@ import { useGenerateCover } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X
+  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -190,6 +190,22 @@ export default function CoverGeneratorPage() {
                     <div className="absolute inset-0 border-4 border-primary rounded-full border-t-transparent animate-spin"></div>
                   </div>
                   <p className="mt-6 text-lg font-medium text-foreground animate-pulse">Gemini está creando tu portada...</p>
+                  <p className="mt-2 text-sm text-muted-foreground/60">Esto puede tomar hasta 30 segundos</p>
+                </div>
+              ) : generateCover.isError ? (
+                <div className="flex flex-col items-center relative z-10 text-center px-4">
+                  <AlertTriangle className="w-16 h-16 text-orange-400 mb-4" />
+                  <h3 className="text-xl font-medium text-foreground mb-2">Error al generar</h3>
+                  <p className="text-sm text-muted-foreground/80 mb-6 max-w-sm">
+                    {(generateCover.error as any)?.message || "No se pudo generar la portada. Intenta de nuevo."}
+                  </p>
+                  <button
+                    onClick={handleGenerate}
+                    className="flex items-center px-6 py-3 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300"
+                  >
+                    <RefreshCw className="w-5 h-5 mr-2" />
+                    Reintentar
+                  </button>
                 </div>
               ) : generateCover.data ? (
                 <motion.div 

@@ -172,50 +172,66 @@ Detalles importantes:
 4. Estilo General: Minimalista, líneas limpias y colores planos.
 5. REGLA FINAL: Antes de generar, re-lee el texto letra por letra y confirma que cada carácter está en el orden correcto. La ortografía correcta es la MÁXIMA PRIORIDAD.`;
 
-  try {
-    let result;
-    if (body.referenceImageBase64) {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents: [
-          {
-            role: "user",
-            parts: [
-              {
-                inlineData: {
-                  data: body.referenceImageBase64,
-                  mimeType: "image/png",
+  const MAX_RETRIES = 3;
+
+  async function attemptGenerate(attempt: number): Promise<{ b64_json: string; mimeType: string }> {
+    console.log(`[CoverGen] Attempt ${attempt}/${MAX_RETRIES}...`);
+    try {
+      if (body.referenceImageBase64) {
+        const response = await ai.models.generateContent({
+          model: "gemini-3-pro-image-preview",
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    data: body.referenceImageBase64,
+                    mimeType: "image/png",
+                  },
                 },
-              },
-              { text: basePrompt },
-            ],
+                { text: basePrompt },
+              ],
+            },
+          ],
+          config: {
+            responseModalities: ["TEXT", "IMAGE"],
           },
-        ],
-        config: {
-          responseModalities: ["TEXT", "IMAGE"],
-        },
-      });
+        });
 
-      const candidate = response.candidates?.[0];
-      const imagePart = candidate?.content?.parts?.find(
-        (part: any) => part.inlineData
-      );
+        const candidate = response.candidates?.[0];
+        const imagePart = candidate?.content?.parts?.find(
+          (part: any) => part.inlineData
+        );
 
-      if (!imagePart?.inlineData?.data) {
-        throw new Error("No image data in response");
+        if (!imagePart?.inlineData?.data) {
+          throw new Error("Gemini no devolvió imagen en este intento");
+        }
+
+        return {
+          b64_json: imagePart.inlineData.data,
+          mimeType: imagePart.inlineData.mimeType || "image/png",
+        };
+      } else {
+        return await generateImage(basePrompt);
       }
-
-      result = {
-        b64_json: imagePart.inlineData.data,
-        mimeType: imagePart.inlineData.mimeType || "image/png",
-      };
-    } else {
-      result = await generateImage(basePrompt);
+    } catch (err: any) {
+      console.warn(`[CoverGen] Attempt ${attempt} failed: ${err.message}`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+        return attemptGenerate(attempt + 1);
+      }
+      throw err;
     }
+  }
 
+  try {
+    const result = await attemptGenerate(1);
+    console.log(`[CoverGen] Cover generated successfully`);
     res.json(result);
   } catch (error: any) {
-    res.status(500).json({ error: error.message || "Cover generation failed" });
+    console.error(`[CoverGen] All ${MAX_RETRIES} attempts failed: ${error.message}`);
+    res.status(500).json({ error: "No se pudo generar la portada después de varios intentos. Intenta de nuevo." });
   }
 });
 

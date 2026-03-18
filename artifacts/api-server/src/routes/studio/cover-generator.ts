@@ -296,41 +296,52 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
   const refImageBase64 = refImageBuffer.toString("base64");
   const prompt = buildIllustrationPrompt(videoDescription);
 
-  console.log(`[CoverGen] Generating fox illustration via Gemini...`);
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-image-preview",
-    contents: [
-      {
-        role: "user",
-        parts: [
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    console.log(`[CoverGen] Generating fox illustration via Gemini (attempt ${attempt}/${MAX_RETRIES})...`);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents: [
           {
-            inlineData: {
-              data: refImageBase64,
-              mimeType: "image/png",
-            },
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  data: refImageBase64,
+                  mimeType: "image/png",
+                },
+              },
+              { text: prompt },
+            ],
           },
-          { text: prompt },
         ],
-      },
-    ],
-    config: {
-      responseModalities: [Modality.TEXT, Modality.IMAGE],
-    },
-  });
+        config: {
+          responseModalities: [Modality.TEXT, Modality.IMAGE],
+        },
+      });
 
-  const candidate = response.candidates?.[0];
-  const imagePart = candidate?.content?.parts?.find(
-    (part: any) => part.inlineData
-  );
+      const candidate = response.candidates?.[0];
+      const imagePart = candidate?.content?.parts?.find(
+        (part: any) => part.inlineData
+      );
 
-  if (!imagePart?.inlineData?.data) {
-    console.error("[CoverGen] No image data in Gemini response");
-    throw new Error("Gemini no devolvio imagen. Intenta de nuevo.");
+      if (!imagePart?.inlineData?.data) {
+        throw new Error("Gemini no devolvió imagen en este intento");
+      }
+
+      console.log(`[CoverGen] Fox illustration generated successfully`);
+      return Buffer.from(imagePart.inlineData.data, "base64");
+    } catch (err: any) {
+      console.warn(`[CoverGen] Attempt ${attempt} failed: ${err.message}`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      } else {
+        throw new Error("No se pudo generar la imagen después de varios intentos. Intenta de nuevo.");
+      }
+    }
   }
-
-  console.log(`[CoverGen] Fox illustration generated successfully`);
-  return Buffer.from(imagePart.inlineData.data, "base64");
+  throw new Error("No se pudo generar la imagen");
 }
 
 const TEXT_ZONE_CLEAR_HEIGHT = TEXT_ZONE_BOTTOM + 40;
