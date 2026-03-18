@@ -120,6 +120,54 @@ router.get("/auth/google/callback",
   }
 );
 
+const TEST_USERNAME = "tiktok_reviewer";
+const TEST_PASSWORD = "WebMaker2026!Review";
+
+router.post("/auth/test-login", async (req: Request, res: Response) => {
+  try {
+    const { username, password } = req.body || {};
+    if (username !== TEST_USERNAME || password !== TEST_PASSWORD) {
+      return res.status(401).json({ error: "Credenciales incorrectas" });
+    }
+
+    const testGoogleId = "test-reviewer-account";
+    const testEmail = "reviewer@webmakerchile.com";
+
+    const [existing] = await db
+      .select()
+      .from(users)
+      .where(eq(users.googleId, testGoogleId))
+      .limit(1);
+
+    let testUser;
+    if (existing) {
+      await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, existing.id));
+      testUser = { ...existing, lastLoginAt: new Date() };
+    } else {
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          googleId: testGoogleId,
+          email: testEmail,
+          name: "TikTok Reviewer",
+          picture: null,
+          role: "admin",
+          googleAccessToken: null,
+          googleRefreshToken: null,
+        })
+        .returning();
+      testUser = newUser;
+    }
+
+    req.login(testUser, (err) => {
+      if (err) return res.status(500).json({ error: "Error al iniciar sesión" });
+      res.json({ success: true, user: { id: testUser.id, email: testEmail, name: "TikTok Reviewer" } });
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get("/auth/me", (req: Request, res: Response) => {
   if (req.isAuthenticated && req.isAuthenticated() && req.user) {
     const user = req.user as any;

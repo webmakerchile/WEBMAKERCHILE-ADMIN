@@ -1,11 +1,43 @@
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 export default function LoginPage() {
+  const [showTestLogin, setShowTestLogin] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [testError, setTestError] = useState("");
+  const [testLoading, setTestLoading] = useState(false);
+
   const handleGoogleLogin = () => {
     window.location.href = `${API_BASE}/auth/google`;
+  };
+
+  const handleTestLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTestError("");
+    setTestLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/test-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTestError(data.error || "Error al iniciar sesión");
+        return;
+      }
+      window.location.href = "/";
+    } catch {
+      setTestError("Error de conexión");
+    } finally {
+      setTestLoading(false);
+    }
   };
 
   return (
@@ -49,6 +81,47 @@ export default function LoginPage() {
             </svg>
             Iniciar sesión con Google
           </Button>
+
+          {!showTestLogin ? (
+            <button
+              onClick={() => setShowTestLogin(true)}
+              className="w-full mt-4 text-xs text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors py-2"
+            >
+              Iniciar con cuenta de prueba
+            </button>
+          ) : (
+            <form onSubmit={handleTestLogin} className="mt-4 space-y-3">
+              <div className="border-t border-white/10 pt-4">
+                <p className="text-xs text-muted-foreground/60 text-center mb-3">Cuenta de prueba</p>
+                <input
+                  type="text"
+                  placeholder="Usuario"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-background/60 border border-white/10 text-foreground text-sm placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                  autoComplete="username"
+                />
+                <input
+                  type="password"
+                  placeholder="Contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full mt-2 px-4 py-3 rounded-xl bg-background/60 border border-white/10 text-foreground text-sm placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                  autoComplete="current-password"
+                />
+                {testError && (
+                  <p className="text-xs text-red-400 mt-2 text-center">{testError}</p>
+                )}
+                <Button
+                  type="submit"
+                  disabled={testLoading || !username || !password}
+                  className="w-full mt-3 h-11 rounded-xl bg-primary/20 hover:bg-primary/30 text-primary border border-primary/20"
+                >
+                  {testLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar"}
+                </Button>
+              </div>
+            </form>
+          )}
 
           <div className="mt-6 text-center">
             <p className="text-xs text-muted-foreground/60">
