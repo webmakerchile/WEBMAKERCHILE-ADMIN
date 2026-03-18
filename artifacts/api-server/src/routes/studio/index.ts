@@ -685,7 +685,7 @@ router.post("/studio/upload-chunk", (req, res, next) => {
 router.post("/studio/finalize-upload", async (req, res) => {
   const allTempFiles: string[] = [];
   try {
-    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments, targetDay: rawTargetDay } = req.body;
+    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments, targetDay: rawTargetDay, targetTime: rawTargetTime } = req.body;
     if (!uploadId) { res.status(400).json({ error: "Missing uploadId" }); return; }
 
     const safeId = uploadId.replace(/[^a-zA-Z0-9\-_]/g, "");
@@ -845,6 +845,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
     const actualMimeType = finalVideoPath.endsWith(".webm") ? "video/webm" : "video/mp4";
 
     const targetDay = typeof rawTargetDay === "string" && rawTargetDay.trim() ? rawTargetDay.trim() : undefined;
+    const targetTime = typeof rawTargetTime === "string" && /^\d{1,2}:\d{2}$/.test(rawTargetTime.trim()) ? rawTargetTime.trim() : undefined;
     let fileId = "";
     let webViewLink = "";
     let driveFolderId = "";
@@ -854,7 +855,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
     try {
       const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
       clearFolderCache();
-      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay);
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay, targetTime);
       fileId = driveResult.fileId;
       webViewLink = driveResult.webViewLink;
       driveFolderId = driveResult.driveFolderId;
@@ -962,16 +963,17 @@ REGLAS:
       }
     }
 
+    const timeLabel = targetTime ? ` (${targetTime})` : "";
     if (driveVerified) {
       res.json({
         success: true,
         fileId,
         driveLink: webViewLink,
         driveVerified: true,
-        dayName: uploadedDayName || undefined,
+        dayName: uploadedDayName ? `${uploadedDayName}${timeLabel}` : undefined,
         coverDriveLink: coverDriveLink || undefined,
         descriptionsDriveLink: descDriveLink || undefined,
-        message: `Video subido a carpeta ${uploadedDayName || "Drive"}` + (coverDriveLink ? " con portada" : ""),
+        message: `Video subido a carpeta ${uploadedDayName || "Drive"}${timeLabel}` + (coverDriveLink ? " con portada" : ""),
       });
     } else {
       res.json({
@@ -1046,6 +1048,7 @@ router.post("/studio/upload-video", (req, res, next) => {
     let ideaTitle = req.body.ideaTitle || "Video sin titulo";
     let ideaGuion = req.body.ideaGuion || "";
     const targetDay = typeof req.body.targetDay === "string" && req.body.targetDay.trim() ? req.body.targetDay.trim() : undefined;
+    const targetTime = typeof req.body.targetTime === "string" && /^\d{1,2}:\d{2}$/.test(req.body.targetTime.trim()) ? req.body.targetTime.trim() : undefined;
 
     if (ideaId) {
       const idea = await db.select().from(videoIdeas).where(eq(videoIdeas.id, ideaId)).limit(1);
@@ -1122,7 +1125,7 @@ router.post("/studio/upload-video", (req, res, next) => {
     try {
       const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
       clearFolderCache();
-      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay);
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay, targetTime);
       fileId = driveResult.fileId;
       webViewLink = driveResult.webViewLink;
       driveFolderId = driveResult.driveFolderId;
@@ -1167,15 +1170,16 @@ router.post("/studio/upload-video", (req, res, next) => {
       }
     }
 
+    const timeLabel2 = targetTime ? ` (${targetTime})` : "";
     if (driveVerified) {
       res.json({
         success: true,
         fileId,
         driveLink: webViewLink,
         driveVerified: true,
-        dayName: uploadedDayName || undefined,
+        dayName: uploadedDayName ? `${uploadedDayName}${timeLabel2}` : undefined,
         coverDriveLink: coverDriveLink || undefined,
-        message: `Video subido a carpeta ${uploadedDayName || "Drive"}` + (coverDriveLink ? " con portada" : ""),
+        message: `Video subido a carpeta ${uploadedDayName || "Drive"}${timeLabel2}` + (coverDriveLink ? " con portada" : ""),
       });
     } else {
       res.json({

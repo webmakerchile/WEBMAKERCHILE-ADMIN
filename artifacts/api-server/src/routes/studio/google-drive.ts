@@ -278,7 +278,7 @@ async function getTargetFolderId(connectors: ReplitConnectors, targetDay?: strin
   throw new Error("[GoogleDrive] Could not find available slot in 3 months of weeks/days");
 }
 
-function buildFileName(fileNumber: number, ideaTitle: string, ext: string = "mp4"): string {
+function buildFileName(fileNumber: number, ideaTitle: string, ext: string = "mp4", targetTime?: string): string {
   const chile = getChileDate();
   const dd = String(chile.getDate()).padStart(2, "0");
   const mm = String(chile.getMonth() + 1).padStart(2, "0");
@@ -291,7 +291,8 @@ function buildFileName(fileNumber: number, ideaTitle: string, ext: string = "mp4
     .trim()
     .substring(0, 50);
 
-  return `${fileNumber}_${dateStr}_${cleanTitle}.${ext}`;
+  const timeTag = targetTime ? `_${targetTime.replace(":", "h")}` : "";
+  return `${fileNumber}_${dateStr}${timeTag}_${cleanTitle}.${ext}`;
 }
 
 async function readFileChunk(filePath: string, start: number, length: number): Promise<Buffer> {
@@ -441,7 +442,8 @@ export async function uploadVideoToDriveFromFile(
   filePath: string,
   ideaTitle: string,
   actualMimeType: string = "video/mp4",
-  targetDay?: string
+  targetDay?: string,
+  targetTime?: string
 ): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean; dayName: string }> {
   const ext = actualMimeType.includes("mp4") ? "mp4" : "webm";
   const MAX_ATTEMPTS = 3;
@@ -456,7 +458,7 @@ export async function uploadVideoToDriveFromFile(
 
       const connectors = getConnectors();
       const { folderId, fileNumber, dayName } = await getTargetFolderId(connectors, targetDay);
-      const fileName = buildFileName(fileNumber, ideaTitle, ext);
+      const fileName = buildFileName(fileNumber, ideaTitle, ext, targetTime);
 
       console.log(`[VideoUpload] Attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${fileName} (${actualMimeType})`);
 
@@ -488,12 +490,13 @@ export async function uploadVideoToDrive(
   videoBuffer: Buffer,
   ideaTitle: string,
   actualMimeType: string = "video/mp4",
-  targetDay?: string
+  targetDay?: string,
+  targetTime?: string
 ): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean; dayName: string }> {
   const tmpPath = path.join("/tmp", `drive-upload-${Date.now()}.tmp`);
   await writeFile(tmpPath, videoBuffer);
   try {
-    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, actualMimeType, targetDay);
+    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, actualMimeType, targetDay, targetTime);
   } finally {
     await unlink(tmpPath).catch(() => {});
   }

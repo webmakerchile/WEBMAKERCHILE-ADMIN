@@ -2470,6 +2470,7 @@ export default function RecordingStudio() {
   const [studioTab, setStudioTab] = useState<"estudio" | "ideas">("estudio");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [targetDay, setTargetDay] = useState<string>("auto");
+  const [targetTime, setTargetTime] = useState<string>("");
 
   const [bgUploads, setBgUploads] = useState<BgUpload[]>([]);
   const studioMountedRef = useRef(true);
@@ -2490,9 +2491,12 @@ export default function RecordingStudio() {
 
   const targetDayRef = useRef(targetDay);
   targetDayRef.current = targetDay;
+  const targetTimeRef = useRef(targetTime);
+  targetTimeRef.current = targetTime;
 
   const runBgUploadFn = useCallback(async (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean = true) => {
     const resolvedDay = targetDayRef.current === "auto" ? undefined : targetDayRef.current;
+    const resolvedTime = targetTimeRef.current || undefined;
     const safeUpdate = (updates: Partial<BgUpload>) => {
       if (studioMountedRef.current) setBgUploads(prev => prev.map(u => u.id === bgId ? { ...u, ...updates } : u));
     };
@@ -2544,6 +2548,7 @@ export default function RecordingStudio() {
           autoEdit: uploadAutoEdit,
           enableSubtitles: uploadEnableSubtitles,
           targetDay: resolvedDay,
+          targetTime: resolvedTime,
         }),
       });
 
@@ -2848,33 +2853,57 @@ export default function RecordingStudio() {
           <Play className="w-4 h-4 text-blue-400/60" />
         </button>
 
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-card/40 border border-border/50">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 flex items-center justify-center shrink-0">
-            <Clock className="w-4 h-4 text-purple-400" />
+        <div className="px-4 py-3 rounded-xl bg-card/40 border border-border/50 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-indigo-500/20 flex items-center justify-center shrink-0">
+              <Clock className="w-4 h-4 text-purple-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-foreground">Destino en Drive</p>
+              {suggestedDayData && (
+                <p className="text-[10px] text-muted-foreground/60">
+                  Hoy: {suggestedDayData.currentDay} ({suggestedDayData.hour}:00 hrs)
+                </p>
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-foreground">Dia destino en Drive</p>
-            {suggestedDayData && (
-              <p className="text-[10px] text-muted-foreground/60">
-                Hoy: {suggestedDayData.currentDay} ({suggestedDayData.hour}:00 hrs)
-                {suggestedDayData.hour < 10 && " - antes de las 10 AM"}
-              </p>
+          <div className="flex items-center gap-2">
+            <select
+              value={targetDay}
+              onChange={(e) => setTargetDay(e.target.value)}
+              className="flex-1 bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
+            >
+              <option value="auto">Dia: Automatico</option>
+              <option value="Lunes">Lunes</option>
+              <option value="Martes">Martes</option>
+              <option value="Miercoles">Miercoles</option>
+              <option value="Jueves">Jueves</option>
+              <option value="Viernes">Viernes</option>
+              <option value="Sabado">Sabado</option>
+              <option value="Domingo">Domingo</option>
+            </select>
+            <input
+              type="time"
+              value={targetTime}
+              onChange={(e) => setTargetTime(e.target.value)}
+              placeholder="HH:MM"
+              className="w-[110px] bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer [color-scheme:dark]"
+            />
+            {targetTime && (
+              <button
+                onClick={() => setTargetTime("")}
+                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-red-500/20 flex items-center justify-center transition-colors shrink-0"
+                title="Quitar hora"
+              >
+                <X className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
             )}
           </div>
-          <select
-            value={targetDay}
-            onChange={(e) => setTargetDay(e.target.value)}
-            className="bg-background/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
-          >
-            <option value="auto">Automatico</option>
-            <option value="Lunes">Lunes</option>
-            <option value="Martes">Martes</option>
-            <option value="Miercoles">Miercoles</option>
-            <option value="Jueves">Jueves</option>
-            <option value="Viernes">Viernes</option>
-            <option value="Sabado">Sabado</option>
-            <option value="Domingo">Domingo</option>
-          </select>
+          {targetTime && (
+            <p className="text-[10px] text-purple-400/80 px-1">
+              Hora de publicacion: {targetTime} hrs
+            </p>
+          )}
         </div>
 
         {stats && (stats.totalCount > 0 || stats.streak > 0) && (
