@@ -736,6 +736,41 @@ router.post("/studio/finalize-upload", async (req, res) => {
     const ext = isMP4 ? "mp4" : "webm";
     let finalVideoPath = tempPath;
 
+    async function probeVideo(filePath: string): Promise<{ width: number; height: number; rotation: number }> {
+      try {
+        const { stdout } = await execAsync(
+          `ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -show_entries stream_side_data=rotation -of json "${filePath}"`,
+          { timeout: 10000 }
+        );
+        const info = JSON.parse(stdout);
+        const stream = info.streams?.[0] || {};
+        const w = parseInt(stream.width) || 0;
+        const h = parseInt(stream.height) || 0;
+        let rot = 0;
+        const sideData = stream.side_data_list || [];
+        for (const sd of sideData) {
+          if (sd.rotation) rot = parseInt(sd.rotation) || 0;
+        }
+        console.log(`[Studio] Probe: ${w}x${h} rotation=${rot}`);
+        return { width: w, height: h, rotation: rot };
+      } catch (e: any) {
+        console.warn(`[Studio] ffprobe failed: ${e.message}`);
+        return { width: 0, height: 0, rotation: 0 };
+      }
+    }
+
+    function buildVf(w: number, h: number, rotation: number): string {
+      const filters: string[] = [];
+      const isLandscape = w > h && Math.abs(rotation) !== 90 && Math.abs(rotation) !== 270;
+      const isRotated = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
+      if (isLandscape && !isRotated) {
+        filters.push("transpose=1");
+        console.log("[Studio] Video is landscape -> rotating 90° clockwise to portrait");
+      }
+      filters.push("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920");
+      return filters.join(",");
+    }
+
     if (hasFFmpeg) {
       const ts = Date.now();
       const rawInputPath = path.join("/tmp", `studio-raw-${ts}.${ext}`);
@@ -743,12 +778,14 @@ router.post("/studio/finalize-upload", async (req, res) => {
       const { copyFile } = await import("fs/promises");
       await copyFile(tempPath, rawInputPath);
 
+      const probe = await probeVideo(rawInputPath);
+      const vfChain = buildVf(probe.width, probe.height, probe.rotation);
+      const cfrVideo = `-vf "${vfChain}" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2`;
+      const cfrAudio = `-c:a aac -b:a 128k -ar 44100 -ac 2`;
+
       try {
         if (segmentsParam && Array.isArray(segmentsParam) && segmentsParam.length > 0) {
           const { writeFile: writeFileAsync } = await import("fs/promises");
-          const cfrVf = `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"`;
-          const cfrVideo = `${cfrVf} -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2`;
-          const cfrAudio = `-c:a aac -b:a 128k -ar 44100 -ac 2`;
           if (segmentsParam.length === 1) {
             const seg = segmentsParam[0];
             const outPath = path.join("/tmp", `studio-seg-out-${ts}.mp4`);
@@ -786,7 +823,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
           const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
           allTempFiles.push(outPath);
           await execAsync(
-            `ffmpeg -y -i "${rawInputPath}" -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+            `ffmpeg -y -i "${rawInputPath}" ${cfrVideo} ${cfrAudio} -movflags +faststart "${outPath}"`,
             { timeout: 180000 }
           );
           finalVideoPath = outPath;
@@ -794,7 +831,8 @@ router.post("/studio/finalize-upload", async (req, res) => {
 
         const outStats = await fsStat(finalVideoPath);
         if (!outStats.size || outStats.size < 100) throw new Error("Processed video empty");
-        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB`);
+        const finalProbe = await probeVideo(finalVideoPath);
+        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB, final=${finalProbe.width}x${finalProbe.height}`);
       } catch (ffErr: any) {
         console.error(`[Studio] ffmpeg FAILED - uploading raw VFR video. Error: ${ffErr.message}`);
         if (ffErr.stderr) console.error(`[Studio] ffmpeg stderr: ${ffErr.stderr}`);
@@ -1027,21 +1065,49 @@ router.post("/studio/upload-video", (req, res, next) => {
 
     let finalVideoPath = uploadedFilePath;
 
+    async function probeVideoUpload(filePath: string): Promise<{ width: number; height: number; rotation: number }> {
+      try {
+        const { stdout } = await execAsync(
+          `ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -show_entries stream_side_data=rotation -of json "${filePath}"`,
+          { timeout: 10000 }
+        );
+        const info = JSON.parse(stdout);
+        const stream = info.streams?.[0] || {};
+        const w = parseInt(stream.width) || 0;
+        const h = parseInt(stream.height) || 0;
+        let rot = 0;
+        const sideData = stream.side_data_list || [];
+        for (const sd of sideData) { if (sd.rotation) rot = parseInt(sd.rotation) || 0; }
+        console.log(`[Studio Upload] Probe: ${w}x${h} rotation=${rot}`);
+        return { width: w, height: h, rotation: rot };
+      } catch { return { width: 0, height: 0, rotation: 0 }; }
+    }
+
     if (hasFFmpeg) {
       const ts = Date.now();
       try {
+        const probe = await probeVideoUpload(uploadedFilePath);
+        const filters: string[] = [];
+        const isLandscape = probe.width > probe.height && Math.abs(probe.rotation) !== 90 && Math.abs(probe.rotation) !== 270;
+        if (isLandscape) {
+          filters.push("transpose=1");
+          console.log("[Studio Upload] Video is landscape -> rotating 90° clockwise");
+        }
+        filters.push("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920");
+        const vf = filters.join(",");
+
         const outPath = path.join("/tmp", `studio-cfr-${ts}.mp4`);
         allTempFiles.push(outPath);
         await execAsync(
-          `ffmpeg -y -i "${uploadedFilePath}" -vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
+          `ffmpeg -y -i "${uploadedFilePath}" -vf "${vf}" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2 -c:a aac -b:a 128k -ar 44100 -ac 2 -movflags +faststart "${outPath}"`,
           { timeout: 180000 }
         );
         const outStats = await fsStat(outPath);
         if (!outStats.size || outStats.size < 100) throw new Error("Processed video empty");
-        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB`);
+        console.log(`[Studio Upload] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB`);
         finalVideoPath = outPath;
       } catch (ffErr: any) {
-        console.warn(`[Studio] ffmpeg failed, uploading raw: ${ffErr.message}`);
+        console.warn(`[Studio Upload] ffmpeg failed, uploading raw: ${ffErr.message}`);
         finalVideoPath = uploadedFilePath;
       }
     }
