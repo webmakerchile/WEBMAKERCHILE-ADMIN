@@ -55,6 +55,19 @@ export default function LoginPage() {
               Solo usuarios autorizados pueden acceder
             </p>
           </div>
+
+          <div className="mt-4 text-center">
+            <p className="text-[11px] text-muted-foreground/50">
+              Al iniciar sesión, aceptas nuestros{" "}
+              <a href={`${import.meta.env.BASE_URL}terms`.replace(/\/+/g, "/")} className="text-primary/70 hover:text-primary underline underline-offset-2 transition-colors">
+                Términos de Servicio
+              </a>
+              {" "}y{" "}
+              <a href={`${import.meta.env.BASE_URL}privacy`.replace(/\/+/g, "/")} className="text-primary/70 hover:text-primary underline underline-offset-2 transition-colors">
+                Política de Privacidad
+              </a>
+            </p>
+          </div>
         </div>
 
         <p className="text-center text-xs text-muted-foreground/40 mt-6">
