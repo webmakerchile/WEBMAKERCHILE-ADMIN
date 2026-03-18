@@ -929,69 +929,71 @@ function StepInfo({
           />
         </div>
 
-        <div className="grid grid-cols-5 gap-4">
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Mes</label>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-muted-foreground">Mes</label>
             <select
               value={formData.month}
               onChange={(e) => setFormData({ ...formData, month: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+              className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
-              <option value="">Seleccionar</option>
-              <option value="Enero">Enero</option>
-              <option value="Febrero">Febrero</option>
-              <option value="Marzo">Marzo</option>
-              <option value="Abril">Abril</option>
-              <option value="Mayo">Mayo</option>
-              <option value="Junio">Junio</option>
-              <option value="Julio">Julio</option>
-              <option value="Agosto">Agosto</option>
-              <option value="Septiembre">Septiembre</option>
-              <option value="Octubre">Octubre</option>
-              <option value="Noviembre">Noviembre</option>
-              <option value="Diciembre">Diciembre</option>
+              <option value="">--</option>
+              <option value="Enero">Ene</option>
+              <option value="Febrero">Feb</option>
+              <option value="Marzo">Mar</option>
+              <option value="Abril">Abr</option>
+              <option value="Mayo">May</option>
+              <option value="Junio">Jun</option>
+              <option value="Julio">Jul</option>
+              <option value="Agosto">Ago</option>
+              <option value="Septiembre">Sep</option>
+              <option value="Octubre">Oct</option>
+              <option value="Noviembre">Nov</option>
+              <option value="Diciembre">Dic</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Semana</label>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-muted-foreground">Semana</label>
             <select
               value={formData.week}
               onChange={(e) => setFormData({ ...formData, week: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+              className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
-              <option value="">Seleccionar</option>
-              <option value="Semana 1">Semana 1</option>
-              <option value="Semana 2">Semana 2</option>
-              <option value="Semana 3">Semana 3</option>
-              <option value="Semana 4">Semana 4</option>
-              <option value="Semana 5">Semana 5</option>
+              <option value="">--</option>
+              <option value="Semana 1">Sem 1</option>
+              <option value="Semana 2">Sem 2</option>
+              <option value="Semana 3">Sem 3</option>
+              <option value="Semana 4">Sem 4</option>
+              <option value="Semana 5">Sem 5</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Día</label>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-muted-foreground">Dia</label>
             <select
               value={formData.day}
               onChange={(e) => setFormData({ ...formData, day: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+              className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
-              <option value="">Seleccionar</option>
-              <option value="Lunes">Lunes</option>
-              <option value="Martes">Martes</option>
-              <option value="Miércoles">Miércoles</option>
-              <option value="Jueves">Jueves</option>
-              <option value="Viernes">Viernes</option>
-              <option value="Sábado">Sábado</option>
-              <option value="Domingo">Domingo</option>
+              <option value="">--</option>
+              <option value="Lunes">Lun</option>
+              <option value="Martes">Mar</option>
+              <option value="Miércoles">Mie</option>
+              <option value="Jueves">Jue</option>
+              <option value="Viernes">Vie</option>
+              <option value="Sábado">Sab</option>
+              <option value="Domingo">Dom</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Video #</label>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-muted-foreground">Video #</label>
             <select
               value={formData.videoNumber}
               onChange={(e) => setFormData({ ...formData, videoNumber: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
+              className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
-              <option value="">Seleccionar</option>
+              <option value="">--</option>
               <option value="01">#01</option>
               <option value="02">#02</option>
               <option value="03">#03</option>
@@ -999,30 +1001,40 @@ function StepInfo({
               <option value="05">#05</option>
             </select>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Hora</label>
-            <select
-              value={formData.scheduleHour}
-              onChange={(e) => setFormData({ ...formData, scheduleHour: e.target.value })}
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
-            >
-              <option value="">Seleccionar</option>
-              <option value="08:00">08:00</option>
-              <option value="09:00">09:00</option>
-              <option value="10:00">10:00</option>
-              <option value="11:00">11:00</option>
-              <option value="12:00">12:00</option>
-              <option value="13:00">13:00</option>
-              <option value="14:00">14:00</option>
-              <option value="15:00">15:00</option>
-              <option value="16:00">16:00</option>
-              <option value="17:00">17:00</option>
-              <option value="18:00">18:00</option>
-              <option value="19:00">19:00</option>
-              <option value="20:00">20:00</option>
-              <option value="21:00">21:00</option>
-              <option value="22:00">22:00</option>
-            </select>
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-muted-foreground">Hora</label>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={formData.scheduleHour ? formData.scheduleHour.split(":")[0] : ""}
+                onChange={(e) => {
+                  const h = e.target.value;
+                  if (!h) { setFormData({ ...formData, scheduleHour: "" }); return; }
+                  const currentMin = formData.scheduleHour ? formData.scheduleHour.split(":")[1] : "00";
+                  setFormData({ ...formData, scheduleHour: `${h}:${currentMin}` });
+                }}
+                className="flex-1 bg-background border border-border rounded-lg px-2 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer text-center"
+              >
+                <option value="">HH</option>
+                {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
+              <span className="text-muted-foreground font-bold">:</span>
+              <select
+                value={formData.scheduleHour ? formData.scheduleHour.split(":")[1] : ""}
+                onChange={(e) => {
+                  const m = e.target.value;
+                  const currentH = formData.scheduleHour ? formData.scheduleHour.split(":")[0] : "12";
+                  setFormData({ ...formData, scheduleHour: `${currentH}:${m}` });
+                }}
+                className="flex-1 bg-background border border-border rounded-lg px-2 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer text-center"
+              >
+                <option value="">MM</option>
+                {["00", "15", "30", "45"].map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

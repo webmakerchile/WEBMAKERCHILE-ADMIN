@@ -2882,13 +2882,36 @@ export default function RecordingStudio() {
               <option value="Sabado">Sabado</option>
               <option value="Domingo">Domingo</option>
             </select>
-            <input
-              type="time"
-              value={targetTime}
-              onChange={(e) => setTargetTime(e.target.value)}
-              placeholder="HH:MM"
-              className="w-[110px] bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer [color-scheme:dark]"
-            />
+            <select
+              value={targetTime ? targetTime.split(":")[0] : ""}
+              onChange={(e) => {
+                const h = e.target.value;
+                if (!h) { setTargetTime(""); return; }
+                const currentMin = targetTime ? targetTime.split(":")[1] : "00";
+                setTargetTime(`${h}:${currentMin}`);
+              }}
+              className="w-[60px] bg-background/60 border border-white/10 rounded-lg px-2 py-2 text-xs text-foreground focus:border-primary outline-none appearance-none cursor-pointer text-center"
+            >
+              <option value="">HH</option>
+              {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => (
+                <option key={h} value={h}>{h}</option>
+              ))}
+            </select>
+            <span className="text-muted-foreground font-bold text-xs">:</span>
+            <select
+              value={targetTime ? targetTime.split(":")[1] : ""}
+              onChange={(e) => {
+                const m = e.target.value;
+                const currentH = targetTime ? targetTime.split(":")[0] : "12";
+                setTargetTime(`${currentH}:${m}`);
+              }}
+              className="w-[60px] bg-background/60 border border-white/10 rounded-lg px-2 py-2 text-xs text-foreground focus:border-primary outline-none appearance-none cursor-pointer text-center"
+            >
+              <option value="">MM</option>
+              {["00", "15", "30", "45"].map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
             {targetTime && (
               <button
                 onClick={() => setTargetTime("")}
