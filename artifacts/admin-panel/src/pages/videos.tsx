@@ -613,16 +613,30 @@ function VideoWizard({
             <StepReview
               video={{ ...video, ...formData }}
               onSchedule={() => {
+                let scheduledDate: Date;
+                const hour = formData.scheduleHour;
+                if (hour && /^\d{1,2}:\d{2}$/.test(hour)) {
+                  const [h, m] = hour.split(":").map(Number);
+                  scheduledDate = new Date();
+                  scheduledDate.setHours(h, m, 0, 0);
+                  if (scheduledDate <= new Date()) {
+                    scheduledDate.setDate(scheduledDate.getDate() + 1);
+                  }
+                } else {
+                  scheduledDate = new Date();
+                }
                 onUpdate({
                   status: "scheduled",
                   tiktokStatus: "scheduled",
                   instagramStatus: "scheduled",
                   youtubeStatus: "scheduled",
-                  scheduledAt: new Date().toISOString(),
+                  scheduledAt: scheduledDate.toISOString(),
                 });
                 toast({
                   title: "¡Programado en las 3 plataformas!",
-                  description: "TikTok, Instagram y YouTube están listos",
+                  description: hour
+                    ? `Se subirá automáticamente a las ${hour} hrs`
+                    : "Se subirá automáticamente ahora",
                 });
               }}
               onPrev={goPrev}

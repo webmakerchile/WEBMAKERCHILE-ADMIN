@@ -404,83 +404,20 @@ router.post("/content/schedule/check", async (_req, res) => {
     .from(videos)
     .where(and(eq(videos.status, "scheduled"), lte(videos.scheduledAt, now)));
 
-  const details: Array<{
-    videoId: number;
-    status: string;
-    error?: string;
-  }> = [];
-  let processed = 0;
-  let errors = 0;
-
-  for (const video of due) {
-    try {
-      if (video.coverImageBase64 && video.driveFolderId) {
-        const connectors = getConnectors();
-
-        const metadata = {
-          name: `${video.title}_cover.png`,
-          parents: [video.driveFolderId],
-        };
-
-        const boundary = "upload_boundary";
-        const multipartBody =
-          `--${boundary}\r\n` +
-          `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-          `${JSON.stringify(metadata)}\r\n` +
-          `--${boundary}\r\n` +
-          `Content-Type: ${video.coverMimeType || "image/png"}\r\n` +
-          `Content-Transfer-Encoding: base64\r\n\r\n` +
-          `${video.coverImageBase64}\r\n` +
-          `--${boundary}--`;
-
-        const uploadRes = await connectors.proxy(
-          "google-drive",
-          "/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": `multipart/related; boundary=${boundary}`,
-            },
-            body: multipartBody,
-          }
-        );
-        const uploadData = await uploadRes.json();
-
-        if (!uploadData.id) {
-          throw new Error(`Drive upload failed: ${JSON.stringify(uploadData)}`);
-        }
-
-        await db
-          .update(videos)
-          .set({
-            driveFileId: uploadData.id,
-            status: "published",
-            publishedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(videos.id, video.id));
-
-        details.push({ videoId: video.id, status: "published" });
-        processed++;
-      } else {
-        details.push({
-          videoId: video.id,
-          status: "skipped",
-          error: "Missing cover image or folder ID",
-        });
-        errors++;
-      }
-    } catch (error: any) {
-      details.push({
-        videoId: video.id,
-        status: "error",
-        error: error.message,
-      });
-      errors++;
-    }
-  }
-
-  res.json({ processed, errors, details });
+  res.json({
+    processed: 0,
+    errors: 0,
+    pending: due.length,
+    message: due.length > 0
+      ? `${due.length} video(s) pendiente(s). El scheduler automático los procesará en el próximo ciclo (cada 60 segundos).`
+      : "No hay videos pendientes de subir.",
+    details: due.map((v) => ({
+      videoId: v.id,
+      title: v.title,
+      scheduledAt: v.scheduledAt,
+      status: "waiting_for_scheduler",
+    })),
+  });
 });
 
 export default router;
