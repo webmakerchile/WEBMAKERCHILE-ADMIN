@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { videos, users } from "@workspace/db/schema";
-import { eq, and, lte } from "drizzle-orm";
+import { eq, and, lte, or, isNull } from "drizzle-orm";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { randomBytes } from "crypto";
@@ -346,7 +346,10 @@ async function processScheduledVideos() {
     const dueVideos = await db
       .select()
       .from(videos)
-      .where(and(eq(videos.status, "scheduled"), lte(videos.scheduledAt, now)));
+      .where(and(
+        eq(videos.status, "scheduled"),
+        or(lte(videos.scheduledAt, now), isNull(videos.scheduledAt))
+      ));
 
     if (dueVideos.length === 0) {
       schedulerRunning = false;
@@ -363,7 +366,12 @@ async function processScheduledVideos() {
     }
 
     for (const video of dueVideos) {
-      console.log(`[Scheduler] Processing video #${video.id}: "${video.title}"`);
+      console.log(`[Scheduler] Processing video #${video.id}: "${video.title}" (driveId: ${video.videoFileDriveId || "NONE"})`);
+
+      if (!video.videoFileDriveId) {
+        console.log(`[Scheduler] Video #${video.id} skipped - no video file in Drive`);
+        continue;
+      }
 
       const freshUser = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (!freshUser) continue;

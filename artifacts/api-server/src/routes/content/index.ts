@@ -170,6 +170,8 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.tiktokStatus !== undefined) updateData.tiktokStatus = body.tiktokStatus;
   if (body.instagramStatus !== undefined) updateData.instagramStatus = body.instagramStatus;
   if (body.youtubeStatus !== undefined) updateData.youtubeStatus = body.youtubeStatus;
+  if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
+  if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
 
   const [row] = await db
     .update(videos)
