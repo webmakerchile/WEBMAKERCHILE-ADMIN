@@ -131,14 +131,11 @@ async function buildTextOverlay(title: string): Promise<Buffer> {
   const fontBuffer = await readFile(await resolveAsset("public", "fonts", "LuckiestGuy-Regular.ttf"));
   const fontBase64 = fontBuffer.toString("base64");
 
+  const strokeWidth = Math.max(8, Math.round(fontSize * 0.08));
   const textElements = finalLines.map((line, i) => {
     const y = startY + i * lineHeight;
     const escaped = escapeXml(line);
-    const shadowOffset = Math.max(4, Math.round(fontSize * 0.05));
-    return [
-      `<text x="${COVER_WIDTH / 2 + shadowOffset}" y="${y + shadowOffset}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="#E86A30" opacity="0.85">${escaped}</text>`,
-      `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white">${escaped}</text>`,
-    ].join("\n    ");
+    return `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${escaped}</text>`;
   }).join("\n    ");
 
   const svg = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">

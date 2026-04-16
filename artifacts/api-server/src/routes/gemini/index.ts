@@ -314,12 +314,11 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
     const fontBuffer = await readFile(fontPath);
     const fontBase64 = fontBuffer.toString("base64");
 
-    const shadowOff = Math.max(4, Math.round(fontSize * 0.05));
+    const strokeWidth = Math.max(8, Math.round(fontSize * 0.08));
     const textEls = lines.map((line, i) => {
       const y = startY + i * lineHeight;
       const esc = escXml(line);
-      return `<text x="${COVER_WIDTH / 2 + shadowOff}" y="${y + shadowOff}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="#E86A30" opacity="0.85">${esc}</text>
-    <text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white">${esc}</text>`;
+      return `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${esc}</text>`;
     }).join("\n    ");
 
     const svgOverlay = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
