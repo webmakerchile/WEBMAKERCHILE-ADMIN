@@ -142,35 +142,53 @@ router.post("/gemini/generate-image", async (req, res) => {
 router.post("/gemini/generate-cover", async (req, res) => {
   const body = GenerateCoverBody.parse(req.body);
 
-  const titleText = body.title.toUpperCase();
-  const titleLetterByLetter = titleText.split("").join("-");
+  const basePrompt = `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
-  const basePrompt = `Basándote en la imagen de referencia, genera una nueva ilustración en formato vertical (relación de aspecto 9:16). Mantén estrictamente el mismo estilo de diseño plano (flat vector art), la misma paleta de colores y el mismo personaje (un zorro).
+REGLA ABSOLUTA - SIN TEXTO:
+NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, texto en pantallas, texto en objetos, ni NINGÚN tipo de escritura en la imagen. CERO caracteres alfanuméricos. Si hay una pantalla o monitor, debe mostrar formas abstractas de colores o gráficos abstractos, JAMÁS texto legible. Esta regla no tiene excepciones.
 
-Título del contenido: "${body.title}"
-Descripción: "${body.description}"
-${body.style ? `Estilo adicional: ${body.style}` : ""}
+PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
+- Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta/polera verde oscuro
+- SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado ni parcialmente visible
+- El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario
+- Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
+- El zorro DEBE mantener el estilo FLAT CARTOON de la referencia: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas. El zorro es un cartoon simple y limpio
+- Expresiones faciales variadas según la escena (confiado, sorprendido, feliz, preocupado, relajado)
 
-La escena debe representar visualmente el tema del título y descripción.
+CONTEXTO DE LA ESCENA (usar como referencia visual, NO como texto):
+TÍTULO: "${body.title}"
+${body.description ? `DESCRIPCIÓN: "${body.description}"` : ""}
+${body.style ? `ESTILO ADICIONAL: ${body.style}` : ""}
+Adapta la escena al contexto del título y descripción. Los objetos y elementos deben ser RELEVANTES al tema y contar una historia visual clara. NO escribas el título ni la descripción como texto en la imagen.
 
-Detalles importantes:
-1. Fondo: Amarillo sólido idéntico al de la referencia.
-2. Título OBLIGATORIO: En el tercio superior, agrega el texto EXACTO que aparece a continuación. NO cambies, NO reorganices y NO omitas NINGUNA letra. Copia el texto carácter por carácter tal cual está escrito aquí:
+ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
+- El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE fondo oscuro limpio sin elementos
+- NADA puede existir en esa zona: ni el zorro, ni objetos, ni sombras, ni líneas, ni bordes
+- Toda la acción visual comienza DEBAJO del píxel 670
 
-   TEXTO EXACTO: "${titleText}"
-   LETRA POR LETRA: ${titleLetterByLetter}
+COMPOSICIÓN:
+- El zorro y los objetos ocupan el 65% INFERIOR de la imagen
+- Composición LIMPIA: el zorro es el protagonista, los objetos complementan la escena
+- Dejar espacio entre elementos, no abarrotar la imagen
+- Se pueden incluir 2-4 elementos/objetos además del zorro, pero deben ser parte de la escena narrativa
 
-   ADVERTENCIA CRÍTICA SOBRE ORTOGRAFÍA:
-   - El texto DEBE escribirse EXACTAMENTE como se muestra arriba, sin alterar NINGUNA letra.
-   - NO inventes, NO reorganices, NO intercambies letras.
-   - Verifica que cada palabra esté escrita correctamente ANTES de renderizar.
-   - Si el texto dice "NEGOCIO", debe decir "NEGOCIO" (N-E-G-O-C-I-O), NO "NEGOICO" ni ninguna otra variante.
-   - Si el texto dice "NECESITA", debe decir "NECESITA" (N-E-C-E-S-I-T-A), NO "NESESITA" ni otra variante.
-   - Cada letra en su posición EXACTA. La precisión ortográfica es OBLIGATORIA.
+CONTRASTE DE ESTILOS (IMPORTANTE):
+- El ZORRO y los OBJETOS/ICONOS se dibujan en estilo FLAT CARTOON: líneas de contorno gruesas negras, colores planos y vibrantes, sin degradados, sin sombras realistas
+- El FONDO es premium y oscuro con efectos de iluminación elegantes (ver abajo)
+- Este contraste entre personaje cartoon sobre fondo premium es intencional y crea un look moderno y llamativo
 
-3. Estilo del Texto: El texto debe ser blanco, en mayúsculas, fuente sans-serif gruesa y negrita, centrado.
-4. Estilo General: Minimalista, líneas limpias y colores planos.
-5. REGLA FINAL: Antes de generar, re-lee el texto letra por letra y confirma que cada carácter está en el orden correcto. La ortografía correcta es la MÁXIMA PRIORIDAD.`;
+FONDO PREMIUM (solo el fondo, NO el personaje):
+- Color base: gradiente vertical muy sutil de #0F172A (slate 900) en la parte inferior a #1E293B (slate 800) en el centro
+- Elementos de fondo: grid geométrico muy sutil (líneas blancas al 3-5% de opacidad)
+- Un glow ambiental suave y difuso detrás del zorro en tono naranja cálido (#E86A30 al 15-20% de opacidad) con blur amplio, como un halo de luz
+- La zona superior (35%) mantiene el mismo tono oscuro limpio sin elementos
+
+PALETA:
+- Fondo: tonos slate oscuros (#0F172A, #1E293B) con glow naranja difuso
+- Zorro: naranja vibrante PLANO (como la referencia), verde sólido en la camiseta, líneas gruesas negras
+- Objetos: colores planos y vibrantes estilo flat icon (naranja, verde, blanco, azul, rojo), con contornos gruesos negros
+
+RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.`;
 
   const MAX_RETRIES = 4;
   const RETRY_DELAYS = [5000, 15000, 30000];
