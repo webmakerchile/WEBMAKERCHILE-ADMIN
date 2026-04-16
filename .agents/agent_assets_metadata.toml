@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "8tC4P84P4Jwpu5q3P-U9m"
+uri = "file://artifacts/api-server/public/test-cover-preview.png"
+type = "image"
+title = "Portada de prueba - Nuevo estilo premium"
