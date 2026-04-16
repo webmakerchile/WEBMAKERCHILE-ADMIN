@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.jpg`;
+const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
 
 export default function CoverGeneratorPage() {
   const [title, setTitle] = useState("");
