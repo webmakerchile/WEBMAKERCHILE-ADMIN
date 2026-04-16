@@ -303,7 +303,7 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
     const totalTextHeight = lineCount * lineHeight;
     const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
 
-    const fontPath = path.join(process.cwd(), "public", "fonts", "LuckiestGuy-Regular.ttf");
+    const fontPath = path.resolve(import.meta.dirname, "..", "..", "public", "fonts", "LuckiestGuy-Regular.ttf");
     const fontBuffer = await readFile(fontPath);
     const fontBase64 = fontBuffer.toString("base64");
 
