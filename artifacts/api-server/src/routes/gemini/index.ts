@@ -144,6 +144,20 @@ router.post("/gemini/generate-image", async (req, res) => {
 router.post("/gemini/generate-cover", async (req, res) => {
   const body = GenerateCoverBody.parse(req.body);
 
+  const foxPoses = [
+    "El zorro está de pie con los brazos cruzados y expresión segura y desafiante, mirando directo al frente con una sonrisa de lado.",
+    "El zorro salta o levita ligeramente con los brazos abiertos y expresión emocionada y sorprendida, como celebrando una victoria.",
+    "El zorro señala hacia el costado con un dedo índice extendido y guiña un ojo con expresión pícara y confiada.",
+    "El zorro está agachado en posición dinámica como si estuviera en acción, con expresión concentrada e intensa.",
+    "El zorro tiene una mano en la cadera y la otra sosteniendo un objeto relacionado al tema, con expresión relajada y cool.",
+    "El zorro inclina la cabeza hacia un lado con expresión curiosa y pensativa, un brazo apoyado en la barbilla.",
+    "El zorro hace un gesto de pulgar hacia arriba con una gran sonrisa y expresión entusiasta y positiva.",
+    "El zorro está en una pose de superhéroe: manos en las caderas, pecho hacia adelante y mirada heroica hacia el horizonte.",
+    "El zorro tiene los brazos extendidos hacia arriba celebrando, expresión de euforia y triunfo total.",
+    "El zorro está inclinado hacia adelante señalando al espectador con un dedo, como diciéndole algo directamente, con expresión seria y directa.",
+  ];
+  const selectedPose = foxPoses[Math.floor(Math.random() * foxPoses.length)];
+
   const basePrompt = `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
 REGLA ABSOLUTA - SIN TEXTO:
@@ -155,7 +169,7 @@ PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia a
 - El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario
 - Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
 - El zorro DEBE mantener el estilo FLAT CARTOON de la referencia: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas. El zorro es un cartoon simple y limpio
-- Expresiones faciales variadas según la escena (confiado, sorprendido, feliz, preocupado, relajado)
+- POSE Y EXPRESIÓN OBLIGATORIA para esta imagen: ${selectedPose}
 
 CONTEXTO DE LA ESCENA (usar como referencia visual, NO como texto):
 TÍTULO: "${body.title}"
@@ -314,11 +328,15 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
     const fontBuffer = await readFile(fontPath);
     const fontBase64 = fontBuffer.toString("base64");
 
-    const strokeWidth = Math.max(8, Math.round(fontSize * 0.08));
+    const strokeWidth = Math.max(6, Math.round(fontSize * 0.07));
+    const shadowOff = Math.max(3, Math.round(fontSize * 0.035));
     const textEls = lines.map((line, i) => {
       const y = startY + i * lineHeight;
       const esc = escXml(line);
-      return `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${esc}</text>`;
+      return [
+        `<text x="${COVER_WIDTH / 2 + shadowOff}" y="${y + shadowOff}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${esc}</text>`,
+        `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${esc}</text>`,
+      ].join("\n    ");
     }).join("\n    ");
 
     const svgOverlay = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">

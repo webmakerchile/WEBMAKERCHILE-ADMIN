@@ -21,7 +21,21 @@ const TEXT_ZONE_BOTTOM = 630;
 const TEXT_ZONE_HEIGHT = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
 const TEXT_ZONE_SIDE_PADDING = 60;
 
+const FOX_POSES = [
+  "El zorro está de pie con los brazos cruzados y expresión segura y desafiante, mirando directo al frente con una sonrisa de lado.",
+  "El zorro salta o levita ligeramente con los brazos abiertos y expresión emocionada y sorprendida, como celebrando una victoria.",
+  "El zorro señala hacia el costado con un dedo índice extendido y guiña un ojo con expresión pícara y confiada.",
+  "El zorro está agachado en posición dinámica como si estuviera en acción, con expresión concentrada e intensa.",
+  "El zorro tiene una mano en la cadera y la otra sosteniendo un objeto relacionado al tema, con expresión relajada y cool.",
+  "El zorro inclina la cabeza hacia un lado con expresión curiosa y pensativa, un brazo apoyado en la barbilla.",
+  "El zorro hace un gesto de pulgar hacia arriba con una gran sonrisa y expresión entusiasta y positiva.",
+  "El zorro está en una pose de superhéroe: manos en las caderas, pecho hacia adelante y mirada heroica hacia el horizonte.",
+  "El zorro tiene los brazos extendidos hacia arriba celebrando, expresión de euforia y triunfo total.",
+  "El zorro está inclinado hacia adelante señalando al espectador con un dedo, como diciéndole algo directamente, con expresión seria y directa.",
+];
+
 function buildIllustrationPrompt(videoDescription: string): string {
+  const selectedPose = FOX_POSES[Math.floor(Math.random() * FOX_POSES.length)];
   return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
 REGLA ABSOLUTA - SIN TEXTO:
@@ -33,7 +47,7 @@ PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia a
 - El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario
 - Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
 - El zorro DEBE mantener el estilo FLAT CARTOON de la referencia: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas. El zorro es un cartoon simple y limpio
-- Expresiones faciales variadas según la escena (confiado, sorprendido, feliz, preocupado, relajado)
+- POSE Y EXPRESIÓN OBLIGATORIA para esta imagen: ${selectedPose}
 
 ESCENA A ILUSTRAR:
 TEMA DEL VIDEO: "${videoDescription}"
@@ -131,11 +145,15 @@ async function buildTextOverlay(title: string): Promise<Buffer> {
   const fontBuffer = await readFile(await resolveAsset("public", "fonts", "LuckiestGuy-Regular.ttf"));
   const fontBase64 = fontBuffer.toString("base64");
 
-  const strokeWidth = Math.max(8, Math.round(fontSize * 0.08));
+  const strokeWidth = Math.max(6, Math.round(fontSize * 0.07));
+  const shadowOffset = Math.max(3, Math.round(fontSize * 0.035));
   const textElements = finalLines.map((line, i) => {
     const y = startY + i * lineHeight;
     const escaped = escapeXml(line);
-    return `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="black" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${escaped}</text>`;
+    return [
+      `<text x="${COVER_WIDTH / 2 + shadowOffset}" y="${y + shadowOffset}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${escaped}</text>`,
+      `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${escaped}</text>`,
+    ].join("\n    ");
   }).join("\n    ");
 
   const svg = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
