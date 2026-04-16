@@ -1,12 +1,17 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
-import { fileURLToPath } from "url";
 
-const __filename_cg = fileURLToPath(import.meta.url);
-const __dirname_cg = path.dirname(__filename_cg);
-
-const REFERENCE_IMAGE_PATH = path.resolve(__dirname_cg, "..", "..", "public", "fox-reference.png");
+async function resolveAsset(...segments: string[]): Promise<string> {
+  const candidates = [
+    path.join(process.cwd(), ...segments),
+    path.join(process.cwd(), "artifacts", "api-server", ...segments),
+  ];
+  for (const p of candidates) {
+    try { await readFile(p); return p; } catch {}
+  }
+  return candidates[0];
+}
 
 const COVER_WIDTH = 1080;
 const COVER_HEIGHT = 1920;
@@ -93,7 +98,6 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-const FONT_PATH = path.resolve(__dirname_cg, "..", "..", "public", "fonts", "LuckiestGuy-Regular.ttf");
 
 async function buildTextOverlay(title: string): Promise<Buffer> {
   const cleanTitle = title
@@ -124,7 +128,7 @@ async function buildTextOverlay(title: string): Promise<Buffer> {
   const totalTextHeight = lineCount * lineHeight;
   const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
 
-  const fontBuffer = await readFile(FONT_PATH);
+  const fontBuffer = await readFile(await resolveAsset("public", "fonts", "LuckiestGuy-Regular.ttf"));
   const fontBase64 = fontBuffer.toString("base64");
 
   const textElements = finalLines.map((line, i) => {
@@ -162,7 +166,7 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
     },
   });
 
-  const refImageBuffer = await readFile(REFERENCE_IMAGE_PATH);
+  const refImageBuffer = await readFile(await resolveAsset("public", "fox-reference.png"));
   const refImageBase64 = refImageBuffer.toString("base64");
   const prompt = buildIllustrationPrompt(videoDescription);
 

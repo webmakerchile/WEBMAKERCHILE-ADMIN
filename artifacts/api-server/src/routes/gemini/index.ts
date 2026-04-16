@@ -303,10 +303,14 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
     const totalTextHeight = lineCount * lineHeight;
     const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
 
-    const { fileURLToPath } = await import("url");
-    const __filename = fileURLToPath(import.meta.url);
-    const __dir = path.dirname(__filename);
-    const fontPath = path.resolve(__dir, "..", "..", "public", "fonts", "LuckiestGuy-Regular.ttf");
+    const fontCandidates = [
+      path.join(process.cwd(), "public", "fonts", "LuckiestGuy-Regular.ttf"),
+      path.join(process.cwd(), "artifacts", "api-server", "public", "fonts", "LuckiestGuy-Regular.ttf"),
+    ];
+    let fontPath = fontCandidates[0];
+    for (const p of fontCandidates) {
+      try { await readFile(p); fontPath = p; break; } catch {}
+    }
     const fontBuffer = await readFile(fontPath);
     const fontBase64 = fontBuffer.toString("base64");
 
