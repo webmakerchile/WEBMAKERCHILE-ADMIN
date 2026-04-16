@@ -1,8 +1,12 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { fileURLToPath } from "url";
 
-const REFERENCE_IMAGE_PATH = path.resolve(import.meta.dirname, "..", "..", "public", "fox-reference.png");
+const __filename_cg = fileURLToPath(import.meta.url);
+const __dirname_cg = path.dirname(__filename_cg);
+
+const REFERENCE_IMAGE_PATH = path.resolve(__dirname_cg, "..", "..", "public", "fox-reference.png");
 
 const COVER_WIDTH = 1080;
 const COVER_HEIGHT = 1920;
@@ -89,7 +93,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-const FONT_PATH = path.resolve(import.meta.dirname, "..", "..", "public", "fonts", "LuckiestGuy-Regular.ttf");
+const FONT_PATH = path.resolve(__dirname_cg, "..", "..", "public", "fonts", "LuckiestGuy-Regular.ttf");
 
 async function buildTextOverlay(title: string): Promise<Buffer> {
   const cleanTitle = title
