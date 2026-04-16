@@ -10,6 +10,8 @@ import {
   GenerateGeminiImageBody,
   GenerateCoverBody,
 } from "@workspace/api-zod";
+import { readFile } from "fs/promises";
+import path from "path";
 
 const router: IRouter = Router();
 
@@ -259,8 +261,75 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
 
   try {
     const result = await attemptGenerate(1);
-    console.log(`[CoverGen] Cover generated successfully`);
-    res.json(result);
+    console.log(`[CoverGen] Cover generated, compositing title overlay...`);
+
+    const sharp = (await import("sharp")).default;
+
+    const COVER_WIDTH = 1080;
+    const COVER_HEIGHT = 1920;
+    const TEXT_ZONE_TOP = 60;
+    const TEXT_ZONE_BOTTOM = 630;
+    const TEXT_ZONE_HEIGHT = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
+    const TEXT_ZONE_SIDE_PADDING = 60;
+
+    function splitLines(text: string, max: number): string[] {
+      const words = text.split(/\s+/);
+      const lines: string[] = [];
+      let cur = "";
+      for (const w of words) {
+        if (!cur) cur = w;
+        else if ((cur + " " + w).length <= max) cur += " " + w;
+        else { lines.push(cur); cur = w; }
+      }
+      if (cur) lines.push(cur);
+      return lines;
+    }
+
+    function escXml(s: string) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+    }
+
+    const cleanTitle = body.title.replace(/\*\*/g, "").toUpperCase().trim();
+    const lines = splitLines(cleanTitle, 15).slice(0, 5);
+    const lineCount = lines.length;
+
+    let fontSize = lineCount <= 2 ? 115 : lineCount <= 3 ? 100 : lineCount <= 4 ? 85 : 72;
+    const maxTextWidth = COVER_WIDTH - TEXT_ZONE_SIDE_PADDING * 2;
+    const maxLineChars = Math.max(...lines.map(l => l.length));
+    const estimatedWidth = maxLineChars * fontSize * 0.58;
+    if (estimatedWidth > maxTextWidth) fontSize = Math.floor(fontSize * (maxTextWidth / estimatedWidth));
+
+    const lineHeight = fontSize * 1.18;
+    const totalTextHeight = lineCount * lineHeight;
+    const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
+
+    const fontPath = path.join(process.cwd(), "public", "fonts", "LuckiestGuy-Regular.ttf");
+    const fontBuffer = await readFile(fontPath);
+    const fontBase64 = fontBuffer.toString("base64");
+
+    const shadowOff = Math.max(4, Math.round(fontSize * 0.05));
+    const textEls = lines.map((line, i) => {
+      const y = startY + i * lineHeight;
+      const esc = escXml(line);
+      return `<text x="${COVER_WIDTH / 2 + shadowOff}" y="${y + shadowOff}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="#E86A30" opacity="0.85">${esc}</text>
+    <text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white">${esc}</text>`;
+    }).join("\n    ");
+
+    const svgOverlay = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+    <defs><style>@font-face { font-family: 'LuckiestGuy'; src: url('data:font/ttf;base64,${fontBase64}'); }</style></defs>
+    ${textEls}
+  </svg>`;
+
+    const baseImgBuf = Buffer.from(result.b64_json, "base64");
+    const composited = await sharp(baseImgBuf)
+      .resize(COVER_WIDTH, COVER_HEIGHT, { fit: "cover" })
+      .composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
+      .png()
+      .toBuffer();
+
+    const finalB64 = composited.toString("base64");
+    console.log(`[CoverGen] Cover with title overlay generated successfully`);
+    res.json({ b64_json: finalB64, mimeType: "image/png" });
   } catch (error: any) {
     console.error(`[CoverGen] All ${MAX_RETRIES} attempts failed: ${error.message}`);
     if (error.message === "RATE_LIMIT") {
