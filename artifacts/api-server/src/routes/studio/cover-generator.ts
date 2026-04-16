@@ -18,11 +18,12 @@ function buildIllustrationPrompt(videoDescription: string): string {
 REGLA ABSOLUTA - SIN TEXTO:
 NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, texto en pantallas, texto en objetos, ni NINGÚN tipo de escritura en la imagen. CERO caracteres alfanuméricos. Si hay una pantalla o monitor, debe mostrar formas abstractas de colores o gráficos abstractos, JAMÁS texto legible. Esta regla no tiene excepciones.
 
-PERSONAJE (copiar EXACTAMENTE de la imagen de referencia adjunta):
+PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
 - Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta/polera verde oscuro
 - SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado ni parcialmente visible
 - El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario
-- Debe verse IDÉNTICO al de la referencia en proporciones y rasgos faciales
+- Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
+- El zorro DEBE mantener el estilo FLAT CARTOON de la referencia: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas. El zorro es un cartoon simple y limpio
 - Expresiones faciales variadas según la escena (confiado, sorprendido, feliz, preocupado, relajado)
 
 ESCENA A ILUSTRAR:
@@ -30,7 +31,7 @@ TEMA DEL VIDEO: "${videoDescription}"
 Adapta la escena al contexto específico del video. Los objetos y elementos deben ser RELEVANTES al tema y contar una historia visual clara.
 
 ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
-- El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE fondo limpio sin elementos
+- El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE fondo oscuro limpio sin elementos
 - NADA puede existir en esa zona: ni el zorro, ni objetos, ni sombras, ni líneas, ni bordes
 - Toda la acción visual comienza DEBAJO del píxel 670
 
@@ -40,29 +41,24 @@ COMPOSICIÓN:
 - Dejar espacio entre elementos, no abarrotar la imagen
 - Se pueden incluir 2-4 elementos/objetos además del zorro, pero deben ser parte de la escena narrativa
 
-ESTILO ARTÍSTICO PREMIUM (CAMBIO CRÍTICO - LEER CON ATENCIÓN):
-- Estilo: ilustración editorial moderna premium, como las portadas de revistas tech (Wired, Fast Company) o presentaciones de startups de Silicon Valley
-- Líneas de contorno: FINAS y elegantes (no gruesas como cartoon infantil). Grosor de línea delgado y refinado
-- Iluminación: incluir iluminación suave ambiental con highlights sutiles. El zorro debe tener volumen y profundidad mediante sombras suaves (NO sombras duras de cartoon)
-- Texturizado: los objetos y el zorro deben tener textura sutil (grain ligero o noise artístico), NO completamente planos
-- Gradientes sutiles PERMITIDOS en objetos y en el pelaje del zorro para dar profundidad y sofisticación
-- Paleta de colores refinada: usar versiones más sofisticadas y menos saturadas de los colores base. El naranja del zorro puede tener matices cálidos con sombras terracota. El verde de la camiseta debe ser un verde bosque elegante, no verde primario
+CONTRASTE DE ESTILOS (IMPORTANTE):
+- El ZORRO y los OBJETOS/ICONOS se dibujan en estilo FLAT CARTOON: líneas de contorno gruesas negras, colores planos y vibrantes, sin degradados, sin sombras realistas. Como iconos grandes y simples, estilizados
+- El FONDO es premium y oscuro con efectos de iluminación elegantes (ver abajo)
+- Este contraste entre personaje cartoon sobre fondo premium es intencional y crea un look moderno y llamativo
 
-FONDO PREMIUM:
+FONDO PREMIUM (solo el fondo, NO el personaje):
 - Color base: gradiente vertical muy sutil de #0F172A (slate 900) en la parte inferior a #1E293B (slate 800) en el centro
 - Elementos de fondo: grid geométrico muy sutil (líneas blancas al 3-5% de opacidad) como el que usan sitios como Linear.app o Vercel
 - Un glow ambiental suave y difuso detrás del zorro en tono naranja cálido (#E86A30 al 15-20% de opacidad) con blur amplio, como un halo de luz
 - La zona superior (35%) mantiene el mismo tono oscuro limpio sin elementos
 
-PALETA PERMITIDA:
-- Fondo: tonos slate oscuros (#0F172A, #1E293B)
-- Zorro: naranja cálido con sombras terracota y highlights dorados sutiles
-- Camiseta: verde bosque (#2E7D32) con sombras más oscuras
-- Acentos: naranja marca (#E86A30), blanco, slate claro para highlights
-- Objetos tecnológicos: tonos slate con acentos de naranja o verde brillante para pantallas/indicadores
-- Glow effects: naranja cálido o verde suave, siempre difusos
+PALETA:
+- Fondo: tonos slate oscuros (#0F172A, #1E293B) con glow naranja difuso
+- Zorro: naranja vibrante PLANO (como la referencia), verde sólido en la camiseta, líneas gruesas negras
+- Objetos: colores planos y vibrantes estilo flat icon (naranja, verde, blanco, azul, rojo), con contornos gruesos negros
+- Los objetos tecnológicos pueden tener pequeños acentos brillantes (pantallas con glow verde o naranja)
 
-RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El estilo debe sentirse PREMIUM, CORPORATIVO y TECH — como la portada de un pitch deck de una startup valorada en millones, NO como un cartoon infantil.`;
+RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.`;
 }
 
 function splitTextIntoLines(text: string, maxCharsPerLine: number): string[] {
