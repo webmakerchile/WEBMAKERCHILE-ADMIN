@@ -292,52 +292,162 @@ REGLA DE ORO: si NO se puede confundir con la imagen master adjunta, es INCORREC
 // SORPRÉNDEME (audiencia: emprendedores/pymes)
 // ============================================
 
-const SORPRENDEME_SYSTEM = `Eres un estratega de contenido para WebMakerLatam, una AGENCIA digital que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología (desarrollo web, e-commerce, software a medida, chatbots con IA, apps móviles, marketing digital/SEO).
+const SORPRENDEME_SYSTEM = `Eres el estratega senior de contenido de WebMakerLatam, AGENCIA digital LATAM que ayuda a EMPRENDEDORES, PYMES y EMPRESAS a crecer con tecnología (desarrollo web a medida, e-commerce, software, chatbots con IA, apps móviles, automatizaciones, marketing digital, SEO, integraciones, branding, hosting/dominios).
 
-AUDIENCIA PRIMARIA: dueños de negocio y emprendedores que NO necesariamente saben de tecnología. Hay que hablarles simple, en términos de BENEFICIOS DE NEGOCIO (vender más, ahorrar tiempo, atender 24/7, profesionalizarse), nunca en jerga técnica.
+AUDIENCIA PRIMARIA (95%): dueños de negocio NO técnicos. Háblales en BENEFICIOS DE NEGOCIO (vender más, ahorrar tiempo, atender 24/7, profesionalizar marca, escalar, ahorrar plata). Cero jerga técnica.
 
-DISTRIBUCIÓN DE CATEGORÍAS cuando NO hay contexto del usuario (respétala estrictamente):
-1. CASOS DE ÉXITO (20%): "Cómo ayudamos a [tipo negocio] a [resultado concreto]". Ej: "Cómo una panadería triplicó pedidos con un chatbot de WhatsApp"
-2. TIPS DE NEGOCIO (20%): consejos prácticos para crecer usando tecnología. Ej: "5 errores que están haciendo huir a tus clientes de tu web"
-3. ¿SABÍAS QUE...? (20%): datos/curiosidades tech para no-devs. Ej: "¿Sabías que el 70% abandona una web si tarda más de 3s en cargar?"
-4. PROBLEMA + SOLUCIÓN (20%): problema común de emprendedor + cómo lo resolvemos. Ej: "¿Pierdes ventas por responder WhatsApp a las 2am? Un chatbot con IA atiende 24/7"
-5. MOTIVACIÓN EMPRENDEDORA (15%): mindset, frases. Ej: "La diferencia entre un negocio que crece y uno que se estanca está en la ejecución"
-6. TUTORIALES DEV (5% - SOLO secundaria): técnico para devs. Ej: "Cómo usar git bisect para encontrar bugs"
+CATEGORÍAS DISPONIBLES (úsalas TODAS rotándolas, NUNCA repitas categoría dos veces seguidas):
+A. CASOS DE ÉXITO ficticios pero verosímiles ("Cómo una [vertical] de [ciudad] [resultado] gracias a [solución]")
+B. TIPS DE NEGOCIO accionables ("N errores/señales/claves/hábitos/trucos que…")
+C. ¿SABÍAS QUE…? con dato/estadística llamativa
+D. PROBLEMA + SOLUCIÓN explícita ("¿Pierdes X? Aquí está cómo solucionarlo")
+E. MOTIVACIÓN EMPRENDEDORA con verdad incómoda
+F. MITOS DERRIBADOS ("La verdad sobre…", "Mito vs realidad de…")
+G. COMPARATIVOS ("Web propia vs Instagram", "Chatbot vs contestar tú", "Plantilla vs hecho a medida")
+H. CHECKLIST/AUDITORÍA ("Audita tu web en 60 seg", "10 cosas que tu negocio debe tener online en 2026")
+I. TENDENCIAS ("Lo que está funcionando en e-commerce 2026", "IA que ya usan tus competidores")
+J. ANTES Y DESPUÉS ("De Excel a un sistema en 7 días")
+K. STORYTELLING / HOOK INESPERADO ("Mi cliente perdió $3M por no tener WhatsApp Business…")
+L. PREGUNTA INCÓMODA AL LECTOR ("¿Cuántos clientes pierdes por no responder a tiempo?")
+M. ANALOGÍAS DEL MUNDO REAL ("Tu web es como tu vitrina: si está sucia, no entran")
+N. NUMEROLOGÍA / RANKING ("Top 5 herramientas IA gratis para tu negocio")
+O. TEMPORAL / ESTACIONAL (Black Friday, Navidad, Año Nuevo, Día de la Madre, vuelta a clases, etc. — solo si es coherente con el mes)
+P. DETRÁS DE CÁMARAS de la agencia ("Así diseñamos una landing en 48 horas")
+Q. TUTORIAL EXPRESS sin código ("Cómo conectar WhatsApp a tu tienda en 5 minutos")
+R. ADVERTENCIA / RIESGO ("Por qué tu web podría desaparecer mañana si no haces esto")
 
-REGLAS:
-- Si el usuario da contexto, RESPÉTALO siempre. Ej: contexto "chatbots" → tema de chatbots para emprendedores (no para devs). Contexto "react" → puede ser técnico para devs.
-- Si NO hay contexto, elige una categoría siguiendo la distribución (mayoritariamente para emprendedores).
-- Tema concreto y accionable, no genérico. Máximo 90 caracteres.
-- Devuelve SOLO el tema en una línea, sin comillas, sin prefijos, sin explicación.`;
+VERTICALES TÍPICAS DE CLIENTES (rota entre ellas para variar): restaurantes, panaderías, cafeterías, peluquerías/barberías, salones de belleza, gimnasios/personal trainers, clínicas dentales, veterinarias, ferreterías, librerías, tiendas de ropa, e-commerce, inmobiliarias, abogados/contadores/consultoras, talleres mecánicos, escuelas/cursos online, agencias de viajes, hoteles/cabañas, farmacias, distribuidoras, importadoras, productores audiovisuales, fotógrafos, organizadores de eventos, food trucks, delivery, dropshipping, infoproductos, coaches, psicólogos online, freelancers.
+
+PAÍSES/CIUDADES LATAM para anclar (úsalos rotando): Santiago, Valparaíso, Concepción, Antofagasta, Temuco, La Serena, Buenos Aires, Córdoba, Mendoza, Rosario, Lima, Arequipa, Bogotá, Medellín, Cali, Quito, Guayaquil, CDMX, Guadalajara, Monterrey, Asunción, Montevideo, La Paz, San José, Panamá. (No abuses, solo cuando aporte verosimilitud.)
+
+FORMATOS DE TÍTULO (rota — no uses dos veces seguidas el mismo):
+- Pregunta directa: "¿Sabías que…?", "¿Tu web…?", "¿Pierdes ventas porque…?"
+- Lista numerada: "5 señales que…", "7 errores que…", "3 razones por las que…"
+- Provocador: "Tu [X] está [problema] y no lo sabes"
+- Storytelling: "Esta [vertical] facturó $X por hacer esto…"
+- Comparativo: "X vs Y: cuál conviene a tu negocio"
+- Antes/Después: "De [malo] a [bueno] en [tiempo]"
+- Imperativo: "Deja de [error]…", "Empieza a [acción]…"
+- Confidencial: "Lo que tu competencia no quiere que sepas sobre…"
+- Tendencia: "Lo nuevo en [tema] que cambia las reglas en [año/2026]"
+
+REGLAS DE ORO:
+- Tema CONCRETO y específico — NUNCA genérico tipo "cómo automatizar tu empresa con IA". Siempre con un ángulo, vertical, número o promesa concreta.
+- Máximo 100 caracteres.
+- Si el usuario da contexto, respétalo y úsalo como pivote pero igual aplica un ángulo creativo de la lista.
+- Si el usuario te entrega temas recientes a evitar, NO los repitas ni propongas variaciones cercanas (cambia categoría, vertical, ángulo y formato).
+- Devuelve SOLO el tema en una línea, sin comillas, sin prefijos, sin explicación, sin emojis.`;
 
 const SorprendemeBody = z.object({
   contexto: z.string().max(300).optional(),
   tipo_seccion: z.enum(["historia", "descripcion"]),
+  temas_recientes: z.array(z.string().max(200)).max(20).optional(),
 });
+
+// Bancos para inyectar variedad por llamada
+const VERTICALES = [
+  "restaurante", "panadería", "cafetería", "peluquería", "barbería", "salón de belleza", "gimnasio", "personal trainer",
+  "clínica dental", "veterinaria", "ferretería", "librería", "tienda de ropa", "e-commerce", "inmobiliaria",
+  "estudio de abogados", "contadora", "consultora", "taller mecánico", "escuela online", "agencia de viajes",
+  "hotel", "cabaña", "farmacia", "distribuidora", "importadora", "fotógrafo", "organizadora de eventos",
+  "food truck", "delivery", "dropshipping", "coach", "psicóloga online", "freelancer", "diseñadora", "arquitecta",
+];
+const CIUDADES = ["Santiago", "Valparaíso", "Concepción", "Buenos Aires", "Córdoba", "Mendoza", "Lima", "Arequipa",
+  "Bogotá", "Medellín", "Cali", "Quito", "Guayaquil", "CDMX", "Guadalajara", "Monterrey", "Montevideo", "Asunción"];
+const ANGULOS = [
+  { letra: "A", nombre: "CASO DE ÉXITO ficticio verosímil con vertical+ciudad+resultado concreto" },
+  { letra: "B", nombre: "TIPS — N errores/señales/claves/hábitos/trucos" },
+  { letra: "C", nombre: "¿SABÍAS QUE…? con dato o estadística llamativa" },
+  { letra: "D", nombre: "PROBLEMA + SOLUCIÓN explícita" },
+  { letra: "E", nombre: "MOTIVACIÓN EMPRENDEDORA con verdad incómoda" },
+  { letra: "F", nombre: "MITO DERRIBADO — 'la verdad sobre' o 'mito vs realidad'" },
+  { letra: "G", nombre: "COMPARATIVO entre dos opciones (X vs Y)" },
+  { letra: "H", nombre: "CHECKLIST / mini auditoría rápida" },
+  { letra: "I", nombre: "TENDENCIA actual en marketing/IA/web/e-commerce 2026" },
+  { letra: "J", nombre: "ANTES Y DESPUÉS de adoptar una solución" },
+  { letra: "K", nombre: "STORYTELLING con hook inesperado o cifra perdida" },
+  { letra: "L", nombre: "PREGUNTA INCÓMODA dirigida al lector" },
+  { letra: "M", nombre: "ANALOGÍA del mundo real para explicar concepto digital" },
+  { letra: "N", nombre: "RANKING / Top N herramientas o prácticas" },
+  { letra: "O", nombre: "TEMPORAL / ESTACIONAL coherente con el mes actual" },
+  { letra: "P", nombre: "DETRÁS DE CÁMARAS de la agencia WebMakerLatam" },
+  { letra: "Q", nombre: "TUTORIAL EXPRESS sin código en pasos simples" },
+  { letra: "R", nombre: "ADVERTENCIA / RIESGO si no se hace algo" },
+];
+const FORMATOS_TITULO = [
+  "Pregunta directa", "Lista numerada (N…)", "Provocador ('Tu X está Y y no lo sabes')",
+  "Storytelling ('Esta panadería facturó $X por…')", "Comparativo (X vs Y)",
+  "Antes/Después ('De X a Y en N días')", "Imperativo ('Deja de…' / 'Empieza a…')",
+  "Confidencial ('Lo que tu competencia no quiere que sepas…')",
+  "Tendencia ('Lo nuevo en X que cambia el juego en 2026')",
+];
+const TEMAS_PIVOTE = [
+  "WhatsApp Business", "página web propia", "tienda online", "chatbot con IA", "automatización con n8n/Make",
+  "Google My Business / Perfil de Empresa", "SEO local", "Instagram Ads", "TikTok orgánico", "email marketing",
+  "embudo de ventas", "carrito abandonado", "atención 24/7", "facturación electrónica", "agenda online de citas",
+  "formularios y captura de leads", "Pixel de Facebook", "Google Analytics", "velocidad de carga de la web",
+  "diseño responsive móvil", "checkout en un click", "MercadoPago/Transbank/Stripe", "reseñas en Google",
+  "newsletter / base de datos propia", "reportes y métricas", "fidelización con descuentos", "membresías y suscripciones",
+];
+
+function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]!; }
 
 router.post("/community/sorprendeme", async (req, res) => {
   try {
     const body = SorprendemeBody.parse(req.body);
     const ctx = (body.contexto || "").trim();
+    const recientes = (body.temas_recientes || []).slice(0, 12);
     const sectionHint = body.tipo_seccion === "historia"
       ? "una HISTORIA corta (story 9:16 con un solo concepto digerible en 5 segundos)"
       : "una PUBLICACIÓN de feed (post único o carrusel con desarrollo más largo)";
 
+    // Semilla creativa aleatoria — fuerza variedad cada llamada
+    const angulo = pickRandom(ANGULOS);
+    const formato = pickRandom(FORMATOS_TITULO);
+    const vertical = pickRandom(VERTICALES);
+    const ciudad = pickRandom(CIUDADES);
+    const pivote = pickRandom(TEMAS_PIVOTE);
+    const mes = new Date().toLocaleDateString("es-CL", { month: "long" });
+
+    const seedBlock = `SEMILLA CREATIVA OBLIGATORIA para esta generación (úsala como guía, no como copia literal):
+- Categoría a usar: ${angulo.letra} — ${angulo.nombre}
+- Formato de título sugerido: ${formato}
+- Vertical de cliente sugerida si aplica: "${vertical}"${angulo.letra === "A" ? ` (puedes anclar a ${ciudad})` : ""}
+- Tema/herramienta pivote sugerida: "${pivote}"
+- Mes actual (úsalo SOLO si elegiste categoría O temporal): ${mes}`;
+
+    const evitarBlock = recientes.length > 0
+      ? `\n\nTEMAS RECIENTES — está PROHIBIDO repetirlos o proponer variaciones cercanas. Cambia categoría, vertical, ángulo y formato:\n${recientes.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
+      : "";
+
     const userPrompt = ctx
-      ? `Genera UN tema concreto para ${sectionHint} de WebMakerLatam. CONTEXTO del usuario: "${ctx}". El tema DEBE estar alineado con ese contexto y dirigido a la audiencia que el contexto sugiera (si suena emprendedor → emprendedores; si suena técnico → devs).`
-      : `Genera UN tema concreto para ${sectionHint} de WebMakerLatam, eligiendo categoría según la distribución (mayoritariamente para emprendedores/pymes, no para devs).`;
+      ? `Genera UN tema concreto para ${sectionHint} de WebMakerLatam.
+
+CONTEXTO del usuario (alta prioridad — el tema debe estar alineado): "${ctx}"
+
+${seedBlock}${evitarBlock}
+
+Devuelve SOLO el tema, máx 100 caracteres, sin comillas ni prefijos.`
+      : `Genera UN tema concreto para ${sectionHint} de WebMakerLatam, dirigido a emprendedores/pymes LATAM no técnicos.
+
+${seedBlock}${evitarBlock}
+
+Devuelve SOLO el tema, máx 100 caracteres, sin comillas ni prefijos.`;
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 200,
+      temperature: 1,
       system: SORPRENDEME_SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
     });
     const block = response.content[0];
     let tema = block && block.type === "text" ? block.text.trim() : "";
     tema = tema.replace(/^["'`]+|["'`]+$/g, "").replace(/^[-*•]\s*/, "").trim();
+    // si el modelo devolvió varias líneas, quédate con la primera no vacía
+    tema = tema.split(/\n+/).map((s) => s.trim()).filter(Boolean)[0] || tema;
     if (tema.length > 120) tema = tema.slice(0, 117) + "...";
-    res.json({ success: true, data: { tema } });
+    res.json({ success: true, data: { tema, _seed: { angulo: angulo.letra, formato, vertical, pivote } } });
   } catch (err: any) {
     console.error("[Sorpréndeme] Error:", err);
     res.status(500).json({ success: false, error: err.message || "Error interno" });

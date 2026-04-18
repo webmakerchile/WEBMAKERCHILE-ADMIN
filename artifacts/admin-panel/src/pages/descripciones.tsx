@@ -92,10 +92,13 @@ export default function DescripcionesPage() {
     setRedes((prev) => (prev.includes(red) ? prev.filter((r) => r !== red) : [...prev, red]));
   };
 
+  const SORPRENDEME_HISTORY_KEY = "wm_sorprendeme_descripcion_history";
   const handleSorprendeme = async () => {
     setSorpresa(true);
     setError(null);
     try {
+      let recientes: string[] = [];
+      try { recientes = JSON.parse(localStorage.getItem(SORPRENDEME_HISTORY_KEY) || "[]"); } catch {}
       const res = await fetch(`${API_BASE}/community/sorprendeme`, {
         method: "POST",
         credentials: "include",
@@ -103,11 +106,14 @@ export default function DescripcionesPage() {
         body: JSON.stringify({
           contexto: tema.trim() || undefined,
           tipo_seccion: "descripcion",
+          temas_recientes: recientes.slice(0, 12),
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Error");
       setTema(data.data.tema);
+      const nuevo = [data.data.tema, ...recientes.filter((t) => t !== data.data.tema)].slice(0, 20);
+      try { localStorage.setItem(SORPRENDEME_HISTORY_KEY, JSON.stringify(nuevo)); } catch {}
     } catch (err: any) {
       setError(err.message);
     } finally {

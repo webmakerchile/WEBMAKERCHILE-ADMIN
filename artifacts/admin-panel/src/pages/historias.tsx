@@ -44,10 +44,13 @@ export default function HistoriasPage() {
   const [intentos, setIntentos] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
+  const SORPRENDEME_HISTORY_KEY = "wm_sorprendeme_historia_history";
   const handleSorprendeme = async () => {
     setSorpresa(true);
     setError(null);
     try {
+      let recientes: string[] = [];
+      try { recientes = JSON.parse(localStorage.getItem(SORPRENDEME_HISTORY_KEY) || "[]"); } catch {}
       const res = await fetch(`${API_BASE}/community/sorprendeme`, {
         method: "POST",
         credentials: "include",
@@ -55,11 +58,14 @@ export default function HistoriasPage() {
         body: JSON.stringify({
           contexto: concepto.trim() || undefined,
           tipo_seccion: "historia",
+          temas_recientes: recientes.slice(0, 12),
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Error");
       setConcepto(data.data.tema);
+      const nuevo = [data.data.tema, ...recientes.filter((t) => t !== data.data.tema)].slice(0, 20);
+      try { localStorage.setItem(SORPRENDEME_HISTORY_KEY, JSON.stringify(nuevo)); } catch {}
     } catch (err: any) {
       setError(err.message);
     } finally {
