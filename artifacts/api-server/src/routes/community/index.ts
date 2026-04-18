@@ -386,6 +386,25 @@ REGLA DE ORO: si NO se puede confundir con la imagen master adjunta, es INCORREC
 // SORPRÉNDEME (audiencia: emprendedores/pymes)
 // ============================================
 
+// Catálogo completo de servicios de WebMakerLatam — se inyecta en TODOS los prompts de texto
+// para que el contenido refleje la oferta real (no solo "webs"). Todos los servicios
+// terminan con CTA "Solicitar Cotización" o "Cotizar por WhatsApp" o "Agendar Reunión".
+const CATALOGO_SERVICIOS = `CATÁLOGO COMPLETO DE SERVICIOS WebMakerLatam (úsalos rotando, NO siempre webs):
+1. Páginas web profesionales y e-commerce (tiendas online, landing pages, sitios corporativos).
+2. App Móvil Nativa (iOS y Android de alto rendimiento).
+3. Sistema ERP (control de inventario, compras, finanzas y operaciones).
+4. Sistema CRM (gestión de clientes, leads, ventas y postventa).
+5. Plataforma SaaS (software escalable en la nube, multi-cliente).
+6. Punto de Venta / POS (caja y stock para tiendas físicas, integrado con e-commerce).
+7. Software 100% a medida (cualquier solución que el cliente necesite).
+8. Chatbots con IA y automatizaciones (atención 24/7, WhatsApp Business, leads automáticos).
+9. SEO y marketing digital (posicionamiento en Google, Ads, contenido).
+10. Branding, hosting, dominios e integraciones.
+
+CTAs reales del sitio: "Solicitar Cotización", "Cotizar por WhatsApp", "Agendar Reunión / consulta gratuita 1 hora", "Escríbenos al WhatsApp +56 9 5365 7460".
+
+REGLA DE VARIEDAD: en una serie de contenidos NO hables solo de webs. Rota entre los servicios según la audiencia: tiendas físicas → POS + ERP, equipos de venta → CRM + chatbot, startups → SaaS + app, comercios online → e-commerce + chatbot, empresas medianas → ERP + integraciones, etc.`;
+
 // Regla de idioma compartida — se inyecta en TODOS los prompts de texto.
 const REGLA_ESPANOL_NEUTRO = `IDIOMA — REGLA OBLIGATORIA E INNEGOCIABLE:
 - Usa SIEMPRE español NEUTRO LATINOAMERICANO, formal-cercano, comprensible para cualquier país de habla hispana (México, Colombia, Perú, Argentina, Chile, España).
@@ -397,7 +416,9 @@ const REGLA_ESPANOL_NEUTRO = `IDIOMA — REGLA OBLIGATORIA E INNEGOCIABLE:
 - Acentos correctos en todas las palabras (estás, más, también, número, fácil, rápido).
 `;
 
-const SORPRENDEME_SYSTEM = `Eres el estratega senior de contenido de WebMakerLatam, AGENCIA digital LATAM que ayuda a EMPRENDEDORES, PYMES y EMPRESAS a crecer con tecnología (desarrollo web a medida, e-commerce, software, chatbots con IA, apps móviles, automatizaciones, marketing digital, SEO, integraciones, branding, hosting/dominios).
+const SORPRENDEME_SYSTEM = `Eres el estratega senior de contenido de WebMakerLatam, AGENCIA digital LATAM que ayuda a EMPRENDEDORES, PYMES y EMPRESAS a crecer con tecnología.
+
+${CATALOGO_SERVICIOS}
 
 ${REGLA_ESPANOL_NEUTRO}
 
@@ -674,7 +695,9 @@ PALETA: fondo slate oscuro + glow naranja. Zorro naranja PLANO + verde sólido +
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte.`;
 }
 
-const SYSTEM_PROMPT_HISTORIA_TEXTO = `Eres el Community Manager de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología (desarrollo web, e-commerce, software a medida, chatbots con IA, apps móviles, SEO/marketing digital). Tu mascota es Webi (zorro naranja con lentes).
+const SYSTEM_PROMPT_HISTORIA_TEXTO = `Eres el Community Manager de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología. Tu mascota es Webi (zorro naranja con lentes).
+
+${CATALOGO_SERVICIOS}
 
 ${REGLA_ESPANOL_NEUTRO}
 
@@ -998,7 +1021,9 @@ router.delete("/community/historias/:id", async (req, res) => {
 // DESCRIPCIONES (audiencia: emprendedores)
 // ============================================
 
-const SYSTEM_PROMPT_DESC = `Eres el Community Manager oficial de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología (desarrollo web, e-commerce, software a medida, chatbots con IA, apps móviles, SEO/marketing digital). Tu mascota es Webi (zorro naranja con lentes).
+const SYSTEM_PROMPT_DESC = `Eres el Community Manager oficial de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología. Tu mascota es Webi (zorro naranja con lentes).
+
+${CATALOGO_SERVICIOS}
 
 ${REGLA_ESPANOL_NEUTRO}
 
@@ -1040,6 +1065,13 @@ SLIDES DEL CARRUSEL (cuando se solicite):
   * Slides "desarrollo": dependiendo del flujo, pueden ser PROBLEMA (zorro mostrando algo que no funciona), SOLUCIÓN (zorro presentando la respuesta), BENEFICIO (zorro celebrando resultado). Cada slide UN solo punto/idea.
   * Slide última "cta": invitación a contactar/agendar/comentar. Visual: zorro con pose invitante + icono de WhatsApp o calendario.
 - Cada slide tiene "titulo" (máx 50 chars), "subtitulo" (máx 90 chars) y "prompt_visual" (descripción breve en español del foco visual y la pose del zorro para esta slide específica, sin texto, indicando objetos relevantes al tema).
+
+REGLA ESTRICTA — TEMAS ENUMERADOS EN CARRUSEL ("3 tips", "5 errores", "7 señales", "4 razones", "10 hábitos", etc.):
+- Si el tema dice "N tips/errores/señales/razones/claves/hábitos/trucos/etc.", el carrusel DEBE tener exactamente 1 portada + N slides de desarrollo + 1 CTA = N+2 slides totales.
+- CADA slide de desarrollo cubre EXACTAMENTE UN punto de la lista, en orden secuencial 1, 2, 3, …, N. PROHIBIDO agrupar dos puntos en una sola slide (NUNCA "Tip 2 y 3 juntos", NUNCA "Errores 1 y 2", NUNCA "Razones 4 y 5").
+- El "titulo" de cada slide de desarrollo DEBE empezar con la palabra del tema seguida del número: "Tip 1: ...", "Tip 2: ...", "Tip 3: ..." (o "Error 1: ...", "Señal 1: ...", "Razón 1: ...", "Clave 1: ...", según corresponda al tema). Mantén el mismo sustantivo y la misma estructura en TODOS los desarrollos del mismo carrusel.
+- PROHIBIDO insertar slides extra de "problema general" o "intro adicional" entre la portada y el primer punto enumerado: el slide #2 debe ser DIRECTAMENTE "Tip 1" (o "Error 1", etc.).
+- Si el front pide menos slides que N+2 (ej: tema dice "5 tips" pero piden 4 slides), recorta los puntos finales pero mantén la numeración correlativa desde 1 (NUNCA saltes números, NUNCA agrupes).
 
 PUBLICACIÓN ÚNICA: 1 sola slide rol "unica" con titulo + subtitulo + prompt_visual.
 
