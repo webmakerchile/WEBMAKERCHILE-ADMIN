@@ -1,0 +1,202 @@
+Hola, necesito hacer una MEJORA GRANDE a las 2 secciones que acabas de integrar 
+(Historias y Descripciones). La idea es que ambas secciones generen CONTENIDO 
+COMPLETO Y LISTO PARA PUBLICAR, no solo imagen o solo texto por separado.
+
+═══════════════════════════════════════════════════════════════
+CONTEXTO: QUÉ ESTÁ MAL AHORA
+═══════════════════════════════════════════════════════════════
+
+- /historias: solo genera imagen, no genera el texto/copy que va en la historia
+- /descripciones: solo genera texto, no genera la imagen o carrusel que acompaña
+- Ambas secciones obligan al CEO a pensar el tema desde cero
+
+═══════════════════════════════════════════════════════════════
+NUEVA FUNCIONALIDAD PARA AMBAS SECCIONES
+═══════════════════════════════════════════════════════════════
+
+FEATURE 1 - BOTÓN "¡SORPRÉNDEME!" (en ambas secciones)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Agregar un botón "🎲 ¡Sorpréndeme!" junto al input de tema/concepto.
+
+Comportamiento:
+- Al hacer click, se llama a Claude con un prompt para generar un tema random 
+  relevante para WebMakerLatam (comunidad de devs y creadores tech latinos)
+- El tema generado se rellena automáticamente en el input
+- IMPORTANTE: Si el input YA tiene texto escrito (contexto), el "sorpréndeme" 
+  debe RESPETAR ese contexto y generar un tema alineado.
+  
+  Ejemplos:
+  * Input vacío + sorpréndeme → "Cómo usar git stash para cambiar de rama rápido"
+  * Input "javascript" + sorpréndeme → "3 métodos de arrays que reemplazan bucles for"
+  * Input "carrera" + sorpréndeme → "Señales de que es momento de pedir un aumento como dev"
+
+- Banco de categorías internas para que no se repita siempre lo mismo:
+  tutoriales, tips rápidos, herramientas, reflexiones de carrera, 
+  motivación, frameworks, debugging, productividad, buenas prácticas
+
+Nuevo endpoint backend:
+POST /api/community/sorprendeme
+Body: { "contexto": string (opcional), "tipo_seccion": "historia" | "descripcion" }
+Response: { "tema": string }
+
+═══════════════════════════════════════════════════════════════
+FEATURE 2 - HISTORIAS: GENERAR IMAGEN + TEXTO LISTO
+═══════════════════════════════════════════════════════════════
+
+Además de la imagen, generar también el TEXTO DE LA HISTORIA:
+- Copy principal (1-2 líneas, máx 80 caracteres, para overlay)
+- Sub-copy opcional (1 línea más de contexto)
+- CTA corto (ej: "Guarda este tip", "Comenta tu favorito")
+- Hashtags (3-5 hashtags para stories)
+
+AGREGAR TOGGLE "Texto en imagen":
+- OFF (default): Genera imagen LIMPIA (como ya funciona) + texto aparte en un 
+  panel copiable
+- ON: Renderiza el texto DIRECTAMENTE sobre la imagen usando canvas en el 
+  backend (node-canvas o sharp + svg). El texto va en las zonas superior e 
+  inferior que ya están reservadas limpias.
+
+Especificaciones del texto renderizado (cuando toggle ON):
+- Zona superior (0-384px): Copy principal centrado, fuente bold, blanco, 
+  tamaño 64-80px, con leve sombra para legibilidad
+- Zona inferior (1440-1920px): Sub-copy + CTA + hashtags pequeños
+- Usar una fuente sans-serif moderna (Inter, Poppins, o Montserrat)
+
+Endpoint modificado:
+POST /api/community/historias/generar
+Body ahora incluye: 
+{ 
+  "tipo_historia": "tip_tech" | "motivacional" | "comunidad",
+  "concepto": string,
+  "texto_en_imagen": boolean  // NUEVO
+}
+
+Response:
+{
+  "imagen": "data:image/png;base64,...",  // con o sin texto según toggle
+  "texto": {
+    "copy_principal": "...",
+    "sub_copy": "...",
+    "cta": "...",
+    "hashtags": "#... #..."
+  }
+}
+
+El panel del frontend debe mostrar:
+- La imagen (con o sin texto renderizado)
+- Un card con los textos en bloques separados, cada uno con botón "Copiar"
+
+═══════════════════════════════════════════════════════════════
+FEATURE 3 - DESCRIPCIONES: AGREGAR GENERACIÓN DE IMAGEN/CARRUSEL
+═══════════════════════════════════════════════════════════════
+
+Además del texto para las 4 redes (que ya funciona bien), ahora debe generar 
+también el contenido visual.
+
+AGREGAR SELECTOR "Tipo de publicación":
+- 📄 Única: 1 sola imagen cuadrada 1:1 (1080x1080)
+- 🎠 Carrusel: 3-5 imágenes relacionadas que cuentan una historia secuencial 
+  en formato 4:5 (1080x1350 - mejor para Instagram)
+
+IMPORTANTE para carrusel:
+- La slide 1 es la PORTADA (hook visual fuerte con el zorro y el tema)
+- Las slides 2-4 son DESARROLLO del contenido (cada una con un punto/paso/idea)
+- La slide final es el CTA (zorro invitando a comentar, guardar, seguir)
+- Todas las slides mantienen consistencia visual (mismo fondo, paleta, estilo)
+- El zorro debe aparecer en AL MENOS la slide 1 y la final
+- Las slides intermedias pueden ser más enfocadas en el contenido (iconos, 
+  diagramas, elementos visuales del tema) con el zorro más pequeño o ausente
+
+Al igual que historias, agregar toggle "Texto en imagen" (ON/OFF).
+
+Endpoint modificado:
+POST /api/community/descripciones/generar
+Body ahora incluye:
+{
+  "tema": string,
+  "tipo_contenido": string,
+  "redes": string[],
+  "tipo_publicacion": "unica" | "carrusel",  // NUEVO
+  "cantidad_slides": number,                  // NUEVO (solo si carrusel, 3-5)
+  "texto_en_imagen": boolean                  // NUEVO
+}
+
+Response:
+{
+  "imagenes": [  // array de 1 imagen si única, 3-5 si carrusel
+    {
+      "numero_slide": 1,
+      "imagen": "data:image/png;base64,...",
+      "rol": "portada" | "desarrollo" | "cta"
+    }
+  ],
+  "descripciones": {  // lo que ya devuelve ahora
+    "tiktok": {...},
+    "instagram": {...},
+    "youtube_shorts": {...},
+    "twitter": {...}
+  }
+}
+
+Frontend debe mostrar:
+- Un carrusel navegable con las imágenes (flechas prev/next, indicador de 
+  posición 1/5, 2/5, etc.)
+- Botón para descargar TODAS las imágenes como ZIP (opcional pero ideal)
+- Botón para descargar cada imagen individual
+- Los 4 bloques de descripciones con botón copiar (como ya está)
+
+═══════════════════════════════════════════════════════════════
+REQUISITOS TÉCNICOS Y DE CALIDAD
+═══════════════════════════════════════════════════════════════
+
+1. CONSISTENCIA VISUAL CRÍTICA:
+   - El zorro debe verse IDÉNTICO en todas las imágenes (portadas, historias, 
+     descripciones). Usa SIEMPRE la misma imagen de referencia del zorro que 
+     ya tienes configurada.
+   - La paleta debe ser la misma: fondo slate oscuro, naranja del zorro, 
+     verde de la polera.
+
+2. CONTEXTO PARA LAS IMÁGENES:
+   - Cuando generes las imágenes de descripciones, el prompt debe incluir el 
+     tema específico generado para que la escena sea RELEVANTE al contenido 
+     (no genérica).
+   - Para carrusel: cada slide debe tener un sub-prompt único pero coherente 
+     con las demás.
+
+3. PERSISTENCIA EN DB:
+   - Guardar todo el set completo en community_content (imágenes + texto)
+   - Permitir ver historial con preview de la primera imagen + tema
+
+4. LOADING STATES:
+   - Generar carrusel puede tardar 30-60 segundos (múltiples imágenes). 
+     Muestra progreso: "Generando slide 1/5...", "Generando slide 2/5..."
+   - Usa streaming o polling, no dejes al usuario mirando una rueda genérica
+
+5. MANEJO DE ERRORES:
+   - Si falla 1 slide del carrusel, reintentar 1 vez antes de fallar todo
+   - Mostrar errores específicos al usuario (no "algo salió mal")
+
+6. MANTENER LO QUE YA FUNCIONA:
+   - NO toques el generador de portadas (/cover)
+   - NO rompas las funcionalidades actuales de /historias y /descripciones
+   - El toggle "texto en imagen" debe estar OFF por defecto (mantiene 
+     comportamiento actual)
+
+═══════════════════════════════════════════════════════════════
+ORDEN SUGERIDO DE IMPLEMENTACIÓN
+═══════════════════════════════════════════════════════════════
+
+1. Primero: Botón "¡Sorpréndeme!" en ambas secciones (es lo más simple)
+2. Segundo: Generación de texto en Historias + toggle de renderizado
+3. Tercero: Generación de imágenes en Descripciones (única primero, carrusel 
+   después)
+4. Cuarto: Renderizado de texto sobre imagen (requiere node-canvas o sharp)
+5. Quinto: Botón de descarga ZIP del carrusel
+
+Si algo es muy complejo o requiere decisiones, PREGÚNTAME antes de 
+implementar. Prefiero que me consultes a que tomes decisiones que después 
+haya que deshacer.
+
+Cuando termines cada paso, haz un test real autenticado (no solo 401) y 
+muéstrame capturas o confirma que funciona end-to-end.
