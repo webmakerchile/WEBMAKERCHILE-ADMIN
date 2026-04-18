@@ -42,3 +42,27 @@ id = "Wx4CBO0EPn9cWAezsjIxM"
 uri = "file://attached_assets/render-tests/slide-v5-45-noellipsis.png"
 type = "image"
 title = "Slide 4:5 forzado + texto largo sin truncamiento"
+
+[[outputs]]
+id = "OWgI7H6WQEQIS516yByHq"
+uri = "file://attached_assets/render-tests/historia-prueba-real.png"
+type = "image"
+title = "Historia 9:16 — \"Chatbots con IA para pymes\""
+
+[[outputs]]
+id = "Nw_XFo1dRud9Pyqs3osu9"
+uri = "file://attached_assets/render-tests/carrusel-slide-1.png"
+type = "image"
+title = "Carrusel 1/3 — Portada"
+
+[[outputs]]
+id = "amzlEBZqYO48ggda-5Y6P"
+uri = "file://attached_assets/render-tests/carrusel-slide-2.png"
+type = "image"
+title = "Carrusel 2/3 — Desarrollo"
+
+[[outputs]]
+id = "tjPWi4KRfxZlAnS8ojnkj"
+uri = "file://attached_assets/render-tests/carrusel-slide-3.png"
+type = "image"
+title = "Carrusel 3/3 — CTA"
