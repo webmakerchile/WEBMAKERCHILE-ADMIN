@@ -835,12 +835,20 @@ VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
 Si respondes NO a cualquiera, REGENERA mentalmente antes de devolver la imagen.
 
 FONDO PREMIUM (consistencia de marca):
-- Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en los bordes
-- Grid geométrico muy sutil (líneas blancas al 3-5% opacidad)
-- Glow ambiental naranja (#E86A30 al 20% opacidad) con blur amplio detrás del zorro como halo
-- 3-5 partículas de luz blancas difusas
+- Gradiente RADIAL (circular) desde el centro hacia afuera: #1E293B (slate 800) en el centro hacia #0F172A (slate 900) en los bordes
+- Grid geométrico muy sutil con líneas VERTICALES y HORIZONTALES de igual peso al 3-5% opacidad (debe verse como malla uniforme, NO como horizonte)
+- Halo naranja CIRCULAR (#E86A30 al 20% opacidad) con blur amplio centrado EXACTAMENTE detrás de la cabeza/torso del zorro. Forma de DISCO/AURA radial, NUNCA banda ni stripe.
+- 3-5 partículas de luz blancas difusas distribuidas aleatoriamente
 
-PALETA: fondo slate oscuro + glow naranja. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
+PROHIBIDO ABSOLUTAMENTE EN EL FONDO (causas comunes de defectos visuales):
+✗ Líneas horizontales naranjas, bandas, stripes o franjas que crucen la imagen
+✗ Línea de horizonte (estilo paisaje sol/atardecer/amanecer)
+✗ Gradiente lineal vertical que divida la imagen en dos zonas (cielo/suelo)
+✗ Cualquier elemento que sugiera "suelo" + "cielo"
+✗ Resplandores en forma de barra, rayo o banda
+El fondo es ESPACIO ABSTRACTO, no un escenario. El zorro flota sobre un fondo plano con halo radial.
+
+PALETA: fondo slate oscuro + halo naranja radial. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
 
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte.`;
 }
