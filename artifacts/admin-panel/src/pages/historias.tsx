@@ -75,7 +75,7 @@ export default function HistoriasPage() {
   const [frameActivo, setFrameActivo] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
-  const [reintentando, setReintentando] = useState<{ frame: number; modo: string } | null>(null);
+  const [reintentando, setReintentando] = useState<Record<number, string>>({});
   const [modalAjuste, setModalAjuste] = useState<{ frame: number; modo: "imagen" | "ambos" } | null>(null);
   const [ajusteTexto, setAjusteTexto] = useState("");
   const [intentos, setIntentos] = useState(0);
@@ -198,7 +198,7 @@ export default function HistoriasPage() {
     if (!resultado) return;
     const frame = resultado.frames[frameIndex];
     if (!frame) return;
-    setReintentando({ frame: frameIndex, modo });
+    setReintentando((prev) => ({ ...prev, [frameIndex]: modo }));
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/community/historias/reintentar`, {
@@ -237,7 +237,11 @@ export default function HistoriasPage() {
     } catch (err: any) {
       setError(`No se pudo regenerar: ${err.message}. La versión anterior se mantiene.`);
     } finally {
-      setReintentando(null);
+      setReintentando((prev) => {
+        const next = { ...prev };
+        delete next[frameIndex];
+        return next;
+      });
     }
   };
 
@@ -561,6 +565,11 @@ export default function HistoriasPage() {
                         <div className="absolute top-1 left-1 bg-slate-950/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                           {f.numero_frame}/{f.total_frames}
                         </div>
+                        {reintentando[i] && (
+                          <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-[2px] flex items-center justify-center">
+                            <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                          </div>
+                        )}
                         <div className={`absolute bottom-0 left-0 right-0 bg-slate-950/85 text-[10px] font-semibold py-1 text-center ${rolMeta.color}`}>
                           {rolMeta.emoji} {rolMeta.label}
                         </div>
@@ -611,7 +620,7 @@ export default function HistoriasPage() {
                       <p className="text-xs mt-3">Usa “Reintentar imagen” abajo.</p>
                     </div>
                   )}
-                  {reintentando?.frame === frameActivo && (
+                  {reintentando[frameActivo] && (
                     <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-3 z-10">
                       <Loader2 className="w-10 h-10 text-primary animate-spin" />
                       <p className="text-foreground font-semibold text-sm">Regenerando...</p>
@@ -623,33 +632,38 @@ export default function HistoriasPage() {
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleReintentar(frameActivo, "imagen")}
-                    disabled={!!reintentando}
+                    disabled={!!reintentando[frameActivo]}
                     className="bg-amber-500/90 hover:bg-amber-500 disabled:bg-amber-500/40 text-slate-900 font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />Reintentar imagen
                   </button>
                   <button
                     onClick={() => handleReintentar(frameActivo, "texto")}
-                    disabled={!!reintentando}
+                    disabled={!!reintentando[frameActivo]}
                     className="bg-blue-500/90 hover:bg-blue-500 disabled:bg-blue-500/40 text-white font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
                   >
                     <Pencil className="w-3.5 h-3.5" />Reintentar texto
                   </button>
                   <button
                     onClick={() => handleReintentar(frameActivo, "ambos")}
-                    disabled={!!reintentando}
+                    disabled={!!reintentando[frameActivo]}
                     className="bg-emerald-500/90 hover:bg-emerald-500 disabled:bg-emerald-500/40 text-white font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
                   >
                     <Repeat className="w-3.5 h-3.5" />Reintentar todo
                   </button>
                   <button
                     onClick={() => { setModalAjuste({ frame: frameActivo, modo: "imagen" }); setAjusteTexto(""); }}
-                    disabled={!!reintentando}
+                    disabled={!!reintentando[frameActivo]}
                     className="bg-primary/90 hover:bg-primary disabled:bg-primary/40 text-primary-foreground font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
                   >
                     <Settings className="w-3.5 h-3.5" />Ajuste personalizado
                   </button>
                 </div>
+                {esSerie && Object.keys(reintentando).length > 0 && (
+                  <p className="text-[11px] text-amber-300/90 mt-2 text-center">
+                    Regenerando {Object.keys(reintentando).length} frame(s) en paralelo — puedes cambiar de frame y lanzar otro reintento.
+                  </p>
+                )}
                 <div className="mt-3">
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1.5 flex items-center gap-1.5">
                     <Wand2 className="w-3 h-3" />Ajustes rápidos
@@ -659,7 +673,7 @@ export default function HistoriasPage() {
                       <button
                         key={preset.id}
                         onClick={() => handleReintentar(frameActivo, "personalizado", preset.prompt)}
-                        disabled={!!reintentando}
+                        disabled={!!reintentando[frameActivo]}
                         title={preset.prompt.slice(0, 140) + "…"}
                         className="bg-white/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-white/10 transition flex items-center gap-1"
                       >
