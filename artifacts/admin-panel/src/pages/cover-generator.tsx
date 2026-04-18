@@ -3,7 +3,7 @@ import { useGenerateCover } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw
+  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -18,6 +18,10 @@ export default function CoverGeneratorPage() {
   const [customRefBase64, setCustomRefBase64] = useState<string | null>(null);
   const [defaultRefBase64, setDefaultRefBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [modalAjuste, setModalAjuste] = useState(false);
+  const [ajusteTexto, setAjusteTexto] = useState("");
+  const [intentos, setIntentos] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
   const generateCover = useGenerateCover();
 
@@ -60,7 +64,7 @@ export default function CoverGeneratorPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (ajuste?: string) => {
     if (!title) return alert("El título es requerido");
 
     let base64: string | undefined = undefined;
@@ -70,14 +74,32 @@ export default function CoverGeneratorPage() {
       base64 = customRefBase64;
     }
 
-    generateCover.mutate({
-      data: {
-        title,
-        description,
-        style,
-        referenceImageBase64: base64,
+    const descripcionExtendida = ajuste
+      ? `${description || ""}\n\nAJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${ajuste}`.trim()
+      : description;
+
+    generateCover.mutate(
+      {
+        data: { title, description: descripcionExtendida, style, referenceImageBase64: base64 },
       },
-    });
+      {
+        onSuccess: () => {
+          setIntentos((n) => n + 1);
+          if (ajuste) {
+            setToast(`✅ Portada regenerada con ajuste`);
+            setTimeout(() => setToast(null), 3500);
+          }
+        },
+      }
+    );
+  };
+
+  const confirmarAjusteCustom = () => {
+    if (!ajusteTexto.trim()) return;
+    const txt = ajusteTexto.trim();
+    setModalAjuste(false);
+    setAjusteTexto("");
+    handleGenerate(txt);
   };
 
   return (
@@ -161,7 +183,7 @@ export default function CoverGeneratorPage() {
               </div>
 
               <button
-                onClick={handleGenerate}
+                onClick={() => handleGenerate()}
                 disabled={generateCover.isPending || !title}
                 className="w-full flex items-center justify-center px-6 py-4 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-xl shadow-primary/20 hover:shadow-primary/40 disabled:opacity-50 hover:-translate-y-0.5 transition-all duration-300"
               >
@@ -200,7 +222,7 @@ export default function CoverGeneratorPage() {
                     {(generateCover.error as any)?.message || "No se pudo generar la portada. Intenta de nuevo."}
                   </p>
                   <button
-                    onClick={handleGenerate}
+                    onClick={() => handleGenerate()}
                     className="flex items-center px-6 py-3 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300"
                   >
                     <RefreshCw className="w-5 h-5 mr-2" />
@@ -220,14 +242,37 @@ export default function CoverGeneratorPage() {
                       className="w-full h-auto aspect-video object-cover"
                     />
                   </div>
-                  <a 
-                    href={`data:${generateCover.data.mimeType};base64,${generateCover.data.b64_json}`} 
-                    download={`portada-${title || "webmakerchile"}.png`}
-                    className="flex items-center justify-center w-full px-6 py-3 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 transition-all duration-300"
-                  >
-                    <Download className="w-5 h-5 mr-2" />
-                    Descargar Imagen
-                  </a>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <a 
+                      href={`data:${generateCover.data.mimeType};base64,${generateCover.data.b64_json}`} 
+                      download={`portada-${title || "webmakerchile"}.png`}
+                      className="flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all duration-300"
+                    >
+                      <Download className="w-5 h-5 mr-2" />
+                      Descargar
+                    </a>
+                    <button
+                      onClick={() => handleGenerate()}
+                      disabled={generateCover.isPending}
+                      className="flex items-center justify-center px-4 py-3 bg-amber-500/90 hover:bg-amber-500 disabled:bg-amber-500/40 text-slate-900 rounded-xl font-bold transition-all"
+                    >
+                      <RefreshCw className="w-5 h-5 mr-2" />
+                      Reintentar
+                    </button>
+                    <button
+                      onClick={() => { setModalAjuste(true); setAjusteTexto(""); }}
+                      disabled={generateCover.isPending}
+                      className="flex items-center justify-center px-4 py-3 bg-white/10 hover:bg-white/20 disabled:bg-white/5 text-foreground rounded-xl font-bold transition-all"
+                    >
+                      <Settings className="w-5 h-5 mr-2" />
+                      Ajustar
+                    </button>
+                  </div>
+                  {intentos >= 5 && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2">
+                      Has reintentado {intentos} veces. Prueba con un ajuste personalizado para guiar mejor al modelo.
+                    </div>
+                  )}
                 </motion.div>
               ) : (
                 <div className="text-center relative z-10">

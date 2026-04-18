@@ -373,6 +373,61 @@ export default function HistoriasPage() {
             </div>
           </motion.div>
         )}
+
+        {/* Modal de ajuste personalizado */}
+        {modalAjuste && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setModalAjuste(null)}>
+            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-display font-bold">Ajuste personalizado</h3>
+                <button onClick={() => setModalAjuste(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Escribe una instrucción específica. Ejemplos:
+                <ul className="list-disc list-inside mt-1 space-y-0.5">
+                  <li>"El zorro más a la izquierda"</li>
+                  <li>"Menos elementos de fondo, pose más alegre"</li>
+                  <li>"Cambiar el CTA a 'Agenda reunión'" (si marcas también texto)</li>
+                </ul>
+              </div>
+              <textarea
+                value={ajusteTexto}
+                onChange={(e) => setAjusteTexto(e.target.value)}
+                placeholder="Describe el ajuste específico..."
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[100px]"
+                maxLength={400}
+                autoFocus
+              />
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs text-foreground/80 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={modalAjuste.modo === "ambos"}
+                    onChange={(e) => setModalAjuste({ modo: e.target.checked ? "ambos" : "imagen" })}
+                    className="w-4 h-4 accent-primary"
+                  />
+                  Aplicar también al texto
+                </label>
+                <div className="flex gap-2">
+                  <button onClick={() => setModalAjuste(null)} className="bg-white/5 hover:bg-white/10 text-foreground font-semibold px-4 py-2 rounded-lg text-sm">Cancelar</button>
+                  <button
+                    onClick={confirmarAjusteCustom}
+                    disabled={!ajusteTexto.trim()}
+                    className="bg-primary hover:bg-primary/90 disabled:bg-muted text-primary-foreground font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />Reintentar con ajuste
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {toast && (
+          <div className="fixed bottom-6 right-6 bg-emerald-500 text-white font-semibold px-4 py-3 rounded-xl shadow-2xl z-50">
+            {toast}
+          </div>
+        )}
       </div>
     </Layout>
   );
