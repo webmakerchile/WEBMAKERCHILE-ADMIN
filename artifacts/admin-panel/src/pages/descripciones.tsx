@@ -64,7 +64,7 @@ export default function DescripcionesPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
   const [slideActual, setSlideActual] = useState(0);
-  const [reintentando, setReintentando] = useState<number | null>(null);
+  const [reintentando, setReintentando] = useState<Record<number, boolean>>({});
   const [zippeando, setZippeando] = useState(false);
   const [menuOpen, setMenuOpen] = useState<number | null>(null);
   const [modalAjuste, setModalAjuste] = useState<{ slide: SlideImagen; modo: "imagen" | "ambos" } | null>(null);
@@ -183,7 +183,8 @@ export default function DescripcionesPage() {
     promptPersonalizado?: string,
   ) => {
     if (!resultado) return;
-    setReintentando(slide.numero_slide);
+    if (reintentando[slide.numero_slide]) return; // ya está en curso, ignorar dobles clicks
+    setReintentando((prev) => ({ ...prev, [slide.numero_slide]: true }));
     setMenuOpen(null);
     setError(null);
     try {
@@ -223,7 +224,11 @@ export default function DescripcionesPage() {
     } catch (err: any) {
       setError(`No se pudo regenerar slide ${slide.numero_slide}: ${err.message}. La versión anterior se mantiene.`);
     } finally {
-      setReintentando(null);
+      setReintentando((prev) => {
+        const next = { ...prev };
+        delete next[slide.numero_slide];
+        return next;
+      });
     }
   };
 
@@ -536,6 +541,33 @@ export default function DescripcionesPage() {
                 </div>
               </div>
 
+              {/* Pill global persistente: muestra TODAS las slides en regen aunque navegues */}
+              {Object.keys(reintentando).length > 0 && (
+                <div className="mb-3 bg-amber-500/15 border border-amber-500/40 rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap">
+                  <Loader2 className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+                  <span className="text-sm font-semibold text-amber-200">
+                    Regenerando {Object.keys(reintentando).length === 1 ? "slide" : "slides"}:
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {Object.keys(reintentando).map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          const idx = slidesRender.findIndex((s) => s.numero_slide === Number(n));
+                          if (idx >= 0) setSlideActual(idx);
+                        }}
+                        className="bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 text-xs font-bold px-2 py-0.5 rounded-md transition"
+                        title={`Ver slide ${n} mientras se regenera`}
+                      >
+                        #{n}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-amber-200/80 ml-auto">~10-30s c/u</span>
+                </div>
+              )}
+
               {/* Visor principal */}
               {slideShown && (
                 <div className="relative max-w-md mx-auto">
@@ -555,10 +587,10 @@ export default function DescripcionesPage() {
                       <p className="text-sm text-red-400">{slideShown.error || "Falló la generación"}</p>
                       <button
                         onClick={() => handleReintentarSlide(slideShown)}
-                        disabled={reintentando === slideShown.numero_slide}
+                        disabled={!!reintentando[slideShown.numero_slide]}
                         className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
                       >
-                        {reintentando === slideShown.numero_slide ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        {!!reintentando[slideShown.numero_slide] ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         Reintentar slide
                       </button>
                     </div>
@@ -570,7 +602,7 @@ export default function DescripcionesPage() {
                       <button
                         type="button"
                         onClick={() => handleReintentarSlide(slideShown, "imagen")}
-                        disabled={reintentando === slideShown.numero_slide}
+                        disabled={!!reintentando[slideShown.numero_slide]}
                         title="Reintentar SOLO imagen (mantiene texto)"
                         className="bg-black/70 backdrop-blur hover:bg-amber-500 hover:text-slate-900 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
                       >
@@ -581,7 +613,7 @@ export default function DescripcionesPage() {
                         <button
                           type="button"
                           onClick={() => setMenuOpen(menuOpen === slideShown.numero_slide ? null : slideShown.numero_slide)}
-                          disabled={reintentando === slideShown.numero_slide}
+                          disabled={!!reintentando[slideShown.numero_slide]}
                           title="Más opciones de reintento"
                           className="bg-black/70 backdrop-blur hover:bg-white/20 text-white p-1.5 rounded-lg transition disabled:opacity-50"
                         >
@@ -639,7 +671,7 @@ export default function DescripcionesPage() {
                   )}
 
                   {/* Loading overlay sobre la slide en regeneración */}
-                  {reintentando === slideShown.numero_slide && (
+                  {!!reintentando[slideShown.numero_slide] && (
                     <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-3 z-30">
                       <Loader2 className="w-10 h-10 text-primary animate-spin" />
                       <p className="text-foreground font-semibold text-sm">Regenerando slide {slideShown.numero_slide}...</p>
@@ -648,7 +680,7 @@ export default function DescripcionesPage() {
                   )}
 
                   {/* Aviso tras 5 intentos */}
-                  {(intentos[slideShown.numero_slide] || 0) >= 5 && reintentando !== slideShown.numero_slide && (
+                  {(intentos[slideShown.numero_slide] || 0) >= 5 && !reintentando[slideShown.numero_slide] && (
                     <div className="absolute bottom-3 left-3 right-3 bg-amber-500/95 text-slate-900 text-xs font-semibold px-3 py-2 rounded-lg z-20">
                       Has reintentado {intentos[slideShown.numero_slide]} veces. Prueba con un ajuste personalizado para guiar mejor al modelo.
                     </div>
@@ -720,10 +752,19 @@ export default function DescripcionesPage() {
                       style={{ width: 64, aspectRatio: "4/5" }}
                     >
                       {slide.imagen ? (
-                        <img src={slide.imagen} alt="" className="w-full h-full object-cover" />
+                        <img src={slide.imagen} alt="" className={`w-full h-full object-cover transition ${reintentando[slide.numero_slide] ? "opacity-30 blur-sm" : ""}`} />
                       ) : (
                         <div className="w-full h-full bg-red-500/20 flex items-center justify-center">
-                          <AlertCircle className="w-4 h-4 text-red-400" />
+                          {reintentando[slide.numero_slide] ? (
+                            <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-red-400" />
+                          )}
+                        </div>
+                      )}
+                      {reintentando[slide.numero_slide] && slide.imagen && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/40">
+                          <Loader2 className="w-5 h-5 text-amber-400 animate-spin drop-shadow-lg" />
                         </div>
                       )}
                       <div className="absolute bottom-0 right-0 bg-black/70 text-white text-[10px] font-bold px-1 leading-tight">
