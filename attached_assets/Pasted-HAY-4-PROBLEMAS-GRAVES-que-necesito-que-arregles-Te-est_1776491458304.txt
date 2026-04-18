@@ -1,0 +1,209 @@
+HAY 4 PROBLEMAS GRAVES que necesito que arregles. Te estoy adjuntando la 
+IMAGEN MASTER OFICIAL del zorro de la marca WebMakerLatam. Por favor guarda 
+esta imagen en tu sistema como la REFERENCIA ÚNICA Y OBLIGATORIA para todas 
+las generaciones.
+
+═══════════════════════════════════════════════════════════════
+ADJUNTO: IMAGEN MASTER OFICIAL DEL ZORRO
+═══════════════════════════════════════════════════════════════
+
+[Adjuntar imagen: 1776491308436_image.png - el zorro pensativo con reloj 
+de arena y velocímetro]
+
+Esta es la ÚNICA versión correcta del zorro. Características obligatorias:
+
+- Cara: ALARGADA y estilizada (NO redonda, NO chibi)
+- Ojos: CÍRCULOS NEGROS PEQUEÑOS y simples (sin brillos, sin pestañas, 
+  sin pupila visible diferenciada)
+- Nariz: NEGRA sólida, forma de triángulo redondeado pequeño
+- Hocico: Blanco cremoso plano, bien definido del resto de la cara
+- Lentes: Rectangulares gruesos, NEGROS (no marrones, no naranjas)
+- Polera: Verde oscuro uniforme (#4A5D3A), sin texturas ni arrugas
+- Pelaje: NARANJA PLANO (#E86A30), sin degradados, sin sombras, sin 
+  variaciones tonales
+- Vientre/pecho: Blanco cremoso plano
+- Cola: Naranja con punta blanca
+- Líneas: NEGRAS gruesas y uniformes en TODO el personaje
+- Expresión: SUTIL, no exagerada (ojos simples, boca pequeña)
+
+LO QUE NUNCA DEBE APARECER:
+❌ Ojos grandes tipo Disney/Pixar con brillos
+❌ Cara redonda estilo chibi
+❌ Pupilas diferenciadas o iris
+❌ Nariz rosada
+❌ Sombras en el pelaje
+❌ Brillo/reflejo en los lentes
+❌ Orejas o pelaje con degradados
+❌ Cejas expresivas tipo anime
+❌ Lengua o dientes visibles
+❌ Expresiones exageradas (muy feliz, muy triste, muy enojado)
+
+REGLA DE ORO:
+Si la imagen generada NO se puede confundir con la imagen master adjunta, 
+es INCORRECTA y debe regenerarse.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 1 (CRÍTICO): CARRUSEL DEGRADÓ DE CALIDAD
+═══════════════════════════════════════════════════════════════
+
+El último carrusel perdió TODO lo que habíamos logrado:
+
+❌ El zorro volvió a ser chibi/Disney con cara redonda y ojos grandes
+❌ El formato es 1:1 (cuadrado) en vez de 4:5 (1080x1350)
+❌ Las sombras del texto son demasiado fuertes (se ven toscas)
+❌ Solo se generaron 3 slides aunque el tema dice "5 señales"
+❌ El texto "Tu web está espanta..." quedó cortado con "..." en la portada
+
+SOLUCIONES OBLIGATORIAS:
+
+1. REVERTIR al sistema de prompt de carruseles que funcionaba antes 
+   (el que generó las 5 slides con numeración 01/05, 02/05, etc). 
+   Ese estaba MUY BIEN y ahora se regresionó.
+
+2. VERIFICAR que el aspect ratio sea 4:5 (1080x1350), NO 1:1.
+
+3. SUAVIZAR las sombras del texto: blur 12-16px, opacity 50% máximo.
+   La sombra actual es demasiado dura.
+
+4. LA IMAGEN MASTER DEL ZORRO DEBE ADJUNTARSE EN CADA LLAMADA a Gemini 
+   para cada slide. Verifica en el código que esto ocurra. Muéstrame 
+   la línea exacta donde se adjunta.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 2 (CRÍTICO): TEXTO SE CORTA EN HISTORIAS Y CARRUSELES
+═══════════════════════════════════════════════════════════════
+
+En la historia generada, el título "Tu web está espantando clientes" 
+apareció como "Tu web está espanta..." — se está TRUNCANDO con puntos 
+suspensivos. Esto es un BUG del renderizador.
+
+CAUSA PROBABLE:
+El sistema está aplicando text-overflow: ellipsis cuando el texto no cabe, 
+en lugar de hacer word-wrap a otra línea.
+
+SOLUCIÓN OBLIGATORIA:
+1. NUNCA truncar texto con "...". En su lugar:
+   - Hacer word-wrap automático a otra línea
+   - Si son más de 2 líneas, reducir el font-size gradualmente 
+     (step de 4px) hasta que quepa en máximo 2 líneas
+   - Si aún así no cabe con font-size mínimo de 56px, entonces pedir 
+     a Claude que reescriba el título más corto
+
+2. El renderizador DEBE validar que el texto quepa ANTES de escribir en 
+   el canvas. Si detecta overflow, ajustar font-size dinámicamente.
+
+3. IMPORTANTE: El sub-copy de la historia "El 70% no vuelve. Tu..." también 
+   se cortó abajo. La zona inferior está permitiendo overflow. Revisar y 
+   aplicar el mismo sistema de wrap + auto-fit.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 3 (CRÍTICO): HISTORIAS VOLVIERON A TENER ZORRO CHIBI
+═══════════════════════════════════════════════════════════════
+
+La historia "¿No apareces en Google?" tiene el zorro INCORRECTO otra vez:
+- Cara redonda ❌
+- Ojos grandes con brillos ❌
+- Expresión demasiado "cute" ❌
+
+Este es el mismo problema recurrente. SOLUCIÓN DEFINITIVA:
+
+1. IMPLEMENTAR el sistema de post-validación con Gemini Vision que 
+   propuse antes:
+   
+   - Después de generar la imagen, hacer una segunda llamada a 
+     Gemini con la imagen generada + la imagen master del zorro
+   - Preguntarle: "¿El zorro de la primera imagen es estilísticamente 
+     IDÉNTICO al de la segunda imagen de referencia? Responde solo SÍ 
+     o NO."
+   - Si responde NO → regenerar (máximo 2 reintentos)
+   - Si después de 2 reintentos sigue fallando → devolver la mejor 
+     versión y marcarla como "⚠️ Revisar consistencia"
+
+2. SI EL AGENTE DICE QUE ESTO ES MUY LENTO/COSTOSO:
+   Alternativa: generar 2 versiones en paralelo y elegir la que sea más 
+   similar a la referencia con un comparador básico (similarity score).
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 4 (FEATURE NUEVA): AUTOAJUSTE DE CANTIDAD DE SLIDES
+═══════════════════════════════════════════════════════════════
+
+Cuando el tema del carrusel menciona un número ("5 señales", "3 razones", 
+"7 tips"), el sistema DEBE generar suficientes slides para cubrir todo 
+el contenido.
+
+ACTUALMENTE:
+- El usuario pone cantidad manual (3, 4, 5, etc.)
+- Si pone 3 slides pero el tema es "5 señales" → solo hay 1 slide de 
+  portada + 1 desarrollando las 5 señales apretadas + 1 CTA = incompleto
+
+SOLUCIÓN:
+
+1. AGREGAR UNA OPCIÓN NUEVA al formulario de descripciones llamada:
+   "🤖 Cantidad automática (recomendado)"
+   
+   Cuando esté activado, el sistema:
+   a) Analiza el tema con Claude
+   b) Detecta si menciona un número ("5 señales", "3 pasos", "7 errores")
+   c) Calcula automáticamente cuántas slides necesita:
+      - 1 slide de portada (hook)
+      - N slides de desarrollo (una por cada señal/paso/error)
+      - 1 slide de CTA final
+      - Total: N + 2 slides
+   d) Si el tema no menciona un número específico, usa default de 5 
+      slides (1 portada + 3 desarrollo + 1 CTA)
+
+2. RANGO PERMITIDO: 3 a 10 slides (Instagram permite máximo 10).
+
+3. MOSTRAR AL USUARIO antes de generar:
+   "📊 Se generarán 7 slides para cubrir las 5 señales + portada + CTA"
+   Con opción de confirmar o ajustar manualmente.
+
+4. NUEVO ENDPOINT:
+   POST /api/community/descripciones/calcular-slides
+   Body: { "tema": string }
+   Response: { 
+     "cantidad_recomendada": number, 
+     "razon": "Detecté '5 señales' → portada + 5 desarrollo + CTA",
+     "estructura": ["portada", "señal 1", "señal 2", ..., "CTA"]
+   }
+
+═══════════════════════════════════════════════════════════════
+RESUMEN DE PRIORIDADES
+═══════════════════════════════════════════════════════════════
+
+🔴 URGENTE: Guardar la imagen master del zorro adjunta y verificar que 
+   se use en TODAS las llamadas (historias + carruseles)
+
+🔴 URGENTE: Arreglar el bug de texto truncado con "..." 
+   Reemplazar por word-wrap + auto-fit
+
+🔴 URGENTE: Revertir el prompt de carruseles al estado anterior 
+   (el que generaba 5 slides excelentes con numeración). 
+   Ese estaba PERFECTO y no debía tocarse.
+
+🟡 IMPORTANTE: Implementar post-validación con Gemini Vision para 
+   consistencia del zorro
+
+🟢 NICE TO HAVE: Feature de autoajuste de cantidad de slides
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN OBLIGATORIA
+═══════════════════════════════════════════════════════════════
+
+1. Muéstrame el código donde adjuntas la imagen master del zorro a las 
+   llamadas de Gemini (tanto historias como cada slide del carrusel).
+
+2. Muéstrame el código del renderizador de texto que hace auto-fit y 
+   word-wrap (confirma que NO usa text-overflow: ellipsis en ningún lado).
+
+3. Genera 1 historia de prueba con tema "Chatbots con IA para pymes". 
+   Esperado: zorro idéntico a la master, título que NO se corte, layout 
+   completo sin overlap.
+
+4. Genera 1 carrusel de prueba con tema "5 errores comunes al crear una 
+   web para tu negocio" Y activa "cantidad automática". 
+   Esperado: 7 slides (1 portada + 5 errores + 1 CTA), todas con el zorro 
+   idéntico a la master, formato 4:5, texto completo sin cortes.
+
+No me digas "terminé" hasta que ambos tests pasen visualmente. 
+Muéstrame las imágenes resultantes antes de considerar cerrada la tarea.

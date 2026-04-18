@@ -123,17 +123,12 @@ function fitTextBlock(
     }
   }
 
-  // Fallback: usar mínimo y truncar líneas si hace falta
+  // Fallback: usar mínimo y devolver TODAS las líneas (NO truncar con "...")
+  // Si overflow leve es preferible a perder texto. El llamador decide qué hacer.
   const fs = opts.minFontSize;
   const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
-  const allLines = wrapTextByChars(text, maxChars);
+  const lines = wrapTextByChars(text, maxChars);
   const lineHeight = fs * (opts.lineHeightRatio ?? 1.18);
-  const maxLines = Math.max(1, Math.floor(opts.maxHeight / lineHeight));
-  let lines = allLines.slice(0, maxLines);
-  if (allLines.length > maxLines && lines.length > 0) {
-    const last = lines[lines.length - 1]!;
-    lines[lines.length - 1] = last.length > 3 ? last.slice(0, last.length - 3) + "..." : "...";
-  }
   const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
   return { lines, fontSize: fs, lineHeight, blockWidth: longest * fs * charW, blockHeight: lines.length * lineHeight };
 }
@@ -193,9 +188,9 @@ const SVG_DEFS = `
       <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95"/>
     </linearGradient>
     <filter id="textds" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="8"/>
-      <feOffset dx="0" dy="3" result="off"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.9"/></feComponentTransfer>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="2" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
       <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
@@ -205,23 +200,37 @@ const SVG_FILTER_DEFS = SVG_DEFS;
 void SVG_FILTER_DEFS;
 
 // Especificación rigurosa del zorro de marca - obligatoria en TODOS los prompts de imagen
-const FOX_BRAND_SPEC = `PERSONAJE - REPLICA EXACTA DE LA IMAGEN DE REFERENCIA ADJUNTA (no es "un zorro", es EL MISMO zorro de la marca registrada WebMakerLatam, llamado Webi):
+// Basado en la IMAGEN MASTER OFICIAL: artifacts/api-server/public/fox-reference.png
+const FOX_BRAND_SPEC = `PERSONAJE — RÉPLICA EXACTA de la IMAGEN MASTER OFICIAL adjunta. No es "un zorro genérico", es WEBI, mascota registrada de WebMakerLatam. Si la imagen generada NO se puede confundir con la master, es INCORRECTA.
 
-Características OBLIGATORIAS Y NO NEGOCIABLES (cualquier desviación es un ERROR de branding):
-- Estilo: FLAT CARTOON 2D PURO. PROHIBIDO: 3D, render realista, estilo Disney/Pixar, anime
-- Líneas de contorno: NEGRAS, GRUESAS y uniformes (mismo grosor en toda la silueta)
-- Pelaje: UN SOLO COLOR NARANJA PLANO (#E86A30 aprox), sin texturas, sin sombras de cuerpo, sin degradados, sin variaciones tonales, sin pelos visibles
-- Vientre y hocico: blanco cremoso plano (#F5E6D3), sin sombreado
-- Punta de la cola: blanca plana
-- Ojos: PEQUEÑOS y simples (NO grandes estilo anime/Disney/chibi). Pupila negra circular, sin brillos ni reflejos blancos
-- Lentes: rectangulares, gruesos, marco negro sólido, cristales transparentes SIN reflejos ni highlights
-- Polera/sudadera: verde oscuro plano (#4A6B3D aprox), SIN arrugas, SIN texturas de tela, SIN sombras
-- Forma de la cabeza: estilizada y ligeramente alargada con orejas triangulares, NO redonda estilo chibi
-- Proporciones idénticas a la referencia: cabeza grande, cuerpo proporcionado, brazos y piernas cortos pero visibles
+CARACTERÍSTICAS OBLIGATORIAS (cualquier desviación = ERROR de branding):
+- Estilo: FLAT CARTOON 2D PURO. PROHIBIDO 3D, render realista, Disney, Pixar, anime, chibi.
+- Cara: ALARGADA y estilizada, NO redonda, NO chibi, NO "cute".
+- Ojos: CÍRCULOS NEGROS PEQUEÑOS y simples. SIN brillos, SIN reflejos, SIN pestañas, SIN pupila/iris diferenciados, SIN highlights.
+- Nariz: NEGRA sólida, forma de triángulo redondeado pequeño. NUNCA rosada.
+- Hocico: blanco cremoso plano (#F5E6D3), bien definido del resto de la cara.
+- Lentes: rectangulares, gruesos, marco NEGRO sólido (no marrón, no naranja). Cristales transparentes SIN reflejos.
+- Polera/sudadera: verde oscuro plano (#4A5D3A), uniforme, SIN arrugas, SIN texturas, SIN sombras.
+- Pelaje: UN SOLO color naranja plano (#E86A30), SIN degradados, SIN sombras, SIN variaciones tonales, SIN pelos visibles.
+- Vientre/pecho: blanco cremoso plano.
+- Cola: naranja con punta blanca plana.
+- Líneas de contorno: NEGRAS, gruesas y UNIFORMES en TODO el personaje.
+- Expresión: SUTIL, no exagerada. Boca pequeña, sin lengua ni dientes visibles.
+- Proporciones idénticas a la master: cabeza algo grande, cuerpo proporcionado, brazos y piernas cortos pero visibles.
 
-PROHIBIDO ABSOLUTAMENTE en el zorro: sombras de cuerpo, brillos especulares, reflejos en los lentes, texturas de pelaje, gradientes de color, iluminación volumétrica, ambient occlusion, cualquier efecto 3D.
+PROHIBIDO ABSOLUTAMENTE:
+× Ojos grandes tipo Disney/Pixar/chibi con brillos
+× Cara redonda
+× Pupilas/iris diferenciados
+× Nariz rosada
+× Sombras o gradientes en pelaje, polera u orejas
+× Brillos/reflejos en los lentes
+× Cejas expresivas tipo anime
+× Lengua o dientes visibles
+× Expresiones exageradas (muy feliz, muy triste, muy enojado)
+× Cualquier efecto 3D, volumen, iluminación volumétrica o ambient occlusion
 
-Este zorro es la MASCOTA OFICIAL de una marca registrada. Debe ser 100% IDÉNTICO entre todas las imágenes — los seguidores deben reconocerlo al instante. Si dudas en algún detalle, COPIA LA REFERENCIA tal cual.`;
+REGLA DE ORO: si NO se puede confundir con la imagen master adjunta, es INCORRECTA y debe regenerarse.`;
 
 // ============================================
 // SORPRÉNDEME (audiencia: emprendedores/pymes)
@@ -765,7 +774,7 @@ const GenerarDescripcionesBody = z.object({
   tipo_contenido: z.string().min(1),
   redes: z.array(z.enum(["tiktok", "instagram", "youtube_shorts", "twitter"])).min(1),
   tipo_publicacion: z.enum(["unica", "carrusel"]).default("unica"),
-  cantidad_slides: z.number().int().min(1).max(5).default(1),
+  cantidad_slides: z.number().int().min(1).max(10).default(1),
   texto_en_imagen: z.boolean().optional().default(false),
 });
 
@@ -897,13 +906,76 @@ async function generarImagenSlideConRetry(
   }
 }
 
+// Post-validación con Gemini Vision: compara la imagen generada vs la master
+// Devuelve true si el zorro es estilísticamente IDÉNTICO. Falla → false.
+async function validarConsistenciaZorro(
+  imagenGeneradaBase64: string,
+  referenceBase64: string | null,
+): Promise<boolean> {
+  if (!referenceBase64) return true; // sin referencia no podemos validar
+  try {
+    const resp = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [
+        { inlineData: { data: referenceBase64, mimeType: "image/png" } },
+        { inlineData: { data: imagenGeneradaBase64, mimeType: "image/png" } },
+        { text: `Analiza ambas imágenes. La PRIMERA es la imagen MASTER OFICIAL del zorro Webi de la marca WebMakerLatam. La SEGUNDA es una imagen recién generada que también debe contener al zorro Webi.
+
+¿El zorro de la SEGUNDA imagen es estilísticamente IDÉNTICO al de la PRIMERA? Verifica:
+- Cara alargada (NO redonda chibi)
+- Ojos pequeños círculos negros (NO ojos grandes Disney/Pixar con brillos)
+- Nariz negra triangular (NO rosada)
+- Lentes rectangulares con marco negro (NO marrón ni naranja)
+- Pelaje plano #E86A30 (NO con sombras ni gradientes)
+- Polera verde oscuro plana #4A5D3A
+- Líneas negras gruesas y uniformes
+- Estilo flat cartoon 2D (NO 3D ni anime ni realista)
+
+Responde EXCLUSIVAMENTE con una sola palabra: SI o NO. Sin explicación.` },
+      ] }],
+    });
+    const txt = (resp.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "").trim().toUpperCase();
+    return txt.startsWith("SI") || txt.startsWith("SÍ") || txt.startsWith("YES");
+  } catch (e) {
+    console.warn("[Descripciones] validación Vision falló:", (e as Error).message);
+    return true; // si falla la validación, no bloqueamos la generación
+  }
+}
+
+async function generarImagenSlideConValidacion(
+  tema: string, tipoContenido: string, slide: SlidePlan,
+  formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
+): Promise<{ imagen: string; consistente: boolean }> {
+  let imagen = await generarImagenSlideConRetry(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+  let consistente = await validarConsistenciaZorro(imagen, referenceBase64);
+  if (!consistente) {
+    console.warn(`[Descripciones] slide ${slide.numero} falló validación Vision, reintentando una vez...`);
+    try {
+      const segundo = await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+      const segundoOk = await validarConsistenciaZorro(segundo, referenceBase64);
+      if (segundoOk) { imagen = segundo; consistente = true; }
+      else { imagen = segundo; } // Devuelve el segundo intento aunque siga inconsistente (mejor que nada)
+    } catch (e) {
+      console.warn("[Descripciones] retry validado fallo:", (e as Error).message);
+    }
+  }
+  return { imagen, consistente };
+}
+
 // Render texto sobre slide (1:1 o 4:5) con auto-fit, padding y fondos semi-transparentes, SIN emojis
 async function renderTextoEnSlide(
   imagenBase64: string,
   slide: SlidePlan,
   totalSlides: number = 1,
+  formatoForzado?: "1:1" | "4:5",
 ): Promise<string> {
-  const imgBuffer = Buffer.from(imagenBase64, "base64");
+  let imgBuffer = Buffer.from(imagenBase64, "base64");
+  // Garantizar dimensiones exactas según formato (Gemini suele devolver 1:1 aunque pidamos 4:5)
+  if (formatoForzado === "4:5") {
+    imgBuffer = await sharp(imgBuffer).resize(1080, 1350, { fit: "cover", position: "center" }).png().toBuffer();
+  } else if (formatoForzado === "1:1") {
+    imgBuffer = await sharp(imgBuffer).resize(1080, 1080, { fit: "cover", position: "center" }).png().toBuffer();
+  }
   const meta = await sharp(imgBuffer).metadata();
   const w = meta.width || 1080;
   const h = meta.height || 1350;
@@ -965,11 +1037,58 @@ async function renderTextoEnSlide(
   return composed.toString("base64");
 }
 
+// Detecta automáticamente cuántas slides necesita un tema (1 portada + N desarrollo + 1 CTA)
+const CalcularSlidesBody = z.object({ tema: z.string().min(1).max(300) });
+router.post("/community/descripciones/calcular-slides", async (req, res) => {
+  try {
+    const body = CalcularSlidesBody.parse(req.body);
+    const sys = `Eres un analista de contenido para Instagram. Recibes el tema de un carrusel y debes detectar cuántas slides son necesarias para cubrirlo.
+
+REGLAS:
+- Estructura siempre: 1 portada (hook) + N desarrollo + 1 CTA final.
+- Si el tema menciona un número explícito ("5 señales", "3 razones", "7 errores", "10 tips"), usa ese N.
+- Si no menciona número, usa N=3 (3 puntos de desarrollo, total 5 slides).
+- Mínimo total: 3 slides. Máximo total: 10 slides (límite de Instagram).
+- Si el número detectado haría que el total > 10, ajusta a 10 (cap).
+
+Devuelve SOLO JSON con esta forma exacta, sin texto extra ni markdown:
+{
+  "cantidad_recomendada": <número entre 3 y 10>,
+  "razon": "<explicación corta en español, ej: Detecté '5 señales' → portada + 5 desarrollo + CTA>",
+  "estructura": ["portada", "<rol slide 2>", "<rol slide 3>", ..., "CTA"]
+}`;
+
+    const resp = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 800,
+      system: sys,
+      messages: [{ role: "user", content: `TEMA: ${body.tema}\n\nDevuelve solo el JSON.` }],
+    });
+    const block = resp.content[0];
+    const raw = block && block.type === "text" ? block.text.trim() : "";
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+    let data: any;
+    try { data = JSON.parse(cleaned); } catch { data = null; }
+    const cantidad = Math.max(3, Math.min(10, Number(data?.cantidad_recomendada) || 5));
+    res.json({
+      success: true,
+      data: {
+        cantidad_recomendada: cantidad,
+        razon: String(data?.razon || `Estructura por defecto: portada + 3 desarrollo + CTA = ${cantidad} slides.`),
+        estructura: Array.isArray(data?.estructura) ? data.estructura.slice(0, cantidad) : undefined,
+      },
+    });
+  } catch (err: any) {
+    console.error("[Descripciones] calcular-slides error:", err);
+    res.status(500).json({ success: false, error: err.message || "Error interno" });
+  }
+});
+
 router.post("/community/descripciones/generar", async (req, res) => {
   try {
     const body = GenerarDescripcionesBody.parse(req.body);
     const cantidad = body.tipo_publicacion === "carrusel"
-      ? Math.max(3, Math.min(5, body.cantidad_slides))
+      ? Math.max(3, Math.min(10, body.cantidad_slides))
       : 1;
     const formato: "1:1" | "4:5" = body.tipo_publicacion === "carrusel" ? "4:5" : "1:1";
 
@@ -1021,7 +1140,7 @@ Solo el JSON.`;
     const referenceBase64 = await getFoxRefBase64();
 
     const settled = await Promise.allSettled(
-      slidesPlan.map((s) => generarImagenSlideConRetry(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad)),
+      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad)),
     );
 
     const imagenes = await Promise.all(
@@ -1031,13 +1150,13 @@ Solo el JSON.`;
           return {
             numero_slide: slide.numero, rol: slide.rol,
             titulo: slide.titulo, subtitulo: slide.subtitulo,
-            imagen: null, error: (r.reason as Error)?.message || "Falló la generación",
+            imagen: null, consistente: false, error: (r.reason as Error)?.message || "Falló la generación",
           };
         }
-        let imgBase64 = r.value;
+        let imgBase64 = r.value.imagen;
         if (body.texto_en_imagen) {
           try {
-            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad);
+            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato);
           } catch (e) {
             console.error("[Descripciones] render texto fallo slide", slide.numero, e);
           }
@@ -1046,6 +1165,7 @@ Solo el JSON.`;
           numero_slide: slide.numero, rol: slide.rol,
           titulo: slide.titulo, subtitulo: slide.subtitulo,
           imagen: `data:image/png;base64,${imgBase64}`,
+          consistente: r.value.consistente,
         };
       }),
     );
@@ -1081,14 +1201,14 @@ Solo el JSON.`;
 const ReintentarSlideBody = z.object({
   tema: z.string().min(1).max(300),
   tipo_contenido: z.string().min(1),
-  numero_slide: z.number().int().min(1).max(5),
+  numero_slide: z.number().int().min(1).max(10),
   rol: z.enum(["portada", "desarrollo", "cta", "unica"]),
   titulo: z.string().max(120),
   subtitulo: z.string().max(200),
   prompt_visual: z.string().max(300).optional(),
   formato: z.enum(["1:1", "4:5"]).default("4:5"),
   texto_en_imagen: z.boolean().optional().default(false),
-  total_slides: z.number().int().min(1).max(5).optional().default(1),
+  total_slides: z.number().int().min(1).max(10).optional().default(1),
 });
 
 router.post("/community/descripciones/reintentar-slide", async (req, res) => {
@@ -1101,7 +1221,7 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
     const referenceBase64 = await getFoxRefBase64();
     let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slide, body.formato, referenceBase64, body.total_slides);
     if (body.texto_en_imagen) {
-      try { imgBase64 = await renderTextoEnSlide(imgBase64, slide); } catch {}
+      try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato); } catch {}
     }
     res.json({
       success: true,

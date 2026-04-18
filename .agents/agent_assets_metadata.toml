@@ -36,3 +36,9 @@ id = "GhOdfJRGBhjy505IkA3s1"
 uri = "file://attached_assets/render-tests/historia-v4-zonas.png"
 type = "image"
 title = "Historia v4 — layout por zonas (5 secciones)"
+
+[[outputs]]
+id = "Wx4CBO0EPn9cWAezsjIxM"
+uri = "file://attached_assets/render-tests/slide-v5-45-noellipsis.png"
+type = "image"
+title = "Slide 4:5 forzado + texto largo sin truncamiento"

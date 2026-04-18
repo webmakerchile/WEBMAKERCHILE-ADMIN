@@ -48,7 +48,10 @@ export default function DescripcionesPage() {
   const [tipoContenido, setTipoContenido] = useState("tip");
   const [redes, setRedes] = useState<RedKey[]>(["tiktok", "instagram", "youtube_shorts", "twitter"]);
   const [tipoPublicacion, setTipoPublicacion] = useState<"unica" | "carrusel">("unica");
-  const [cantidadSlides, setCantidadSlides] = useState(3);
+  const [cantidadSlides, setCantidadSlides] = useState(5);
+  const [cantidadAuto, setCantidadAuto] = useState(true);
+  const [calculandoSlides, setCalculandoSlides] = useState(false);
+  const [autoInfo, setAutoInfo] = useState<{ cantidad: number; razon: string } | null>(null);
   const [textoEnImagen, setTextoEnImagen] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -116,6 +119,24 @@ export default function DescripcionesPage() {
     setResultado(null);
     setSlideActual(0);
     try {
+      let cantidadFinal = tipoPublicacion === "carrusel" ? cantidadSlides : 1;
+      if (tipoPublicacion === "carrusel" && cantidadAuto) {
+        try {
+          const calc = await fetch(`${API_BASE}/community/descripciones/calcular-slides`, {
+            method: "POST", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tema: tema.trim() }),
+          });
+          const calcData = await calc.json();
+          if (calcData.success) {
+            cantidadFinal = calcData.data.cantidad_recomendada;
+            setAutoInfo({ cantidad: cantidadFinal, razon: calcData.data.razon });
+          }
+        } catch (e) { console.warn("auto-cantidad falló", e); }
+      } else {
+        setAutoInfo(null);
+      }
+
       const res = await fetch(`${API_BASE}/community/descripciones/generar`, {
         method: "POST",
         credentials: "include",
@@ -125,7 +146,7 @@ export default function DescripcionesPage() {
           tipo_contenido: tipoContenido,
           redes,
           tipo_publicacion: tipoPublicacion,
-          cantidad_slides: tipoPublicacion === "carrusel" ? cantidadSlides : 1,
+          cantidad_slides: cantidadFinal,
           texto_en_imagen: textoEnImagen,
         }),
       });
@@ -229,7 +250,8 @@ export default function DescripcionesPage() {
   const slidesRender: SlideImagen[] = resultado?.imagenes || [];
   const slideShown = slidesRender[slideActual];
 
-  const skeletonCount = tipoPublicacion === "carrusel" ? cantidadSlides : 1;
+  void calculandoSlides; void setCalculandoSlides;
+  const skeletonCount = tipoPublicacion === "carrusel" ? (cantidadAuto ? 5 : cantidadSlides) : 1;
 
   return (
     <Layout>
@@ -322,24 +344,50 @@ export default function DescripcionesPage() {
           </div>
 
           {tipoPublicacion === "carrusel" && (
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Cantidad de slides</label>
-              <div className="flex gap-2">
-                {[3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setCantidadSlides(n)}
-                    className={`px-5 py-2 rounded-lg text-sm font-bold transition ${
-                      cantidadSlides === n
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-white/5 text-foreground/70 hover:bg-white/10 border border-white/10"
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between bg-white/5 rounded-xl p-4 border border-white/10">
+                <div>
+                  <div className="text-sm font-semibold text-foreground">🤖 Cantidad automática (recomendado)</div>
+                  <div className="text-xs text-muted-foreground">
+                    Detecta números en el tema ("5 señales", "3 razones") y calcula portada + N + CTA.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCantidadAuto(!cantidadAuto)}
+                  className={`relative w-14 h-8 rounded-full transition flex-shrink-0 ${cantidadAuto ? "bg-primary" : "bg-white/20"}`}
+                >
+                  <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${cantidadAuto ? "left-7" : "left-1"}`} />
+                </button>
               </div>
+
+              {!cantidadAuto && (
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-3">Cantidad de slides (3 a 10)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setCantidadSlides(n)}
+                        className={`px-5 py-2 rounded-lg text-sm font-bold transition ${
+                          cantidadSlides === n
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-white/5 text-foreground/70 hover:bg-white/10 border border-white/10"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {cantidadAuto && autoInfo && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-lg p-3 text-xs">
+                  📊 Última detección: <strong>{autoInfo.cantidad} slides</strong> — {autoInfo.razon}
+                </div>
+              )}
             </div>
           )}
 
