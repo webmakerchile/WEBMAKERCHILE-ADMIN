@@ -131,40 +131,33 @@ async function buildTextOverlay(title: string): Promise<Buffer> {
   else if (lineCount <= 4) fontSize = 85;
   else fontSize = 72;
 
-  const approxCharWidth = fontSize * 0.58;
+  // Inter / sans-serif (mismo stack que historias y descripciones).
+  // Char ratio ~0.55 para Inter Bold/ExtraBold (más estrecho que LuckiestGuy).
+  const approxCharWidth = fontSize * 0.55;
   const maxLineChars = Math.max(...finalLines.map(l => l.length));
   const estimatedWidth = maxLineChars * approxCharWidth;
   if (estimatedWidth > maxTextWidth) {
     fontSize = Math.floor(fontSize * (maxTextWidth / estimatedWidth));
   }
 
-  const lineHeight = fontSize * 1.18;
+  const lineHeight = fontSize * 1.12;
   const totalTextHeight = lineCount * lineHeight;
   const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
 
-  const fontBuffer = await readFile(await resolveAsset("public", "fonts", "LuckiestGuy-Regular.ttf"));
-  const fontBase64 = fontBuffer.toString("base64");
-
-  const strokeWidth = Math.max(6, Math.round(fontSize * 0.07));
+  const fontFamily = "'Inter','Helvetica Neue','Arial',sans-serif";
+  const fontWeight = 800;
+  const strokeWidth = Math.max(5, Math.round(fontSize * 0.055));
   const shadowOffset = Math.max(3, Math.round(fontSize * 0.035));
   const textElements = finalLines.map((line, i) => {
     const y = startY + i * lineHeight;
     const escaped = escapeXml(line);
     return [
-      `<text x="${COVER_WIDTH / 2 + shadowOffset}" y="${y + shadowOffset}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${escaped}</text>`,
-      `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${escaped}</text>`,
+      `<text x="${COVER_WIDTH / 2 + shadowOffset}" y="${y + shadowOffset}" text-anchor="middle" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${escaped}</text>`,
+      `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${escaped}</text>`,
     ].join("\n    ");
   }).join("\n    ");
 
   const svg = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <style>
-        @font-face {
-          font-family: 'LuckiestGuy';
-          src: url('data:font/ttf;base64,${fontBase64}');
-        }
-      </style>
-    </defs>
     ${textElements}
   </svg>`;
 
