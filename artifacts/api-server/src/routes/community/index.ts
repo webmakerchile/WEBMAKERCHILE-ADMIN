@@ -73,15 +73,52 @@ const STYLE_GALLERY: GalleryEntry[] = [
   { file: "cta_brazos_abiertos.png", rol: "cta", tags: ["cta", "brazos", "abiertos", "invitando", "whatsapp", "calendario", "agenda", "membresia", "ingresos", "fijos", "feliz"] },
 ];
 
+// Las imágenes canon son screenshots de slides FINALES con título/subtítulo
+// renderizados en bandas superior (22%) e inferior (25%). Si Gemini ve esas
+// referencias con texto, replica texto en su salida (rompe la regla "CERO TEXTO"
+// del prompt). Solución: enmascarar esas bandas con el color del fondo navy
+// (#0F172A) antes de enviarlas al modelo. Mantiene dimensiones para no confundir
+// la composición; el modelo solo ve la ilustración limpia del personaje.
 const galleryCache = new Map<string, string>();
 async function loadGalleryFile(file: string): Promise<string | null> {
   if (galleryCache.has(file)) return galleryCache.get(file)!;
   try {
     const p = await resolveAsset("public", "style-gallery", file);
-    const b64 = (await readFile(p)).toString("base64");
+    const raw = await readFile(p);
+    const meta = await sharp(raw).metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    let buf: Buffer;
+    if (w > 0 && h > 0) {
+      const topBand = Math.max(1, Math.floor(h * 0.22));
+      const bottomBand = Math.max(1, Math.floor(h * 0.25));
+      buf = await sharp(raw)
+        .composite([
+          {
+            input: {
+              create: { width: w, height: topBand, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
+            },
+            top: 0,
+            left: 0,
+          },
+          {
+            input: {
+              create: { width: w, height: bottomBand, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
+            },
+            top: h - bottomBand,
+            left: 0,
+          },
+        ])
+        .png()
+        .toBuffer();
+    } else {
+      buf = raw;
+    }
+    const b64 = buf.toString("base64");
     galleryCache.set(file, b64);
     return b64;
-  } catch {
+  } catch (e) {
+    console.warn(`[style-gallery] no pude cargar ${file}:`, (e as Error).message);
     return null;
   }
 }
@@ -1072,6 +1109,14 @@ The character (Webi the fox) MUST match EXACTLY the provided reference images:
 Study these references carefully BEFORE generating. Only the pose and surrounding objects change between slides — the character itself never deviates.
 </character_canon>
 
+<reference_image_handling>
+CRITICAL — about the reference images you received above:
+- The dark navy bands at the top (~22%) and bottom (~25%) of each canonical reference are RESERVED EMPTY ZONES. They were intentionally cleared. They are NOT part of the illustration.
+- Your output MUST keep those same top and bottom bands completely empty: no character parts, no objects, no shadows, no text, no buttons, no badges, no logos.
+- Replicate ONLY the central illustration (the fox + the supporting objects in the middle). Ignore any artifact you might perceive in the bands.
+- The references contain ZERO readable text. Your output must also contain ZERO readable text — no titles, no captions, no buttons with words like "Hablemos" or "Escríbenos", no UI labels, no numbers, no logos with text.
+</reference_image_handling>
+
 <strict_style_specifications>
 ${FOX_BRAND_SPEC}
 
@@ -1161,7 +1206,7 @@ async function generarImagenSlide(
 
   if (referenceBase64 && charImagesUsed < MAX_CHARACTER_IMAGES) {
     parts.push({
-      text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):",
+      text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length, FLAT 2D cartoon style with NO shading or gradients):",
     });
     parts.push({ inlineData: { mimeType: "image/png", data: referenceBase64 } });
     charImagesUsed++;
@@ -1172,7 +1217,7 @@ async function generarImagenSlide(
       break;
     }
     parts.push({
-      text: `REFERENCE IMAGE ${charImagesUsed + 1} (canonical pose/style variant — same flat 2D cartoon style, same background palette, same character anatomy):`,
+      text: `REFERENCE IMAGE ${charImagesUsed + 1} (canonical pose/style variant — same FLAT 2D cartoon style, same background palette, same character anatomy. The dark navy bands at the top and bottom of this reference are the RESERVED TEXT ZONES kept intentionally empty — they are NOT part of the illustration; do NOT draw any character parts, objects, shadows or text into those bands in your output):`,
     });
     parts.push({ inlineData: { mimeType: "image/png", data: canonRefs[i]! } });
     charImagesUsed++;
