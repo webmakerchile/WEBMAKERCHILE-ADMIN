@@ -86,6 +86,32 @@ async function loadGalleryFile(file: string): Promise<string | null> {
   }
 }
 
+// ============================================
+// FIX 1 — EXTRACCIÓN DE IMAGEN FINAL DE GEMINI 3 PRO IMAGE
+// El modelo devuelve múltiples parts: bocetos del "thinking" + imagen final.
+// Hay que filtrar parts con thought:true y tomar la ÚLTIMA inlineData (no la primera).
+// ============================================
+function extractFinalImage(response: any): { mimeType: string; data: string } | null {
+  const parts = response?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return null;
+  const imageParts = parts.filter(
+    (p: any) => p?.inlineData?.data && !p?.thought,
+  );
+  if (imageParts.length === 0) return null;
+  const finalImage = imageParts[imageParts.length - 1];
+  return {
+    mimeType: finalImage.inlineData.mimeType || "image/png",
+    data: finalImage.inlineData.data as string,
+  };
+}
+
+// Config estándar para Gemini 3 Pro Image: dejar temperature/topK/topP en default,
+// y desactivar inclusión de bocetos en el response (siguen generándose internamente).
+const GEMINI_IMAGE_BASE_CONFIG = {
+  responseModalities: ["TEXT", "IMAGE"] as string[],
+  thinkingConfig: { includeThoughts: false },
+} as const;
+
 // Selecciona 2-3 referencias canon: la mejor por score semántico + 1-2 adicionales
 // para dar variedad de pose y forzar consistencia de estilo en primera generación.
 async function pickCanonReferences(
@@ -862,6 +888,7 @@ router.post("/community/historias/generar", async (req, res) => {
 
     const contents = referenceBase64
       ? [{ role: "user" as const, parts: [
+          { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
           { inlineData: { data: referenceBase64, mimeType: "image/png" } },
           { text: prompt },
         ] }]
@@ -871,19 +898,19 @@ router.post("/community/historias/generar", async (req, res) => {
       ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents,
-        config: { responseModalities: ["TEXT", "IMAGE"] },
+        config: GEMINI_IMAGE_BASE_CONFIG,
       }),
       generarTextoHistoria(body.tipo_historia, body.concepto),
     ]);
 
-    const imagePart = imageResp.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-    if (!imagePart?.inlineData?.data) {
-      res.status(502).json({ success: false, error: "Gemini no devolvió imagen" });
+    const finalImg = extractFinalImage(imageResp);
+    if (!finalImg) {
+      res.status(502).json({ success: false, error: "Gemini no devolvió imagen final" });
       return;
     }
 
-    let imgBase64 = imagePart.inlineData.data as string;
-    const mime = imagePart.inlineData.mimeType || "image/png";
+    let imgBase64 = finalImg.data;
+    const mime = finalImg.mimeType;
 
     if (body.texto_en_imagen) {
       try {
@@ -1032,67 +1059,88 @@ function buildSlidePrompt(
     ? `FOCO VISUAL ESPECÍFICO de esta slide (del estratega de contenido): "${slide.prompt_visual}". Sigue esta dirección.`
     : `Ilustra: "${slide.titulo}" — extrae las palabras clave visuales de este título y úsalas como objetos.`;
 
-  return `Genera una ilustración en ${dims} para una publicación de WebMakerLatam (agencia digital para emprendedores y pymes en LATAM).
+  // FIX 4 — prompt en estructura XML: Gemini 3 da más peso a las instrucciones FINALES.
+  // Por eso <critical_final_requirements> va al cierre del prompt, no al inicio.
+  return `<role>
+Professional brand illustrator replicating exact character style from the provided reference images for WebMakerLatam's mascot "Webi" (an orange cartoon fox with glasses). Output: a single illustration of ${dims} for a WebMakerLatam social media post (digital agency for entrepreneurs/pymes in LATAM).
+</role>
 
-REGLA ABSOLUTA - SIN TEXTO:
-NO incluyas NINGUNA letra, palabra, número, rótulo ni texto en la imagen. CERO caracteres alfanuméricos. Pantallas muestran formas abstractas, NUNCA texto legible.
+<character_canon>
+The character (Webi the fox) MUST match EXACTLY the provided reference images:
+- REFERENCE IMAGE 1 = primary canon (replicate outline weight, fur color, glasses shape, eye size, body proportions, muzzle length).
+- Additional REFERENCE IMAGES = approved pose/scene variants in the same style and palette.
+Study these references carefully BEFORE generating. Only the pose and surrounding objects change between slides — the character itself never deviates.
+</character_canon>
 
+<strict_style_specifications>
 ${FOX_BRAND_SPEC}
 
-CONSISTENCIA CRÍTICA DEL CARRUSEL: este zorro debe verse 100% IDÉNTICO al de las otras slides del mismo carrusel. Mismo color, mismas proporciones, mismo trazo, mismo estilo flat cartoon. Solo cambia su POSE y EXPRESIÓN según el rol narrativo de esta slide.
+Additional carousel-wide rules:
+- Style: Flat 2D cartoon (NOT 3D, NOT Disney, NOT chibi, NOT anime, NOT realistic).
+- Outlines: bold uniform black lines, ~3-4px weight everywhere (character + objects).
+- Fills: solid flat colors only — NO gradients, NO shading on the character, NO highlights, NO glossy reflections in glasses lenses.
+- Fox fur: saturated orange #E86A30 single flat tone.
+- Shirt: olive green #4A5D3A single flat color.
+- Glasses: thick rectangular dark-brown frames, transparent lenses (no white reflections).
+- Face: elongated slim muzzle (NOT round chibi), black triangular nose (NOT pink), small simple black-dot eyes (NOT big Disney/Pixar shiny eyes).
+- This slide must look part of the SAME visual universe as the other slides of the same carousel (same background, palette, line weight).
+</strict_style_specifications>
 
-ROL NARRATIVO DE ESTA SLIDE:
+<scene_role>
 ${rolDescripcion}
+</scene_role>
 
-CONTEXTO DE LA PUBLICACIÓN:
-TEMA general: "${tema}" (${tipoContenido})
-TÍTULO de esta slide: "${slide.titulo}"
-SUBTÍTULO de esta slide: "${slide.subtitulo}"
-${enfoqueVisual}
+<scene_context>
+- Carousel theme: "${tema}" (${tipoContenido})
+- Slide title: "${slide.titulo}"
+- Slide subtitle: "${slide.subtitulo}"
+- ${enfoqueVisual}
+</scene_context>
 
-OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
-- MÁXIMO 2-3 objetos principales en TODA la escena (no 5, no 7). Cuando hay demasiados elementos, el zorro pierde consistencia visual porque el modelo "balancea" estilos.
-- Extrae las PALABRAS CLAVE VISUALES del tema y del foco de esta slide. Mapeo (elige UNO o DOS, no todos):
-  * chatbot/WhatsApp → burbuja de chat verde O smartphone (uno solo)
-  * web/sitio → laptop con web abstracta (sin texto)
-  * ventas → carrito O gráfico ascendente (uno)
-  * velocidad → cohete O velocímetro
-  * automatización/IA → engranajes O cerebro digital
-  * clientes → 2-3 siluetas pequeñas
-  * SEO → lupa O podio
-  * móvil/app → smartphone
-  * agendar → calendario
-- Los objetos INTERACTÚAN con el zorro (señala/sostiene/empuja), NUNCA flotan amontonados
-- Colores planos vibrantes y SIMPLES; NUNCA muchos elementos coloridos juntos compitiendo con el zorro
-- ESCENA NARRATIVA SIMPLE: zorro + 1-2 objetos clave bien colocados
+<scene_objects>
+RULE "less is more": MAXIMUM 2-3 main objects in the WHOLE scene (never 5, never 7). When the scene gets crowded, the character loses consistency because the model balances styles.
+Object mapping (pick ONE or TWO, never all):
+  * chatbot / WhatsApp → green chat bubble OR a single smartphone
+  * website → laptop with abstract webpage (no readable text)
+  * sales → cart OR ascending chart (one)
+  * speed → rocket OR speedometer
+  * automation / AI → gears OR digital brain
+  * customers → 2-3 small silhouettes
+  * SEO → magnifier OR podium
+  * mobile / app → smartphone
+  * scheduling → calendar
+- Objects INTERACT with the fox (he points at / holds / pushes them). They never float in a pile.
+- Solid vibrant flat colors with thick black outlines — never multiple colorful elements competing with the character.
+</scene_objects>
 
-ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
-- 22% SUPERIOR (formato 1:1: 0-220px / formato 4:5: 0-280px) = fondo limpio SIN elementos (reservado para título)
-- 25% INFERIOR (formato 1:1: 880-1080px / formato 4:5: 1050-1350px) = fondo limpio SIN elementos (reservado para subtítulo)
-- Toda la acción visual (zorro y objetos) va estrictamente en el centro
-- NADA invade las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras
+<composition>
+- Aspect ratio and canvas: ${dims}.
+- Character placement: centered, full body visible from ears to feet, occupying ~30-55% of the central area depending on the role above.
+- Reserved TOP zone — 22% (1:1 → 0-220px / 4:5 → 0-280px): clean background, no character parts, no objects, no shadows. Reserved for text overlay.
+- Reserved BOTTOM zone — 25% (1:1 → 880-1080px / 4:5 → 1050-1350px): clean background, no character parts, no objects, no shadows. Reserved for text overlay.
+- All visual action goes strictly in the central zone.
+</composition>
 
-FONDO PREMIUM (consistencia entre todas las slides del carrusel):
-- Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en bordes
-- Grid geométrico muy sutil (líneas blancas al 3-5% opacidad)
-- Glow ambiental naranja (#E86A30 al 20% opacidad) detrás del foco como halo
-- 3-5 partículas de luz blancas difusas
+<background>
+- Radial gradient from center: #1E293B (slate-800) toward #0F172A (slate-900) at edges.
+- Subtle geometric grid: white lines at 3-5% opacity.
+- Ambient orange glow (#E86A30 at ~20% opacity) behind the character as a halo.
+- 3-5 soft white light particles scattered.
+</background>
 
-PALETA: fondo slate oscuro + glow naranja. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
+<critical_final_requirements>
+VERIFY these BEFORE finalizing the image. If ANY answer is "no", regenerate internally:
+1. NO text, NO letters, NO numbers, NO labels, NO captions ANYWHERE in the image. Screens and UI show abstract shapes only.
+2. Character matches REFERENCE IMAGE 1 in: outline weight, fur color saturation (#E86A30 flat), glasses shape (rectangular, dark brown), eye size (small simple black dots), nose color (black, NOT pink), muzzle length (elongated, NOT round chibi), shirt color (olive green #4A5D3A flat).
+3. Glasses lenses are fully transparent — NO white reflections, NO highlights.
+4. NO 3D rendering, NO Disney/Pixar big shiny eyes, NO realistic shading or gradients on the fox or his shirt, NO anime style.
+5. Maximum 2-3 main objects in scene — character is the clear focus.
+6. Full body visible (ears to feet), not cropped.
+7. Top 22% and bottom 25% zones are completely clean (no character, no objects, no shadows).
+8. Background follows the radial gradient + subtle grid + orange glow halo + light particles spec exactly.
 
-CONSISTENCIA DEL CARRUSEL: esta slide debe verse del MISMO universo visual que las demás (mismo fondo, paleta, estilo flat cartoon). El zorro siempre IDÉNTICO a la referencia.
-
-VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
-1. ¿Los OJOS del zorro son PEQUEÑOS y simples (NO grandes, redondos y brillosos estilo Disney/Pixar/chibi)?
-2. ¿La NARIZ del zorro es NEGRA (NO rosada)?
-3. ¿La CARA es ESTILIZADA y ligeramente alargada (NO redonda y "cute" estilo chibi)?
-4. ¿El PELAJE es UN SOLO color naranja plano #E86A30 SIN brillos, reflejos, sombras ni gradientes?
-5. ¿Los CRISTALES de los lentes están totalmente transparentes SIN reflejos blancos?
-6. ¿Las LÍNEAS del contorno son negras, gruesas y uniformes (NO finas ni con variación de grosor)?
-7. ¿Hay MÁXIMO 2-3 objetos en escena (no un montón amontonados)?
-Si respondiste NO a cualquiera de estas, el zorro está INCORRECTO y debes REGENERAR mentalmente la imagen antes de entregarla. Cualquier desviación rompe el branding registrado.
-
-RECUERDA: CERO TEXTO. Ni una letra ni número en NINGUNA parte.`;
+If any element deviates from the reference style or violates these rules, regenerate internally before returning the final image. Any deviation breaks the registered branding.
+</critical_final_requirements>`;
 }
 
 async function generarImagenSlide(
@@ -1104,24 +1152,32 @@ async function generarImagenSlide(
   // Referencias canon (imágenes 10/10 aprobadas) según rol del slide
   const canonRefs = await pickCanonReferences(slide.rol, tema, slide.prompt_visual);
 
+  // FIX 3 — Construcción del array `parts` con etiqueta de rol ANTES de cada imagen
+  // y prompt al FINAL (Gemini 3 da más peso a las instrucciones finales).
+  // Cap de 5 imágenes de personaje por request (límite "character consistency").
   const parts: any[] = [];
-  if (referenceBase64) {
-    parts.push({ inlineData: { data: referenceBase64, mimeType: "image/png" } });
+  let charImagesUsed = 0;
+  const MAX_CHARACTER_IMAGES = 5;
+
+  if (referenceBase64 && charImagesUsed < MAX_CHARACTER_IMAGES) {
+    parts.push({
+      text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):",
+    });
+    parts.push({ inlineData: { mimeType: "image/png", data: referenceBase64 } });
+    charImagesUsed++;
   }
-  for (const ref of canonRefs) {
-    parts.push({ inlineData: { data: ref, mimeType: "image/png" } });
-  }
-  if (referenceBase64 || canonRefs.length > 0) {
-    const lineas: string[] = ["IMÁGENES DE REFERENCIA arriba:"];
-    if (referenceBase64) {
-      lineas.push("• La PRIMERA es el MASTER OFICIAL del zorro Webi (anatomía, colores, estilo línea exactos a replicar).");
+  for (let i = 0; i < canonRefs.length; i++) {
+    if (charImagesUsed >= MAX_CHARACTER_IMAGES) {
+      console.warn(`[Slide ${slide.numero}] limitando referencias a ${MAX_CHARACTER_IMAGES} (descartadas: ${canonRefs.length - i})`);
+      break;
     }
-    if (canonRefs.length > 0) {
-      const cuantas = canonRefs.length === 1 ? "1 referencia" : `${canonRefs.length} referencias`;
-      lineas.push(`• Las siguientes son ${cuantas} CANON 10/10 ya aprobadas por el cliente: muestran composición, pose, props, paleta de fondo, tipografía blanca, tamaño del zorro, gradiente naranja radial detrás del personaje, grilla geométrica sutil de fondo y nivel de detalle CORRECTOS para este tipo de slide. RESPETA esta estética de forma estricta: misma escala del zorro (ocupa ~55% del alto, NO más), mismo fondo azul oscuro #0F1B2D con gradiente naranja radial detrás del personaje, mismas líneas negras gruesas uniformes, mismo nivel de plano (NO close-up de cara), misma calidad y limpieza de los props (laptops/celulares con iconos simples vector, no fotorrealistas).`);
-    }
-    parts.push({ text: lineas.join("\n") });
+    parts.push({
+      text: `REFERENCE IMAGE ${charImagesUsed + 1} (canonical pose/style variant — same flat 2D cartoon style, same background palette, same character anatomy):`,
+    });
+    parts.push({ inlineData: { mimeType: "image/png", data: canonRefs[i]! } });
+    charImagesUsed++;
   }
+  // FIX 4 — el prompt (con instrucciones críticas al final) va AL FINAL del array
   parts.push({ text: prompt });
 
   const contents = [{ role: "user" as const, parts }];
@@ -1129,13 +1185,13 @@ async function generarImagenSlide(
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-image-preview",
     contents,
-    config: { responseModalities: ["TEXT", "IMAGE"] },
+    config: GEMINI_IMAGE_BASE_CONFIG,
   });
-  const imagePart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-  if (!imagePart?.inlineData?.data) {
-    throw new Error(`Gemini no devolvió imagen para slide ${slide.numero}`);
+  const finalImg = extractFinalImage(response);
+  if (!finalImg) {
+    throw new Error(`Gemini no devolvió imagen final para slide ${slide.numero}`);
   }
-  return imagePart.inlineData.data as string;
+  return finalImg.data;
 }
 
 function isRateLimitErr(err: any): boolean {
@@ -1616,6 +1672,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
     const referenceBase64 = await getFoxRefBase64();
     const contents = referenceBase64
       ? [{ role: "user" as const, parts: [
+          { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
           { inlineData: { data: referenceBase64, mimeType: "image/png" } },
           { text: prompt },
         ] }]
@@ -1624,15 +1681,15 @@ router.post("/community/historias/reintentar", async (req, res) => {
     const imageResp = await ai.models.generateContent({
       model: "gemini-3-pro-image-preview",
       contents,
-      config: { responseModalities: ["TEXT", "IMAGE"] },
+      config: GEMINI_IMAGE_BASE_CONFIG,
     });
-    const imagePart = imageResp.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
-    if (!imagePart?.inlineData?.data) {
-      res.status(502).json({ success: false, error: "Gemini no devolvió imagen" });
+    const finalImg = extractFinalImage(imageResp);
+    if (!finalImg) {
+      res.status(502).json({ success: false, error: "Gemini no devolvió imagen final" });
       return;
     }
-    let imgBase64 = imagePart.inlineData.data as string;
-    const mime = imagePart.inlineData.mimeType || "image/png";
+    let imgBase64 = finalImg.data;
+    const mime = finalImg.mimeType;
 
     if (body.texto_en_imagen) {
       try { imgBase64 = await renderTextoEnHistoria(imgBase64, texto); } catch (e) { console.error("[Hist reintentar] render:", e); }

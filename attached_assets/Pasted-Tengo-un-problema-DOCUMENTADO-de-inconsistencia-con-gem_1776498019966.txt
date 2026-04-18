@@ -1,0 +1,342 @@
+Tengo un problema DOCUMENTADO de inconsistencia con gemini-3-pro-image-preview 
+al generar imágenes con personaje consistente (el zorro Webi de WebMakerLatam). 
+Investigué la documentación oficial de Google y detecté 5 problemas técnicos 
+específicos en nuestra implementación actual que están causando que ~30-40% 
+de las generaciones deriven del canon en la primera pasada.
+
+Necesito que implementes TODAS las correcciones siguientes en el orden 
+indicado. Cada una tiene su justificación basada en la doc oficial.
+
+═══════════════════════════════════════════════════════════════
+CONTEXTO TÉCNICO (LEE ESTO PRIMERO)
+═══════════════════════════════════════════════════════════════
+
+Documentación oficial relevante:
+- Gemini 3 Pro Image Preview tiene un mecanismo de "Thinking" que genera 
+  hasta 2 imágenes temporales (bocetos) antes de la final
+- El modelo permite máximo 11 imágenes por request (6 object + 5 character)
+- Desde el launch de Gemini 3.1 Flash en febrero 2026, el Pro model tiene 
+  inconsistencia documentada como bug conocido
+- Gemini 3 requiere temperature = 1.0 (default); bajarlo causa degradación
+- Para Gemini 3 las instrucciones críticas deben ir AL FINAL del prompt, 
+  no al inicio
+- El parseo del response DEBE filtrar parts con thought: true y tomar la 
+  ÚLTIMA inline_data (no parts[0])
+
+═══════════════════════════════════════════════════════════════
+FIX 1 (CRÍTICO - ESTE ES EL MÁS IMPORTANTE): PARSEO DE RESPONSE
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Gemini 3 Pro Image devuelve MÚLTIPLES imágenes en el response: los "bocetos" 
+del proceso de thinking + la imagen final. Si el código actual toma 
+parts[0] o generatedImages[0], probablemente estamos mostrando un BOCETO 
+intermedio y no la imagen final. Esto explicaría por qué a veces sale 
+incompleta o de baja calidad.
+
+ACCIÓN:
+
+1. Busca en el código (artifacts/api-server/src/routes/community/) dónde 
+   parseamos el response de gemini.models.generateContent o 
+   generateImages. Muéstrame ese código actual.
+
+2. Reemplaza el parseo por este patrón:
+
+```javascript
+// ❌ INCORRECTO (lo que probablemente tenemos):
+// const imageData = response.generatedImages[0].image.imageBytes;
+// o
+// const imageData = response.candidates[0].content.parts[0].inlineData.data;
+
+// ✅ CORRECTO para Gemini 3 Pro Image:
+function extractFinalImage(response) {
+  const parts = response.candidates[0].content.parts;
+  
+  // Filtrar cualquier part con thought: true (son bocetos intermedios)
+  const imageParts = parts.filter(part => 
+    part.inlineData && !part.thought
+  );
+  
+  if (imageParts.length === 0) {
+    throw new Error("No se encontró imagen final en el response");
+  }
+  
+  // Tomar la ÚLTIMA imagen (la final, no los bocetos)
+  const finalImage = imageParts[imageParts.length - 1];
+  
+  return {
+    mimeType: finalImage.inlineData.mimeType,
+    data: finalImage.inlineData.data,
+  };
+}
+```
+
+3. En la request a Gemini, agrega este parámetro para ahorrar tokens:
+```javascript
+config: {
+  // ...otras configs
+  thinkingConfig: {
+    includeThoughts: false  // No nos devuelve los bocetos, solo la final
+  }
+}
+```
+
+IMPORTANTE: Aunque includeThoughts sea false, los bocetos siguen 
+generándose internamente (es feature del modelo, no se puede desactivar). 
+Por eso el filter del punto 2 es necesario de todas formas.
+
+═══════════════════════════════════════════════════════════════
+FIX 2 (CRÍTICO): PARÁMETROS DEL API MAL CONFIGURADOS
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Google documenta que para Gemini 3 el temperature DEBE ser 1.0 (default). 
+Si está en un valor menor (probable, porque "bajar temperature para más 
+consistencia" era verdad en modelos viejos), está CAUSANDO la degradación.
+
+ACCIÓN:
+
+1. Busca en el código todos los lugares donde se configura generationConfig 
+   o config para las llamadas a Gemini Image. Muéstramelos.
+
+2. Aplica esta configuración estándar:
+
+```javascript
+const geminiImageConfig = {
+  // NO setear temperature, topK, topP → dejar defaults del modelo
+  // (temperature = 1.0, el modelo maneja el resto con su thinking interno)
+  
+  candidateCount: 1,  // Para generación normal
+  // candidateCount: 3,  // Para slides críticas (portada, CTA) si queremos 
+                        //  elegir el mejor automáticamente
+  
+  responseModalities: ["IMAGE"],  // Solo queremos imagen
+  
+  imageConfig: {
+    aspectRatio: "9:16",  // o "4:5" para carruseles, o "1:1" para únicas
+    // imageSize: "2K"  // opcional, si queremos alta resolución
+  },
+  
+  thinkingConfig: {
+    includeThoughts: false
+  }
+};
+```
+
+3. ELIMINA estos parámetros si existen:
+   - temperature (déjalo en default 1.0)
+   - topK, topP (el modelo los maneja internamente)
+   - Cualquier "thinking_level" custom si lo bajamos (dejar default "high")
+
+═══════════════════════════════════════════════════════════════
+FIX 3 (IMPORTANTE): ORDEN Y ESTRUCTURA DEL ARRAY `parts`
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Google recomienda etiquetar cada imagen de referencia con su ROL explícito 
+en texto ANTES de la imagen, para que el modelo entienda qué buscar en 
+cada una. También indica que las instrucciones críticas deben ir AL FINAL 
+del prompt.
+
+ACCIÓN:
+
+Refactoriza la construcción del array `parts` así:
+
+```javascript
+function buildGeminiPartsArray({ 
+  foxReferenceBase64,      // la imagen master del zorro
+  canonReferences,          // array de 2-4 imágenes canon adicionales
+  prompt                    // el prompt de texto con instrucciones
+}) {
+  const parts = [];
+  
+  // 1️⃣ PRIMERO: Imagen master con rol explícito
+  parts.push({ 
+    text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY. Match outline weight, fur color, glasses shape, eye size, body proportions):" 
+  });
+  parts.push({ 
+    inlineData: { mimeType: "image/png", data: foxReferenceBase64 } 
+  });
+  
+  // 2️⃣ SEGUNDO: Referencias canon con roles específicos
+  canonReferences.forEach((ref, idx) => {
+    parts.push({ 
+      text: `REFERENCE IMAGE ${idx + 2} (canonical pose/style variant — maintain same flat cartoon style):` 
+    });
+    parts.push({ 
+      inlineData: { mimeType: "image/png", data: ref.base64 } 
+    });
+  });
+  
+  // 3️⃣ ÚLTIMO: Prompt con instrucciones (al final según doc oficial)
+  parts.push({ text: prompt });
+  
+  return parts;
+}
+```
+
+REGLA CRÍTICA: Máximo 5 imágenes de referencia del zorro por request 
+(límite "character consistency" del modelo). Si el array tiene más de 5, 
+loggea un warning y toma las primeras 5.
+
+═══════════════════════════════════════════════════════════════
+FIX 4 (IMPORTANTE): REESCRIBIR EL PROMPT CON ESTRUCTURA XML
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+El prompt actual probablemente es verboso y narrativo. Gemini 3 responde 
+MEJOR a prompts estructurados con XML tags y restricciones al FINAL. 
+Mezclar markdown con prosa confunde al modelo.
+
+ACCIÓN:
+
+Reemplaza el prompt actual por esta plantilla XML (adaptando el contenido 
+dinámico a las variables que ya usamos):
+
+```
+<role>
+Professional brand illustrator replicating exact character style from the provided reference images for WebMakerLatam's mascot "Webi".
+</role>
+
+<character_canon>
+The character must match EXACTLY the provided reference images:
+- Reference 1 = primary canon (replicate outline weight, color, proportions)
+- Reference 2+ = pose/scene variants in the same style
+Study these references carefully before generating.
+</character_canon>
+
+<strict_style_specifications>
+- Style: Flat 2D cartoon illustration (NOT 3D, NOT Disney, NOT chibi, NOT anime)
+- Outlines: Bold uniform black lines, consistent 3-4px weight everywhere
+- Fills: Solid flat colors only — NO gradients, NO shading, NO highlights
+- Fur color: saturated orange (#E86A30), single flat tone
+- Shirt: olive green (#4A5D3A), single flat color, no wrinkles/texture
+- Glasses: thick rectangular frames, dark brown color
+- Face: elongated slim muzzle, small simple eyes (solid black dots)
+- Background: dark navy gradient (#0F172A to #1E293B) with subtle grid lines and radial orange glow behind character
+</strict_style_specifications>
+
+<scene_description>
+[DESCRIPCIÓN DE LA ESCENA — máximo 2 oraciones concretas. Ejemplo: "Webi points confidently at a laptop screen showing a growing sales chart. A small smartphone icon floats to the left."]
+</scene_description>
+
+<composition>
+- Aspect ratio: [9:16 | 4:5 | 1:1]
+- Character placement: centered, full body visible from ears to feet
+- Supporting objects: maximum 2, smaller than character, at sides (never behind)
+- Top reserved zone: clean background (for text overlay)
+- Bottom reserved zone: clean background (for text overlay)
+</composition>
+
+<critical_final_requirements>
+VERIFY before finalizing the image:
+1. Character matches Reference Image 1 in outline weight, fur color saturation, eye size, glasses shape
+2. No realistic shading, no 3D rendering, no Disney-style big eyes
+3. Full body visible, not cropped
+4. Supporting objects DO NOT overlap the character
+5. Top and bottom zones are clean (no objects, no character parts)
+
+If any element deviates from the reference style, internally regenerate before returning.
+</critical_final_requirements>
+```
+
+CLAVE: Las <critical_final_requirements> van AL FINAL porque según la doc 
+oficial de Google, Gemini 3 le da más peso a las instrucciones al final 
+del prompt.
+
+═══════════════════════════════════════════════════════════════
+FIX 5 (NICE TO HAVE): POST-CHECK AUTOMÁTICO DE CONSISTENCIA
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Incluso con todos los fixes anteriores, el modelo tiene el bug documentado 
+que causa ~15-20% de inconsistencia residual. La única forma de garantizar 
+consistencia cercana al 100% es validar automáticamente.
+
+ACCIÓN (solo si tenemos tiempo, es optimización):
+
+1. Después de generar una imagen, hacer una segunda llamada a Gemini 
+   Vision (gemini-3.1-pro-preview, modelo de texto) con:
+
+```javascript
+async function validateCharacterConsistency(generatedImageBase64, referenceBase64) {
+  const response = await ai.models.generateContent({
+    model: "gemini-3.1-pro-preview",
+    contents: [{
+      role: "user",
+      parts: [
+        { text: "REFERENCE IMAGE (the canonical character style):" },
+        { inlineData: { mimeType: "image/png", data: referenceBase64 } },
+        { text: "GENERATED IMAGE (to validate):" },
+        { inlineData: { mimeType: "image/png", data: generatedImageBase64 } },
+        { text: `Compare these two images. Does the character in the GENERATED IMAGE match the REFERENCE IMAGE in all these aspects?
+        
+1. Flat 2D cartoon style (not 3D, not Disney, not chibi)
+2. Same orange fur color (no variations in saturation)  
+3. Same outline weight (thick, uniform, black)
+4. Same eye size (small, simple, not big anime-style)
+5. Same glasses shape (thick rectangular frames)
+6. Same body proportions
+
+Answer with ONLY: "PASS" or "FAIL: [brief reason]"` }
+      ]
+    }],
+    config: {
+      thinkingConfig: { thinkingLevel: "low" }  // rápido, no necesita deep thinking
+    }
+  });
+  
+  const verdict = response.text.trim();
+  return {
+    passed: verdict.startsWith("PASS"),
+    reason: verdict
+  };
+}
+```
+
+2. Integrar en el flujo de generación:
+   - Generar imagen
+   - Validar con el check anterior
+   - Si FAIL → regenerar con diferente set de referencias (hasta 2 reintentos)
+   - Si al 3er intento sigue fallando → devolver la última versión con 
+     warning al usuario: "⚠️ Posible variación de estilo, revisa antes de publicar"
+
+3. Hacer esto OPCIONAL detrás de un feature flag `ENABLE_CONSISTENCY_CHECK` 
+   en .env para poder desactivarlo si agrega mucha latencia.
+
+═══════════════════════════════════════════════════════════════
+ORDEN DE IMPLEMENTACIÓN Y VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+1️⃣ PRIMERO: Implementa FIX 1 (parseo del response). Esto solo podría 
+resolver el 50% de los casos "raros".
+
+2️⃣ SEGUNDO: Implementa FIX 2 (parámetros del API). Sube temperature a 
+default y elimina configs de temperatura/topK/topP si las hubiera.
+
+3️⃣ TERCERO: Implementa FIX 3 (orden del array parts) y FIX 4 
+(prompt XML). Son complementarios.
+
+4️⃣ CUARTO: Evalúa con 10 generaciones consecutivas del mismo tema. 
+Si la tasa de fallo baja de 30-40% a <15%, estamos bien. Si no, 
+implementar FIX 5.
+
+VERIFICACIÓN OBLIGATORIA:
+
+Después de implementar FIX 1-4, genera un carrusel de 5 slides con tema 
+"5 señales de que tu web no vende". Para cada slide, muéstrame:
+- El tema/rol de esa slide (portada/desarrollo/CTA)
+- La imagen generada
+- Confirmación de que el código nuevo filtró correctamente los 
+  thinking drafts
+
+Si 4 de 5 slides tienen el zorro idéntico al canon → éxito total.
+Si 5 de 5 → FIX 5 no es necesario.
+Si 3 o menos → implementar FIX 5.
+
+IMPORTANTE: NO toques nada que ya funciona (generador de portadas 
+original, rutas existentes, UI). Solo tocar la lógica de construcción 
+del request a Gemini y el parseo del response.
+
+Cuando termines cada fix, confirmame qué archivos tocaste y pega un 
+snippet del antes/después del código clave.
