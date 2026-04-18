@@ -1,0 +1,245 @@
+Hola, necesito que hagas AJUSTES CRÍTICOS a las secciones de Historias y 
+Descripciones. Hay 3 problemas que resolver y un reposicionamiento completo 
+del contenido.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 1 (CRÍTICO): AUDIENCIA EQUIVOCADA
+═══════════════════════════════════════════════════════════════
+
+Actualmente el contenido generado está 100% enfocado en DESARROLLADORES 
+(git bisect, git stash, tips de código, frameworks). Esto está MAL.
+
+WebMakerLatam es una AGENCIA que vende servicios a EMPRENDEDORES y EMPRESAS.
+No somos un canal de tutoriales para programadores.
+
+NUEVO POSICIONAMIENTO (OBLIGATORIO):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WebMakerLatam es una agencia digital que ayuda a emprendedores, pymes y 
+empresas a hacer crecer su negocio con tecnología. 
+
+Servicios que ofrecemos:
+- Desarrollo web: landing pages, sitios corporativos, e-commerce
+- Software a medida para empresas
+- Chatbots y automatizaciones con IA
+- Apps móviles
+- Marketing digital / SEO
+
+AUDIENCIA OBJETIVO:
+- Dueños de negocio, emprendedores, pymes en Latinoamérica
+- Pueden NO saber de tecnología, hay que explicarles simple
+- Buscan soluciones para vender más, automatizar, tener presencia online
+
+TONO DE CONTENIDO:
+- Educativo pero accesible (nada de jerga técnica)
+- Orientado a BENEFICIOS de negocio, no a features técnicas
+- Ejemplo malo: "Aprende a usar git stash"
+- Ejemplo bueno: "Por qué tu negocio necesita una web hoy (y no el próximo 
+  trimestre)"
+- Ejemplo malo: "3 hooks de React que debes conocer"
+- Ejemplo bueno: "3 señales de que tu negocio necesita un chatbot con IA"
+
+ACCIÓN REQUERIDA:
+Reescribe COMPLETAMENTE el system prompt tanto del generador de historias 
+como del generador de descripciones. Además, reescribe el prompt del botón 
+"¡Sorpréndeme!" con las siguientes categorías:
+
+BANCO DE CATEGORÍAS PARA "¡SORPRÉNDEME!":
+
+1. CASOS DE ÉXITO (20%): 
+   "Cómo ayudamos a [tipo de negocio] a [resultado concreto]"
+   Ej: "Cómo una panadería triplicó sus pedidos con un chatbot de WhatsApp"
+
+2. TIPS DE NEGOCIO (20%):
+   Consejos prácticos para hacer crecer un negocio usando tecnología
+   Ej: "5 errores que están haciendo huir a tus clientes de tu web"
+
+3. ¿SABÍAS QUE...? (20%):
+   Datos y curiosidades de tecnología explicados simple para no-devs
+   Ej: "¿Sabías que el 70% de los usuarios abandonan una web si tarda más 
+   de 3 segundos en cargar?"
+
+4. PROBLEMA + SOLUCIÓN (20%):
+   Un problema común de emprendedores + cómo nuestros servicios lo resuelven
+   Ej: "¿Pierdes ventas porque respondes WhatsApp a las 2am? Un chatbot con 
+   IA atiende 24/7"
+
+5. MOTIVACIÓN EMPRENDEDORA (15%):
+   Mentalidad, mindset, frases para emprendedores
+   Ej: "La diferencia entre un negocio que crece y uno que se estanca está 
+   en la ejecución, no en la idea"
+
+6. TUTORIALES DEV (5% - AUDIENCIA SECUNDARIA):
+   Contenido técnico puro para devs, mantenerlo como opción minoritaria
+   Ej: "Cómo usar git bisect para encontrar bugs"
+
+IMPORTANTE: 
+- Cuando el usuario usa "¡Sorpréndeme!" sin contexto, respeta esta 
+  distribución (mayoría para emprendedores, no para devs)
+- Si el usuario escribe un contexto antes de sorprenderme, respeta su 
+  contexto (ej: si escribe "chatbots" → genera tema de chatbots para 
+  emprendedores, no para devs)
+- En todas las categorías debe quedar implícita o explícita la conexión 
+  con WebMakerLatam como solución (sin ser spam)
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 2 (CRÍTICO): ERRORES EN RENDERIZADO DE TEXTO SOBRE IMAGEN
+═══════════════════════════════════════════════════════════════
+
+Tengo 2 errores visibles cuando activo "Texto en imagen":
+
+ERROR A: LOS EMOJIS SE ROMPEN Y MUESTRAN CÓDIGOS UNICODE
+Cuando el texto tiene emojis (🦊, 💡, etc.), aparecen como cajas con códigos 
+tipo "01F98A" o "01F4BE" en lugar del emoji. Esto pasa porque la fuente que 
+estás usando para renderizar no tiene soporte de emojis.
+
+SOLUCIÓN OBLIGATORIA:
+- Opción A (recomendada): Instala una fuente con soporte de emojis como 
+  "Noto Color Emoji" o "Twemoji" en el renderizador de imagen
+- Opción B: ANTES de renderizar el texto, REMUEVE todos los emojis del string 
+  automáticamente con un regex (más simple, siempre funciona)
+- Recomiendo la opción B: es más robusto y simple. Los emojis quedan en el 
+  texto COPIABLE (para redes sociales) pero NO se renderizan sobre la imagen.
+
+ERROR B: TEXTO DESBORDA EL CANVAS Y APARECE ENCIMA DEL ZORRO
+El copy principal a veces se corta por los lados o queda encima del zorro 
+en lugar de en la zona superior reservada.
+
+SOLUCIONES OBLIGATORIAS:
+1. El texto debe respetar un PADDING HORIZONTAL de mínimo 80px a cada lado 
+   (para imágenes 1080 de ancho). Nunca debe tocar los bordes.
+
+2. El texto DEBE hacer word-wrap automático (saltos de línea) para caber en 
+   el ancho disponible. Usa algoritmo de wrap por palabras, no por caracteres.
+
+3. Si el texto es MUY LARGO y no cabe con tamaño de fuente normal, REDUCIR 
+   tamaño de fuente dinámicamente (auto-fit) hasta que quepa en la zona 
+   reservada. Tamaño mínimo 48px, máximo 80px.
+
+4. VERIFICAR que el texto NUNCA invada la zona central donde está el zorro:
+   - Historias 9:16 (1080x1920): Zona superior 0-384px, zona inferior 
+     1440-1920px, zona central 384-1440px RESERVADA para zorro
+   - Publicación única 1:1 (1080x1080): Zona superior 0-200px, zona inferior 
+     880-1080px
+   - Carrusel 4:5 (1080x1350): Zona superior 0-250px, zona inferior 
+     1100-1350px
+
+5. Agregar un FONDO SEMI-TRANSPARENTE detrás del texto (rectángulo negro al 
+   60% de opacidad con bordes redondeados, con padding de 24px) para mejorar 
+   legibilidad cuando el texto queda sobre partes claras de la imagen.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 3: FALTA DE PRECISIÓN EN LAS IMÁGENES
+═══════════════════════════════════════════════════════════════
+
+Las imágenes generadas a veces no reflejan el tema del contenido. El zorro 
+aparece, pero los objetos alrededor son genéricos o poco relacionados.
+
+MEJORAS AL PROMPT DE GENERACIÓN DE IMAGEN:
+
+1. OBJETOS DEBEN SER 100% RELEVANTES AL TEMA:
+   El prompt debe extraer PALABRAS CLAVE VISUALES del tema y forzar su 
+   aparición. Ejemplo:
+   - Tema: "Por qué tu negocio necesita un chatbot" 
+     → objetos: burbuja de chat, icono WhatsApp, smartphone, emoji de robot
+   - Tema: "Cómo una web rápida vende más"
+     → objetos: velocímetro, cohete, pantalla de web, gráfico ascendente
+   - Tema: "Automatiza tus ventas con IA"
+     → objetos: engranajes conectados, cerebro digital, carrito de compras, 
+     flecha de crecimiento
+
+2. POSE DEL ZORRO DEBE ILUSTRAR EL CONTEXTO:
+   No siempre la misma pose. Por ejemplo:
+   - Tema educativo → zorro con cara de profesor explicando
+   - Tema de casos de éxito → zorro celebrando con cara de triunfo
+   - Tema de problema → zorro con cara preocupada señalando el problema
+   - Tema de solución → zorro con bombilla y cara de "¡eureka!"
+
+3. ESCENA NARRATIVA, NO OBJETOS FLOTANTES RANDOM:
+   Los objetos deben INTERACTUAR con el zorro o entre sí:
+   - Zorro SEÑALANDO la pantalla que muestra una web
+   - Zorro SOSTENIENDO un teléfono con un chatbot
+   - Zorro EMPUJANDO un gráfico hacia arriba
+   
+   NO queremos: zorro parado + 3 iconos random flotando sin conexión.
+
+4. PARA CARRUSELES - CADA SLIDE DEBE SER DIFERENTE:
+   Asegúrate de que cada slide del carrusel cuente una parte distinta:
+   - Slide 1 (portada): HOOK. Zorro con cara de pregunta + elemento del problema
+   - Slide 2: PROBLEMA. Zorro mostrando algo que no funciona/preocupación
+   - Slide 3: SOLUCIÓN. Zorro presentando la solución con cara de confianza
+   - Slide 4: BENEFICIO. Zorro celebrando el resultado positivo
+   - Slide 5 (CTA final): Zorro con pose invitante + icono de WhatsApp o 
+     "agenda tu reunión"
+
+5. MANTENER CONSISTENCIA DE ESTILO ENTRE SLIDES:
+   - Mismo fondo (gradiente slate oscuro + glow naranja)
+   - Mismo estilo flat cartoon
+   - Misma paleta de colores en objetos
+   - El zorro debe verse IDÉNTICO en todas las slides (usar siempre la misma 
+     imagen de referencia)
+
+═══════════════════════════════════════════════════════════════
+EJEMPLOS DE OUTPUT ESPERADO (PARA CALIBRAR)
+═══════════════════════════════════════════════════════════════
+
+TEMA GENERADO CORRECTAMENTE (sin contexto):
+✅ "3 señales de que tu negocio necesita una web profesional"
+✅ "Cómo un chatbot puede atender a tus clientes mientras duermes"
+✅ "¿Sabías que una web lenta te hace perder el 40% de tus ventas?"
+
+TEMA GENERADO INCORRECTAMENTE:
+❌ "Cómo usar git stash" (muy técnico, no es la audiencia)
+❌ "Mejores hooks de React" (muy técnico)
+❌ "Tutorial de JavaScript" (muy técnico, salvo que se pida modo devs)
+
+COPY PRINCIPAL BIEN ESCRITO:
+✅ "Tu web vende aunque tú duermas"
+✅ "Deja de perder clientes por responder tarde"
+✅ "De idea a negocio digital en 30 días"
+
+COPY MAL ESCRITO:
+❌ "Encuentra el bug en segundos con Git"
+❌ "git bisect: la herramienta que busca el commit culpable"
+
+═══════════════════════════════════════════════════════════════
+ORDEN DE IMPLEMENTACIÓN
+═══════════════════════════════════════════════════════════════
+
+1. Reescribir system prompts (historias + descripciones + sorpréndeme) con 
+   nuevo posicionamiento de audiencia. Esto es lo más urgente.
+
+2. Arreglar el bug de emojis rotos en renderizado (quitar emojis del texto 
+   antes de renderizar, mantenerlos en el texto copiable).
+
+3. Arreglar el texto que desborda (padding, word-wrap, auto-fit, fondo 
+   semi-transparente).
+
+4. Mejorar prompt de generación de imagen para que objetos sean relevantes 
+   al tema y haya narrativa visual.
+
+5. Mejorar prompts de carruseles para que cada slide tenga rol narrativo 
+   distinto.
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN OBLIGATORIA
+═══════════════════════════════════════════════════════════════
+
+Cuando termines, prueba GENERANDO DE VERDAD (autenticado, no solo 401):
+
+TEST 1: Click "¡Sorpréndeme!" sin contexto, 5 veces seguidas.
+Esperado: 4 de 5 temas son para EMPRENDEDORES, máximo 1 técnico para devs.
+Muéstrame los 5 temas generados.
+
+TEST 2: Generar historia con tema "chatbots para mi negocio" y texto en 
+imagen ACTIVADO.
+Esperado: Imagen con zorro + chatbot visual + texto bien renderizado SIN 
+emojis rotos y SIN desbordar. Mándame la imagen.
+
+TEST 3: Generar carrusel de 4 slides con tema "Por qué tu pyme necesita 
+una web".
+Esperado: 4 imágenes con narrativa clara (portada → problema → solución → 
+CTA) y descripciones para 4 redes orientadas a emprendedores (no devs).
+Mándame las 4 imágenes + las descripciones.
+
+No me digas "terminé" hasta que estos 3 tests pasen visualmente bien.

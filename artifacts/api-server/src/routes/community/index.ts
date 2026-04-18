@@ -22,10 +22,7 @@ async function resolveAsset(...segments: string[]): Promise<string> {
     path.join(process.cwd(), "artifacts", "api-server", ...segments),
   ];
   for (const p of candidates) {
-    try {
-      await readFile(p);
-      return p;
-    } catch {}
+    try { await readFile(p); return p; } catch {}
   }
   return candidates[0]!;
 }
@@ -42,29 +39,178 @@ async function getFoxRefBase64(): Promise<string | null> {
   }
 }
 
+// ============================================
+// HELPERS DE TEXTO Y RENDER
+// ============================================
+
 function escapeXml(s: string): string {
   return s.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]!));
 }
 
-function wrapText(text: string, maxCharsPerLine: number): string[] {
-  const words = text.split(/\s+/);
+// Quita emojis y símbolos pictográficos para render seguro en SVG
+function stripEmojis(s: string): string {
+  return s
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, "")
+    .replace(/[\u200D\uFE0F\u20E3]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wrapTextByChars(text: string, maxCharsPerLine: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
   const lines: string[] = [];
   let current = "";
   for (const w of words) {
-    if ((current + " " + w).trim().length <= maxCharsPerLine) {
-      current = (current + " " + w).trim();
+    const tentative = current ? current + " " + w : w;
+    if (tentative.length <= maxCharsPerLine) {
+      current = tentative;
     } else {
       if (current) lines.push(current);
-      current = w;
+      // Si la palabra solita excede, cortarla duro
+      if (w.length > maxCharsPerLine) {
+        let chunk = w;
+        while (chunk.length > maxCharsPerLine) {
+          lines.push(chunk.slice(0, maxCharsPerLine));
+          chunk = chunk.slice(maxCharsPerLine);
+        }
+        current = chunk;
+      } else {
+        current = w;
+      }
     }
   }
   if (current) lines.push(current);
   return lines;
 }
 
+interface FitResult {
+  lines: string[];
+  fontSize: number;
+  lineHeight: number;
+  blockWidth: number;
+  blockHeight: number;
+}
+
+// Auto-fit: prueba tamaños de fuente decrecientes hasta que quepa en el área
+function fitTextBlock(
+  text: string,
+  opts: {
+    maxWidth: number;
+    maxHeight: number;
+    maxFontSize: number;
+    minFontSize: number;
+    charWidthRatio?: number; // ancho promedio de char relativo al fontSize
+    lineHeightRatio?: number;
+  },
+): FitResult {
+  const charW = opts.charWidthRatio ?? 0.56; // bold sans-serif aprox
+  const lhRatio = opts.lineHeightRatio ?? 1.18;
+
+  const sizes: number[] = [];
+  for (let fs = opts.maxFontSize; fs >= opts.minFontSize; fs -= 2) sizes.push(fs);
+
+  for (const fs of sizes) {
+    const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
+    const lines = wrapTextByChars(text, maxChars);
+    const lineHeight = fs * lhRatio;
+    const blockHeight = lines.length * lineHeight;
+    const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
+    const blockWidth = longest * fs * charW;
+    if (blockHeight <= opts.maxHeight && blockWidth <= opts.maxWidth) {
+      return { lines, fontSize: fs, lineHeight, blockWidth, blockHeight };
+    }
+  }
+
+  // Fallback: usar mínimo y truncar líneas si hace falta
+  const fs = opts.minFontSize;
+  const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
+  const allLines = wrapTextByChars(text, maxChars);
+  const lineHeight = fs * (opts.lineHeightRatio ?? 1.18);
+  const maxLines = Math.max(1, Math.floor(opts.maxHeight / lineHeight));
+  let lines = allLines.slice(0, maxLines);
+  if (allLines.length > maxLines && lines.length > 0) {
+    const last = lines[lines.length - 1]!;
+    lines[lines.length - 1] = last.length > 3 ? last.slice(0, last.length - 3) + "..." : "...";
+  }
+  const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
+  return { lines, fontSize: fs, lineHeight, blockWidth: longest * fs * charW, blockHeight: lines.length * lineHeight };
+}
+
+// Genera SVG de un bloque de texto con fondo semi-transparente y centrado horizontal
+function renderTextBlockSvg(
+  fit: FitResult,
+  opts: {
+    canvasWidth: number;
+    centerY: number; // centro vertical del bloque
+    fontWeight: 600 | 700 | 800 | 900;
+    color: string;
+    bgColor?: string; // por defecto semi-transparente negro
+    bgOpacity?: number; // 0-1
+    bgPadding?: number;
+    bgRadius?: number;
+    filterId: string;
+  },
+): string {
+  if (fit.lines.length === 0) return "";
+  const bgPadding = opts.bgPadding ?? 24;
+  const bgRadius = opts.bgRadius ?? 18;
+  const bgColor = opts.bgColor ?? "#000000";
+  const bgOpacity = opts.bgOpacity ?? 0.55;
+
+  const bgWidth = Math.min(opts.canvasWidth - 40, fit.blockWidth + bgPadding * 2);
+  const bgHeight = fit.blockHeight + bgPadding * 2;
+  const bgX = (opts.canvasWidth - bgWidth) / 2;
+  const bgY = opts.centerY - bgHeight / 2;
+
+  // baseline de cada línea
+  const firstBaselineY = bgY + bgPadding + fit.fontSize * 0.85;
+
+  return `
+    <rect x="${bgX.toFixed(1)}" y="${bgY.toFixed(1)}" width="${bgWidth.toFixed(1)}" height="${bgHeight.toFixed(1)}"
+      rx="${bgRadius}" fill="${bgColor}" fill-opacity="${bgOpacity}" />
+    ${fit.lines.map((line, i) => `
+      <text x="${opts.canvasWidth / 2}" y="${(firstBaselineY + i * fit.lineHeight).toFixed(1)}"
+        text-anchor="middle" font-family="'Inter','Helvetica Neue',Arial,sans-serif"
+        font-weight="${opts.fontWeight}" font-size="${fit.fontSize}" fill="${opts.color}"
+        filter="url(#${opts.filterId})">${escapeXml(line)}</text>
+    `).join("")}
+  `;
+}
+
+const SVG_FILTER_DEFS = `
+  <defs>
+    <filter id="textds" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.85"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+`;
+
 // ============================================
-// SORPRÉNDEME
+// SORPRÉNDEME (audiencia: emprendedores/pymes)
 // ============================================
+
+const SORPRENDEME_SYSTEM = `Eres un estratega de contenido para WebMakerLatam, una AGENCIA digital que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología (desarrollo web, e-commerce, software a medida, chatbots con IA, apps móviles, marketing digital/SEO).
+
+AUDIENCIA PRIMARIA: dueños de negocio y emprendedores que NO necesariamente saben de tecnología. Hay que hablarles simple, en términos de BENEFICIOS DE NEGOCIO (vender más, ahorrar tiempo, atender 24/7, profesionalizarse), nunca en jerga técnica.
+
+DISTRIBUCIÓN DE CATEGORÍAS cuando NO hay contexto del usuario (respétala estrictamente):
+1. CASOS DE ÉXITO (20%): "Cómo ayudamos a [tipo negocio] a [resultado concreto]". Ej: "Cómo una panadería triplicó pedidos con un chatbot de WhatsApp"
+2. TIPS DE NEGOCIO (20%): consejos prácticos para crecer usando tecnología. Ej: "5 errores que están haciendo huir a tus clientes de tu web"
+3. ¿SABÍAS QUE...? (20%): datos/curiosidades tech para no-devs. Ej: "¿Sabías que el 70% abandona una web si tarda más de 3s en cargar?"
+4. PROBLEMA + SOLUCIÓN (20%): problema común de emprendedor + cómo lo resolvemos. Ej: "¿Pierdes ventas por responder WhatsApp a las 2am? Un chatbot con IA atiende 24/7"
+5. MOTIVACIÓN EMPRENDEDORA (15%): mindset, frases. Ej: "La diferencia entre un negocio que crece y uno que se estanca está en la ejecución"
+6. TUTORIALES DEV (5% - SOLO secundaria): técnico para devs. Ej: "Cómo usar git bisect para encontrar bugs"
+
+REGLAS:
+- Si el usuario da contexto, RESPÉTALO siempre. Ej: contexto "chatbots" → tema de chatbots para emprendedores (no para devs). Contexto "react" → puede ser técnico para devs.
+- Si NO hay contexto, elige una categoría siguiendo la distribución (mayoritariamente para emprendedores).
+- Tema concreto y accionable, no genérico. Máximo 90 caracteres.
+- Devuelve SOLO el tema en una línea, sin comillas, sin prefijos, sin explicación.`;
 
 const SorprendemeBody = z.object({
   contexto: z.string().max(300).optional(),
@@ -75,27 +221,24 @@ router.post("/community/sorprendeme", async (req, res) => {
   try {
     const body = SorprendemeBody.parse(req.body);
     const ctx = (body.contexto || "").trim();
-
     const sectionHint = body.tipo_seccion === "historia"
-      ? "una HISTORIA corta (story de 9:16 con un solo concepto digerible en 5 segundos)"
-      : "una PUBLICACIÓN de feed (carrusel o post único con desarrollo más largo)";
+      ? "una HISTORIA corta (story 9:16 con un solo concepto digerible en 5 segundos)"
+      : "una PUBLICACIÓN de feed (post único o carrusel con desarrollo más largo)";
 
     const userPrompt = ctx
-      ? `Genera UN tema concreto y específico para ${sectionHint} de WebMakerLatam (comunidad latina de devs y creadores tech). El tema DEBE estar alineado con este contexto del usuario: "${ctx}". Devuelve SOLO el tema en una línea, sin comillas, sin prefijos, sin explicación. Máximo 90 caracteres.`
-      : `Genera UN tema random concreto y específico para ${sectionHint} de WebMakerLatam (comunidad latina de devs y creadores tech). Elige aleatoriamente una de estas categorías: tutoriales, tips rápidos, herramientas, reflexiones de carrera, motivación, frameworks (react/vue/svelte/angular/next), debugging, productividad, buenas prácticas, javascript/typescript, css moderno, git, terminal, vs code, ia para devs. Sé específico y accionable, no genérico. Devuelve SOLO el tema en una línea, sin comillas, sin prefijos, sin explicación. Máximo 90 caracteres.`;
+      ? `Genera UN tema concreto para ${sectionHint} de WebMakerLatam. CONTEXTO del usuario: "${ctx}". El tema DEBE estar alineado con ese contexto y dirigido a la audiencia que el contexto sugiera (si suena emprendedor → emprendedores; si suena técnico → devs).`
+      : `Genera UN tema concreto para ${sectionHint} de WebMakerLatam, eligiendo categoría según la distribución (mayoritariamente para emprendedores/pymes, no para devs).`;
 
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 200,
-      system: "Eres un generador de ideas de contenido para devs latinos. Devuelves SOLO el tema pedido, sin formato, sin comillas, sin prefijos.",
+      system: SORPRENDEME_SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
     });
-
     const block = response.content[0];
     let tema = block && block.type === "text" ? block.text.trim() : "";
     tema = tema.replace(/^["'`]+|["'`]+$/g, "").replace(/^[-*•]\s*/, "").trim();
     if (tema.length > 120) tema = tema.slice(0, 117) + "...";
-
     res.json({ success: true, data: { tema } });
   } catch (err: any) {
     console.error("[Sorpréndeme] Error:", err);
@@ -104,106 +247,143 @@ router.post("/community/sorprendeme", async (req, res) => {
 });
 
 // ============================================
-// HISTORIAS
+// HISTORIAS - prompts orientados a emprendedores
 // ============================================
 
-const POSES_HISTORIA: Record<string, string[]> = {
-  tip_tech: [
-    "apuntando con el dedo índice hacia arriba con expresión de '¡importante!', cejas levantadas",
-    "con una bombilla de idea flotando sobre su cabeza, sonrisa de descubrimiento",
-    "tecleando en una laptop con cara concentrada, lentes brillando",
-    "sosteniendo un engranaje con mirada analítica, postura de experto",
-    "señalando un código flotante abstracto con el dedo, expresión explicativa",
+const POSES_BASE: Record<string, string[]> = {
+  educativo: [
+    "con cara de profesor explicando, una pata levantada como dando una lección, expresión amable y didáctica",
+    "señalando hacia un objeto del tema con expresión de '¡presta atención!', cejas levantadas",
+    "sosteniendo el objeto principal del tema y mostrándolo a cámara con orgullo, sonrisa de experto",
   ],
-  motivacional: [
-    "con los dos brazos levantados en pose de victoria, sonrisa enorme",
-    "en pose de superhéroe con manos en la cintura, mirada confiada",
-    "corriendo hacia adelante con sonrisa determinada, cola ondeando",
-    "saltando con un puño al aire, expresión de triunfo",
-    "meditando sentado con piernas cruzadas, aura de calma y enfoque",
+  exito: [
+    "celebrando con los dos brazos en alto, sonrisa enorme de triunfo, ojos brillantes",
+    "señalando un gráfico ascendente con cara de 'lo logramos', pose confiada",
+    "chocando los cinco al aire, mirada de victoria, cola moviéndose de alegría",
+  ],
+  problema: [
+    "con cara preocupada y pata en la cabeza señalando un objeto/situación problemática, ceño fruncido",
+    "mirando con sorpresa y un poco de pánico hacia el problema, ojos abiertos",
+    "señalando con desaprobación a un objeto roto/mal funcionando, expresión de '¡esto no!'",
+  ],
+  solucion: [
+    "con bombilla flotando sobre la cabeza y cara de '¡eureka!', sonrisa de descubrimiento",
+    "presentando con ambas patas abiertas la solución, cara de confianza y seguridad",
+    "guiñando un ojo y señalando la solución con el pulgar, expresión cómplice",
+  ],
+  motivacion: [
+    "en pose de superhéroe con manos en la cintura y mirada decidida, capa imaginaria al viento",
+    "corriendo hacia adelante con sonrisa determinada, cola ondeando, ojos al horizonte",
+    "con un puño al aire en pose motivacional, cara de '¡vamos!'",
   ],
   comunidad: [
-    "saludando con la pata levantada, sonrisa amigable tipo 'hola'",
-    "sosteniendo una taza de café humeante, relajado y acogedor",
-    "con audífonos grandes puestos frente a un micrófono, grabando contenido",
-    "riéndose con las dos patas en el estómago, expresión genuina",
-    "dando un abrazo al aire con brazos abiertos, cara de cariño",
+    "saludando con la pata levantada y sonrisa amigable tipo 'hola', acogedor",
+    "abriendo los brazos en gesto de bienvenida, cara cálida y cercana",
+    "guiñando un ojo con pulgar arriba, cara cómplice de comunidad",
   ],
 };
 
-function buildHistoriaPrompt(tipoHistoria: string, concepto: string, poseOverride?: string): string {
-  const posesDisponibles = POSES_HISTORIA[tipoHistoria] || POSES_HISTORIA.comunidad!;
-  const pose = poseOverride || posesDisponibles[Math.floor(Math.random() * posesDisponibles.length)];
+function elegirCategoriaPose(concepto: string, tipoHistoria: string): { categoria: string; pose: string } {
+  const c = concepto.toLowerCase();
+  let cat = "educativo";
+  if (/(\bdeja|pierd|error|problem|tard|lent|abandon|huir|huye|huyen|sin |no\s+(tiene|ten[ií]as|sab|funcion))/i.test(c)) cat = "problema";
+  else if (/(c[oó]mo|gu[ií]a|aprende|tutorial|3 |5 |7 |señales|tips?|trucos?)/i.test(c)) cat = "educativo";
+  else if (/(triplic|duplic|crec|aument|ventas|ingres|gan[oó]|logr[oó]|resultado|caso de [eé]xito|m[aá]s clientes)/i.test(c)) cat = "exito";
+  else if (/(soluci[oó]n|automatiz|chatbot|24\/7|resuelve|optim|mejor)/i.test(c)) cat = "solucion";
+  else if (/(motiv|mind|mentalidad|atr[eé]vete|empieza|emprend|sue[ñn]o)/i.test(c)) cat = "motivacion";
+  else if (tipoHistoria === "comunidad") cat = "comunidad";
+  else if (tipoHistoria === "motivacional") cat = "motivacion";
 
-  return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles) para una HISTORIA de red social de WebMakerLatam.
+  const poses = POSES_BASE[cat] || POSES_BASE.educativo!;
+  return { categoria: cat, pose: poses[Math.floor(Math.random() * poses.length)]! };
+}
+
+function buildHistoriaPrompt(tipoHistoria: string, concepto: string, poseOverride?: string): string {
+  const { categoria, pose: poseElegida } = elegirCategoriaPose(concepto, tipoHistoria);
+  const pose = poseOverride || poseElegida;
+
+  return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles) para una HISTORIA de red social de WebMakerLatam (agencia digital para emprendedores y pymes en LATAM).
 
 REGLA ABSOLUTA - SIN TEXTO:
-NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, texto en pantallas, texto en objetos, ni NINGÚN tipo de escritura en la imagen. CERO caracteres alfanuméricos. Si hay una pantalla o monitor, debe mostrar formas abstractas de colores o gráficos abstractos, JAMÁS texto legible. Esta regla no tiene excepciones.
+NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, ni texto en pantallas/objetos. CERO caracteres alfanuméricos. Pantallas/monitores muestran formas abstractas de colores, NUNCA texto. Esta regla no tiene excepciones.
 
 PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
-- Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta/polera verde oscuro
-- SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado ni parcialmente visible
-- El zorro debe ocupar al menos 35% del área visual CENTRAL. Es el PROTAGONISTA absoluto
-- Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
-- El zorro DEBE mantener el estilo FLAT CARTOON: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas
-- POSE Y EXPRESIÓN OBLIGATORIA para esta historia: ${pose}
+- Zorro naranja antropomórfico llamado Webi, con lentes rectangulares negros gruesos y polera verde oscuro
+- SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado
+- Ocupa al menos 35% del área visual CENTRAL. Es el PROTAGONISTA
+- Idéntico a la referencia: líneas de contorno GRUESAS negras, colores PLANOS sólidos (naranja vibrante, verde sólido), SIN degradados ni texturas en el personaje
+- POSE Y EXPRESIÓN ESPECÍFICA para esta historia (categoría narrativa: "${categoria}"): ${pose}
 
-CONTEXTO DE LA HISTORIA:
-TIPO: "${tipoHistoria}"
-CONCEPTO CLAVE: "${concepto}"
-Adapta los objetos/iconos de la escena al concepto clave, pero NUNCA escribas el concepto como texto en la imagen.
+CONTENIDO Y CONTEXTO:
+TIPO de historia: "${tipoHistoria}"
+CONCEPTO/TEMA del día: "${concepto}"
+
+OBJETOS DE LA ESCENA (REGLAS ESTRICTAS):
+- Extrae las PALABRAS CLAVE VISUALES del tema y úsalas como objetos. Ejemplos:
+  * "chatbot" / "responder" / "WhatsApp" → burbuja de chat verde estilo WhatsApp, smartphone, robot pequeño amigable
+  * "web" / "sitio" / "landing" → pantalla de laptop o monitor mostrando una web abstracta (sin texto), cursor del mouse
+  * "ventas" / "vender más" / "ingresos" → carrito de compras, gráfico de barras ascendente, signos de moneda ($)
+  * "rápido" / "carga" / "velocidad" → cohete, velocímetro, líneas de movimiento
+  * "automatización" / "IA" / "ahorro de tiempo" → engranajes interconectados, reloj, cerebro digital estilizado
+  * "clientes" / "atención" → siluetas de personas pequeñas, corazones, manos saludando
+  * "SEO" / "Google" / "encontrar" → lupa, gráfico de búsqueda, primera posición/podio
+  * "móvil" / "app" → smartphone con interfaz abstracta, notificación
+- 1 a 3 objetos máximo, todos RELACIONADOS al tema
+- Los objetos deben INTERACTUAR con el zorro o entre sí, NO flotar al azar:
+  * El zorro SEÑALA / SOSTIENE / EMPUJA / MUESTRA el objeto principal
+  * O los objetos se conectan visualmente entre sí (flechas, líneas de movimiento, sucesión)
+- ESCENA NARRATIVA: la imagen debe contar visualmente la idea del tema, no ser un montón de iconos sueltos
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
-- El 20% SUPERIOR (0px a 384px) debe ser fondo limpio SIN elementos - reservado para logo/handle
-- El 25% INFERIOR (1440px a 1920px) debe ser fondo limpio SIN elementos - reservado para CTA/sticker
-- Toda la acción visual se concentra entre el píxel 384 y 1440 (zona central)
-- NADA puede existir en las zonas reservadas: ni el zorro, ni objetos, ni sombras, ni líneas
+- 20% SUPERIOR (0px a 384px) = fondo limpio SIN elementos (reservado para texto)
+- 25% INFERIOR (1440px a 1920px) = fondo limpio SIN elementos (reservado para texto)
+- Toda la acción visual va entre los píxeles 384 y 1440 (zona central)
+- NADA puede invadir las zonas reservadas: ni el zorro, ni objetos, ni sombras
 
-COMPOSICIÓN:
-- El zorro ocupa el centro vertical de la imagen (entre píxeles 500 y 1400 aprox.)
-- 1-3 objetos/iconos flotantes acompañan al zorro, relacionados al tipo de contenido
-- Composición LIMPIA y respirable, estilo "sticker premium"
+FONDO PREMIUM (consistencia de marca):
+- Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en los bordes
+- Grid geométrico muy sutil (líneas blancas al 3-5% opacidad)
+- Glow ambiental naranja (#E86A30 al 20% opacidad) con blur amplio detrás del zorro como halo
+- 3-5 partículas de luz blancas difusas
 
-FONDO PREMIUM:
-- Color base: gradiente radial desde el centro con #1E293B (slate 800) hacia #0F172A (slate 900) en los bordes
-- Grid geométrico muy sutil (líneas blancas al 3-5% de opacidad)
-- Glow ambiental naranja (#E86A30 al 20% de opacidad) con blur amplio detrás del zorro como halo
-- Pequeñas partículas de luz flotantes (3-5 puntitos blancos difusos)
-- Las zonas superior (20%) e inferior (25%) mantienen el tono oscuro limpio sin elementos
-
-PALETA:
-- Fondo: slate oscuros (#0F172A, #1E293B) con glow naranja difuso
-- Zorro: naranja vibrante PLANO, verde sólido en camiseta, líneas gruesas negras
-- Objetos: colores planos vibrantes, contornos gruesos negros
+PALETA: fondo slate oscuro + glow naranja. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
 
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte.`;
 }
 
-const SYSTEM_PROMPT_HISTORIA_TEXTO = `Eres el Community Manager de WebMakerLatam, comunidad latina de devs. Tu mascota es Webi (zorro naranja con lentes).
+const SYSTEM_PROMPT_HISTORIA_TEXTO = `Eres el Community Manager de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología (desarrollo web, e-commerce, software a medida, chatbots con IA, apps móviles, SEO/marketing digital). Tu mascota es Webi (zorro naranja con lentes).
 
-Genera el TEXTO que va a acompañar una HISTORIA (story 9:16) en redes. Reglas estrictas:
+AUDIENCIA: dueños de negocio que NO son técnicos. Háblales en BENEFICIOS DE NEGOCIO (vender más, ahorrar tiempo, profesionalizar marca, atender 24/7), nunca jerga técnica.
 
-- copy_principal: 1-2 líneas, MÁXIMO 80 caracteres totales, hook potente para la zona superior
-- sub_copy: 1 línea de contexto, MÁXIMO 100 caracteres, para la zona inferior
-- cta: llamada a acción corta y específica, MÁXIMO 35 caracteres (ej: "Guarda este tip", "Comenta tu fav")
-- hashtags: 3-5 hashtags relevantes incluyendo al menos 1 de marca (#WebMakerLatam, #WebMaker, #ComunidadWebMaker)
+EJEMPLOS DE BUENOS COPIES:
+✅ "Tu web vende aunque tú duermas"
+✅ "Deja de perder clientes por responder tarde"
+✅ "De idea a negocio digital en 30 días"
+✅ "3 señales de que tu negocio necesita un chatbot"
 
-Tono: cercano, latino, entusiasta, sin cringe. Habla de "tú". Emojis con moderación (0-2 totales).
+EJEMPLOS MALOS (PROHIBIDOS salvo audiencia dev explícita):
+❌ "git bisect: encuentra bugs en segundos"
+❌ "Mejores hooks de React"
+❌ "Tutorial de async/await"
+
+Genera el TEXTO que va a acompañar una HISTORIA (story 9:16). Reglas:
+- copy_principal: 1-2 líneas, MÁX 70 caracteres totales, hook orientado a beneficio de negocio
+- sub_copy: 1 línea de contexto/explicación, MÁX 90 caracteres
+- cta: llamada a acción corta y específica, MÁX 30 caracteres (ej: "Agenda tu reunión", "Escríbenos", "Guarda este tip")
+- hashtags: 3-5 hashtags. Incluye al menos 1 de marca (#WebMakerLatam, #WebMaker, #ComunidadWebMaker) y 2-3 de la industria del cliente (#Emprendedores, #PymesLatam, #NegociosOnline, #Marketing, #Ecommerce, #Chatbot, #IA, #PaginasWeb, #Automatizacion, etc.)
+
+Tono: cercano, latino, accesible, sin cringe. Habla de "tú". Emojis con moderación (0-2 totales en todo el texto).
 
 FORMATO DE SALIDA: SOLO un objeto JSON válido, sin markdown, sin texto adicional. Estructura:
 { "copy_principal": "...", "sub_copy": "...", "cta": "...", "hashtags": "#... #..." }`;
 
 async function generarTextoHistoria(tipoHistoria: string, concepto: string): Promise<{
-  copy_principal: string;
-  sub_copy: string;
-  cta: string;
-  hashtags: string;
+  copy_principal: string; sub_copy: string; cta: string; hashtags: string;
 }> {
   const userMessage = `TIPO de historia: ${tipoHistoria}
-CONCEPTO: ${concepto}
+TEMA/CONCEPTO: ${concepto}
 
 Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.`;
-
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
@@ -222,6 +402,7 @@ Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.`;
   };
 }
 
+// Render texto sobre historia 9:16 con auto-fit, padding, fondos semi-transparentes y SIN emojis
 async function renderTextoEnHistoria(
   imagenBase64: string,
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string },
@@ -230,56 +411,102 @@ async function renderTextoEnHistoria(
   const meta = await sharp(imgBuffer).metadata();
   const w = meta.width || 1080;
   const h = meta.height || 1920;
+  const sidePadding = 80;
+  const innerWidth = w - sidePadding * 2;
 
-  const principalLines = wrapText(texto.copy_principal, 18);
-  const subLines = wrapText(texto.sub_copy, 26);
+  // Strip emojis para evitar cajitas con códigos unicode
+  const principal = stripEmojis(texto.copy_principal);
+  const sub = stripEmojis(texto.sub_copy);
+  const cta = stripEmojis(texto.cta);
+  const hashtags = stripEmojis(texto.hashtags);
 
-  const principalFontSize = principalLines.length === 1 ? 92 : 76;
-  const principalLineHeight = principalFontSize * 1.15;
-  const principalStartY = 130 + (principalLines.length === 1 ? 60 : 30);
+  // Zona superior reservada: 0-384px. Padding interno 60.
+  const topZoneTop = 60;
+  const topZoneBottom = 384 - 30;
+  const topZoneCenterY = (topZoneTop + topZoneBottom) / 2;
+  const topMaxHeight = topZoneBottom - topZoneTop;
 
-  const subFontSize = 38;
-  const ctaFontSize = 44;
-  const hashFontSize = 28;
+  // Zona inferior: 1440-1920 (480px). Subdividir en sub-copy + cta + hashtags.
+  const bottomTop = 1440 + 30;
+  const bottomBottom = 1920 - 50;
+  const subMaxHeight = 200;
+  const ctaButtonHeight = 92;
+  const hashMaxHeight = 80;
+  const subCenterY = bottomTop + subMaxHeight / 2;
+  const ctaCenterY = subCenterY + subMaxHeight / 2 + 20 + ctaButtonHeight / 2;
+  const hashCenterY = ctaCenterY + ctaButtonHeight / 2 + 18 + hashMaxHeight / 2;
+  void bottomBottom;
 
-  const bottomZoneTop = h * 0.78;
-  const subStartY = bottomZoneTop + 40;
-  const ctaY = subStartY + (subLines.length * subFontSize * 1.2) + 50;
-  const hashY = ctaY + 60;
+  const principalFit = principal ? fitTextBlock(principal, {
+    maxWidth: innerWidth - 48, // descontando padding del bg
+    maxHeight: topMaxHeight - 48,
+    maxFontSize: 84,
+    minFontSize: 48,
+  }) : null;
+
+  const subFit = sub ? fitTextBlock(sub, {
+    maxWidth: innerWidth - 48,
+    maxHeight: subMaxHeight - 36,
+    maxFontSize: 44,
+    minFontSize: 32,
+    charWidthRatio: 0.5, // weight 600 algo más estrecho
+  }) : null;
+
+  const ctaFit = cta ? fitTextBlock(cta, {
+    maxWidth: 540,
+    maxHeight: ctaButtonHeight - 28,
+    maxFontSize: 44,
+    minFontSize: 30,
+    charWidthRatio: 0.55,
+  }) : null;
+
+  const hashFit = hashtags ? fitTextBlock(hashtags, {
+    maxWidth: innerWidth - 24,
+    maxHeight: hashMaxHeight - 16,
+    maxFontSize: 30,
+    minFontSize: 22,
+    charWidthRatio: 0.5,
+  }) : null;
+
+  // Construir CTA tipo botón con su propio fondo (naranja sólido)
+  const ctaSvg = ctaFit ? (() => {
+    const padX = 40, padY = 18;
+    const btnWidth = Math.min(innerWidth, ctaFit.blockWidth + padX * 2);
+    const btnHeight = ctaFit.blockHeight + padY * 2;
+    const btnX = (w - btnWidth) / 2;
+    const btnY = ctaCenterY - btnHeight / 2;
+    const baselineY = btnY + padY + ctaFit.fontSize * 0.85;
+    return `
+      <rect x="${btnX.toFixed(1)}" y="${btnY.toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
+        rx="${btnHeight / 2}" fill="#E86A30" />
+      ${ctaFit.lines.map((line, i) => `
+        <text x="${w / 2}" y="${(baselineY + i * ctaFit.lineHeight).toFixed(1)}" text-anchor="middle"
+          font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="800"
+          font-size="${ctaFit.fontSize}" fill="#ffffff">${escapeXml(line)}</text>
+      `).join("")}
+    `;
+  })() : "";
 
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <filter id="ds" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
-        <feOffset dx="0" dy="3" result="offsetblur"/>
-        <feComponentTransfer><feFuncA type="linear" slope="0.85"/></feComponentTransfer>
-        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-    </defs>
-    <style>
-      .principal { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-weight: 900; fill: #ffffff; }
-      .sub { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; fill: #f1f5f9; }
-      .cta { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-weight: 800; fill: #ffffff; }
-      .hash { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-weight: 500; fill: #fb923c; }
-    </style>
-    ${principalLines.map((line, i) => `
-      <text x="${w / 2}" y="${principalStartY + i * principalLineHeight}" text-anchor="middle"
-        class="principal" font-size="${principalFontSize}" filter="url(#ds)">${escapeXml(line)}</text>
-    `).join("")}
-    ${subLines.map((line, i) => `
-      <text x="${w / 2}" y="${subStartY + i * subFontSize * 1.2}" text-anchor="middle"
-        class="sub" font-size="${subFontSize}" filter="url(#ds)">${escapeXml(line)}</text>
-    `).join("")}
-    ${texto.cta ? `<rect x="${w / 2 - 230}" y="${ctaY - 50}" width="460" height="72" rx="36" fill="#E86A30" filter="url(#ds)"/>
-    <text x="${w / 2}" y="${ctaY}" text-anchor="middle" class="cta" font-size="${ctaFontSize}">${escapeXml(texto.cta)}</text>` : ""}
-    ${texto.hashtags ? `<text x="${w / 2}" y="${hashY + 40}" text-anchor="middle" class="hash" font-size="${hashFontSize}">${escapeXml(texto.hashtags)}</text>` : ""}
+    ${SVG_FILTER_DEFS}
+    ${principalFit ? renderTextBlockSvg(principalFit, {
+      canvasWidth: w, centerY: topZoneCenterY, fontWeight: 900, color: "#ffffff",
+      bgOpacity: 0.55, bgPadding: 24, bgRadius: 22, filterId: "textds",
+    }) : ""}
+    ${subFit ? renderTextBlockSvg(subFit, {
+      canvasWidth: w, centerY: subCenterY, fontWeight: 700, color: "#f1f5f9",
+      bgOpacity: 0.5, bgPadding: 18, bgRadius: 16, filterId: "textds",
+    }) : ""}
+    ${ctaSvg}
+    ${hashFit ? renderTextBlockSvg(hashFit, {
+      canvasWidth: w, centerY: hashCenterY, fontWeight: 600, color: "#fb923c",
+      bgOpacity: 0, bgPadding: 8, bgRadius: 10, filterId: "textds",
+    }) : ""}
   </svg>`;
 
   const composed = await sharp(imgBuffer)
     .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
-    .png()
-    .toBuffer();
-
+    .png().toBuffer();
   return composed.toString("base64");
 }
 
@@ -297,13 +524,10 @@ router.post("/community/historias/generar", async (req, res) => {
     const referenceBase64 = await getFoxRefBase64();
 
     const contents = referenceBase64
-      ? [{
-          role: "user" as const,
-          parts: [
-            { inlineData: { data: referenceBase64, mimeType: "image/png" } },
-            { text: prompt },
-          ],
-        }]
+      ? [{ role: "user" as const, parts: [
+          { inlineData: { data: referenceBase64, mimeType: "image/png" } },
+          { text: prompt },
+        ] }]
       : [{ role: "user" as const, parts: [{ text: prompt }] }];
 
     const [imageResp, texto] = await Promise.all([
@@ -334,33 +558,19 @@ router.post("/community/historias/generar", async (req, res) => {
 
     const imagenDataUrl = `data:${body.texto_en_imagen ? "image/png" : mime};base64,${imgBase64}`;
 
-    const [row] = await db
-      .insert(communityContent)
-      .values({
-        kind: "historia",
-        subtype: body.tipo_historia,
-        topic: body.concepto,
-        data: {
-          tipo_historia: body.tipo_historia,
-          concepto: body.concepto,
-          pose: body.pose_override || "aleatoria",
-          texto,
-          texto_en_imagen: body.texto_en_imagen,
-        },
-        imageUrl: imagenDataUrl,
-      })
-      .returning();
+    const [row] = await db.insert(communityContent).values({
+      kind: "historia",
+      subtype: body.tipo_historia,
+      topic: body.concepto,
+      data: { tipo_historia: body.tipo_historia, concepto: body.concepto, pose: body.pose_override || "auto", texto, texto_en_imagen: body.texto_en_imagen },
+      imageUrl: imagenDataUrl,
+    }).returning();
 
     res.json({
       success: true,
       data: {
-        id: row!.id,
-        imagen: imagenDataUrl,
-        tipo_historia: body.tipo_historia,
-        concepto: body.concepto,
-        texto,
-        texto_en_imagen: body.texto_en_imagen,
-        fecha: row!.createdAt,
+        id: row!.id, imagen: imagenDataUrl, tipo_historia: body.tipo_historia,
+        concepto: body.concepto, texto, texto_en_imagen: body.texto_en_imagen, fecha: row!.createdAt,
       },
     });
   } catch (err: any) {
@@ -384,35 +594,45 @@ router.delete("/community/historias/:id", async (req, res) => {
 });
 
 // ============================================
-// DESCRIPCIONES (Claude + imágenes)
+// DESCRIPCIONES (audiencia: emprendedores)
 // ============================================
 
-const SYSTEM_PROMPT_DESC = `Eres el Community Manager oficial de WebMakerLatam, una comunidad de desarrolladores y creadores de contenido tech en Latinoamérica. Tu mascota es un zorro naranja con lentes llamado "Webi".
+const SYSTEM_PROMPT_DESC = `Eres el Community Manager oficial de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología (desarrollo web, e-commerce, software a medida, chatbots con IA, apps móviles, SEO/marketing digital). Tu mascota es Webi (zorro naranja con lentes).
 
-TU TAREA:
-Generar descripciones para publicaciones en redes sociales que mantengan VIVA la comunidad, generen engagement y refuercen la identidad de marca. Cuando se solicite carrusel, también generar los textos para cada slide.
+AUDIENCIA: dueños de negocio que NO son técnicos. Habla de BENEFICIOS DE NEGOCIO (vender más, ahorrar tiempo, profesionalizar marca, atender 24/7), nunca jerga técnica. Conecta el contenido con servicios de WebMakerLatam de forma natural, sin ser spam.
+
+EJEMPLOS BUENOS:
+✅ "Tu web vende aunque tú duermas"
+✅ "Deja de perder clientes por responder tarde"
+
+PROHIBIDOS (salvo audiencia dev explícita):
+❌ Tutoriales de código, librerías, frameworks técnicos
 
 REGLAS DE ESCRITURA (NO NEGOCIABLES):
 1. MÁXIMO 5 LÍNEAS por descripción
-2. Tono cercano, entusiasta, latino, sin cringe
-3. SIEMPRE incluir pregunta o CTA al final para generar comentarios
-4. Emojis con moderación (máximo 3-4)
-5. Evitar frases genéricas tipo "dale like y suscríbete"
-6. Hablar de "tú"
+2. Tono cercano, latino, accesible, sin cringe
+3. SIEMPRE pregunta o CTA al final para generar comentarios
+4. Emojis con moderación (0-3)
+5. Habla de "tú"
+6. Conecta con servicios de la agencia cuando sea natural
 
 ESTRUCTURA POR RED:
 📱 TIKTOK: hook + 1-2 líneas + CTA + 5-7 hashtags (mezcla nicho+trending+marca)
-📸 INSTAGRAM: hook emocional + 3-4 líneas con valor + pregunta + 8-12 hashtags
+📸 INSTAGRAM: hook emocional + 3-4 líneas con valor/storytelling + pregunta + 8-12 hashtags
 ▶️ YOUTUBE SHORTS: keyword en línea 1 + descripción clara + CTA + 4-6 hashtags (#shorts obligatorio)
 🐦 X/TWITTER: MÁX 280 caracteres totales incluyendo hashtags. Hook punzante + insight + 2-3 hashtags
 
-HASHTAGS DE MARCA: #WebMakerLatam #WebMaker #ComunidadWebMaker (al menos 2 excepto Twitter donde es opcional)
+HASHTAGS DE MARCA: #WebMakerLatam #WebMaker #ComunidadWebMaker (al menos 2 excepto Twitter donde es opcional).
+HASHTAGS DE INDUSTRIA del cliente sugeridos: #Emprendedores #PymesLatam #NegociosOnline #Marketing #Ecommerce #PaginasWeb #Chatbot #IA #Automatizacion #SEO #MarketingDigital #VendeMas #WhatsAppBusiness
 
 SLIDES DEL CARRUSEL (cuando se solicite):
-- Slide 1 (rol "portada"): hook visual potente. titulo: máx 50 chars. subtitulo: máx 70 chars
-- Slides intermedias (rol "desarrollo"): cada una con UN punto/paso/idea concreto. titulo: máx 50 chars. subtitulo: máx 90 chars
-- Slide final (rol "cta"): invita a comentar/guardar/seguir. titulo: máx 40 chars. subtitulo: máx 80 chars
-- Para post único (rol "unica"): 1 sola slide con titulo+subtitulo
+- Carrusel narrativo con esta estructura por rol:
+  * Slide 1 "portada": HOOK. Plantea pregunta/dolor. Título corto y potente. Visual: el zorro con cara de pregunta + elemento del problema.
+  * Slides "desarrollo": dependiendo del flujo, pueden ser PROBLEMA (zorro mostrando algo que no funciona), SOLUCIÓN (zorro presentando la respuesta), BENEFICIO (zorro celebrando resultado). Cada slide UN solo punto/idea.
+  * Slide última "cta": invitación a contactar/agendar/comentar. Visual: zorro con pose invitante + icono de WhatsApp o calendario.
+- Cada slide tiene "titulo" (máx 50 chars), "subtitulo" (máx 90 chars) y "prompt_visual" (descripción breve en español del foco visual y la pose del zorro para esta slide específica, sin texto, indicando objetos relevantes al tema).
+
+PUBLICACIÓN ÚNICA: 1 sola slide rol "unica" con titulo + subtitulo + prompt_visual.
 
 FORMATO DE SALIDA (JSON ESTRICTO, sin markdown, sin texto adicional):
 {
@@ -423,7 +643,7 @@ FORMATO DE SALIDA (JSON ESTRICTO, sin markdown, sin texto adicional):
     "twitter": { "post_completo": "..." }
   },
   "slides": [
-    { "numero": 1, "rol": "portada", "titulo": "...", "subtitulo": "...", "prompt_visual": "descripción breve del foco visual de esta slide en español, sin texto" }
+    { "numero": 1, "rol": "portada", "titulo": "...", "subtitulo": "...", "prompt_visual": "..." }
   ]
 }
 
@@ -452,69 +672,83 @@ function buildSlidePrompt(
   tipoContenido: string,
   slide: SlidePlan,
   formato: "1:1" | "4:5",
+  totalSlides: number,
 ): string {
   const dims = formato === "1:1" ? "1080x1080 píxeles formato cuadrado 1:1" : "1080x1350 píxeles formato vertical 4:5";
 
   const rolDescripcion = {
-    portada: "PORTADA del carrusel: el zorro Webi es protagonista absoluto, expresión de hook potente que invita a deslizar. El zorro ocupa al menos 40% del área central.",
-    desarrollo: "SLIDE DE DESARROLLO: enfocada en el contenido (iconos, diagramas, elementos visuales del tema). El zorro Webi puede estar pequeño en una esquina o ausente. Lo importante es ilustrar el punto del slide.",
-    cta: "SLIDE FINAL DE CTA: el zorro Webi es protagonista, invitando a comentar/seguir/guardar con expresión cálida y brazos abiertos o señalando hacia adelante. El zorro ocupa al menos 40% del área central.",
-    unica: "PUBLICACIÓN ÚNICA: el zorro Webi es protagonista absoluto en una escena que ilustra el tema. El zorro ocupa al menos 35% del área central.",
+    portada: "PORTADA del carrusel. El zorro Webi tiene CARA DE PREGUNTA / CURIOSIDAD / hook (cabeza ligeramente inclinada, una pata en el mentón, o señalando con expresión de '¿sabías que...?'). Aparece junto a un ELEMENTO VISUAL del problema o tema. Es el HOOK que invita a deslizar. El zorro ocupa al menos 40% del área central.",
+    desarrollo: `SLIDE DE DESARROLLO ${slide.numero} de ${totalSlides}. Según el subtítulo de esta slide, decide si es: PROBLEMA (zorro con cara preocupada señalando algo que no funciona), SOLUCIÓN (zorro presentando con confianza la respuesta, pose de '¡eureka!' con bombilla o pulgar arriba), o BENEFICIO (zorro celebrando un resultado, gráfico ascendente, expresión de triunfo). El zorro debe INTERACTUAR con el objeto principal del tema (señalándolo, sosteniéndolo, empujándolo). Ocupa 30-40% del área central.`,
+    cta: "SLIDE FINAL DE CTA. El zorro Webi en pose INVITANTE: brazos abiertos, sonrisa cálida, una pata extendida hacia el espectador, o señalando un icono de WhatsApp / burbuja de chat / calendario. Expresión de cercanía y entusiasmo, invitando a escribir/agendar/contactar. El zorro ocupa al menos 40% del área central.",
+    unica: "PUBLICACIÓN ÚNICA. El zorro Webi es protagonista absoluto en una escena que ilustra el tema. Su pose y expresión deben coincidir con el tono del subtítulo (pregunta, problema, solución, celebración). El zorro INTERACTÚA con el objeto principal del tema (señala, sostiene, muestra). Ocupa al menos 35% del área central.",
   }[slide.rol];
 
-  const enfoqueVisual = slide.prompt_visual || `escena que ilustra: ${slide.titulo}`;
+  const enfoqueVisual = slide.prompt_visual
+    ? `FOCO VISUAL ESPECÍFICO de esta slide (del estratega de contenido): "${slide.prompt_visual}". Sigue esta dirección.`
+    : `Ilustra: "${slide.titulo}" — extrae las palabras clave visuales de este título y úsalas como objetos.`;
 
-  return `Genera una ilustración en ${dims} para una publicación de WebMakerLatam.
+  return `Genera una ilustración en ${dims} para una publicación de WebMakerLatam (agencia digital para emprendedores y pymes en LATAM).
 
 REGLA ABSOLUTA - SIN TEXTO:
-NO incluyas NINGUNA letra, palabra, número, rótulo ni texto en la imagen. CERO caracteres alfanuméricos. Si hay pantallas, deben mostrar formas abstractas, nunca texto legible.
+NO incluyas NINGUNA letra, palabra, número, rótulo ni texto en la imagen. CERO caracteres alfanuméricos. Pantallas muestran formas abstractas, NUNCA texto legible.
 
 PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
-- Zorro naranja antropomórfico llamado Webi, con lentes rectangulares negros gruesos y polera verde oscuro
-- Estilo FLAT CARTOON: líneas de contorno GRUESAS negras, colores PLANOS sólidos (naranja vibrante, verde), SIN degradados ni texturas en el personaje
-- Debe verse IDÉNTICO a la referencia en proporciones, estilo y nivel de detalle
+- Zorro naranja antropomórfico Webi, lentes rectangulares negros gruesos, polera verde oscuro
+- Estilo flat cartoon: líneas de contorno GRUESAS negras, colores PLANOS sólidos, SIN degradados ni texturas en el personaje
+- IDÉNTICO a la referencia en proporciones y nivel de detalle, sin importar la pose
 
-ROL DE ESTA SLIDE:
+ROL NARRATIVO DE ESTA SLIDE:
 ${rolDescripcion}
 
-TEMA GENERAL DE LA PUBLICACIÓN: "${tema}" (${tipoContenido})
-ENFOQUE VISUAL DE ESTA SLIDE ESPECÍFICA: ${enfoqueVisual}
+CONTEXTO DE LA PUBLICACIÓN:
+TEMA general: "${tema}" (${tipoContenido})
+TÍTULO de esta slide: "${slide.titulo}"
+SUBTÍTULO de esta slide: "${slide.subtitulo}"
+${enfoqueVisual}
+
+OBJETOS DE LA ESCENA (REGLAS ESTRICTAS):
+- Extrae las PALABRAS CLAVE VISUALES del tema y del foco de esta slide. Mapeo:
+  * chatbot/responder/WhatsApp → burbuja de chat verde estilo WhatsApp + smartphone + robot pequeño
+  * web/sitio/landing → laptop o monitor con web abstracta sin texto + cursor
+  * ventas/vender/ingresos → carrito + gráfico de barras ascendente + signos $
+  * rápido/carga/velocidad → cohete + velocímetro + líneas de movimiento
+  * automatización/IA/ahorro de tiempo → engranajes + reloj + cerebro digital
+  * clientes/atención → siluetas pequeñas de personas + corazones + manos saludando
+  * SEO/Google/encontrar → lupa + podio + gráfico
+  * móvil/app → smartphone con interfaz abstracta + notificación
+  * agendar/reunión → calendario + checkmark
+- 1 a 3 objetos máximo, TODOS relacionados al tema y al rol de la slide
+- Los objetos INTERACTÚAN con el zorro o entre sí (el zorro señala/sostiene/empuja, o flechas conectan los objetos), NUNCA flotan al azar
+- ESCENA NARRATIVA, no un montón de iconos sueltos
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO):
-- 22% SUPERIOR: fondo limpio sin elementos (reservado para título)
-- 22% INFERIOR: fondo limpio sin elementos (reservado para subtítulo/CTA)
-- Toda la acción visual se concentra en el centro
+- 22% SUPERIOR: fondo limpio sin elementos
+- 22% INFERIOR: fondo limpio sin elementos
+- Toda la acción visual va en el centro
 
-FONDO PREMIUM:
-- Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en los bordes
+FONDO PREMIUM (consistencia entre todas las slides del carrusel):
+- Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en bordes
 - Grid geométrico muy sutil (líneas blancas al 3-5% opacidad)
 - Glow ambiental naranja (#E86A30 al 20% opacidad) detrás del foco como halo
 - 3-5 partículas de luz blancas difusas
 
-PALETA: Fondo slate oscuro con glow naranja. Zorro: naranja PLANO + verde sólido + líneas negras gruesas. Objetos: colores planos vibrantes con contornos negros.
+PALETA: fondo slate oscuro + glow naranja. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
 
-CONSISTENCIA: Esta slide debe verse del MISMO universo visual que las demás del carrusel (mismo fondo, paleta, estilo).
+CONSISTENCIA DEL CARRUSEL: esta slide debe verse del MISMO universo visual que las demás (mismo fondo, paleta, estilo flat cartoon). El zorro siempre IDÉNTICO a la referencia.
 
 RECUERDA: CERO TEXTO. Ni una letra ni número en NINGUNA parte.`;
 }
 
 async function generarImagenSlide(
-  tema: string,
-  tipoContenido: string,
-  slide: SlidePlan,
-  formato: "1:1" | "4:5",
-  referenceBase64: string | null,
+  tema: string, tipoContenido: string, slide: SlidePlan,
+  formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
 ): Promise<string> {
-  const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato);
-
+  const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides);
   const contents = referenceBase64
-    ? [{
-        role: "user" as const,
-        parts: [
-          { inlineData: { data: referenceBase64, mimeType: "image/png" } },
-          { text: prompt },
-        ],
-      }]
+    ? [{ role: "user" as const, parts: [
+        { inlineData: { data: referenceBase64, mimeType: "image/png" } },
+        { text: prompt },
+      ] }]
     : [{ role: "user" as const, parts: [{ text: prompt }] }];
 
   const response = await ai.models.generateContent({
@@ -522,7 +756,6 @@ async function generarImagenSlide(
     contents,
     config: { responseModalities: ["TEXT", "IMAGE"] },
   });
-
   const imagePart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
   if (!imagePart?.inlineData?.data) {
     throw new Error(`Gemini no devolvió imagen para slide ${slide.numero}`);
@@ -532,16 +765,17 @@ async function generarImagenSlide(
 
 async function generarImagenSlideConRetry(
   tema: string, tipoContenido: string, slide: SlidePlan,
-  formato: "1:1" | "4:5", referenceBase64: string | null,
+  formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
 ): Promise<string> {
   try {
-    return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64);
+    return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
   } catch (e) {
     console.warn(`[Descripciones] retry slide ${slide.numero}:`, (e as Error).message);
-    return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64);
+    return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
   }
 }
 
+// Render texto sobre slide (1:1 o 4:5) con auto-fit, padding y fondos semi-transparentes, SIN emojis
 async function renderTextoEnSlide(
   imagenBase64: string,
   slide: SlidePlan,
@@ -550,39 +784,47 @@ async function renderTextoEnSlide(
   const meta = await sharp(imgBuffer).metadata();
   const w = meta.width || 1080;
   const h = meta.height || 1350;
+  const sidePadding = 80;
+  const innerWidth = w - sidePadding * 2;
 
-  const tituloLines = wrapText(slide.titulo, 22);
-  const subLines = wrapText(slide.subtitulo, 30);
+  // Zonas reservadas según formato
+  const isCuadrado = Math.abs(w - h) < 50;
+  const topZoneEnd = isCuadrado ? 200 : 250;
+  const bottomZoneStart = isCuadrado ? h - 200 : h - 250;
 
-  const tituloFontSize = tituloLines.length === 1 ? 72 : 60;
-  const tituloLineHeight = tituloFontSize * 1.15;
-  const tituloStartY = 90 + tituloFontSize;
+  const topCenterY = topZoneEnd / 2 + 20;
+  const topMaxHeight = topZoneEnd - 40;
+  const bottomCenterY = (bottomZoneStart + h) / 2;
+  const bottomMaxHeight = (h - bottomZoneStart) - 40;
 
-  const subFontSize = 36;
-  const subLineHeight = subFontSize * 1.25;
-  const subStartY = h - (h * 0.18) + 20;
+  const titulo = stripEmojis(slide.titulo);
+  const subtitulo = stripEmojis(slide.subtitulo);
+
+  const tituloFit = titulo ? fitTextBlock(titulo, {
+    maxWidth: innerWidth - 48,
+    maxHeight: topMaxHeight - 48,
+    maxFontSize: 76,
+    minFontSize: 48,
+  }) : null;
+
+  const subFit = subtitulo ? fitTextBlock(subtitulo, {
+    maxWidth: innerWidth - 48,
+    maxHeight: bottomMaxHeight - 36,
+    maxFontSize: 44,
+    minFontSize: 28,
+    charWidthRatio: 0.5,
+  }) : null;
 
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <filter id="ds2" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur in="SourceAlpha" stdDeviation="5"/>
-        <feOffset dx="0" dy="3" result="offsetblur"/>
-        <feComponentTransfer><feFuncA type="linear" slope="0.85"/></feComponentTransfer>
-        <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-    </defs>
-    <style>
-      .titulo { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-weight: 900; fill: #ffffff; }
-      .sub { font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; fill: #f1f5f9; }
-    </style>
-    ${tituloLines.map((line, i) => `
-      <text x="${w / 2}" y="${tituloStartY + i * tituloLineHeight}" text-anchor="middle"
-        class="titulo" font-size="${tituloFontSize}" filter="url(#ds2)">${escapeXml(line)}</text>
-    `).join("")}
-    ${subLines.map((line, i) => `
-      <text x="${w / 2}" y="${subStartY + i * subLineHeight}" text-anchor="middle"
-        class="sub" font-size="${subFontSize}" filter="url(#ds2)">${escapeXml(line)}</text>
-    `).join("")}
+    ${SVG_FILTER_DEFS}
+    ${tituloFit ? renderTextBlockSvg(tituloFit, {
+      canvasWidth: w, centerY: topCenterY, fontWeight: 900, color: "#ffffff",
+      bgOpacity: 0.55, bgPadding: 24, bgRadius: 22, filterId: "textds",
+    }) : ""}
+    ${subFit ? renderTextBlockSvg(subFit, {
+      canvasWidth: w, centerY: bottomCenterY, fontWeight: 700, color: "#f1f5f9",
+      bgOpacity: 0.5, bgPadding: 18, bgRadius: 16, filterId: "textds",
+    }) : ""}
   </svg>`;
 
   const composed = await sharp(imgBuffer)
@@ -607,8 +849,8 @@ CANTIDAD de slides: ${cantidad}
 
 Genera el JSON con "redes" (solo las solicitadas) y "slides" (${cantidad} slide${cantidad > 1 ? "s" : ""}).
 ${body.tipo_publicacion === "carrusel"
-  ? `La slide 1 debe ser rol "portada", la última rol "cta", las del medio rol "desarrollo".`
-  : `La única slide debe ser rol "unica".`}
+  ? `La slide 1 es rol "portada" (HOOK con pregunta/dolor), la última rol "cta" (invitación a contactar). Las del medio rol "desarrollo" siguiendo flujo PROBLEMA → SOLUCIÓN → BENEFICIO según corresponda. Cada slide debe tener un "prompt_visual" claro indicando la pose del zorro y los objetos a mostrar.`
+  : `La única slide es rol "unica". Incluye un "prompt_visual" claro.`}
 Solo el JSON.`;
 
     const claudeResp = await anthropic.messages.create({
@@ -635,7 +877,7 @@ Solo el JSON.`;
           rol: (s.rol as SlideRol) || (cantidad === 1 ? "unica" : (i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo")),
           titulo: String(s.titulo || "").slice(0, 70),
           subtitulo: String(s.subtitulo || "").slice(0, 110),
-          prompt_visual: s.prompt_visual ? String(s.prompt_visual).slice(0, 200) : undefined,
+          prompt_visual: s.prompt_visual ? String(s.prompt_visual).slice(0, 280) : undefined,
         }))
       : Array.from({ length: cantidad }, (_, i): SlidePlan => ({
           numero: i + 1,
@@ -647,7 +889,7 @@ Solo el JSON.`;
     const referenceBase64 = await getFoxRefBase64();
 
     const settled = await Promise.allSettled(
-      slidesPlan.map((s) => generarImagenSlideConRetry(body.tema, body.tipo_contenido, s, formato, referenceBase64)),
+      slidesPlan.map((s) => generarImagenSlideConRetry(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad)),
     );
 
     const imagenes = await Promise.all(
@@ -655,12 +897,9 @@ Solo el JSON.`;
         const r = settled[idx]!;
         if (r.status === "rejected") {
           return {
-            numero_slide: slide.numero,
-            rol: slide.rol,
-            titulo: slide.titulo,
-            subtitulo: slide.subtitulo,
-            imagen: null,
-            error: (r.reason as Error)?.message || "Falló la generación",
+            numero_slide: slide.numero, rol: slide.rol,
+            titulo: slide.titulo, subtitulo: slide.subtitulo,
+            imagen: null, error: (r.reason as Error)?.message || "Falló la generación",
           };
         }
         let imgBase64 = r.value;
@@ -672,10 +911,8 @@ Solo el JSON.`;
           }
         }
         return {
-          numero_slide: slide.numero,
-          rol: slide.rol,
-          titulo: slide.titulo,
-          subtitulo: slide.subtitulo,
+          numero_slide: slide.numero, rol: slide.rol,
+          titulo: slide.titulo, subtitulo: slide.subtitulo,
           imagen: `data:image/png;base64,${imgBase64}`,
         };
       }),
@@ -688,14 +925,9 @@ Solo el JSON.`;
       subtype: body.tipo_contenido,
       topic: body.tema,
       data: {
-        tema: body.tema,
-        tipo_contenido: body.tipo_contenido,
-        redes: body.redes,
-        tipo_publicacion: body.tipo_publicacion,
-        cantidad_slides: cantidad,
-        texto_en_imagen: body.texto_en_imagen,
-        descripciones,
-        slides_textos: slidesPlan,
+        tema: body.tema, tipo_contenido: body.tipo_contenido, redes: body.redes,
+        tipo_publicacion: body.tipo_publicacion, cantidad_slides: cantidad,
+        texto_en_imagen: body.texto_en_imagen, descripciones, slides_textos: slidesPlan,
       },
       imageUrl: imagenes.find((i) => i.imagen)?.imagen || null,
     }).returning();
@@ -703,14 +935,9 @@ Solo el JSON.`;
     res.json({
       success: true,
       data: {
-        id: row!.id,
-        fecha: row!.createdAt,
-        tema: body.tema,
-        tipo_contenido: body.tipo_contenido,
-        tipo_publicacion: body.tipo_publicacion,
-        texto_en_imagen: body.texto_en_imagen,
-        imagenes,
-        descripciones,
+        id: row!.id, fecha: row!.createdAt, tema: body.tema,
+        tipo_contenido: body.tipo_contenido, tipo_publicacion: body.tipo_publicacion,
+        texto_en_imagen: body.texto_en_imagen, imagenes, descripciones,
       },
     });
   } catch (err: any) {
@@ -719,7 +946,6 @@ Solo el JSON.`;
   }
 });
 
-// Reintentar UNA slide específica del carrusel
 const ReintentarSlideBody = z.object({
   tema: z.string().min(1).max(300),
   tipo_contenido: z.string().min(1),
@@ -730,30 +956,26 @@ const ReintentarSlideBody = z.object({
   prompt_visual: z.string().max(300).optional(),
   formato: z.enum(["1:1", "4:5"]).default("4:5"),
   texto_en_imagen: z.boolean().optional().default(false),
+  total_slides: z.number().int().min(1).max(5).optional().default(1),
 });
 
 router.post("/community/descripciones/reintentar-slide", async (req, res) => {
   try {
     const body = ReintentarSlideBody.parse(req.body);
     const slide: SlidePlan = {
-      numero: body.numero_slide,
-      rol: body.rol,
-      titulo: body.titulo,
-      subtitulo: body.subtitulo,
-      prompt_visual: body.prompt_visual,
+      numero: body.numero_slide, rol: body.rol,
+      titulo: body.titulo, subtitulo: body.subtitulo, prompt_visual: body.prompt_visual,
     };
     const referenceBase64 = await getFoxRefBase64();
-    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slide, body.formato, referenceBase64);
+    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slide, body.formato, referenceBase64, body.total_slides);
     if (body.texto_en_imagen) {
       try { imgBase64 = await renderTextoEnSlide(imgBase64, slide); } catch {}
     }
     res.json({
       success: true,
       data: {
-        numero_slide: slide.numero,
-        rol: slide.rol,
-        titulo: slide.titulo,
-        subtitulo: slide.subtitulo,
+        numero_slide: slide.numero, rol: slide.rol,
+        titulo: slide.titulo, subtitulo: slide.subtitulo,
         imagen: `data:image/png;base64,${imgBase64}`,
       },
     });

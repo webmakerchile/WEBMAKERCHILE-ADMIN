@@ -6,3 +6,9 @@ id = "8tC4P84P4Jwpu5q3P-U9m"
 uri = "file://artifacts/api-server/public/test-cover-preview.png"
 type = "image"
 title = "Portada v3 - Con nueva referencia dark"
+
+[[outputs]]
+id = "nllxx5rxSYYSFk2XXsrrc"
+uri = "file://attached_assets/render-tests/historia-render-test.png"
+type = "image"
+title = "Test de renderizado: emojis quitados, auto-fit, fondos y CTA pill"
