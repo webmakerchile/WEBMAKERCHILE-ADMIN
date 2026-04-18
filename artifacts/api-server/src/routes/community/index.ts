@@ -45,13 +45,32 @@ async function getFoxRefBase64(): Promise<string | null> {
 // ============================================
 type GalleryEntry = { file: string; rol: SlideRol | "any"; tags: string[] };
 const STYLE_GALLERY: GalleryEntry[] = [
+  // PORTADAS — hooks, preguntas, problema inicial
   { file: "portada_01.png", rol: "portada", tags: ["hook", "laptop", "cohete", "señalando"] },
+  { file: "portada_espanta_clientes.png", rol: "portada", tags: ["web", "espanta", "clientes", "laptop", "x", "rojo", "señalando", "menton", "pensativo"] },
+  { file: "portada_haciendo_solo.png", rol: "portada", tags: ["solo", "shrug", "manos", "arriba", "agobio", "multitask", "tareas", "ia", "automatizar", "celular", "documento", "reloj"] },
+  { file: "portada_dinero_pensativo.png", rol: "portada", tags: ["dinero", "ingresos", "cofre", "tesoro", "monedas", "menton", "pensativo", "trampa", "proyecto"] },
+
+  // DESARROLLO — explicación de problemas/soluciones
   { file: "desarrollo_problema_lento.png", rol: "desarrollo", tags: ["problema", "lento", "laptop", "preocupado"] },
+  { file: "desarrollo_lento_snail.png", rol: "desarrollo", tags: ["lento", "carga", "snail", "caracol", "telaraña", "laptop", "preocupado", "señalando"] },
   { file: "desarrollo_movil_roto.png", rol: "desarrollo", tags: ["movil", "celular", "responsive", "preocupado"] },
+  { file: "desarrollo_movil_celular.png", rol: "desarrollo", tags: ["movil", "celular", "smartphone", "responsive", "mostrando", "señalando", "preocupado"] },
   { file: "desarrollo_confusion_shrug.png", rol: "desarrollo", tags: ["confusion", "shrug", "interrogante", "duda"] },
-  { file: "desarrollo_lupa.png", rol: "desarrollo", tags: ["lupa", "buscar", "investigar", "analizar"] },
+  { file: "desarrollo_lupa.png", rol: "desarrollo", tags: ["lupa", "buscar", "investigar", "analizar", "seo", "404"] },
   { file: "desarrollo_abandonada.png", rol: "desarrollo", tags: ["abandono", "carrito", "triste", "vacio"] },
+  { file: "desarrollo_chat_link_roto.png", rol: "desarrollo", tags: ["chat", "contacto", "link", "roto", "celular", "interrogante", "competencia", "preocupado"] },
+  { file: "desarrollo_chat_lento.png", rol: "desarrollo", tags: ["chat", "lento", "respuesta", "celular", "interrogante", "tarde", "competencia"] },
+  { file: "desarrollo_overwhelm.png", rol: "desarrollo", tags: ["overwhelm", "agobio", "manos", "arriba", "multiples", "chats", "celular", "tareas", "tiempo", "reloj", "perdiendo", "clientes"] },
+  { file: "desarrollo_chatbot_solucion.png", rol: "desarrollo", tags: ["chatbot", "ia", "solucion", "automatizar", "celular", "engranaje", "gear", "thumbs", "pulgar", "responder"] },
+  { file: "desarrollo_negocio_crece.png", rol: "desarrollo", tags: ["crecimiento", "exito", "thumbs", "pulgar", "doble", "grafico", "subir", "ventas", "laptop", "engranaje", "vender", "automatizar", "feliz"] },
+  { file: "desarrollo_ciclo_agotador.png", rol: "desarrollo", tags: ["ciclo", "agotamiento", "cansado", "caminando", "engranajes", "casa", "monedas", "reloj", "lupa", "loop", "repetir"] },
+  { file: "desarrollo_membresia_escudo.png", rol: "desarrollo", tags: ["membresia", "escudo", "seguro", "proteccion", "planos", "checklist", "ingreso", "recurrente", "ofrecer"] },
+  { file: "desarrollo_ingresos_predecibles.png", rol: "desarrollo", tags: ["ingresos", "predecibles", "laptop", "grafico", "subir", "monedas", "thumbs", "pulgar", "señalando", "plataforma"] },
+
+  // CTA — cierre, invitación a contactar
   { file: "cta_whatsapp.png", rol: "cta", tags: ["cta", "whatsapp", "feliz", "invitando", "contacto"] },
+  { file: "cta_brazos_abiertos.png", rol: "cta", tags: ["cta", "brazos", "abiertos", "invitando", "whatsapp", "calendario", "agenda", "membresia", "ingresos", "fijos", "feliz"] },
 ];
 
 const galleryCache = new Map<string, string>();
@@ -67,7 +86,8 @@ async function loadGalleryFile(file: string): Promise<string | null> {
   }
 }
 
-// Selecciona 1-2 referencias canon más relevantes según rol y tema
+// Selecciona 2-3 referencias canon: la mejor por score semántico + 1-2 adicionales
+// para dar variedad de pose y forzar consistencia de estilo en primera generación.
 async function pickCanonReferences(
   rol: SlideRol,
   tema: string,
@@ -77,17 +97,28 @@ async function pickCanonReferences(
   const candidatas = STYLE_GALLERY.filter((g) => g.rol === rol);
   if (candidatas.length === 0) return [];
 
-  // Score por coincidencia de tags en tema/prompt_visual
+  // Score por coincidencia de tags en tema/prompt_visual (con desempate aleatorio)
   const scored = candidatas.map((g) => ({
     g,
     score: g.tags.reduce((acc, tag) => acc + (haystack.includes(tag) ? 1 : 0), 0),
+    rand: Math.random(),
   }));
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => (b.score - a.score) || (b.rand - a.rand));
 
-  // Siempre incluir la mejor; si hay 2+ desarrollo y ninguna matchea fuerte, agregar una segunda como variedad de pose
+  // Mejor match (semántico) + 1-2 adicionales aleatorias del mismo rol
+  // para dar al modelo múltiples anclas de estilo (cara, glasses, camiseta verde, líneas negras)
   const elegidas: GalleryEntry[] = [scored[0]!.g];
-  if (rol === "desarrollo" && scored.length > 1 && scored[0]!.score === 0) {
-    elegidas.push(scored[1]!.g);
+  const restantes = scored.slice(1);
+  // Mezclar las restantes para variedad
+  for (let i = restantes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [restantes[i], restantes[j]] = [restantes[j]!, restantes[i]!];
+  }
+  // Objetivo: 3 referencias para portada/desarrollo (más anclas), 2 para cta (suelen ser más simples)
+  const objetivo = rol === "cta" ? 2 : 3;
+  for (const r of restantes) {
+    if (elegidas.length >= objetivo) break;
+    elegidas.push(r.g);
   }
 
   const cargadas = await Promise.all(elegidas.map((e) => loadGalleryFile(e.file)));
