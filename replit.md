@@ -62,6 +62,9 @@ artifacts-monorepo/
   - Frontend: studio.tsx (recording studio page) + ai-video-ideas-tab.tsx (ideas management component)
   - Uses inline apiFetch (fetch with credentials: "include") instead of apiRequest
 - **Schedule Manager**: Schedule videos for automatic publishing to Google Drive
+- **Generador de Comunidad**:
+  - **Descripciones (Carruseles)**: Multi-slide carrusel generation with per-slide retry, ZIP download, granular regenerate controls
+  - **Historias (Stories 9:16)**: Single frame ("única") or narrative series (2–5 frames). Series use role-based structure: 2=[hook,cta], 3=[hook,desarrollo,cta], 4=[hook,problema,solucion,cta], 5=[hook,contexto,problema,solucion,cta]. Each role has its own pose+visualHint and CTA style (microCTA "Sigue viendo" for intermediate frames, conversion CTA with WhatsApp for final). "Auto" mode calls Claude (`/community/historias/detectar-formato`) to recommend formato + cantidad based on the concept (e.g., "N tips" → N+2 frames). Frames are generated in parallel via `Promise.allSettled` so partial failures surface as per-frame retry buttons. UI shows carousel thumbnail strip with role labels, frame counter pill (N/Total) rendered top-right, ZIP download with textos.txt.
 
 ### Integrations
 - **Gemini AI**: Image generation (covers/portadas) with reference image support via Replit AI Integrations proxy

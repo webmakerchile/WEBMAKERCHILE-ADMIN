@@ -716,12 +716,80 @@ function elegirCategoriaPose(concepto: string, tipoHistoria: string): { categori
   return { categoria: cat, pose: poses[Math.floor(Math.random() * poses.length)]! };
 }
 
-function buildHistoriaPrompt(tipoHistoria: string, concepto: string, poseOverride?: string): string {
+// ============================================
+// HISTORIAS — soporte para FORMATO ÚNICO o SERIE de 2-5 frames
+// ============================================
+
+type RolFrame = "unica" | "hook" | "contexto" | "problema" | "desarrollo" | "solucion" | "cta";
+interface FrameContext {
+  numero: number;        // 1..N
+  total: number;         // total de frames en la serie
+  rol: RolFrame;
+}
+
+// Estructura narrativa por cantidad de frames en una serie de stories
+function getEstructuraSerie(n: number): RolFrame[] {
+  switch (n) {
+    case 2: return ["hook", "cta"];
+    case 3: return ["hook", "desarrollo", "cta"];
+    case 4: return ["hook", "problema", "solucion", "cta"];
+    case 5: return ["hook", "contexto", "problema", "solucion", "cta"];
+    default: return ["hook", "desarrollo", "cta"];
+  }
+}
+
+// Pose y elementos visuales del zorro según el rol del frame en la serie
+const POSE_POR_ROL: Record<RolFrame, { pose: string; visualHint: string }> = {
+  hook: {
+    pose: "expresión de pregunta/curiosidad: cabeza ligeramente inclinada, una pata en el mentón o señalando hacia el espectador, cejas levantadas. Cara amigable que invita a seguir mirando.",
+    visualHint: "ícono pequeño relacionado al tema acompañado de un símbolo sutil de interrogación visual (no texto)",
+  },
+  contexto: {
+    pose: "atento y didáctico: una pata abierta señalando un dato visual, expresión seria pero cercana, postura erguida.",
+    visualHint: "ícono de dato/estadística (gráfico de barras simple, lupa, ícono porcentual) — sin texto",
+  },
+  problema: {
+    pose: "preocupado/frustrado: cejas fruncidas hacia abajo, una pata en la cabeza o cruzada al pecho, cuerpo levemente encorvado. Muestra el dolor del problema sin caricaturizar.",
+    visualHint: "objeto del tema con una X roja o un pequeño símbolo de alerta naranja",
+  },
+  desarrollo: {
+    pose: "explicando con calma: una pata abierta hacia el espectador como en una mini-clase, expresión confiada y educativa.",
+    visualHint: "objeto del tema en estado neutro (lupa, libro, engranaje, monitor)",
+  },
+  solucion: {
+    pose: "confiado y resolutivo: bombilla de idea brillante sobre la cabeza o gesto de '¡ya está!', sonrisa satisfecha, postura erguida con energía positiva.",
+    visualHint: "objeto solución con un check verde o un brillo dorado/naranja positivo",
+  },
+  cta: {
+    pose: "saludando con la pata, sonriente y muy invitante. Postura abierta y receptiva, mostrando un teléfono o burbuja de WhatsApp verde como invitando a contactar.",
+    visualHint: "ícono verde de WhatsApp y/o ícono de calendario representando 'agendar reunión'",
+  },
+  unica: {
+    pose: "definida por el sistema según el concepto",
+    visualHint: "definido por el sistema según el concepto",
+  },
+};
+
+function buildHistoriaPrompt(
+  tipoHistoria: string,
+  concepto: string,
+  poseOverride?: string,
+  frame?: FrameContext,
+): string {
   const { categoria, pose: poseElegida } = elegirCategoriaPose(concepto, tipoHistoria);
-  const pose = poseOverride || poseElegida;
+  let pose = poseOverride || poseElegida;
+  let visualHintSerie = "";
+  let frameRoleHeader = "";
+
+  if (frame && frame.rol !== "unica") {
+    const conf = POSE_POR_ROL[frame.rol];
+    pose = poseOverride || conf.pose;
+    visualHintSerie = `\nPISTA VISUAL adicional para este rol: ${conf.visualHint}.`;
+    frameRoleHeader = `\nEste frame forma parte de una SERIE de ${frame.total} stories conectadas. Frame actual: ${frame.numero} de ${frame.total} con rol "${frame.rol}". Mantén EXACTAMENTE el mismo gradiente de fondo, mismo glow naranja y mismas partículas que un story estándar — los frames de la serie deben verse como un set cohesivo. Solo cambia la POSE/EXPRESIÓN del zorro y los OBJETOS DE APOYO según el rol indicado.\n`;
+  }
 
   return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles) para una HISTORIA de red social de WebMakerLatam (agencia digital para emprendedores y pymes en LATAM).
-
+${frameRoleHeader}
 REGLA ABSOLUTA - SIN TEXTO:
 NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, ni texto en pantallas/objetos. CERO caracteres alfanuméricos. Pantallas/monitores muestran formas abstractas de colores, NUNCA texto. Esta regla no tiene excepciones.
 
@@ -748,7 +816,7 @@ OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
   * "clientes" / "atención" → 2-3 siluetas pequeñas O corazones
   * "SEO" / "Google" / "encontrar" → lupa O podio
   * "móvil" / "app" → smartphone con interfaz abstracta
-- MÁXIMO ABSOLUTO: 2 objetos de apoyo (no 3, no más). En historias el zorro es el rey.
+- MÁXIMO ABSOLUTO: 2 objetos de apoyo (no 3, no más). En historias el zorro es el rey.${visualHintSerie}
 - POSICIÓN DE LOS OBJETOS: a los LADOS del zorro (izquierda y/o derecha), a su altura, NUNCA detrás de él, NUNCA encima ni debajo invadiendo otra zona.
 - Los objetos PUEDEN ser señalados/sostenidos por el zorro, pero su silueta debe verse completa y separada del zorro.
 - PROHIBIDO: amontonar iconos, llenar el fondo de elementos, hacer un collage. Si dudas, elimina objetos.
@@ -861,18 +929,36 @@ function excedeLimites(t: { copy_principal: string; sub_copy: string; cta: strin
   return issues;
 }
 
-async function generarTextoHistoria(tipoHistoria: string, concepto: string): Promise<{
+// Refuerzo opcional para CTA de conversión (modo única o último frame de serie)
+const CTA_CONVERSION_INSTRUCTION = `Este es un story DE CIERRE: el usuario NO verá más después de este. El campo "cta" DEBE ser una invitación clara a contactar a WebMakerLatam — escríbenos al WhatsApp +56 9 5365 7460, agenda una reunión, o cotiza tu proyecto. Tono de AGENCIA, no de influencer. Ejemplos válidos (≤25 chars): "Agenda hoy", "Hablemos por WhatsApp", "Cotiza gratis", "Escríbenos hoy", "Agenda tu diagnóstico". PROHIBIDO: "Sígueme", "Dale like", "Comparte", "Comenta".`;
+
+// Refuerzo para frames intermedios (no son cierre, microCTA tipo "sigue viendo")
+const CTA_INTERMEDIO_INSTRUCTION = `Este story NO es el último de la serie — viene otro después. El campo "cta" debe ser un microCTA que invite a CONTINUAR viendo. Ejemplos válidos (≤25 chars): "Sigue viendo", "Mira esto", "Toca para seguir", "Continúa". Hashtags pueden quedar vacíos en este frame ya que solo el último frame los necesita.`;
+
+async function generarTextoHistoria(
+  tipoHistoria: string,
+  concepto: string,
+  options?: { rol?: RolFrame; numero?: number; total?: number },
+): Promise<{
   copy_principal: string; sub_copy: string; cta: string; hashtags: string;
 }> {
-  let texto = await callClaudeHistoria(tipoHistoria, concepto);
+  // Si el frame pertenece a una serie, contextualizamos el copy según rol
+  let extraSerie = "";
+  let conceptoFinal = concepto;
+  if (options && options.total && options.total > 1) {
+    const esUltimo = options.numero === options.total;
+    const esPrimero = options.numero === 1;
+    extraSerie = `\n\nESTE COPY ES PARA UN FRAME DE UNA SERIE de ${options.total} stories conectadas.\nFrame actual: ${options.numero}/${options.total} con rol "${options.rol}".\nReglas adicionales:\n- Cada frame debe poder leerse SOLO (la gente entra a stories en cualquier punto).\n- copy_principal: titular específico para el rol "${options.rol}" (no repetir entre frames).\n- sub_copy: contexto breve consistente con la narrativa del rol.\n- ${esUltimo ? CTA_CONVERSION_INSTRUCTION : CTA_INTERMEDIO_INSTRUCTION}\n- ${esPrimero || esUltimo ? "Hashtags requeridos en este frame (es portada o cierre)." : "Hashtags pueden quedar vacíos."}`;
+    conceptoFinal = `${concepto} (rol del frame: ${options.rol})`;
+  }
+
+  let texto = await callClaudeHistoria(tipoHistoria, conceptoFinal, extraSerie || undefined);
   const issues = excedeLimites(texto);
   if (issues.length > 0) {
     console.log("[Historias] copy excede límites, pidiendo versión más corta:", issues);
     try {
-      texto = await callClaudeHistoria(
-        tipoHistoria, concepto,
-        `IMPORTANTE: tu intento anterior excedió los límites: ${issues.join("; ")}. REESCRIBE TODO el JSON con versiones MÁS CORTAS y PUNZANTES que sí respeten los máximos. Prefiere impacto sobre información.`,
-      );
+      const extraRetry = `${extraSerie}\n\nIMPORTANTE: tu intento anterior excedió los límites: ${issues.join("; ")}. REESCRIBE TODO el JSON con versiones MÁS CORTAS y PUNZANTES que sí respeten los máximos. Prefiere impacto sobre información. MANTÉN las reglas de rol/CTA indicadas arriba.`;
+      texto = await callClaudeHistoria(tipoHistoria, conceptoFinal, extraRetry);
     } catch (e) {
       console.warn("[Historias] retry de copy falló, uso truncamiento duro:", e);
     }
@@ -885,6 +971,136 @@ async function generarTextoHistoria(tipoHistoria: string, concepto: string): Pro
   };
 }
 
+// Detector automático: dada una idea, sugiere "unica" o "serie" con N frames
+async function detectarFormatoHistoria(concepto: string): Promise<{
+  formato_recomendado: "unica" | "serie";
+  cantidad_frames: number;
+  razon: string;
+  estructura: RolFrame[];
+}> {
+  const sys = `Eres un estratega de contenido de Instagram Stories para WebMakerLatam (agencia digital LATAM). Tu trabajo es decidir si un tema necesita 1 sola historia o una mini-serie.
+
+REGLAS DE DECISIÓN:
+1) Si el tema es una FRASE motivacional, dato curioso, tip rápido o mensaje simple → "unica".
+2) Si el tema MENCIONA un número (ej. "3 razones", "5 tips", "4 errores", "2 claves") → "serie" con cantidad = (N + 2) frames (hook + N + cta), pero acotada al rango 2-5. Si N+2 > 5, devolver 5.
+3) Si el tema es complejo o EDUCATIVO (necesita explicar qué/por qué/cómo) → "serie" con 3 frames (hook+desarrollo+cta).
+4) Si dudas → "unica".
+
+ESTRUCTURAS VÁLIDAS según cantidad:
+- 2: ["hook","cta"]
+- 3: ["hook","desarrollo","cta"]
+- 4: ["hook","problema","solucion","cta"]
+- 5: ["hook","contexto","problema","solucion","cta"]
+
+DEVUELVE SOLO un JSON válido sin markdown:
+{ "formato_recomendado": "unica"|"serie", "cantidad_frames": 1|2|3|4|5, "razon": "...breve...", "estructura": ["unica"] | [...roles...] }`;
+  const resp = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 400,
+    system: sys,
+    messages: [{ role: "user", content: `TEMA: ${concepto}\n\nDevuelve solo el JSON.` }],
+  });
+  const block = resp.content[0];
+  const raw = block && block.type === "text" ? block.text.trim() : "{}";
+  const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+  let parsed: any = {};
+  try { parsed = JSON.parse(cleaned); } catch { parsed = {}; }
+  const formato = parsed.formato_recomendado === "serie" ? "serie" : "unica";
+  let cantidad = Number(parsed.cantidad_frames) || (formato === "unica" ? 1 : 3);
+  cantidad = Math.max(formato === "unica" ? 1 : 2, Math.min(5, cantidad));
+  const estructura: RolFrame[] = formato === "unica" ? ["unica"] : getEstructuraSerie(cantidad);
+  return {
+    formato_recomendado: formato,
+    cantidad_frames: cantidad,
+    razon: String(parsed.razon || "").slice(0, 240) || (formato === "unica" ? "Tema simple, una historia es suficiente." : "Tema con desarrollo, mejor en serie."),
+    estructura,
+  };
+}
+
+// Genera UN frame de historia (imagen + texto + opcional render con counter).
+// Reusable para modo "unica" (frame único) y modo "serie" (N frames).
+async function generarFrameHistoria(args: {
+  tipoHistoria: string;
+  concepto: string;
+  poseOverride?: string;
+  promptOverride?: string;
+  textoEnImagen: boolean;
+  referenceBase64: string | null;
+  rol: RolFrame;
+  numero: number;
+  total: number;
+  textoPreservado?: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
+}): Promise<{
+  numero_frame: number;
+  total_frames: number;
+  rol: RolFrame;
+  imagen: string; // data url
+  texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
+}> {
+  const frameCtx: FrameContext | undefined = args.total > 1
+    ? { numero: args.numero, total: args.total, rol: args.rol }
+    : undefined;
+  const basePrompt = buildHistoriaPrompt(args.tipoHistoria, args.concepto, args.poseOverride, frameCtx);
+  const finalPrompt = args.promptOverride ? `${basePrompt}\n\nAJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${args.promptOverride}` : basePrompt;
+  const contents = args.referenceBase64
+    ? [{ role: "user" as const, parts: [
+        { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
+        { inlineData: { data: args.referenceBase64, mimeType: "image/png" } },
+        { text: finalPrompt },
+      ] }]
+    : [{ role: "user" as const, parts: [{ text: finalPrompt }] }];
+
+  // Backoff para 429
+  const MAX_ATTEMPTS = 3;
+  let lastErr: any;
+  let imgBase64 = "";
+  let mime = "image/png";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const resp = await ai.models.generateContent({
+        model: "gemini-3-pro-image-preview",
+        contents,
+        config: GEMINI_IMAGE_BASE_CONFIG,
+      });
+      const finalImg = extractFinalImage(resp);
+      if (!finalImg) throw new Error("Gemini no devolvió imagen final");
+      imgBase64 = finalImg.data;
+      mime = finalImg.mimeType;
+      break;
+    } catch (e) {
+      lastErr = e;
+      const rate = isRateLimitErr(e);
+      console.warn(`[Historia frame ${args.numero}/${args.total}] intento ${attempt} falló${rate ? " (429)" : ""}:`, (e as Error).message?.slice(0, 200));
+      if (attempt === MAX_ATTEMPTS) throw lastErr;
+      const baseMs = rate ? 4000 : 800;
+      await new Promise((r) => setTimeout(r, baseMs * Math.pow(2, attempt - 1) + Math.random() * 500));
+    }
+  }
+
+  const texto = args.textoPreservado
+    ? args.textoPreservado
+    : await generarTextoHistoria(args.tipoHistoria, args.concepto, {
+        rol: args.rol, numero: args.numero, total: args.total,
+      });
+
+  let outBase64 = imgBase64;
+  if (args.textoEnImagen) {
+    try {
+      outBase64 = await renderTextoEnHistoria(imgBase64, texto, args.total > 1 ? { numero: args.numero, total: args.total } : undefined);
+    } catch (e) {
+      console.error("[Historia frame] render texto fallo:", e);
+    }
+  }
+  const imagenDataUrl = `data:${args.textoEnImagen ? "image/png" : mime};base64,${outBase64}`;
+  return {
+    numero_frame: args.numero,
+    total_frames: args.total,
+    rol: args.rol,
+    imagen: imagenDataUrl,
+    texto,
+  };
+}
+
 // Render texto sobre historia 9:16 con LAYOUT POR ZONAS FIJAS (1080x1920):
 //   Z1 Título    : 0     - 420   (centro 210)
 //   Z2 Imagen    : 420   - 1280  (zorro vive aquí, sin overlay)
@@ -894,6 +1110,7 @@ async function generarTextoHistoria(tipoHistoria: string, concepto: string): Pro
 async function renderTextoEnHistoria(
   imagenBase64: string,
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string },
+  frameInfo?: { numero: number; total: number },
 ): Promise<string> {
   // Forzar 9:16 (1080x1920) — Gemini suele devolver tamaños menores (ej. 768x1376)
   // Sin este resize, las zonas hardcodeadas (Z3_TOP=1280, etc.) quedan fuera del canvas.
@@ -1010,6 +1227,13 @@ async function renderTextoEnHistoria(
       canvasWidth: w, centerY: z5Center, fontWeight: 500, color: "#fb923c",
       bgOpacity: 0, filterId: "textds", letterSpacing: 0,
     } as any) : ""}
+    ${frameInfo && frameInfo.total > 1 ? `
+      <rect x="${(w - 160).toFixed(1)}" y="40" width="120" height="56" rx="28"
+        fill="#0F172A" fill-opacity="0.55"/>
+      <text x="${(w - 100).toFixed(1)}" y="78" text-anchor="middle"
+        font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="700"
+        font-size="30" fill="#ffffff" fill-opacity="0.85">${frameInfo.numero}/${frameInfo.total}</text>
+    ` : ""}
   </svg>`;
 
   const composed = await sharp(imgBuffer)
@@ -1023,67 +1247,107 @@ const GenerarHistoriaBody = z.object({
   concepto: z.string().min(1).max(200),
   pose_override: z.string().optional(),
   texto_en_imagen: z.boolean().optional().default(false),
+  formato: z.enum(["unica", "serie"]).optional().default("unica"),
+  cantidad_frames: z.number().int().min(2).max(5).optional(),
 });
 
 router.post("/community/historias/generar", async (req, res) => {
   try {
     const body = GenerarHistoriaBody.parse(req.body);
-    const prompt = buildHistoriaPrompt(body.tipo_historia, body.concepto, body.pose_override);
     const referenceBase64 = await getFoxRefBase64();
 
-    const contents = referenceBase64
-      ? [{ role: "user" as const, parts: [
-          { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
-          { inlineData: { data: referenceBase64, mimeType: "image/png" } },
-          { text: prompt },
-        ] }]
-      : [{ role: "user" as const, parts: [{ text: prompt }] }];
+    // Determinar estructura de frames
+    const estructura: RolFrame[] = body.formato === "serie"
+      ? getEstructuraSerie(body.cantidad_frames || 3)
+      : ["unica"];
+    const total = estructura.length;
 
-    const [imageResp, texto] = await Promise.all([
-      ai.models.generateContent({
-        model: "gemini-3-pro-image-preview",
-        contents,
-        config: GEMINI_IMAGE_BASE_CONFIG,
-      }),
-      generarTextoHistoria(body.tipo_historia, body.concepto),
-    ]);
+    // Generar todos los frames en paralelo
+    const settled = await Promise.allSettled(
+      estructura.map((rol, i) => generarFrameHistoria({
+        tipoHistoria: body.tipo_historia,
+        concepto: body.concepto,
+        poseOverride: body.pose_override,
+        textoEnImagen: body.texto_en_imagen,
+        referenceBase64,
+        rol,
+        numero: i + 1,
+        total,
+      })),
+    );
 
-    const finalImg = extractFinalImage(imageResp);
-    if (!finalImg) {
-      res.status(502).json({ success: false, error: "Gemini no devolvió imagen final" });
+    const frames = settled.map((r, i) => {
+      if (r.status === "fulfilled") return r.value;
+      console.error(`[Historias] frame ${i + 1} falló:`, (r.reason as Error)?.message);
+      return {
+        numero_frame: i + 1, total_frames: total, rol: estructura[i] as RolFrame,
+        imagen: "", texto: { copy_principal: "", sub_copy: "", cta: "", hashtags: "" },
+        error: (r.reason as Error)?.message || "Falló este frame",
+      };
+    });
+
+    // Si TODOS fallaron, reportar error
+    const algunoOk = frames.some((f) => f.imagen);
+    if (!algunoOk) {
+      res.status(502).json({ success: false, error: "Falló la generación de todos los frames" });
       return;
     }
 
-    let imgBase64 = finalImg.data;
-    const mime = finalImg.mimeType;
-
-    if (body.texto_en_imagen) {
-      try {
-        imgBase64 = await renderTextoEnHistoria(imgBase64, texto);
-      } catch (e) {
-        console.error("[Historias] render texto fallo:", e);
-      }
-    }
-
-    const imagenDataUrl = `data:${body.texto_en_imagen ? "image/png" : mime};base64,${imgBase64}`;
+    const primerImg = frames.find((f) => f.imagen)?.imagen || "";
 
     const [row] = await db.insert(communityContent).values({
       kind: "historia",
       subtype: body.tipo_historia,
       topic: body.concepto,
-      data: { tipo_historia: body.tipo_historia, concepto: body.concepto, pose: body.pose_override || "auto", texto, texto_en_imagen: body.texto_en_imagen },
-      imageUrl: imagenDataUrl,
+      data: {
+        tipo_historia: body.tipo_historia,
+        concepto: body.concepto,
+        pose: body.pose_override || "auto",
+        texto_en_imagen: body.texto_en_imagen,
+        formato: body.formato,
+        cantidad_frames: total,
+        frames,
+        // Compat con vista de historial: el primer frame se expone también plano
+        texto: frames[0]?.texto,
+      },
+      imageUrl: primerImg,
     }).returning();
 
     res.json({
       success: true,
       data: {
-        id: row!.id, imagen: imagenDataUrl, tipo_historia: body.tipo_historia,
-        concepto: body.concepto, texto, texto_en_imagen: body.texto_en_imagen, fecha: row!.createdAt,
+        id: row!.id,
+        formato: body.formato,
+        tipo_historia: body.tipo_historia,
+        concepto: body.concepto,
+        texto_en_imagen: body.texto_en_imagen,
+        fecha: row!.createdAt,
+        frames,
+        // Compat con UI antigua (modo única siempre llena estos campos)
+        imagen: primerImg,
+        texto: frames[0]?.texto,
       },
     });
   } catch (err: any) {
     console.error("[Historias] Error:", err);
+    res.status(500).json({ success: false, error: err.message || "Error interno" });
+  }
+});
+
+// ============================================
+// HISTORIAS — DETECTAR FORMATO (auto)
+// ============================================
+const DetectarFormatoBody = z.object({
+  concepto: z.string().min(1).max(200),
+});
+
+router.post("/community/historias/detectar-formato", async (req, res) => {
+  try {
+    const body = DetectarFormatoBody.parse(req.body);
+    const reco = await detectarFormatoHistoria(body.concepto);
+    res.json({ success: true, data: reco });
+  } catch (err: any) {
+    console.error("[Detectar formato] Error:", err);
     res.status(500).json({ success: false, error: err.message || "Error interno" });
   }
 });
@@ -1803,11 +2067,18 @@ const ReintentarHistoriaBody = z.object({
   texto_en_imagen: z.boolean().optional().default(false),
   modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).default("imagen"),
   prompt_personalizado: z.string().max(2000).optional(),
+  // Soporte de serie: regenerar UN frame específico
+  numero_frame: z.number().int().min(1).max(5).optional(),
+  total_frames: z.number().int().min(1).max(5).optional(),
+  rol: z.enum(["unica", "hook", "contexto", "problema", "desarrollo", "solucion", "cta"]).optional(),
 });
 
 router.post("/community/historias/reintentar", async (req, res) => {
   try {
     const body = ReintentarHistoriaBody.parse(req.body);
+    const total = body.total_frames || 1;
+    const numero = body.numero_frame || 1;
+    const rol: RolFrame = body.rol || "unica";
 
     // 1) Regenerar texto si modo lo requiere
     let texto = body.texto_actual || { copy_principal: "", sub_copy: "", cta: "", hashtags: "" };
@@ -1816,7 +2087,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
       const conceptoExtendido = body.prompt_personalizado && (body.modo === "texto" || body.modo === "ambos")
         ? `${body.concepto}. AJUSTE PEDIDO: ${body.prompt_personalizado}`
         : body.concepto;
-      texto = await generarTextoHistoria(body.tipo_historia, conceptoExtendido);
+      texto = await generarTextoHistoria(body.tipo_historia, conceptoExtendido, { rol, numero, total });
     }
 
     // 2) Modo "texto" puro: devuelve solo texto, sin imagen
@@ -1825,39 +2096,50 @@ router.post("/community/historias/reintentar", async (req, res) => {
       return;
     }
 
-    // 3) Regenerar imagen
-    let promptOverride: string | undefined;
-    if (body.modo === "personalizado" && body.prompt_personalizado) {
-      promptOverride = `Pose y escena con AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${body.prompt_personalizado}`;
-    }
-    const prompt = buildHistoriaPrompt(body.tipo_historia, body.concepto, promptOverride);
+    // 3) Regenerar imagen (con contexto de frame si aplica)
+    // El ajuste personalizado debe afectar a la IMAGEN tanto en modo "personalizado"
+    // como en modo "ambos" (texto + imagen) cuando viene un prompt del usuario.
+    const promptOverride = body.prompt_personalizado &&
+      (body.modo === "personalizado" || body.modo === "ambos")
+      ? body.prompt_personalizado
+      : undefined;
     const referenceBase64 = await getFoxRefBase64();
-    const contents = referenceBase64
-      ? [{ role: "user" as const, parts: [
-          { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
-          { inlineData: { data: referenceBase64, mimeType: "image/png" } },
-          { text: prompt },
-        ] }]
-      : [{ role: "user" as const, parts: [{ text: prompt }] }];
-
-    const imageResp = await ai.models.generateContent({
-      model: "gemini-3-pro-image-preview",
-      contents,
-      config: GEMINI_IMAGE_BASE_CONFIG,
+    // Si NO regeneramos texto en este modo y el cliente envió texto_actual,
+    // preservamos el texto y evitamos llamar a Claude (más rápido y robusto).
+    const textoPreservado = (body.modo === "imagen" || body.modo === "personalizado") && body.texto_actual
+      ? body.texto_actual
+      : undefined;
+    const frame = await generarFrameHistoria({
+      tipoHistoria: body.tipo_historia,
+      concepto: body.concepto,
+      promptOverride,
+      textoEnImagen: body.texto_en_imagen,
+      referenceBase64,
+      rol,
+      numero,
+      total,
+      textoPreservado,
     });
-    const finalImg = extractFinalImage(imageResp);
-    if (!finalImg) {
-      res.status(502).json({ success: false, error: "Gemini no devolvió imagen final" });
-      return;
-    }
-    let imgBase64 = finalImg.data;
-    const mime = finalImg.mimeType;
+    // El frame ya devuelve el texto correcto (preservado o nuevo)
+    const textoFinal = frame.texto;
 
-    if (body.texto_en_imagen) {
-      try { imgBase64 = await renderTextoEnHistoria(imgBase64, texto); } catch (e) { console.error("[Hist reintentar] render:", e); }
+    // Si conservamos el texto pero hicimos texto_en_imagen, hay que re-renderizar el counter encima de la nueva imagen — generarFrameHistoria ya lo hizo con su propio texto.
+    // Para evitar inconsistencia visual (counter+texto que no coincide con el panel), cuando hay texto_actual y texto_en_imagen, re-renderizamos con el texto preservado.
+    let imagenFinal = frame.imagen;
+    if (body.texto_en_imagen && (body.modo === "imagen" || body.modo === "personalizado") && body.texto_actual) {
+      try {
+        // Extraer base64 puro del data URL para re-render
+        const m = frame.imagen.match(/^data:[^;]+;base64,(.+)$/);
+        if (m) {
+          const reRendered = await renderTextoEnHistoria(m[1]!, body.texto_actual, total > 1 ? { numero, total } : undefined);
+          imagenFinal = `data:image/png;base64,${reRendered}`;
+        }
+      } catch (e) {
+        console.error("[Hist reintentar] re-render con texto preservado falló:", e);
+      }
     }
-    const imagenDataUrl = `data:${body.texto_en_imagen ? "image/png" : mime};base64,${imgBase64}`;
-    res.json({ success: true, data: { texto, imagen: imagenDataUrl } });
+
+    res.json({ success: true, data: { texto: textoFinal, imagen: imagenFinal, numero_frame: numero, total_frames: total, rol } });
   } catch (err: any) {
     console.error("[Reintentar historia] Error:", err);
     res.status(500).json({ success: false, error: err.message || "Error interno" });

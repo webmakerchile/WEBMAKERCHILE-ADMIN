@@ -1,0 +1,370 @@
+Los carruseles quedaron excelentes. Ahora necesito mejorar el generador 
+de HISTORIAS (stories) agregando flexibilidad de formato: actualmente 
+generan una sola imagen, pero necesito que el usuario pueda elegir entre 
+3 modos según el tipo de contenido que quiera comunicar.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA ACTUAL
+═══════════════════════════════════════════════════════════════
+
+Las historias generan 1 sola imagen con copy corto. Esto funciona bien 
+para temas simples, pero hay 2 casos donde se queda corto:
+
+1. TEMAS QUE NECESITAN CONTEXTO: Por ejemplo "Automatiza tu negocio 
+   con IA" necesita explicar QUÉ es, POR QUÉ importa, y CÓMO WebMakerLatam 
+   ayuda. En 1 sola historia queda incompleto.
+
+2. TEMAS EDUCATIVOS O SECUENCIALES: Como "5 razones para tener un 
+   chatbot" o "Paso a paso: cómo transformar tu negocio digital". 
+   Necesitan múltiples frames tipo mini-serie de stories.
+
+SOLUCIÓN:
+Agregar un SELECTOR DE FORMATO al generador de historias con 3 modos, 
+y que en cada modo el copy se genere apropiadamente con contexto 
+completo.
+
+═══════════════════════════════════════════════════════════════
+FEATURE: SELECTOR DE FORMATO DE HISTORIA
+═══════════════════════════════════════════════════════════════
+
+En el formulario de Historias, agregar un nuevo selector llamado 
+"Formato de historia" con estas 3 opciones:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📖 MODO 1: "Historia única autocontenida"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CUÁNDO USARLO: Para mensajes cortos, frases motivacionales, tips 
+rápidos, o datos curiosos que no necesitan explicación extensa.
+
+QUÉ GENERA:
+- 1 sola imagen 9:16
+- Copy COMPLETO Y AUTOCONTENIDO que debe incluir obligatoriamente:
+  * Hook (título corto e impactante)
+  * Contexto/beneficio (sub-copy que explique en 1-2 líneas por qué 
+    importa)
+  * CTA de conversión a WhatsApp/contacto (ejemplo: "¿Quieres 
+    automatizar tu negocio? Contáctanos, entendemos tu negocio con 
+    soluciones tecnológicas")
+  * Hashtags (máximo 4)
+
+REGLA CRÍTICA: Como es una sola historia, el CTA debe estar enfocado 
+en conversión directa (escribirnos por WhatsApp, agendar reunión, 
+visitar web). No dejar al usuario "colgado" sin invitación a la acción.
+
+AJUSTE AL PROMPT DE CLAUDE (system prompt):
+Cuando el formato sea "única", usar esta regla:
+"Este es un formato de historia ÚNICA. El copy debe ser completo y 
+autocontenido. Debe incluir: (1) hook que capte atención, (2) un 
+contexto breve o beneficio clave, (3) un CTA de conversión directa 
+que invite a contactar a WebMakerLatam por WhatsApp o agendar una 
+reunión, (4) hashtags relevantes. El usuario NO verá más historias 
+después de esta, así que todo el mensaje debe cerrarse aquí."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎬 MODO 2: "Serie de historias (2-5 frames)"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CUÁNDO USARLO: Para temas que necesitan desarrollo narrativo, tips 
+numerados, o cuando se quiere contar una "mini historia" que el 
+usuario consumirá en secuencia al hacer tap en stories.
+
+QUÉ GENERA:
+- N imágenes 9:16 relacionadas entre sí (el usuario elige cantidad: 
+  2, 3, 4 o 5)
+- Cada frame tiene un rol narrativo específico:
+
+ESTRUCTURA NARRATIVA:
+
+Si son 2 frames:
+- Frame 1: HOOK + problema/pregunta
+- Frame 2: SOLUCIÓN + CTA de conversión
+
+Si son 3 frames:
+- Frame 1: HOOK (pregunta o dato que capte atención)
+- Frame 2: DESARROLLO (explica el qué/por qué)
+- Frame 3: CTA (cómo WebMakerLatam resuelve esto + contacto)
+
+Si son 4 frames:
+- Frame 1: HOOK
+- Frame 2: PROBLEMA (profundiza el dolor)
+- Frame 3: SOLUCIÓN (cómo resolverlo con tecnología)
+- Frame 4: CTA (invitar a contactar)
+
+Si son 5 frames:
+- Frame 1: HOOK
+- Frame 2: CONTEXTO (dato/estadística)
+- Frame 3: PROBLEMA
+- Frame 4: SOLUCIÓN
+- Frame 5: CTA
+
+REGLAS:
+- Cada frame debe poder leerse solo si el usuario entra en cualquier 
+  punto de la serie (stories son así, la gente no siempre ve desde 
+  el frame 1)
+- El frame FINAL SIEMPRE debe tener CTA de conversión
+- Los frames intermedios pueden tener "swipe up" o "sigue viendo" 
+  como microCTA
+- Mantener CONSISTENCIA VISUAL entre frames: mismo fondo, misma paleta, 
+  mismo zorro en poses variantes según el rol del frame
+- Agregar indicador visual de secuencia en la esquina superior: 
+  "1/3", "2/3", "3/3" (como los carruseles pero para stories)
+
+POSES DEL ZORRO POR ROL:
+- HOOK: zorro con expresión de pregunta, señalando hacia el usuario, 
+  cara curiosa
+- PROBLEMA: zorro preocupado, cabeza apoyada en mano, frustrado
+- SOLUCIÓN: zorro confiado, con bombilla de idea, señalando algo 
+  positivo
+- CTA: zorro saludando con la pata, sonriente e invitante, mostrando 
+  teléfono/WhatsApp
+
+AJUSTE AL PROMPT DE CLAUDE:
+Cuando el formato sea "serie", generar N bloques de texto (uno por 
+frame), cada uno con su rol narrativo asignado. El copy de cada 
+frame debe ser corto (máximo 40 caracteres título, 80 caracteres 
+sub-copy) porque cada frame tiene <5 segundos de atención del usuario 
+en stories.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🤖 MODO 3: "Detección automática (recomendado)"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CUÁNDO USARLO: Si el usuario no sabe qué formato conviene.
+
+QUÉ HACE:
+- Envía el tema a Claude con un prompt de análisis que decide 
+  automáticamente:
+  * Si el tema es simple/directo → Modo 1 (única)
+  * Si el tema menciona número ("3 razones", "5 tips") → Modo 2 con 
+    esa cantidad + 2 (hook + N + CTA)
+  * Si el tema es complejo/educativo → Modo 2 con 3 frames
+- Muestra al usuario la recomendación ANTES de generar:
+  
+  "🤖 Recomiendo: [Formato elegido] porque [razón]. ¿Confirmas o 
+  prefieres otro formato?"
+  
+  Con botones: "✅ Generar así" o "✏️ Cambiar formato"
+
+EJEMPLOS DE DETECCIÓN:
+
+Tema: "No te rindas emprendiendo"
+→ Detección: Modo 1 (historia única, mensaje motivacional simple)
+
+Tema: "3 razones para automatizar tu atención al cliente"
+→ Detección: Modo 2 con 5 frames (hook + 3 razones + CTA)
+
+Tema: "Por qué tu negocio necesita inteligencia artificial"
+→ Detección: Modo 2 con 3 frames (complejo, necesita contexto)
+
+Tema: "Dato: 70% de clientes prefiere WhatsApp"
+→ Detección: Modo 1 (dato único, impacta en 1 frame)
+
+═══════════════════════════════════════════════════════════════
+CAMBIOS EN EL BACKEND
+═══════════════════════════════════════════════════════════════
+
+1. ENDPOINT MODIFICADO: POST /api/community/historias/generar
+
+Body ahora incluye nuevos campos:
+```json
+{
+  "tipo_historia": "tip_tech" | "motivacional" | "comunidad",
+  "concepto": string,
+  "formato": "unica" | "serie" | "auto",
+  "cantidad_frames": number,  // solo si formato = "serie" (2 a 5)
+  "texto_en_imagen": boolean
+}
+```
+
+2. NUEVO ENDPOINT: POST /api/community/historias/detectar-formato
+
+Analiza el tema y sugiere formato:
+```json
+// Request:
+{ "concepto": "3 razones para automatizar tu atención al cliente" }
+
+// Response:
+{
+  "formato_recomendado": "serie",
+  "cantidad_frames": 5,
+  "razon": "El tema menciona 3 elementos específicos, sugiero hook + 3 frames de desarrollo + CTA final",
+  "estructura": ["hook", "razon_1", "razon_2", "razon_3", "cta"]
+}
+```
+
+3. RESPONSE del endpoint de generación:
+
+Modo "unica":
+```json
+{
+  "id": "historia_xxx",
+  "formato": "unica",
+  "frames": [
+    {
+      "numero_frame": 1,
+      "rol": "unica",
+      "imagen": "data:image/png;base64,...",
+      "texto": {
+        "titulo": "...",
+        "sub_copy": "...",
+        "cta": "...",
+        "hashtags": "#..."
+      }
+    }
+  ]
+}
+```
+
+Modo "serie":
+```json
+{
+  "id": "historia_xxx",
+  "formato": "serie",
+  "frames": [
+    {
+      "numero_frame": 1,
+      "total_frames": 3,
+      "rol": "hook",
+      "imagen": "data:image/png;base64,...",
+      "texto": {...}
+    },
+    {
+      "numero_frame": 2,
+      "total_frames": 3,
+      "rol": "desarrollo",
+      "imagen": "data:image/png;base64,...",
+      "texto": {...}
+    },
+    {
+      "numero_frame": 3,
+      "total_frames": 3,
+      "rol": "cta",
+      "imagen": "data:image/png;base64,...",
+      "texto": {...}
+    }
+  ]
+}
+```
+
+═══════════════════════════════════════════════════════════════
+CAMBIOS EN EL FRONTEND
+═══════════════════════════════════════════════════════════════
+
+1. AGREGAR selector de formato al formulario de /historias:
+   
+   Después del campo "Concepto clave", agregar:
+   
+   [Formato de historia]
+   [ 📖 Única ] [ 🎬 Serie ] [ 🤖 Auto (recomendado) ]
+   
+   Si elige "Serie":
+   [Cantidad de frames]
+   [ 2 ] [ 3 ] [ 4 ] [ 5 ]
+
+2. VISUALIZACIÓN DEL RESULTADO:
+
+Si es "única":
+- Igual que ahora: una sola imagen grande + textos a la derecha
+
+Si es "serie":
+- Mostrar un CARRUSEL horizontal con las N imágenes (similar al 
+  generador de descripciones)
+- Thumbnails numerados abajo con el rol de cada frame
+- Al hacer click en un thumbnail → ver esa imagen en grande + su 
+  texto específico
+- Botón "📦 Descargar serie (ZIP)" que empaqueta las N imágenes con 
+  nombres ordenados (frame_1_hook.png, frame_2_desarrollo.png, etc.)
+- Botón "Descargar individual" en cada frame
+
+3. INDICADOR DE FORMATO:
+
+En la preview de cada frame del modo serie, mostrar arriba-derecha:
+"1/3" o "2/3" etc. con estilo sutil (Inter 600, 24px, white 70% 
+opacity) — igual que los carruseles.
+
+4. BOTONES DE REINTENTAR:
+
+Cada frame del modo serie debe tener su botón individual de 
+"🔄 Reintentar" (como los carruseles), que regenere SOLO ese frame 
+específico manteniendo el resto intacto.
+
+═══════════════════════════════════════════════════════════════
+REGLAS IMPORTANTES DE CONTENIDO
+═══════════════════════════════════════════════════════════════
+
+1. CTA DE CONVERSIÓN OBLIGATORIO:
+En modo "única" y en el último frame del modo "serie", el CTA DEBE 
+invitar a contactar a WebMakerLatam. Ejemplos válidos:
+- "¿Quieres automatizar tu negocio? Escríbenos al WhatsApp"
+- "Agenda tu diagnóstico gratis hoy"
+- "Hablemos en WhatsApp y transformemos tu negocio"
+- "Contáctanos: entendemos tu negocio con soluciones tech"
+
+2. TONO DE AGENCIA, NO DE INFLUENCER:
+El CTA NO debe sonar a influencer ("¡Sígueme!", "¡Dale like!"). 
+Debe ser propuesta de valor de agencia:
+- ❌ "¡Déjame un comentario!"
+- ❌ "¡Comparte si te gustó!"
+- ✅ "Agenda una llamada gratis"
+- ✅ "Escríbenos y hablemos de tu proyecto"
+
+3. CONSISTENCIA VISUAL ENTRE FRAMES (MODO SERIE):
+Los frames de una serie deben tener:
+- Mismo gradiente de fondo
+- Mismo glow naranja detrás del zorro
+- Misma paleta en objetos/iconos
+- El zorro en poses que avancen la narrativa (no todos iguales)
+- Numeración visible y consistente (1/3, 2/3, 3/3)
+
+═══════════════════════════════════════════════════════════════
+ORDEN DE IMPLEMENTACIÓN
+═══════════════════════════════════════════════════════════════
+
+1. Primero: Agregar el selector de formato en el frontend (solo UI, 
+   sin lógica todavía)
+
+2. Segundo: Modificar endpoint existente para aceptar el nuevo 
+   parámetro "formato" y manejar modo "unica" (que es lo que ya 
+   funciona pero con CTA reforzado de conversión)
+
+3. Tercero: Implementar modo "serie" — generar N frames en paralelo 
+   con roles narrativos distintos (reusar la lógica de carruseles 
+   que ya funciona)
+
+4. Cuarto: Implementar endpoint de detección automática con Claude
+
+5. Quinto: Integrar botón "Descargar ZIP" y reintento individual por 
+   frame
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+Cuando termines, prueba estos 3 escenarios:
+
+TEST 1 - Modo única:
+Tema: "La IA no reemplaza, potencia tu negocio"
+Formato: única
+Esperado: 1 imagen con hook + sub-copy que explique + CTA de 
+conversión a WhatsApp
+
+TEST 2 - Modo serie de 3:
+Tema: "Por qué un chatbot cambia tu atención al cliente"
+Formato: serie, 3 frames
+Esperado: 3 imágenes secuenciales con hook → desarrollo → CTA, 
+consistencia visual entre las 3, indicador 1/3 2/3 3/3, el zorro 
+igual en todas
+
+TEST 3 - Modo auto:
+Tema: "5 errores al crear tu página web"
+Formato: auto
+Esperado: sistema sugiere "serie de 7 frames (hook + 5 errores + 
+CTA)" y tras confirmación genera todo
+
+Muéstrame los 3 resultados completos para validar.
+
+IMPORTANTE: NO rompas la funcionalidad actual. El modo "única" debe 
+comportarse igual que ahora (con el ajuste del CTA reforzado). Los 
+usuarios que no quieran cambiar nada deben seguir pudiendo generar 
+historias únicas como antes.
