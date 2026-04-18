@@ -184,8 +184,9 @@ const SVG_DEFS = `
     </linearGradient>
     <linearGradient id="botfade" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#0F172A" stop-opacity="0"/>
-      <stop offset="40%" stop-color="#0F172A" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95"/>
+      <stop offset="20%" stop-color="#0F172A" stop-opacity="0.85"/>
+      <stop offset="40%" stop-color="#0F172A" stop-opacity="0.97"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="1"/>
     </linearGradient>
     <filter id="textds" x="-30%" y="-30%" width="160%" height="160%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
@@ -355,7 +356,7 @@ REGLAS ADICIONALES PARA ESTA HISTORIA:
 - Cuerpo completo SIEMPRE visible (cabeza, torso, brazos, piernas, cola). Nunca cortado por los bordes ni recortado.
 - El zorro es el PROTAGONISTA ABSOLUTO. Ocupa el centro de la zona de imagen.
 - POSE Y EXPRESIÓN específica (categoría narrativa: "${categoria}"): ${pose}
-- POSICIÓN VERTICAL EXACTA: la cabeza del zorro debe empezar después del píxel 480, y sus PIES deben terminar ANTES del píxel 1240. Es decir, todo el zorro vive entre y=480 y y=1240 (860 px de altura). Esto deja franjas TOTALMENTE libres arriba (0-420) y abajo (1280-1920) para el texto overlay.
+- POSICIÓN VERTICAL EXACTA Y NO NEGOCIABLE: la cabeza del zorro debe empezar DESPUÉS del píxel y=420, y sus PIES deben terminar ANTES del píxel y=1080. Es decir, todo el zorro vive ESTRICTAMENTE entre y=420 y y=1080 (660 px de altura). NUNCA invadas la franja inferior (y=1080-1920) — esa zona está reservada para texto, sub-copy, botón CTA y hashtags. Si tu zorro queda demasiado abajo o demasiado grande, RECÓRTALO. Mejor un zorro mediano centrado en la mitad superior que un zorro grande que invade la zona inferior.
 - RESPIRACIÓN: el zorro debe tener al menos 100 px de aire vacío por TODOS sus lados (arriba, abajo, izquierda, derecha). Nada lo toca.
 
 CONTENIDO Y CONTEXTO:
@@ -515,7 +516,11 @@ async function renderTextoEnHistoria(
   imagenBase64: string,
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string },
 ): Promise<string> {
-  const imgBuffer = Buffer.from(imagenBase64, "base64");
+  // Forzar 9:16 (1080x1920) — Gemini suele devolver tamaños menores (ej. 768x1376)
+  // Sin este resize, las zonas hardcodeadas (Z3_TOP=1280, etc.) quedan fuera del canvas.
+  const imgBuffer = await sharp(Buffer.from(imagenBase64, "base64"))
+    .resize(1080, 1920, { fit: "cover", position: "center" })
+    .png().toBuffer();
   const meta = await sharp(imgBuffer).metadata();
   const w = meta.width || 1080;
   const h = meta.height || 1920;
@@ -528,10 +533,11 @@ async function renderTextoEnHistoria(
   const hashtags = stripEmojis(texto.hashtags);
 
   // Centros de cada zona
-  const Z1_TOP = 0,       Z1_BOTTOM = 420;
-  const Z3_TOP = 1280,    Z3_BOTTOM = 1500;
+  // Zonas recalculadas: zorro vive 420-1080, abajo queda libre desde 1100
+  const Z1_TOP = 0,       Z1_BOTTOM = 380;
+  const Z3_TOP = 1180,    Z3_BOTTOM = 1480;   // sub-copy con más espacio (300 px)
   const Z4_TOP = 1500,    Z4_BOTTOM = 1720;
-  const Z5_TOP = 1720,    Z5_BOTTOM = 1860; // 60 px de padding al borde inferior (h=1920)
+  const Z5_TOP = 1740,    Z5_BOTTOM = 1880;
 
   const z1Center = (Z1_TOP + Z1_BOTTOM) / 2;       // 210
   const z3Center = (Z3_TOP + Z3_BOTTOM) / 2;       // 1390
@@ -606,8 +612,8 @@ async function renderTextoEnHistoria(
     <filter id="ctashadow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur in="SourceGraphic" stdDeviation="14"/>
     </filter>
-    <rect x="0" y="0" width="${w}" height="${Z1_BOTTOM}" fill="url(#topfade)"/>
-    <rect x="0" y="${Z3_TOP}" width="${w}" height="${h - Z3_TOP}" fill="url(#botfade)"/>
+    <rect x="0" y="0" width="${w}" height="${Z1_BOTTOM + 60}" fill="url(#topfade)"/>
+    <rect x="0" y="${Z3_TOP - 100}" width="${w}" height="${h - (Z3_TOP - 100)}" fill="url(#botfade)"/>
     ${principalFit ? renderTextBlockSvg(principalFit, {
       canvasWidth: w, centerY: z1Center, fontWeight: 900, color: "#ffffff",
       bgOpacity: 0, filterId: "textds", letterSpacing: -2,

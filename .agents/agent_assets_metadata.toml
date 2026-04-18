@@ -66,3 +66,9 @@ id = "tjPWi4KRfxZlAnS8ojnkj"
 uri = "file://attached_assets/render-tests/carrusel-slide-3.png"
 type = "image"
 title = "Carrusel 3/3 — CTA"
+
+[[outputs]]
+id = "YefsTYt8mpGaM3RJ7u8wh"
+uri = "file://attached_assets/render-tests/historia-prueba-v3.png"
+type = "image"
+title = "Historia v3 — layout corregido (1080×1920 forzado)"
