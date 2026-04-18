@@ -40,6 +40,61 @@ async function getFoxRefBase64(): Promise<string | null> {
 }
 
 // ============================================
+// GALERÍA CANON — imágenes 10/10 aprobadas por el usuario
+// Se incluyen como referencias adicionales para forzar consistencia visual.
+// ============================================
+type GalleryEntry = { file: string; rol: SlideRol | "any"; tags: string[] };
+const STYLE_GALLERY: GalleryEntry[] = [
+  { file: "portada_01.png", rol: "portada", tags: ["hook", "laptop", "cohete", "señalando"] },
+  { file: "desarrollo_problema_lento.png", rol: "desarrollo", tags: ["problema", "lento", "laptop", "preocupado"] },
+  { file: "desarrollo_movil_roto.png", rol: "desarrollo", tags: ["movil", "celular", "responsive", "preocupado"] },
+  { file: "desarrollo_confusion_shrug.png", rol: "desarrollo", tags: ["confusion", "shrug", "interrogante", "duda"] },
+  { file: "desarrollo_lupa.png", rol: "desarrollo", tags: ["lupa", "buscar", "investigar", "analizar"] },
+  { file: "desarrollo_abandonada.png", rol: "desarrollo", tags: ["abandono", "carrito", "triste", "vacio"] },
+  { file: "cta_whatsapp.png", rol: "cta", tags: ["cta", "whatsapp", "feliz", "invitando", "contacto"] },
+];
+
+const galleryCache = new Map<string, string>();
+async function loadGalleryFile(file: string): Promise<string | null> {
+  if (galleryCache.has(file)) return galleryCache.get(file)!;
+  try {
+    const p = await resolveAsset("public", "style-gallery", file);
+    const b64 = (await readFile(p)).toString("base64");
+    galleryCache.set(file, b64);
+    return b64;
+  } catch {
+    return null;
+  }
+}
+
+// Selecciona 1-2 referencias canon más relevantes según rol y tema
+async function pickCanonReferences(
+  rol: SlideRol,
+  tema: string,
+  promptVisual: string | undefined,
+): Promise<string[]> {
+  const haystack = `${tema} ${promptVisual || ""}`.toLowerCase();
+  const candidatas = STYLE_GALLERY.filter((g) => g.rol === rol);
+  if (candidatas.length === 0) return [];
+
+  // Score por coincidencia de tags en tema/prompt_visual
+  const scored = candidatas.map((g) => ({
+    g,
+    score: g.tags.reduce((acc, tag) => acc + (haystack.includes(tag) ? 1 : 0), 0),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  // Siempre incluir la mejor; si hay 2+ desarrollo y ninguna matchea fuerte, agregar una segunda como variedad de pose
+  const elegidas: GalleryEntry[] = [scored[0]!.g];
+  if (rol === "desarrollo" && scored.length > 1 && scored[0]!.score === 0) {
+    elegidas.push(scored[1]!.g);
+  }
+
+  const cargadas = await Promise.all(elegidas.map((e) => loadGalleryFile(e.file)));
+  return cargadas.filter((b): b is string => !!b);
+}
+
+// ============================================
 // HELPERS DE TEXTO Y RENDER
 // ============================================
 
@@ -887,12 +942,31 @@ async function generarImagenSlide(
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
 ): Promise<string> {
   const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides);
-  const contents = referenceBase64
-    ? [{ role: "user" as const, parts: [
-        { inlineData: { data: referenceBase64, mimeType: "image/png" } },
-        { text: prompt },
-      ] }]
-    : [{ role: "user" as const, parts: [{ text: prompt }] }];
+
+  // Referencias canon (imágenes 10/10 aprobadas) según rol del slide
+  const canonRefs = await pickCanonReferences(slide.rol, tema, slide.prompt_visual);
+
+  const parts: any[] = [];
+  if (referenceBase64) {
+    parts.push({ inlineData: { data: referenceBase64, mimeType: "image/png" } });
+  }
+  for (const ref of canonRefs) {
+    parts.push({ inlineData: { data: ref, mimeType: "image/png" } });
+  }
+  if (referenceBase64 || canonRefs.length > 0) {
+    const lineas: string[] = ["IMÁGENES DE REFERENCIA arriba:"];
+    if (referenceBase64) {
+      lineas.push("• La PRIMERA es el MASTER OFICIAL del zorro Webi (anatomía, colores, estilo línea exactos a replicar).");
+    }
+    if (canonRefs.length > 0) {
+      const cuantas = canonRefs.length === 1 ? "1 referencia" : `${canonRefs.length} referencias`;
+      lineas.push(`• Las siguientes son ${cuantas} CANON 10/10 ya aprobadas por el cliente: muestran composición, pose, props, paleta de fondo, tipografía blanca, tamaño del zorro, gradiente naranja radial detrás del personaje, grilla geométrica sutil de fondo y nivel de detalle CORRECTOS para este tipo de slide. RESPETA esta estética de forma estricta: misma escala del zorro (ocupa ~55% del alto, NO más), mismo fondo azul oscuro #0F1B2D con gradiente naranja radial detrás del personaje, mismas líneas negras gruesas uniformes, mismo nivel de plano (NO close-up de cara), misma calidad y limpieza de los props (laptops/celulares con iconos simples vector, no fotorrealistas).`);
+    }
+    parts.push({ text: lineas.join("\n") });
+  }
+  parts.push({ text: prompt });
+
+  const contents = [{ role: "user" as const, parts }];
 
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-image-preview",
