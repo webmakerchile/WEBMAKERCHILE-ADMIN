@@ -1090,16 +1090,35 @@ async function generarImagenSlide(
   return imagePart.inlineData.data as string;
 }
 
+function isRateLimitErr(err: any): boolean {
+  const msg = typeof err?.message === "string" ? err.message : "";
+  return msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Resource exhausted") || msg.toLowerCase().includes("quota");
+}
+
 async function generarImagenSlideConRetry(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
 ): Promise<string> {
-  try {
-    return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
-  } catch (e) {
-    console.warn(`[Descripciones] retry slide ${slide.numero}:`, (e as Error).message);
-    return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+  const MAX_ATTEMPTS = 4;
+  let lastErr: any;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+    } catch (e) {
+      lastErr = e;
+      const rate = isRateLimitErr(e);
+      console.warn(`[Descripciones] slide ${slide.numero} intento ${attempt}/${MAX_ATTEMPTS} falló${rate ? " (429)" : ""}:`, (e as Error).message?.slice(0, 200));
+      if (attempt === MAX_ATTEMPTS) break;
+      // Backoff: 429 espera más; otros errores espera menos
+      const baseMs = rate ? 4000 : 800;
+      const wait = baseMs * Math.pow(2, attempt - 1) + Math.random() * 500;
+      await new Promise((r) => setTimeout(r, wait));
+    }
   }
+  if (isRateLimitErr(lastErr)) {
+    throw new Error("RATE_LIMIT");
+  }
+  throw lastErr;
 }
 
 // Post-validación con Gemini Vision: compara la imagen generada vs la master
@@ -1495,6 +1514,10 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
     });
   } catch (err: any) {
     console.error("[Reintentar slide] Error:", err);
+    if (err?.message === "RATE_LIMIT" || isRateLimitErr(err)) {
+      res.status(429).json({ success: false, error: "El servicio de imágenes está saturado ahora mismo (cuota de Gemini). Espera 1-2 minutos y vuelve a intentar el ajuste rápido." });
+      return;
+    }
     res.status(500).json({ success: false, error: err.message || "Error interno" });
   }
 });
