@@ -1,0 +1,65 @@
+Hola, te estoy compartiendo un ZIP con el código de 2 nuevas secciones que necesito integrar a mi proyecto existente de WebMakerLatam. El proyecto actual ya tiene funcionando el "Generador de Portadas" usando Node.js + React + Google Gemini, y quiero que agregues estas 2 secciones nuevas SIN romper lo que ya funciona.
+
+ESTRUCTURA DEL ZIP:
+webmaker-secciones/
+├── backend/
+│   ├── generarHistoria.js          (endpoint para generar stories con Gemini)
+│   ├── generarDescripciones.js     (endpoint para generar textos con Claude)
+│   └── server.js                    (referencia de rutas, NO reemplazar mi server)
+├── frontend/
+│   ├── GeneradorHistorias.jsx      (componente React de historias)
+│   └── GeneradorDescripciones.jsx  (componente React de descripciones)
+└── docs/
+    └── README.md                    (documentación completa)
+
+TAREAS QUE NECESITO QUE HAGAS:
+
+1. EXTRAER el ZIP en la raíz del proyecto.
+
+2. INSTALAR las dependencias nuevas:
+   npm install @google/genai @anthropic-ai/sdk @replit/database
+
+3. CONFIGURAR los Secrets de Replit (pedirme los valores si no existen):
+   - GEMINI_API_KEY (ya debería existir del generador de portadas)
+   - ANTHROPIC_API_KEY (es nueva, me la pides)
+
+4. INTEGRAR las rutas del backend en mi server.js EXISTENTE (sin reemplazarlo). 
+   Agrega estas rutas junto a las que ya tengo:
+   - POST /api/historias/generar
+   - GET  /api/historias
+   - POST /api/descripciones/generar
+   - GET  /api/descripciones
+   - DELETE /api/descripciones/:id
+
+5. MOVER los componentes React a la carpeta correcta de mi frontend 
+   (donde tengo el componente de portadas).
+
+6. AGREGAR las 2 nuevas rutas/páginas a mi navegación/menú existente:
+   - /historias     → <GeneradorHistorias />
+   - /descripciones → <GeneradorDescripciones />
+   
+   El menú debe quedar con 3 opciones: Portadas | Historias | Descripciones.
+   Usa el mismo estilo visual que ya tiene el generador de portadas.
+
+7. VERIFICAR que:
+   - El generador de portadas sigue funcionando igual que antes
+   - Las nuevas rutas responden correctamente
+   - Los componentes React se renderizan sin errores
+   - No hay conflictos de dependencias ni imports duplicados
+
+8. AL FINALIZAR, hacer un test rápido:
+   - Llamar a POST /api/historias/generar con tipo "tip_tech" y concepto "test"
+   - Llamar a POST /api/descripciones/generar con tema "test" y redes ["tiktok"]
+   - Confirmarme que ambos devuelven success: true
+
+IMPORTANTE:
+- NO reemplaces mi server.js actual, solo AGREGA las rutas nuevas
+- NO toques el código del generador de portadas que ya funciona
+- Si encuentras algún conflicto o duda, pregúntame antes de hacer cambios
+- Mantén el mismo estilo de código que ya tengo en el proyecto
+- Si mi proyecto usa otra estructura de carpetas, adapta las rutas de imports
+
+Cuando termines, dime:
+1. Qué archivos creaste/modificaste
+2. Si hubo algún error o ajuste que tuviste que hacer
+3. Las URLs donde puedo probar las nuevas secciones
