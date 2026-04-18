@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "jszip": "^3.10.1",
     "tailwindcss-animate": "^1.0.7"
   }
 }

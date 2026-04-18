@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/layout";
-import { Sparkles, Download, AlertCircle, Loader2 } from "lucide-react";
+import { Sparkles, Download, AlertCircle, Loader2, Dices, Copy, Check } from "lucide-react";
 import { motion } from "framer-motion";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -11,25 +11,60 @@ const TIPOS_HISTORIA = [
   { value: "comunidad", label: "Comunidad", desc: "Behind scenes y comunidad", emoji: "🤝" },
 ];
 
+type TextoHistoria = {
+  copy_principal: string;
+  sub_copy: string;
+  cta: string;
+  hashtags: string;
+};
+
 type Resultado = {
   id: number;
   imagen: string;
   tipo_historia: string;
   concepto: string;
+  texto: TextoHistoria;
+  texto_en_imagen: boolean;
   fecha: string;
 };
 
 export default function HistoriasPage() {
   const [tipoHistoria, setTipoHistoria] = useState("tip_tech");
   const [concepto, setConcepto] = useState("");
+  const [textoEnImagen, setTextoEnImagen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [sorpresa, setSorpresa] = useState(false);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState<string | null>(null);
+
+  const handleSorprendeme = async () => {
+    setSorpresa(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/community/sorprendeme`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contexto: concepto.trim() || undefined,
+          tipo_seccion: "historia",
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Error");
+      setConcepto(data.data.tema);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSorpresa(false);
+    }
+  };
 
   const handleGenerar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!concepto.trim()) {
-      setError("Debes escribir un concepto");
+      setError("Debes escribir un concepto o usar Sorpréndeme");
       return;
     }
     setLoading(true);
@@ -40,7 +75,11 @@ export default function HistoriasPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo_historia: tipoHistoria, concepto: concepto.trim() }),
+        body: JSON.stringify({
+          tipo_historia: tipoHistoria,
+          concepto: concepto.trim(),
+          texto_en_imagen: textoEnImagen,
+        }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Error al generar");
@@ -62,13 +101,19 @@ export default function HistoriasPage() {
     document.body.removeChild(link);
   };
 
+  const copiar = (texto: string, id: string) => {
+    navigator.clipboard.writeText(texto);
+    setCopiado(id);
+    setTimeout(() => setCopiado(null), 2000);
+  };
+
   return (
     <Layout>
       <div className="space-y-8 max-w-5xl mx-auto">
         <header>
           <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Generador de Historias</h1>
           <p className="text-muted-foreground text-sm sm:text-lg">
-            Crea historias diarias 9:16 para mantener viva la comunidad.
+            Crea historias diarias 9:16 con texto listo para publicar.
           </p>
         </header>
 
@@ -102,17 +147,45 @@ export default function HistoriasPage() {
 
           <div>
             <label className="block text-sm font-semibold text-foreground mb-2">Concepto clave</label>
-            <input
-              type="text"
-              value={concepto}
-              onChange={(e) => setConcepto(e.target.value)}
-              placeholder="Ej: aprende git en 1 minuto, no te rindas programando..."
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
-              maxLength={120}
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={concepto}
+                onChange={(e) => setConcepto(e.target.value)}
+                placeholder="Ej: aprende git en 1 minuto, no te rindas programando..."
+                className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                maxLength={120}
+              />
+              <button
+                type="button"
+                onClick={handleSorprendeme}
+                disabled={sorpresa}
+                title={concepto.trim() ? "Generar idea alineada con el contexto escrito" : "Generar tema random"}
+                className="bg-amber-500/90 hover:bg-amber-500 disabled:bg-amber-500/40 text-slate-900 font-bold px-4 py-3 rounded-xl transition flex items-center gap-2 whitespace-nowrap"
+              >
+                {sorpresa ? <Loader2 className="w-4 h-4 animate-spin" /> : <Dices className="w-4 h-4" />}
+                ¡Sorpréndeme!
+              </button>
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {concepto.length}/120 caracteres. La IA adaptará la escena al concepto.
+              {concepto.length}/120 caracteres. {concepto.trim() && "Sorpréndeme respetará tu contexto."}
             </p>
+          </div>
+
+          <div className="flex items-center justify-between bg-white/5 rounded-xl p-4 border border-white/10">
+            <div>
+              <div className="text-sm font-semibold text-foreground">Texto en imagen</div>
+              <div className="text-xs text-muted-foreground">
+                {textoEnImagen ? "La imagen se entregará con el texto ya quemado encima." : "La imagen vendrá limpia. Te entregamos el texto aparte para que lo agregues en Canva/IG."}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTextoEnImagen(!textoEnImagen)}
+              className={`relative w-14 h-8 rounded-full transition ${textoEnImagen ? "bg-primary" : "bg-white/20"}`}
+            >
+              <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${textoEnImagen ? "left-7" : "left-1"}`} />
+            </button>
           </div>
 
           {error && (
@@ -128,15 +201,9 @@ export default function HistoriasPage() {
             className="w-full bg-primary hover:bg-primary/90 disabled:bg-muted disabled:cursor-not-allowed text-primary-foreground font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
           >
             {loading ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Generando historia...
-              </>
+              <><Loader2 className="w-5 h-5 animate-spin" />Generando historia...</>
             ) : (
-              <>
-                <Sparkles className="w-5 h-5" />
-                Generar Historia
-              </>
+              <><Sparkles className="w-5 h-5" />Generar Historia</>
             )}
           </button>
         </motion.form>
@@ -145,34 +212,65 @@ export default function HistoriasPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass-card rounded-2xl p-6 border border-white/5"
+            className="grid grid-cols-1 md:grid-cols-2 gap-6"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-display font-bold">Historia generada</h2>
+            <div className="glass-card rounded-2xl p-6 border border-white/5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-display font-bold">Imagen</h2>
+                <button
+                  onClick={handleDescargar}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />PNG
+                </button>
+              </div>
+              <div className="flex justify-center">
+                <img
+                  src={resultado.imagen}
+                  alt="Historia generada"
+                  className="max-w-xs w-full rounded-xl shadow-2xl"
+                  style={{ aspectRatio: "9/16" }}
+                />
+              </div>
+              {!resultado.texto_en_imagen && (
+                <p className="text-xs text-muted-foreground italic mt-3 text-center">
+                  Imagen limpia: usa el texto del panel derecho como overlay en Canva/IG.
+                </p>
+              )}
+            </div>
+
+            <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
+              <h2 className="text-lg font-display font-bold">Texto</h2>
+
+              {[
+                { id: "copy", label: "Copy principal", value: resultado.texto.copy_principal, accent: "text-foreground font-bold text-base" },
+                { id: "sub", label: "Sub-copy", value: resultado.texto.sub_copy, accent: "text-foreground/80 text-sm" },
+                { id: "cta", label: "CTA", value: resultado.texto.cta, accent: "text-primary font-semibold" },
+                { id: "hash", label: "Hashtags", value: resultado.texto.hashtags, accent: "text-amber-400 text-sm" },
+              ].map((b) => (
+                <div key={b.id} className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">{b.label}</span>
+                    <button
+                      onClick={() => copiar(b.value, b.id)}
+                      className="bg-white/5 hover:bg-white/10 text-foreground text-xs font-semibold px-2 py-1 rounded-md transition flex items-center gap-1"
+                    >
+                      {copiado === b.id ? <><Check className="w-3 h-3 text-emerald-400" />Copiado</> : <><Copy className="w-3 h-3" />Copiar</>}
+                    </button>
+                  </div>
+                  <p className={`whitespace-pre-wrap ${b.accent}`}>{b.value || <span className="text-muted-foreground italic">(vacío)</span>}</p>
+                </div>
+              ))}
+
               <button
-                onClick={handleDescargar}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
+                onClick={() => {
+                  const all = `${resultado.texto.copy_principal}\n\n${resultado.texto.sub_copy}\n\n${resultado.texto.cta}\n\n${resultado.texto.hashtags}`;
+                  copiar(all, "todo");
+                }}
+                className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-foreground text-sm font-semibold py-2 rounded-lg transition flex items-center justify-center gap-2"
               >
-                <Download className="w-4 h-4" />
-                Descargar PNG
+                {copiado === "todo" ? <><Check className="w-4 h-4 text-emerald-400" />Todo copiado</> : <><Copy className="w-4 h-4" />Copiar TODO el texto</>}
               </button>
-            </div>
-
-            <div className="flex justify-center">
-              <img
-                src={resultado.imagen}
-                alt="Historia generada"
-                className="max-w-sm w-full rounded-xl shadow-2xl"
-                style={{ aspectRatio: "9/16" }}
-              />
-            </div>
-
-            <div className="mt-4 text-sm text-muted-foreground space-y-1">
-              <p><span className="text-foreground/60">Tipo:</span> {resultado.tipo_historia}</p>
-              <p><span className="text-foreground/60">Concepto:</span> {resultado.concepto}</p>
-              <p className="text-xs mt-3 italic">
-                Las zonas superior e inferior quedaron limpias para overlay de texto en Canva, Figma o la app de la red social.
-              </p>
             </div>
           </motion.div>
         )}
