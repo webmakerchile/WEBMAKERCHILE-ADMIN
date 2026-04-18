@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/layout";
-import { Sparkles, Download, AlertCircle, Loader2, Dices, Copy, Check } from "lucide-react";
+import { Sparkles, Download, AlertCircle, Loader2, Dices, Copy, Check, RefreshCw, Pencil, Repeat, Settings, X, Image as ImageIcon } from "lucide-react";
 import { motion } from "framer-motion";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -37,6 +37,11 @@ export default function HistoriasPage() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<string | null>(null);
+  const [reintentando, setReintentando] = useState<string | null>(null);
+  const [modalAjuste, setModalAjuste] = useState<{ modo: "imagen" | "ambos" } | null>(null);
+  const [ajusteTexto, setAjusteTexto] = useState("");
+  const [intentos, setIntentos] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
   const handleSorprendeme = async () => {
     setSorpresa(true);
@@ -89,6 +94,56 @@ export default function HistoriasPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleReintentar = async (
+    modo: "imagen" | "texto" | "ambos" | "personalizado",
+    promptPersonalizado?: string,
+  ) => {
+    if (!resultado) return;
+    setReintentando(modo);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/community/historias/reintentar`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo_historia: resultado.tipo_historia,
+          concepto: resultado.concepto,
+          texto_actual: resultado.texto,
+          texto_en_imagen: resultado.texto_en_imagen,
+          modo,
+          prompt_personalizado: promptPersonalizado,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Falló reintento");
+      setResultado((prev) => prev ? {
+        ...prev,
+        imagen: data.data.imagen ?? prev.imagen,
+        texto: data.data.texto ?? prev.texto,
+      } : prev);
+      setIntentos((n) => n + 1);
+      showToast(`✅ Historia regenerada (${modo})`);
+    } catch (err: any) {
+      setError(`No se pudo regenerar: ${err.message}. La versión anterior se mantiene.`);
+    } finally {
+      setReintentando(null);
+    }
+  };
+
+  const confirmarAjusteCustom = async () => {
+    if (!modalAjuste || !ajusteTexto.trim()) return;
+    const modo = modalAjuste.modo === "ambos" ? "ambos" : "personalizado";
+    setModalAjuste(null);
+    await handleReintentar(modo, ajusteTexto.trim());
+    setAjusteTexto("");
   };
 
   const handleDescargar = () => {
@@ -215,23 +270,67 @@ export default function HistoriasPage() {
             className="grid grid-cols-1 md:grid-cols-2 gap-6"
           >
             <div className="glass-card rounded-2xl p-6 border border-white/5">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h2 className="text-lg font-display font-bold">Imagen</h2>
                 <button
                   onClick={handleDescargar}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition flex items-center gap-2"
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-3 py-2 rounded-lg text-sm transition flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />PNG
                 </button>
               </div>
-              <div className="flex justify-center">
+              <div className="relative max-w-xs w-full mx-auto">
                 <img
                   src={resultado.imagen}
                   alt="Historia generada"
-                  className="max-w-xs w-full rounded-xl shadow-2xl"
+                  className="w-full rounded-xl shadow-2xl"
                   style={{ aspectRatio: "9/16" }}
                 />
+                {reintentando && (
+                  <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-3 z-10">
+                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                    <p className="text-foreground font-semibold text-sm">Regenerando...</p>
+                    <p className="text-muted-foreground text-xs">~10-30s</p>
+                  </div>
+                )}
               </div>
+
+              {/* Barra de acciones de reintento */}
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleReintentar("imagen")}
+                  disabled={!!reintentando}
+                  className="bg-amber-500/90 hover:bg-amber-500 disabled:bg-amber-500/40 text-slate-900 font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />Reintentar imagen
+                </button>
+                <button
+                  onClick={() => handleReintentar("texto")}
+                  disabled={!!reintentando}
+                  className="bg-blue-500/90 hover:bg-blue-500 disabled:bg-blue-500/40 text-white font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />Reintentar texto
+                </button>
+                <button
+                  onClick={() => handleReintentar("ambos")}
+                  disabled={!!reintentando}
+                  className="bg-emerald-500/90 hover:bg-emerald-500 disabled:bg-emerald-500/40 text-white font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
+                >
+                  <Repeat className="w-3.5 h-3.5" />Reintentar todo
+                </button>
+                <button
+                  onClick={() => { setModalAjuste({ modo: "imagen" }); setAjusteTexto(""); }}
+                  disabled={!!reintentando}
+                  className="bg-primary/90 hover:bg-primary disabled:bg-primary/40 text-primary-foreground font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
+                >
+                  <Settings className="w-3.5 h-3.5" />Ajuste personalizado
+                </button>
+              </div>
+              {intentos >= 5 && (
+                <div className="mt-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2">
+                  Has reintentado {intentos} veces. Prueba con un ajuste personalizado para guiar mejor al modelo.
+                </div>
+              )}
               {!resultado.texto_en_imagen && (
                 <p className="text-xs text-muted-foreground italic mt-3 text-center">
                   Imagen limpia: usa el texto del panel derecho como overlay en Canva/IG.

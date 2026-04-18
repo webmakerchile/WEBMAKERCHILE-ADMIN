@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
-import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive } from "lucide-react";
+import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat } from "lucide-react";
 import { motion } from "framer-motion";
 import JSZip from "jszip";
 
@@ -65,6 +65,11 @@ export default function DescripcionesPage() {
   const [slideActual, setSlideActual] = useState(0);
   const [reintentando, setReintentando] = useState<number | null>(null);
   const [zippeando, setZippeando] = useState(false);
+  const [menuOpen, setMenuOpen] = useState<number | null>(null);
+  const [modalAjuste, setModalAjuste] = useState<{ slide: SlideImagen; modo: "imagen" | "ambos" } | null>(null);
+  const [ajusteTexto, setAjusteTexto] = useState("");
+  const [intentos, setIntentos] = useState<Record<number, number>>({});
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (loading) {
@@ -160,9 +165,20 @@ export default function DescripcionesPage() {
     }
   };
 
-  const handleReintentarSlide = async (slide: SlideImagen) => {
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleReintentarSlide = async (
+    slide: SlideImagen,
+    modo: "imagen" | "texto" | "ambos" | "personalizado" = "imagen",
+    promptPersonalizado?: string,
+  ) => {
     if (!resultado) return;
     setReintentando(slide.numero_slide);
+    setMenuOpen(null);
+    setError(null);
     try {
       const res = await fetch(`${API_BASE}/community/descripciones/reintentar-slide`, {
         method: "POST",
@@ -177,19 +193,45 @@ export default function DescripcionesPage() {
           subtitulo: slide.subtitulo,
           formato: resultado.tipo_publicacion === "carrusel" ? "4:5" : "1:1",
           texto_en_imagen: resultado.texto_en_imagen,
+          total_slides: resultado.imagenes.length,
+          modo,
+          prompt_personalizado: promptPersonalizado,
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Falló reintento");
       setResultado((prev) => prev ? {
         ...prev,
-        imagenes: prev.imagenes.map((i) => i.numero_slide === slide.numero_slide ? { ...i, imagen: data.data.imagen, error: undefined } : i),
+        imagenes: prev.imagenes.map((i) => i.numero_slide === slide.numero_slide ? {
+          ...i,
+          // si vino imagen nueva la usamos, si no conservamos la actual (modo "texto")
+          imagen: data.data.imagen ?? i.imagen,
+          titulo: data.data.titulo ?? i.titulo,
+          subtitulo: data.data.subtitulo ?? i.subtitulo,
+          error: undefined,
+        } : i),
       } : prev);
+      setIntentos((prev) => ({ ...prev, [slide.numero_slide]: (prev[slide.numero_slide] || 1) + 1 }));
+      showToast(`✅ Slide ${slide.numero_slide} regenerada (${modo})`);
     } catch (err: any) {
-      setError(err.message);
+      setError(`No se pudo regenerar slide ${slide.numero_slide}: ${err.message}. La versión anterior se mantiene.`);
     } finally {
       setReintentando(null);
     }
+  };
+
+  const abrirModalAjuste = (slide: SlideImagen, modo: "imagen" | "ambos" = "imagen") => {
+    setModalAjuste({ slide, modo });
+    setAjusteTexto("");
+    setMenuOpen(null);
+  };
+
+  const confirmarAjusteCustom = async () => {
+    if (!modalAjuste || !ajusteTexto.trim()) return;
+    const { slide, modo } = modalAjuste;
+    const modoFinal = modo === "ambos" ? "ambos" : "personalizado";
+    setModalAjuste(null);
+    await handleReintentarSlide(slide, modoFinal, ajusteTexto.trim());
   };
 
   const copiar = (texto: string, id: string) => {
@@ -515,6 +557,82 @@ export default function DescripcionesPage() {
                     </div>
                   )}
 
+                  {/* Botones de reintento overlay (esquina superior derecha) */}
+                  {slideShown.imagen && (
+                    <div className="absolute top-3 left-3 flex gap-1.5 z-20">
+                      <button
+                        type="button"
+                        onClick={() => handleReintentarSlide(slideShown, "imagen")}
+                        disabled={reintentando === slideShown.numero_slide}
+                        title="Reintentar SOLO imagen (mantiene texto)"
+                        className="bg-black/70 backdrop-blur hover:bg-amber-500 hover:text-slate-900 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Reintentar
+                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setMenuOpen(menuOpen === slideShown.numero_slide ? null : slideShown.numero_slide)}
+                          disabled={reintentando === slideShown.numero_slide}
+                          title="Más opciones de reintento"
+                          className="bg-black/70 backdrop-blur hover:bg-white/20 text-white p-1.5 rounded-lg transition disabled:opacity-50"
+                        >
+                          <Settings className="w-3.5 h-3.5" />
+                        </button>
+                        {menuOpen === slideShown.numero_slide && (
+                          <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-white/20 rounded-xl shadow-2xl py-1 min-w-[220px] z-30">
+                            <button
+                              type="button"
+                              onClick={() => handleReintentarSlide(slideShown, "imagen")}
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                            >
+                              <ImageIcon className="w-4 h-4 text-amber-400" />Reintentar solo imagen
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleReintentarSlide(slideShown, "texto")}
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                            >
+                              <Pencil className="w-4 h-4 text-blue-400" />Reintentar solo texto
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleReintentarSlide(slideShown, "ambos")}
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                            >
+                              <Repeat className="w-4 h-4 text-emerald-400" />Reintentar todo
+                            </button>
+                            <div className="border-t border-white/10 my-1" />
+                            <button
+                              type="button"
+                              onClick={() => abrirModalAjuste(slideShown, "imagen")}
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                            >
+                              <Settings className="w-4 h-4 text-primary" />Ajuste personalizado…
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Loading overlay sobre la slide en regeneración */}
+                  {reintentando === slideShown.numero_slide && (
+                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-3 z-30">
+                      <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                      <p className="text-foreground font-semibold text-sm">Regenerando slide {slideShown.numero_slide}...</p>
+                      <p className="text-muted-foreground text-xs">~10-30s</p>
+                    </div>
+                  )}
+
+                  {/* Aviso tras 5 intentos */}
+                  {(intentos[slideShown.numero_slide] || 0) >= 5 && reintentando !== slideShown.numero_slide && (
+                    <div className="absolute bottom-3 left-3 right-3 bg-amber-500/95 text-slate-900 text-xs font-semibold px-3 py-2 rounded-lg z-20">
+                      Has reintentado {intentos[slideShown.numero_slide]} veces. Prueba con un ajuste personalizado para guiar mejor al modelo.
+                    </div>
+                  )}
+
                   {slidesRender.length > 1 && (
                     <>
                       <button
@@ -641,6 +759,66 @@ export default function DescripcionesPage() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Modal de ajuste personalizado */}
+        {modalAjuste && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setModalAjuste(null)}>
+            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-display font-bold">Ajuste personalizado — Slide {modalAjuste.slide.numero_slide}</h3>
+                <button onClick={() => setModalAjuste(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Escribe una instrucción específica. Ejemplos:
+                <ul className="list-disc list-inside mt-1 space-y-0.5">
+                  <li>"Hacer el zorro más pequeño"</li>
+                  <li>"Usar colores más oscuros / fondo más oscuro"</li>
+                  <li>"Agregar un icono de WhatsApp"</li>
+                  <li>"Pose más alegre y dinámica"</li>
+                </ul>
+              </div>
+              <textarea
+                value={ajusteTexto}
+                onChange={(e) => setAjusteTexto(e.target.value)}
+                placeholder="Describe el ajuste específico..."
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[100px]"
+                maxLength={400}
+                autoFocus
+              />
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs text-foreground/80 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={modalAjuste.modo === "ambos"}
+                    onChange={(e) => setModalAjuste((prev) => prev ? { ...prev, modo: e.target.checked ? "ambos" : "imagen" } : prev)}
+                    className="w-4 h-4 accent-primary"
+                  />
+                  Aplicar también al copy/texto
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setModalAjuste(null)}
+                    className="bg-white/5 hover:bg-white/10 text-foreground font-semibold px-4 py-2 rounded-lg text-sm"
+                  >Cancelar</button>
+                  <button
+                    onClick={confirmarAjusteCustom}
+                    disabled={!ajusteTexto.trim()}
+                    className="bg-primary hover:bg-primary/90 disabled:bg-muted text-primary-foreground font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-4 h-4" />Reintentar con ajuste
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Toast feedback */}
+        {toast && (
+          <div className="fixed bottom-6 right-6 bg-emerald-500 text-white font-semibold px-4 py-3 rounded-xl shadow-2xl z-50 animate-in slide-in-from-bottom-4">
+            {toast}
           </div>
         )}
       </div>

@@ -1,0 +1,255 @@
+La historia quedó EXCELENTE, felicitaciones. Ahora necesito agregar una 
+feature crítica de control de calidad: BOTONES DE REINTENTO INDIVIDUAL 
+en todas las secciones.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA ACTUAL
+═══════════════════════════════════════════════════════════════
+
+Cuando una generación sale "casi perfecta" pero UNA imagen específica 
+falla (zorro mal, layout malo, texto cortado), actualmente la única 
+opción es regenerar TODO desde cero. Esto es costoso e ineficiente:
+
+- Un carrusel de 7 slides donde 1 salió mal → hay que regenerar las 7
+- Una historia con imagen buena pero texto malo → hay que regenerar todo
+- Una portada con 1 detalle feo → hay que regenerar toda la portada
+
+SOLUCIÓN: Botón de "🔄 Reintentar" a nivel INDIVIDUAL en cada imagen, 
+que regenere SOLO esa imagen específica manteniendo el resto intacto.
+
+═══════════════════════════════════════════════════════════════
+FEATURE 1: REINTENTAR SLIDE INDIVIDUAL EN CARRUSELES
+═══════════════════════════════════════════════════════════════
+
+UBICACIÓN DEL BOTÓN:
+En cada slide del carrusel (tanto en el preview grande como en los 
+thumbnails numerados de abajo), agregar un botón pequeño en la esquina 
+superior derecha de la slide con el ícono 🔄 y texto "Reintentar".
+
+COMPORTAMIENTO:
+
+1. Al hacer click en "Reintentar" de la slide N:
+   - Mostrar un overlay de loading SOLO sobre esa slide específica 
+     ("Regenerando slide N...")
+   - Las demás slides siguen visibles e intactas
+   - Llamar a un nuevo endpoint que regenera solo esa slide
+
+2. La regeneración debe MANTENER:
+   - El mismo tema del carrusel completo
+   - El mismo rol de esa slide (portada / desarrollo / CTA)
+   - El mismo texto asociado (a menos que se pida cambiar también)
+   - La numeración 01/05, 02/05, etc.
+   - El estilo consistente con las demás slides del carrusel
+
+3. La regeneración debe CAMBIAR:
+   - Generar una nueva variación visual de esa slide específica
+   - Volver a validar el zorro contra la imagen master
+
+4. OPCIÓN EXTRA "Reintentar con ajuste":
+   Al lado del botón reintentar, un menú dropdown (icono ⚙️) con opciones:
+   - "Reintentar solo imagen" (default, mantiene texto)
+   - "Reintentar solo texto" (mantiene imagen, regenera copy)
+   - "Reintentar todo" (regenera imagen + texto de esa slide)
+   - "Reintentar con prompt personalizado" → abre un modal donde el 
+     usuario puede escribir un ajuste específico (ej: "hacer el zorro 
+     más pequeño", "usar colores más oscuros", "agregar un icono de 
+     WhatsApp")
+
+NUEVO ENDPOINT BACKEND:
+POST /api/community/descripciones/reintentar-slide
+Body: {
+  "carrusel_id": string,
+  "slide_numero": number,
+  "modo": "imagen" | "texto" | "ambos" | "personalizado",
+  "prompt_personalizado": string (opcional),
+  "mantener_consistencia": boolean (default true)
+}
+Response: {
+  "slide": {
+    "numero_slide": number,
+    "imagen": "data:image/png;base64,...",
+    "texto": { ... },
+    "rol": string
+  }
+}
+
+El endpoint debe:
+- Buscar el carrusel original en la DB usando carrusel_id
+- Tomar el contexto completo (tema, tipo, estilo de las otras slides)
+- Regenerar SOLO la slide pedida manteniendo el contexto
+- Actualizar ese slide específico en la DB sin tocar los demás
+- Devolver la nueva slide al frontend
+
+═══════════════════════════════════════════════════════════════
+FEATURE 2: REINTENTAR EN HISTORIAS
+═══════════════════════════════════════════════════════════════
+
+En la sección de Historias, al lado del botón "Descargar PNG" agregar:
+
+1. Botón "🔄 Reintentar imagen" → regenera la imagen manteniendo el 
+   texto actual (título, sub-copy, CTA, hashtags)
+
+2. Botón "✍️ Reintentar texto" → regenera los textos manteniendo la 
+   imagen actual
+
+3. Botón "♻️ Reintentar todo" → regenera imagen + texto completamente
+
+4. Botón "⚙️ Ajuste personalizado" → modal con input de texto donde el 
+   usuario escribe un ajuste específico:
+   - Para imagen: "el zorro más a la izquierda", "menos elementos de 
+     fondo", "pose más alegre"
+   - Para texto: "hacerlo más corto", "más informal", "cambiar CTA a 
+     'Agenda reunión'"
+
+NUEVO ENDPOINT:
+POST /api/community/historias/reintentar
+Body: {
+  "historia_id": string,
+  "modo": "imagen" | "texto" | "ambos" | "personalizado",
+  "prompt_personalizado": string (opcional)
+}
+
+═══════════════════════════════════════════════════════════════
+FEATURE 3: REINTENTAR EN PORTADAS (generador existente)
+═══════════════════════════════════════════════════════════════
+
+En el generador de Portadas (/cover, la sección original), agregar 
+el botón "🔄 Reintentar" al lado del botón de descarga.
+
+Como las portadas solo tienen imagen (no texto renderizado), las 
+opciones son más simples:
+- "🔄 Reintentar" → regenera manteniendo inputs (título, contexto, 
+  estilo)
+- "⚙️ Reintentar con ajuste" → modal para prompt personalizado 
+  adicional (ej: "más oscuro", "zorro más grande", "sin el monitor")
+
+IMPORTANTE: No tocar la lógica del generador de portadas que ya 
+funciona. Solo AGREGAR el botón de reintentar usando el mismo endpoint 
+de generación actual + un parámetro nuevo opcional "ajuste_adicional".
+
+═══════════════════════════════════════════════════════════════
+FEATURE 4: HISTORIAL DE INTENTOS (BONUS)
+═══════════════════════════════════════════════════════════════
+
+Para cualquier reintento (slide, historia o portada), guardar en la DB:
+
+- intento_numero (1, 2, 3...)
+- timestamp
+- imagen_url
+- texto (si aplica)
+- prompt_usado
+
+En el frontend, agregar un botón discreto "📚 Ver intentos anteriores" 
+que abre un popup horizontal tipo carousel mostrando todas las 
+versiones generadas. El usuario puede:
+- Ver las versiones previas
+- Hacer click en "Usar esta versión" para recuperar un intento anterior 
+  si resulta que era mejor que el actual
+
+Esto evita perder generaciones buenas cuando el usuario reintenta 
+muchas veces.
+
+LÍMITE: Máximo 5 intentos guardados por slot (para controlar uso de 
+DB). El más antiguo se borra al llegar al 6to intento.
+
+═══════════════════════════════════════════════════════════════
+UX Y DISEÑO DE LOS BOTONES
+═══════════════════════════════════════════════════════════════
+
+CRITERIOS OBLIGATORIOS:
+
+1. Los botones de reintento NO deben estorbar el preview. Deben ser 
+   sutiles pero visibles (fondo semi-transparente, ícono pequeño).
+
+2. Ubicación consistente en todas las secciones: siempre en la esquina 
+   superior derecha de cada imagen/slide.
+
+3. Estado de loading CLARO:
+   - Overlay con spinner centrado en la imagen que se está regenerando
+   - Texto "Regenerando..."
+   - Tiempo estimado "~10-15s"
+   - Las demás imágenes permanecen visibles y utilizables
+
+4. Feedback de éxito:
+   - Animación sutil de fade in cuando llega la nueva imagen
+   - Toast notification: "✅ Slide 3 regenerada"
+
+5. Manejo de errores:
+   - Si falla el reintento, NO perder la imagen actual
+   - Mostrar error específico: "❌ No se pudo regenerar. La imagen 
+     original se mantiene."
+   - Permitir reintentar de nuevo hasta 3 veces
+
+6. ESTÉTICA:
+   - Usar el mismo diseño de botones que ya tiene el admin (pill-shape, 
+     naranja para acciones primarias, slate para secundarias)
+   - Íconos de lucide-react para mantener consistencia
+
+═══════════════════════════════════════════════════════════════
+REGLAS DE NEGOCIO IMPORTANTES
+═══════════════════════════════════════════════════════════════
+
+1. NO COBRAR DOBLE por reintento. La validación de éxito es que el 
+   usuario apruebe visualmente. Si reintenta, es porque la primera 
+   salió mal → es parte del mismo trabajo.
+
+   Si el usuario hace 10 reintentos en la misma slide, tras el 5to 
+   mostrar un mensaje: "Has reintentado esta imagen 5 veces. ¿Quieres 
+   ajustar el prompt manualmente con una instrucción específica?" y 
+   ofrecer el modal de prompt personalizado.
+
+2. MANTENER CONTEXTO:
+   Al reintentar una slide del carrusel, pasar al LLM información de 
+   las OTRAS slides del mismo carrusel para que mantenga coherencia 
+   visual (ej: "Esta slide es parte de un carrusel donde las demás 
+   slides tienen estos elementos: [...]. Genera algo visualmente 
+   consistente con ellas").
+
+3. TIMEOUT RAZONABLE:
+   Si una regeneración tarda más de 45 segundos, mostrar opción de 
+   cancelar. Muchas regeneraciones fallan porque el modelo se cuelga 
+   con prompts mal armados.
+
+═══════════════════════════════════════════════════════════════
+ORDEN DE IMPLEMENTACIÓN RECOMENDADO
+═══════════════════════════════════════════════════════════════
+
+1. Primero: Botón "Reintentar" simple en carruseles (solo regenerar 
+   imagen, sin opciones avanzadas). Es el caso de uso más frecuente.
+
+2. Segundo: Botón "Reintentar" en historias (imagen + texto por 
+   separado).
+
+3. Tercero: Botón "Reintentar" en portadas.
+
+4. Cuarto: Modal de "Ajuste personalizado" para los 3 generadores.
+
+5. Quinto (opcional): Historial de intentos con recuperación de 
+   versiones previas.
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN FINAL
+═══════════════════════════════════════════════════════════════
+
+Cuando termines, haz esta prueba real:
+
+1. Generar un carrusel de 5 slides con tema "Por qué tu pyme necesita 
+   chatbots en WhatsApp"
+
+2. Verificar que cada slide tenga su botón "🔄 Reintentar" visible en 
+   la esquina superior derecha
+
+3. Hacer click en reintentar de la slide 3:
+   - Verificar que aparece loading solo en slide 3
+   - Las demás slides permanecen intactas y visibles
+   - La slide 3 nueva mantiene el número 03/05 y el mismo texto
+   - La nueva imagen es DIFERENTE a la anterior pero visualmente 
+     coherente con las demás slides del carrusel
+
+4. Hacer click en "⚙️ Ajuste personalizado" en la slide 3:
+   - Escribir: "cambiar el color de fondo a más oscuro"
+   - Verificar que el modal funciona
+   - La slide regenerada refleja el ajuste pedido
+
+Muéstrame capturas de antes/después del reintento para confirmar que 
+funciona bien.

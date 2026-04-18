@@ -1215,17 +1215,83 @@ const ReintentarSlideBody = z.object({
   formato: z.enum(["1:1", "4:5"]).default("4:5"),
   texto_en_imagen: z.boolean().optional().default(false),
   total_slides: z.number().int().min(1).max(10).optional().default(1),
+  modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).optional().default("imagen"),
+  prompt_personalizado: z.string().max(500).optional(),
 });
+
+// Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
+async function regenerarTextoSlide(
+  tema: string, tipoContenido: string, rol: SlideRol, numero: number, totalSlides: number,
+  ajuste?: string,
+): Promise<{ titulo: string; subtitulo: string; prompt_visual?: string }> {
+  const ajusteTxt = ajuste ? `\n\nAJUSTE PEDIDO POR EL USUARIO: "${ajuste}". Aplica este ajuste al copy.` : "";
+  const prompt = `Genera SOLO una slide de carrusel para WebMakerLatam.
+Tema general: "${tema}" (${tipoContenido})
+Es la slide número ${numero} de ${totalSlides} con rol "${rol}".${ajusteTxt}
+
+Devuelve JSON estricto:
+{ "titulo": "máx 50 chars", "subtitulo": "máx 90 chars", "prompt_visual": "1 frase descripción visual" }`;
+  const resp = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 400,
+    system: SYSTEM_PROMPT_DESC,
+    messages: [{ role: "user", content: prompt }],
+  });
+  const txt = resp.content[0]?.type === "text" ? resp.content[0].text : "";
+  const m = txt.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("Claude no devolvió JSON válido para texto de slide");
+  const parsed = JSON.parse(m[0]);
+  return { titulo: parsed.titulo || "", subtitulo: parsed.subtitulo || "", prompt_visual: parsed.prompt_visual };
+}
 
 router.post("/community/descripciones/reintentar-slide", async (req, res) => {
   try {
     const body = ReintentarSlideBody.parse(req.body);
+    let titulo = body.titulo;
+    let subtitulo = body.subtitulo;
+    let prompt_visual = body.prompt_visual;
+
+    // 1) Regenerar texto si modo lo requiere
+    if (body.modo === "texto" || body.modo === "ambos") {
+      try {
+        const nuevo = await regenerarTextoSlide(
+          body.tema, body.tipo_contenido, body.rol, body.numero_slide, body.total_slides,
+          body.modo === "ambos" ? body.prompt_personalizado : body.prompt_personalizado,
+        );
+        titulo = nuevo.titulo || titulo;
+        subtitulo = nuevo.subtitulo || subtitulo;
+        if (nuevo.prompt_visual) prompt_visual = nuevo.prompt_visual;
+      } catch (e) { console.error("[Reintentar slide] regen texto:", e); }
+    }
+
     const slide: SlidePlan = {
       numero: body.numero_slide, rol: body.rol,
-      titulo: body.titulo, subtitulo: body.subtitulo, prompt_visual: body.prompt_visual,
+      titulo, subtitulo, prompt_visual,
     };
+
+    // 2) Si modo es "texto", devolvemos sin tocar imagen
+    if (body.modo === "texto") {
+      res.json({
+        success: true,
+        data: {
+          numero_slide: slide.numero, rol: slide.rol,
+          titulo, subtitulo, prompt_visual,
+          imagen: null, // frontend conserva la imagen actual
+        },
+      });
+      return;
+    }
+
+    // 3) Regenerar imagen — para "personalizado", inyectamos ajuste al prompt visual
     const referenceBase64 = await getFoxRefBase64();
-    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slide, body.formato, referenceBase64, body.total_slides);
+    let slideParaImagen = slide;
+    if (body.modo === "personalizado" && body.prompt_personalizado) {
+      slideParaImagen = {
+        ...slide,
+        prompt_visual: `${slide.prompt_visual || ""}. AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${body.prompt_personalizado}`.trim(),
+      };
+    }
+    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides);
     if (body.texto_en_imagen) {
       try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato); } catch {}
     }
@@ -1233,12 +1299,87 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
       success: true,
       data: {
         numero_slide: slide.numero, rol: slide.rol,
-        titulo: slide.titulo, subtitulo: slide.subtitulo,
+        titulo, subtitulo, prompt_visual,
         imagen: `data:image/png;base64,${imgBase64}`,
       },
     });
   } catch (err: any) {
     console.error("[Reintentar slide] Error:", err);
+    res.status(500).json({ success: false, error: err.message || "Error interno" });
+  }
+});
+
+// ============================================
+// HISTORIAS — REINTENTAR
+// ============================================
+const ReintentarHistoriaBody = z.object({
+  tipo_historia: z.enum(["tip_tech", "motivacional", "comunidad"]),
+  concepto: z.string().min(1).max(200),
+  texto_actual: z.object({
+    copy_principal: z.string(),
+    sub_copy: z.string(),
+    cta: z.string(),
+    hashtags: z.string(),
+  }).optional(),
+  texto_en_imagen: z.boolean().optional().default(false),
+  modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).default("imagen"),
+  prompt_personalizado: z.string().max(500).optional(),
+});
+
+router.post("/community/historias/reintentar", async (req, res) => {
+  try {
+    const body = ReintentarHistoriaBody.parse(req.body);
+
+    // 1) Regenerar texto si modo lo requiere
+    let texto = body.texto_actual || { copy_principal: "", sub_copy: "", cta: "", hashtags: "" };
+    if (body.modo === "texto" || body.modo === "ambos" ||
+        (body.modo === "personalizado" && !body.texto_actual)) {
+      const conceptoExtendido = body.prompt_personalizado && (body.modo === "texto" || body.modo === "ambos")
+        ? `${body.concepto}. AJUSTE PEDIDO: ${body.prompt_personalizado}`
+        : body.concepto;
+      texto = await generarTextoHistoria(body.tipo_historia, conceptoExtendido);
+    }
+
+    // 2) Modo "texto" puro: devuelve solo texto, sin imagen
+    if (body.modo === "texto") {
+      res.json({ success: true, data: { texto, imagen: null } });
+      return;
+    }
+
+    // 3) Regenerar imagen
+    let promptOverride: string | undefined;
+    if (body.modo === "personalizado" && body.prompt_personalizado) {
+      promptOverride = `Pose y escena con AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${body.prompt_personalizado}`;
+    }
+    const prompt = buildHistoriaPrompt(body.tipo_historia, body.concepto, promptOverride);
+    const referenceBase64 = await getFoxRefBase64();
+    const contents = referenceBase64
+      ? [{ role: "user" as const, parts: [
+          { inlineData: { data: referenceBase64, mimeType: "image/png" } },
+          { text: prompt },
+        ] }]
+      : [{ role: "user" as const, parts: [{ text: prompt }] }];
+
+    const imageResp = await ai.models.generateContent({
+      model: "gemini-3-pro-image-preview",
+      contents,
+      config: { responseModalities: ["TEXT", "IMAGE"] },
+    });
+    const imagePart = imageResp.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+    if (!imagePart?.inlineData?.data) {
+      res.status(502).json({ success: false, error: "Gemini no devolvió imagen" });
+      return;
+    }
+    let imgBase64 = imagePart.inlineData.data as string;
+    const mime = imagePart.inlineData.mimeType || "image/png";
+
+    if (body.texto_en_imagen) {
+      try { imgBase64 = await renderTextoEnHistoria(imgBase64, texto); } catch (e) { console.error("[Hist reintentar] render:", e); }
+    }
+    const imagenDataUrl = `data:${body.texto_en_imagen ? "image/png" : mime};base64,${imgBase64}`;
+    res.json({ success: true, data: { texto, imagen: imagenDataUrl } });
+  } catch (err: any) {
+    console.error("[Reintentar historia] Error:", err);
     res.status(500).json({ success: false, error: err.message || "Error interno" });
   }
 });
