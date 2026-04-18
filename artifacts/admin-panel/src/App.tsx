@@ -9,6 +9,8 @@ import CoverGeneratorPage from "./pages/cover-generator";
 import DriveBrowserPage from "./pages/drive-browser";
 import SchedulePage from "./pages/schedule";
 import StudioPage from "./pages/studio";
+import HistoriasPage from "./pages/historias";
+import DescripcionesPage from "./pages/descripciones";
 import LoginPage from "./pages/login";
 import TermsPage from "./pages/terms";
 import PrivacyPage from "./pages/privacy";
@@ -112,6 +114,8 @@ function Router() {
       <Route path="/drive" component={DriveBrowserPage} />
       <Route path="/schedule" component={SchedulePage} />
       <Route path="/estudio" component={StudioPage} />
+      <Route path="/historias" component={HistoriasPage} />
+      <Route path="/descripciones" component={DescripcionesPage} />
       <Route component={NotFound} />
     </Switch>
   );
