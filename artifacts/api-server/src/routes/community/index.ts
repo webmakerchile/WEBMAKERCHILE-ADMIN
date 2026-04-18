@@ -243,6 +243,88 @@ interface FitResult {
 }
 
 // Auto-fit: prueba tamaños de fuente decrecientes hasta que quepa en el área
+// Distribuye tokens (hashtags, palabras) entre N líneas, minimizando la
+// diferencia de longitud entre líneas (líneas balanceadas). Devuelve null si
+// no es posible meter todos los tokens en `numLines` sin exceder `maxChars`.
+function balanceTokensAcrossLines(
+  tokens: string[],
+  maxChars: number,
+  numLines: number,
+): string[] | null {
+  if (numLines < 1 || tokens.length === 0) return null;
+  let best: { lines: string[]; maxLen: number } | null = null;
+  function recurse(start: number, linesSoFar: string[]) {
+    const remaining = numLines - linesSoFar.length;
+    if (remaining === 1) {
+      const line = tokens.slice(start).join(" ");
+      if (line.length > maxChars) return;
+      const all = [...linesSoFar, line];
+      const maxLen = Math.max(...all.map((l) => l.length));
+      if (!best || maxLen < best.maxLen) best = { lines: all, maxLen };
+      return;
+    }
+    for (let end = start + 1; end <= tokens.length - (remaining - 1); end++) {
+      const line = tokens.slice(start, end).join(" ");
+      if (line.length > maxChars) break; // tokens contiguos: si excede, los siguientes también
+      recurse(end, [...linesSoFar, line]);
+    }
+  }
+  recurse(0, []);
+  return best ? best.lines : null;
+}
+
+// Ajusta el font size para que tokens (hashtags) quepan en hasta `maxLines`
+// líneas balanceadas dentro del ancho disponible. Garantiza padding visual a los lados.
+function fitHashtagsBlock(
+  text: string,
+  opts: {
+    maxWidth: number;
+    maxFontSize: number;
+    minFontSize: number;
+    maxLines: number;
+    charWidthRatio?: number;
+    lineHeightRatio?: number;
+  },
+): FitResult {
+  const charW = opts.charWidthRatio ?? 0.58; // hashtags = mezcla mayús+minús, ratio realista
+  const lhRatio = opts.lineHeightRatio ?? 1.22;
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return { lines: [], fontSize: opts.minFontSize, lineHeight: opts.minFontSize * lhRatio, blockWidth: 0, blockHeight: 0 };
+  }
+  for (let fs = opts.maxFontSize; fs >= opts.minFontSize; fs -= 2) {
+    const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
+    // Buscar la cantidad MÍNIMA de líneas (1, luego 2, … hasta maxLines).
+    for (let n = 1; n <= opts.maxLines; n++) {
+      const lines = balanceTokensAcrossLines(tokens, maxChars, n);
+      if (!lines) continue;
+      const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
+      const blockWidth = longest * fs * charW;
+      const lineHeight = fs * lhRatio;
+      const blockHeight = lines.length * lineHeight;
+      return { lines, fontSize: fs, lineHeight, blockWidth, blockHeight };
+    }
+  }
+  // Fallback: minFontSize + greedy llenado (evita perder hashtags si nada calza balanceado).
+  const fs = opts.minFontSize;
+  const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
+  const lines: string[] = [];
+  let cur = "";
+  for (const t of tokens) {
+    const candidate = cur ? cur + " " + t : t;
+    if (candidate.length > maxChars && cur) {
+      lines.push(cur);
+      cur = t;
+    } else {
+      cur = candidate;
+    }
+  }
+  if (cur) lines.push(cur);
+  const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
+  const lineHeight = fs * lhRatio;
+  return { lines, fontSize: fs, lineHeight, blockWidth: longest * fs * charW, blockHeight: lines.length * lineHeight };
+}
+
 function fitTextBlock(
   text: string,
   opts: {
@@ -868,13 +950,16 @@ async function renderTextoEnHistoria(
     charWidthRatio: 0.55,
   }) : null;
 
-  // Hashtags: 32px Inter 500
-  const hashFit = hashtags ? fitTextBlock(hashtags, {
-    maxWidth: innerWidth,
-    maxHeight: Z5_BOTTOM - Z5_TOP - 20,
+  // Hashtags: ancho con padding lateral generoso (no llegan al borde) +
+  // balanceo entre líneas (preferir "3+2" sobre "4+1"). Hasta 3 líneas si hace falta.
+  const hashSidePadding = 140;
+  const hashFit = hashtags ? fitHashtagsBlock(hashtags, {
+    maxWidth: w - hashSidePadding * 2,
     maxFontSize: 32,
-    minFontSize: 24,
-    charWidthRatio: 0.5,
+    minFontSize: 22,
+    maxLines: 3,
+    charWidthRatio: 0.58,
+    lineHeightRatio: 1.22,
   }) : null;
 
   // CTA pill button con sombra
