@@ -3,9 +3,10 @@ import { useGenerateCover } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings
+  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { RETRY_PRESETS } from "@/lib/retry-presets";
 
 const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
 
@@ -268,6 +269,26 @@ export default function CoverGeneratorPage() {
                       Ajustar
                     </button>
                   </div>
+                  {/* Ajustes rápidos predefinidos */}
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1.5 flex items-center gap-1.5">
+                      <Wand2 className="w-3 h-3" />Ajustes rápidos
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {RETRY_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          onClick={() => handleGenerate(preset.prompt)}
+                          disabled={generateCover.isPending}
+                          title={preset.prompt.slice(0, 140) + "…"}
+                          className="bg-white/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-white/10 transition flex items-center gap-1"
+                        >
+                          <span>{preset.emoji}</span>{preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {intentos >= 5 && (
                     <div className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-lg px-3 py-2">
                       Has reintentado {intentos} veces. Prueba con un ajuste personalizado para guiar mejor al modelo.

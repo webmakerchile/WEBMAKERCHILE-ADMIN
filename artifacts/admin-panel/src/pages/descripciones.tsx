@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
-import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat } from "lucide-react";
+import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat, Wand2 } from "lucide-react";
 import { motion } from "framer-motion";
 import JSZip from "jszip";
+import { RETRY_PRESETS } from "@/lib/retry-presets";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -604,12 +605,26 @@ export default function DescripcionesPage() {
                               <Repeat className="w-4 h-4 text-emerald-400" />Reintentar todo
                             </button>
                             <div className="border-t border-white/10 my-1" />
+                            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Ajustes rápidos</div>
+                            {RETRY_PRESETS.map((preset) => (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => handleReintentarSlide(slideShown, "personalizado", preset.prompt)}
+                                className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-white/10 flex items-center gap-2"
+                                title={preset.prompt.slice(0, 140) + "…"}
+                              >
+                                <span>{preset.emoji}</span>
+                                <span>{preset.label}</span>
+                              </button>
+                            ))}
+                            <div className="border-t border-white/10 my-1" />
                             <button
                               type="button"
                               onClick={() => abrirModalAjuste(slideShown, "imagen")}
                               className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
                             >
-                              <Settings className="w-4 h-4 text-primary" />Ajuste personalizado…
+                              <Wand2 className="w-4 h-4 text-primary" />Escribir ajuste propio…
                             </button>
                           </div>
                         )}
