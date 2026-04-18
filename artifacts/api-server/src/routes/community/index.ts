@@ -1425,7 +1425,7 @@ const ReintentarSlideBody = z.object({
   texto_en_imagen: z.boolean().optional().default(false),
   total_slides: z.number().int().min(1).max(10).optional().default(1),
   modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).optional().default("imagen"),
-  prompt_personalizado: z.string().max(500).optional(),
+  prompt_personalizado: z.string().max(2000).optional(),
 });
 
 // Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
@@ -1536,7 +1536,7 @@ const ReintentarHistoriaBody = z.object({
   }).optional(),
   texto_en_imagen: z.boolean().optional().default(false),
   modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).default("imagen"),
-  prompt_personalizado: z.string().max(500).optional(),
+  prompt_personalizado: z.string().max(2000).optional(),
 });
 
 router.post("/community/historias/reintentar", async (req, res) => {
