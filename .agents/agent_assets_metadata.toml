@@ -12,3 +12,9 @@ id = "nllxx5rxSYYSFk2XXsrrc"
 uri = "file://attached_assets/render-tests/historia-render-test.png"
 type = "image"
 title = "Test de renderizado: emojis quitados, auto-fit, fondos y CTA pill"
+
+[[outputs]]
+id = "iR-XcP00a18KudlE9VtVV"
+uri = "file://attached_assets/render-tests/historia-render-v2.png"
+type = "image"
+title = "Layout v2: hashtags wrap a 2 líneas, padding 60px del borde, stack sub→CTA→hashtags"

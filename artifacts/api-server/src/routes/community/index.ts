@@ -307,12 +307,13 @@ function buildHistoriaPrompt(tipoHistoria: string, concepto: string, poseOverrid
 REGLA ABSOLUTA - SIN TEXTO:
 NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, ni texto en pantallas/objetos. CERO caracteres alfanuméricos. Pantallas/monitores muestran formas abstractas de colores, NUNCA texto. Esta regla no tiene excepciones.
 
-PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
+PERSONAJE - ESTILO FLAT CARTOON PURO (copiar EXACTAMENTE de la imagen de referencia adjunta):
 - Zorro naranja antropomórfico llamado Webi, con lentes rectangulares negros gruesos y polera verde oscuro
 - SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado
 - Ocupa al menos 35% del área visual CENTRAL. Es el PROTAGONISTA
-- Idéntico a la referencia: líneas de contorno GRUESAS negras, colores PLANOS sólidos (naranja vibrante, verde sólido), SIN degradados ni texturas en el personaje
+- ESTILO OBLIGATORIO: FLAT CARTOON PURO con colores planos sólidos. SIN sombras realistas, SIN sombreados degradados, SIN texturas en el pelaje, SIN volumen 3D, SIN highlights brillantes. Solo líneas de contorno NEGRAS GRUESAS y colores totalmente PLANOS (naranja vibrante uniforme, verde uniforme, blanco, negro). Debe verse IDÉNTICO al zorro de la imagen de referencia (mismas proporciones, misma cabeza grande, mismos ojos detrás de los lentes, misma polera verde oscuro). Si dudas, copia la referencia.
 - POSE Y EXPRESIÓN ESPECÍFICA para esta historia (categoría narrativa: "${categoria}"): ${pose}
+- POSICIÓN VERTICAL: el zorro debe estar ELEVADO en el cuadro. Sus PIES deben terminar ANTES del píxel 1370 (no más abajo). La cabeza debe estar a partir del píxel 420 aproximadamente. Esto deja libre la franja inferior 1370-1920 para el texto.
 
 CONTENIDO Y CONTEXTO:
 TIPO de historia: "${tipoHistoria}"
@@ -335,10 +336,10 @@ OBJETOS DE LA ESCENA (REGLAS ESTRICTAS):
 - ESCENA NARRATIVA: la imagen debe contar visualmente la idea del tema, no ser un montón de iconos sueltos
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
-- 20% SUPERIOR (0px a 384px) = fondo limpio SIN elementos (reservado para texto)
-- 25% INFERIOR (1440px a 1920px) = fondo limpio SIN elementos (reservado para texto)
-- Toda la acción visual va entre los píxeles 384 y 1440 (zona central)
-- NADA puede invadir las zonas reservadas: ni el zorro, ni objetos, ni sombras
+- 22% SUPERIOR (0px a 420px) = fondo limpio SIN elementos (reservado para texto)
+- 29% INFERIOR (1370px a 1920px) = fondo limpio SIN elementos (reservado para sub-copy + botón CTA + hashtags)
+- Toda la acción visual (zorro y objetos) va estrictamente entre los píxeles 420 y 1370 (zona central)
+- NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo (el glow es decorativo del fondo plano sin elementos sólidos arriba)
 
 FONDO PREMIUM (consistencia de marca):
 - Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en los bordes
@@ -420,25 +421,22 @@ async function renderTextoEnHistoria(
   const cta = stripEmojis(texto.cta);
   const hashtags = stripEmojis(texto.hashtags);
 
-  // Zona superior reservada: 0-384px. Padding interno 60.
+  // Zona superior reservada: 0-420px. Padding interno 60.
   const topZoneTop = 60;
-  const topZoneBottom = 384 - 30;
+  const topZoneBottom = 420 - 30;
   const topZoneCenterY = (topZoneTop + topZoneBottom) / 2;
   const topMaxHeight = topZoneBottom - topZoneTop;
 
-  // Zona inferior: 1440-1920 (480px). Subdividir en sub-copy + cta + hashtags.
-  const bottomTop = 1440 + 30;
-  const bottomBottom = 1920 - 50;
-  const subMaxHeight = 200;
-  const ctaButtonHeight = 92;
-  const hashMaxHeight = 80;
-  const subCenterY = bottomTop + subMaxHeight / 2;
-  const ctaCenterY = subCenterY + subMaxHeight / 2 + 20 + ctaButtonHeight / 2;
-  const hashCenterY = ctaCenterY + ctaButtonHeight / 2 + 18 + hashMaxHeight / 2;
-  void bottomBottom;
+  // Zona inferior reservada: 1370-1920 (550px). Layout vertical:
+  //   sub_copy → 30px → CTA (botón pill) → 30px → hashtags → 60px al borde
+  const bottomEdgePadding = 60; // padding al borde inferior de la imagen
+  const ctaButtonHeight = 96;
+  const subMaxHeight = 200; // hasta 4 líneas a 32-44px
+  const hashMaxHeight = 100; // hasta 2 líneas a 28-36px
+  const gapBetween = 30;
 
   const principalFit = principal ? fitTextBlock(principal, {
-    maxWidth: innerWidth - 48, // descontando padding del bg
+    maxWidth: innerWidth - 48,
     maxHeight: topMaxHeight - 48,
     maxFontSize: 84,
     minFontSize: 48,
@@ -449,11 +447,11 @@ async function renderTextoEnHistoria(
     maxHeight: subMaxHeight - 36,
     maxFontSize: 44,
     minFontSize: 32,
-    charWidthRatio: 0.5, // weight 600 algo más estrecho
+    charWidthRatio: 0.5,
   }) : null;
 
   const ctaFit = cta ? fitTextBlock(cta, {
-    maxWidth: 540,
+    maxWidth: innerWidth - 80,
     maxHeight: ctaButtonHeight - 28,
     maxFontSize: 44,
     minFontSize: 30,
@@ -461,16 +459,30 @@ async function renderTextoEnHistoria(
   }) : null;
 
   const hashFit = hashtags ? fitTextBlock(hashtags, {
-    maxWidth: innerWidth - 24,
+    maxWidth: innerWidth - 48, // RESPETA el padding lateral de 80px + 24px del bg
     maxHeight: hashMaxHeight - 16,
-    maxFontSize: 30,
-    minFontSize: 22,
+    maxFontSize: 36,
+    minFontSize: 28,
     charWidthRatio: 0.5,
   }) : null;
 
+  // Stack desde el borde inferior hacia arriba:
+  // hashtags al fondo → CTA → sub_copy
+  const subBlockH = subFit ? subFit.blockHeight + 36 : 0; // bg padding 18 c/lado
+  const ctaBlockH = ctaFit ? ctaFit.blockHeight + 36 : 0; // padY 18
+  const hashBlockH = hashFit ? hashFit.blockHeight + 24 : 0; // bg padding 12 c/lado
+
+  // Posiciones bottom-up
+  const hashBottom = h - bottomEdgePadding;
+  const hashCenterY = hashBottom - hashBlockH / 2;
+  const ctaBottom = hashFit ? hashCenterY - hashBlockH / 2 - gapBetween : h - bottomEdgePadding;
+  const ctaCenterY = ctaBottom - ctaBlockH / 2;
+  const subBottom = ctaFit ? ctaCenterY - ctaBlockH / 2 - gapBetween : (hashFit ? hashCenterY - hashBlockH / 2 - gapBetween : h - bottomEdgePadding);
+  const subCenterY = subBottom - subBlockH / 2;
+
   // Construir CTA tipo botón con su propio fondo (naranja sólido)
   const ctaSvg = ctaFit ? (() => {
-    const padX = 40, padY = 18;
+    const padX = 44, padY = 18;
     const btnWidth = Math.min(innerWidth, ctaFit.blockWidth + padX * 2);
     const btnHeight = ctaFit.blockHeight + padY * 2;
     const btnX = (w - btnWidth) / 2;
@@ -491,16 +503,16 @@ async function renderTextoEnHistoria(
     ${SVG_FILTER_DEFS}
     ${principalFit ? renderTextBlockSvg(principalFit, {
       canvasWidth: w, centerY: topZoneCenterY, fontWeight: 900, color: "#ffffff",
-      bgOpacity: 0.55, bgPadding: 24, bgRadius: 22, filterId: "textds",
+      bgOpacity: 0.7, bgPadding: 24, bgRadius: 22, filterId: "textds",
     }) : ""}
     ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: subCenterY, fontWeight: 700, color: "#f1f5f9",
-      bgOpacity: 0.5, bgPadding: 18, bgRadius: 16, filterId: "textds",
+      canvasWidth: w, centerY: subCenterY, fontWeight: 700, color: "#f8fafc",
+      bgOpacity: 0.7, bgPadding: 18, bgRadius: 16, filterId: "textds",
     }) : ""}
     ${ctaSvg}
     ${hashFit ? renderTextBlockSvg(hashFit, {
-      canvasWidth: w, centerY: hashCenterY, fontWeight: 600, color: "#fb923c",
-      bgOpacity: 0, bgPadding: 8, bgRadius: 10, filterId: "textds",
+      canvasWidth: w, centerY: hashCenterY, fontWeight: 700, color: "#fb923c",
+      bgOpacity: 0.55, bgPadding: 12, bgRadius: 12, filterId: "textds",
     }) : ""}
   </svg>`;
 
@@ -692,10 +704,10 @@ function buildSlidePrompt(
 REGLA ABSOLUTA - SIN TEXTO:
 NO incluyas NINGUNA letra, palabra, número, rótulo ni texto en la imagen. CERO caracteres alfanuméricos. Pantallas muestran formas abstractas, NUNCA texto legible.
 
-PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
+PERSONAJE - ESTILO FLAT CARTOON PURO (copiar EXACTAMENTE de la imagen de referencia adjunta):
 - Zorro naranja antropomórfico Webi, lentes rectangulares negros gruesos, polera verde oscuro
-- Estilo flat cartoon: líneas de contorno GRUESAS negras, colores PLANOS sólidos, SIN degradados ni texturas en el personaje
-- IDÉNTICO a la referencia en proporciones y nivel de detalle, sin importar la pose
+- ESTILO OBLIGATORIO: FLAT CARTOON PURO con colores planos sólidos. SIN sombras realistas, SIN sombreados degradados, SIN texturas en el pelaje, SIN volumen 3D, SIN highlights brillantes. Solo líneas de contorno NEGRAS GRUESAS y colores totalmente PLANOS (naranja vibrante uniforme, verde uniforme, blanco, negro).
+- IDÉNTICO a la referencia en proporciones, cabeza grande, ojos detrás de los lentes, polera verde oscuro y nivel de detalle, sin importar la pose. Si dudas, copia la referencia.
 
 ROL NARRATIVO DE ESTA SLIDE:
 ${rolDescripcion}
@@ -721,10 +733,11 @@ OBJETOS DE LA ESCENA (REGLAS ESTRICTAS):
 - Los objetos INTERACTÚAN con el zorro o entre sí (el zorro señala/sostiene/empuja, o flechas conectan los objetos), NUNCA flotan al azar
 - ESCENA NARRATIVA, no un montón de iconos sueltos
 
-ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO):
-- 22% SUPERIOR: fondo limpio sin elementos
-- 22% INFERIOR: fondo limpio sin elementos
-- Toda la acción visual va en el centro
+ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
+- 22% SUPERIOR (formato 1:1: 0-220px / formato 4:5: 0-280px) = fondo limpio SIN elementos (reservado para título)
+- 25% INFERIOR (formato 1:1: 880-1080px / formato 4:5: 1050-1350px) = fondo limpio SIN elementos (reservado para subtítulo)
+- Toda la acción visual (zorro y objetos) va estrictamente en el centro
+- NADA invade las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras
 
 FONDO PREMIUM (consistencia entre todas las slides del carrusel):
 - Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en bordes
@@ -787,15 +800,16 @@ async function renderTextoEnSlide(
   const sidePadding = 80;
   const innerWidth = w - sidePadding * 2;
 
-  // Zonas reservadas según formato
+  // Zonas reservadas según formato + padding al borde
   const isCuadrado = Math.abs(w - h) < 50;
-  const topZoneEnd = isCuadrado ? 200 : 250;
-  const bottomZoneStart = isCuadrado ? h - 200 : h - 250;
+  const edgePad = 50; // padding desde el borde superior/inferior
+  const topZoneEnd = isCuadrado ? 230 : 290;
+  const bottomZoneStart = isCuadrado ? h - 230 : h - 290;
 
-  const topCenterY = topZoneEnd / 2 + 20;
-  const topMaxHeight = topZoneEnd - 40;
-  const bottomCenterY = (bottomZoneStart + h) / 2;
-  const bottomMaxHeight = (h - bottomZoneStart) - 40;
+  const topCenterY = (edgePad + topZoneEnd) / 2;
+  const topMaxHeight = topZoneEnd - edgePad - 20;
+  const bottomCenterY = (bottomZoneStart + h - edgePad) / 2;
+  const bottomMaxHeight = (h - edgePad - bottomZoneStart) - 20;
 
   const titulo = stripEmojis(slide.titulo);
   const subtitulo = stripEmojis(slide.subtitulo);
@@ -819,11 +833,11 @@ async function renderTextoEnSlide(
     ${SVG_FILTER_DEFS}
     ${tituloFit ? renderTextBlockSvg(tituloFit, {
       canvasWidth: w, centerY: topCenterY, fontWeight: 900, color: "#ffffff",
-      bgOpacity: 0.55, bgPadding: 24, bgRadius: 22, filterId: "textds",
+      bgOpacity: 0.7, bgPadding: 24, bgRadius: 22, filterId: "textds",
     }) : ""}
     ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: bottomCenterY, fontWeight: 700, color: "#f1f5f9",
-      bgOpacity: 0.5, bgPadding: 18, bgRadius: 16, filterId: "textds",
+      canvasWidth: w, centerY: bottomCenterY, fontWeight: 700, color: "#f8fafc",
+      bgOpacity: 0.7, bgPadding: 18, bgRadius: 16, filterId: "textds",
     }) : ""}
   </svg>`;
 

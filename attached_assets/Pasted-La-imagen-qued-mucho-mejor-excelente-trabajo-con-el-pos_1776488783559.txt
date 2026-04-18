@@ -1,0 +1,60 @@
+La imagen quedó mucho mejor, excelente trabajo con el posicionamiento y la 
+narrativa visual. Pero hay 3 ajustes finales de layout:
+
+AJUSTE 1 - HASHTAGS SE CORTAN AL BORDE:
+Los hashtags al pie de la imagen (#WebMakerLatam #Emprendedores #PymesLatam 
+#PaginasWeb) se están cortando en el borde derecho. 
+
+Soluciones:
+- Respetar el padding lateral de 80px también en los hashtags
+- Si los hashtags son muy largos para una sola línea, hacer wrap a 2 líneas 
+  automáticamente
+- Reducir tamaño de fuente de los hashtags si excede el ancho (mínimo 28px, 
+  máximo 36px)
+- Centrar los hashtags horizontalmente
+
+AJUSTE 2 - EL TEXTO INFERIOR TAPA AL ZORRO:
+El copy secundario ("Diseñamos sitios que convierten visitas en clientes 
+24/7") queda sobre las piernas del zorro.
+
+Soluciones:
+- El zorro debe aparecer MÁS ARRIBA en la imagen. Reposiciónalo para que 
+  sus pies terminen antes de los 1400px en historias 9:16 (actualmente 
+  parece que llega hasta los 1500px).
+- O aumentar la zona inferior reservada de 480px a 550px para dar más espacio 
+  al texto sin invadir al zorro.
+- El fondo semi-transparente detrás del texto debe ser LO SUFICIENTEMENTE 
+  OPACO (bajar opacidad a 40% para que tape mejor lo que hay detrás) para 
+  garantizar legibilidad.
+
+AJUSTE 3 - BOTÓN CTA MUY PEGADO AL BORDE:
+El botón "Agenda tu reunión" queda casi tocando el borde inferior.
+
+Solución:
+- Padding inferior mínimo de 60px entre el botón y el borde de la imagen.
+- Los hashtags deben ir DEBAJO del botón con otro padding de 30px.
+- Orden vertical de la zona inferior: copy secundario → botón CTA → 
+  hashtags → padding de 60px al borde.
+
+AJUSTE 4 - CONSISTENCIA DEL ZORRO (IMPORTANTE):
+El zorro en esta imagen tiene más sombras y texturas que el zorro flat 
+cartoon de las portadas. Refuerza en el prompt:
+
+"El zorro DEBE ser estilo FLAT CARTOON PURO con colores planos sólidos, 
+SIN sombras realistas, SIN degradados, SIN texturas en el pelaje. Solo 
+líneas gruesas negras y colores planos. Debe verse IDÉNTICO al zorro del 
+generador de portadas."
+
+Compara el zorro generado con el zorro de referencia antes de devolver la 
+imagen. Si detectas sombras o degradados en el zorro, regenera.
+
+VERIFICACIÓN:
+Después de los ajustes, generame 2 imágenes de test:
+1. Historia 9:16 con tema "Automatiza tu WhatsApp con IA" + texto en imagen
+2. Carrusel de 3 slides con tema "Señales de que tu pyme necesita una web"
+
+Quiero ver que en ambas:
+- Los hashtags caben sin cortarse
+- El texto NO tapa al zorro
+- Los botones tienen padding correcto
+- El zorro se ve flat cartoon puro (sin sombras)
