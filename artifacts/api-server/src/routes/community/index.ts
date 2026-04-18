@@ -799,7 +799,7 @@ REGLAS ADICIONALES PARA ESTA HISTORIA:
 - Cuerpo completo SIEMPRE visible (cabeza, torso, brazos, piernas, cola). Nunca cortado por los bordes ni recortado.
 - El zorro es el PROTAGONISTA ABSOLUTO. Ocupa el centro de la zona de imagen.
 - POSE Y EXPRESIÓN específica (categoría narrativa: "${categoria}"): ${pose}
-- POSICIÓN VERTICAL EXACTA Y NO NEGOCIABLE: la cabeza del zorro debe empezar DESPUÉS del píxel y=420, y sus PIES deben terminar ANTES del píxel y=1080. Es decir, todo el zorro vive ESTRICTAMENTE entre y=420 y y=1080 (660 px de altura). NUNCA invadas la franja inferior (y=1080-1920) — esa zona está reservada para texto, sub-copy, botón CTA y hashtags. Si tu zorro queda demasiado abajo o demasiado grande, RECÓRTALO. Mejor un zorro mediano centrado en la mitad superior que un zorro grande que invade la zona inferior.
+- POSICIÓN VERTICAL EXACTA Y NO NEGOCIABLE: la cabeza del zorro debe empezar DESPUÉS del píxel y=550, y sus PIES deben terminar ANTES del píxel y=1300. Es decir, todo el zorro vive ESTRICTAMENTE entre y=550 y y=1300 (750 px de altura). NUNCA invadas la franja inferior (y=1300-1920) — esa zona está reservada para sub-copy, botón CTA y hashtags. Si tu zorro queda demasiado abajo o demasiado grande, RECÓRTALO. Mejor un zorro mediano bien centrado verticalmente que un zorro grande que invada las zonas reservadas.
 - RESPIRACIÓN: el zorro debe tener al menos 100 px de aire vacío por TODOS sus lados (arriba, abajo, izquierda, derecha). Nada lo toca.
 
 CONTENIDO Y CONTEXTO:
@@ -822,15 +822,15 @@ OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
 - PROHIBIDO: amontonar iconos, llenar el fondo de elementos, hacer un collage. Si dudas, elimina objetos.
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
-- 22% SUPERIOR (0px a 420px) = fondo limpio SIN elementos sólidos (reservado para título)
-- 33% INFERIOR (1280px a 1920px) = fondo limpio SIN elementos sólidos (reservado para sub-copy + CTA + hashtags)
-- Toda la acción visual (zorro + 1-2 objetos pequeños) va estrictamente entre los píxeles 420 y 1280 (zona central de 860 px)
+- 28% SUPERIOR (0px a 550px) = fondo limpio SIN elementos sólidos (reservado para título)
+- 32% INFERIOR (1300px a 1920px) = fondo limpio SIN elementos sólidos (reservado para sub-copy + CTA + hashtags)
+- Toda la acción visual (zorro + 1-2 objetos pequeños) va estrictamente entre los píxeles 550 y 1300 (zona central de 750 px)
 - NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo
 
 VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
 1. ¿El zorro está 100% IDÉNTICO a la referencia (ojos pequeños, nariz negra, pelaje plano #E86A30, sin estilo Disney/Pixar)?
 2. ¿Hay un máximo de 2 objetos de apoyo y están a los lados, NUNCA detrás del zorro?
-3. ¿La franja superior 0-420 está LIMPIA sin objetos, y la inferior 1280-1920 también?
+3. ¿La franja superior 0-550 está LIMPIA sin objetos, y la inferior 1300-1920 también?
 4. ¿El zorro tiene 100+ px de aire alrededor?
 Si respondes NO a cualquiera, REGENERA mentalmente antes de devolver la imagen.
 
@@ -1136,22 +1136,30 @@ async function renderTextoEnHistoria(
   const cta = stripEmojis(texto.cta);
   const hashtags = stripEmojis(texto.hashtags);
 
-  // Centros de cada zona
-  // Zonas recalculadas: zorro vive 420-1080, abajo queda libre desde 1100
-  const Z1_TOP = 0,       Z1_BOTTOM = 380;
-  const Z3_TOP = 1180,    Z3_BOTTOM = 1480;   // sub-copy con más espacio (300 px)
-  const Z4_TOP = 1500,    Z4_BOTTOM = 1720;
-  const Z5_TOP = 1740,    Z5_BOTTOM = 1880;
+  // LAYOUT DEFINITIVO 1080x1920 (zorro vive 550-1300, ~750 px de alto):
+  //   0-150     padding top
+  //   150-430   Z1 título (centro 290) — 280 px
+  //   430-550   transición con glow ambiental
+  //   550-1300  zorro
+  //   1300-1360 transición
+  //   1360-1540 Z3 sub-copy (centro 1450)
+  //   1540-1700 Z4 botón CTA (centro 1620)
+  //   1700-1840 Z5 hashtags (centro 1770)
+  //   1840-1920 padding bottom
+  const Z1_TOP = 150,     Z1_BOTTOM = 430;
+  const Z3_TOP = 1360,    Z3_BOTTOM = 1540;
+  const Z4_TOP = 1540,    Z4_BOTTOM = 1700;
+  const Z5_TOP = 1700,    Z5_BOTTOM = 1840;
 
-  const z1Center = (Z1_TOP + Z1_BOTTOM) / 2;       // 210
-  const z3Center = (Z3_TOP + Z3_BOTTOM) / 2;       // 1390
-  const z4Center = (Z4_TOP + Z4_BOTTOM) / 2;       // 1610
-  const z5Center = (Z5_TOP + Z5_BOTTOM) / 2;       // 1790
+  const z1Center = (Z1_TOP + Z1_BOTTOM) / 2;       // 290
+  const z3Center = (Z3_TOP + Z3_BOTTOM) / 2;       // 1450
+  const z4Center = (Z4_TOP + Z4_BOTTOM) / 2;       // 1620
+  const z5Center = (Z5_TOP + Z5_BOTTOM) / 2;       // 1770
 
-  // Título: 72-88px, máximo 2 líneas. Si no cabe en 2 líneas a 64px, baja a 56 antes de 3.
+  // Título: 72-88px, máximo 2 líneas. Z1 = 280px, dejamos ~30px de padding interno.
   const principalFit = principal ? fitTextBlock(principal, {
     maxWidth: innerWidth,
-    maxHeight: Z1_BOTTOM - Z1_TOP - 160, // padding top 80, bottom 80
+    maxHeight: Z1_BOTTOM - Z1_TOP - 60,
     maxFontSize: 88,
     minFontSize: 56,
     charWidthRatio: 0.55,

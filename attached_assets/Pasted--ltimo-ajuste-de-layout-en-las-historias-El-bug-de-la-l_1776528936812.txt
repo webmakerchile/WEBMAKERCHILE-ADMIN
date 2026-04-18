@@ -1,0 +1,100 @@
+Último ajuste de layout en las historias. El bug de la línea se resolvió 
+perfectamente y todo lo demás quedó excelente. Pero hay un problema de 
+DISTRIBUCIÓN VERTICAL del título que rompe el balance visual.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA
+═══════════════════════════════════════════════════════════════
+
+El título principal está POSICIONADO MUY ARRIBA (casi pegado al borde 
+superior de la imagen) y deja DEMASIADO ESPACIO VACÍO entre el título 
+y el zorro (casi 400px de negro).
+
+Mira la última historia "Cobros que fallan = dinero perdido":
+- Título arranca a ~30px del borde superior (casi tocándolo)
+- Termina alrededor del pixel 280
+- El zorro empieza recién en el pixel 650
+- Hay ~370px de espacio muerto en el medio
+
+Esto hace que la composición se vea "desbalanceada" — como si el 
+título estuviera flotando solo y el zorro estuviera hundido en el 
+centro-bajo.
+
+═══════════════════════════════════════════════════════════════
+SOLUCIÓN
+═══════════════════════════════════════════════════════════════
+
+El título debe respirar arriba y estar más cerca del zorro. Ajustar 
+el posicionamiento vertical así:
+
+LAYOUT ACTUAL (incorrecto):
+- 0-30px       → padding top casi inexistente
+- 30-280px     → TÍTULO (pegado arriba)
+- 280-650px    → ESPACIO VACÍO gigante (~370px)
+- 650-1280px   → ZORRO
+- ...
+
+LAYOUT NUEVO (correcto):
+- 0-150px      → padding top generoso (aire arriba)
+- 150-430px    → TÍTULO (centrado visualmente en su zona)
+- 430-550px    → ESPACIO DE TRANSICIÓN razonable (~120px)
+- 550-1280px   → ZORRO
+- ...
+
+CAMBIOS ESPECÍFICOS:
+
+1. PADDING TOP DEL TÍTULO: aumentar de ~30px a 150px
+   El título NO debe estar pegado al borde superior. Necesita aire.
+
+2. ESPACIO TÍTULO → ZORRO: reducir de ~370px a ~120px
+   El zorro debe empezar más arriba para estar más cerca del título.
+
+3. EL ZORRO SE CORRE HACIA ARRIBA:
+   Actualmente empieza en pixel ~650. Ajustar para que empiece en 
+   pixel ~550. Esto:
+   - Reduce el espacio vacío entre título y zorro
+   - Deja más espacio natural entre zorro y sub-copy (que actualmente 
+     se siente apretado)
+
+═══════════════════════════════════════════════════════════════
+LAYOUT FINAL DEFINITIVO (1080x1920)
+═══════════════════════════════════════════════════════════════
+
+Por favor aplica estas coordenadas como plantilla DEFINITIVA para 
+todas las historias:
+
+- 0-150px     → padding top (aire superior limpio)
+- 150-430px   → TÍTULO (hasta 2 líneas, centrado vertical en su zona)
+- 430-550px   → Transición con glow ambiental (~120px)
+- 550-1300px  → ZORRO de cuerpo completo (750px de alto)
+- 1300-1360px → Transición (60px)
+- 1360-1540px → SUB-COPY (hasta 2 líneas)
+- 1540-1700px → BOTÓN CTA
+- 1700-1840px → HASHTAGS
+- 1840-1920px → padding bottom (80px)
+
+La diferencia clave es que el TÍTULO YA NO ESTÁ PEGADO ARRIBA y el 
+ZORRO está más centrado verticalmente, lo que balancea la composición.
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+Genera 2 historias de prueba:
+
+TEST 1: Tema corto (título de 1 línea): "Vende más con tu web"
+TEST 2: Tema largo (título de 2 líneas): "Cómo automatizar tu atención 
+al cliente"
+
+En ambas verifica:
+✅ El título tiene 150px de aire arriba (no pegado al borde)
+✅ Entre título y zorro hay ~120px (no un vacío gigante)
+✅ El zorro se ve más centrado verticalmente en la imagen
+✅ Todo el resto del layout se mantiene igual (sub-copy, CTA, 
+   hashtags sin cambios)
+
+Mándame las 2 imágenes para confirmar que el balance quedó bien.
+
+IMPORTANTE: Solo tocar el posicionamiento vertical del título y del 
+zorro. NO tocar el fondo (que quedó perfecto), ni los estilos de 
+texto, ni los colores. Es solo reposicionamiento vertical.
