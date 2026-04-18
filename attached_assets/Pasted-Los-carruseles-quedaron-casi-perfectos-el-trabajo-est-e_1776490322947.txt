@@ -1,0 +1,208 @@
+Los carruseles quedaron casi perfectos, el trabajo está excelente. Pero hay 
+2 problemas específicos que resolver: uno pequeño en carruseles y uno FUERTE 
+en historias.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 1 (MENOR): INCONSISTENCIA EN SLIDE 4 DE 5 EN CARRUSELES
+═══════════════════════════════════════════════════════════════
+
+En el último carrusel generado, 4 de las 5 slides tienen el zorro CORRECTO 
+(flat cartoon estilizado, ojos simples), pero la slide 04/05 ("Sin renovar, 
+tu competencia te gana") tiene un zorro DIFERENTE:
+
+- Ojos grandes y redondos con brillo (estilo Disney/Pixar) ❌
+- Nariz rosada en lugar de negra ❌  
+- Cara más redonda y "cute" ❌
+- Más detalles de iluminación en el pelaje ❌
+
+Las otras 4 slides tienen el zorro correcto (ojos pequeños, forma alargada, 
+nariz negra, colores planos).
+
+CAUSA PROBABLE:
+Aunque estás pasando la imagen de referencia, Gemini a veces reinterpreta. 
+Esto pasa más cuando la slide tiene muchos otros elementos visuales 
+coloridos (en el slide 4 hay cohete, gráfico azul, flechas verdes, carrito, 
+monedas...) y el modelo "balancea" el estilo.
+
+SOLUCIONES:
+
+1. REFORZAR la restricción del zorro en el prompt de CADA slide con una 
+   sección de "VALIDACIÓN FINAL" que Gemini debe ejecutar mentalmente antes 
+   de generar:
+   
+   "ANTES DE FINALIZAR LA IMAGEN, VERIFICA:
+   - ¿Los ojos del zorro son PEQUEÑOS y simples (no grandes tipo Pixar)? 
+   - ¿La nariz es NEGRA (no rosada)?
+   - ¿La cara es ESTILIZADA y alargada (no redonda estilo chibi)?
+   - ¿El pelaje es UN SOLO color plano sin brillos?
+   - ¿Las líneas son GRUESAS y negras uniformes?
+   Si respondiste NO a cualquiera, el zorro está INCORRECTO."
+
+2. AGREGAR UN POST-CHECK AUTOMÁTICO:
+   Para cada slide generada, hacer una segunda llamada a Gemini Vision 
+   preguntándole: "¿Este zorro tiene ojos grandes estilo Pixar o simples 
+   estilo flat cartoon?". Si responde "estilo Pixar", regenerar esa slide 
+   automáticamente (máximo 2 reintentos).
+
+3. REDUCIR LA DENSIDAD VISUAL DE LA ESCENA:
+   En slides con muchos objetos coloridos, simplificar a máximo 2-3 objetos 
+   principales. Cuando hay demasiados elementos, Gemini tiende a suavizar 
+   el estilo del zorro para "armonizar".
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 2 (CRÍTICO): HISTORIAS NECESITAN REDISEÑO DE LAYOUT
+═══════════════════════════════════════════════════════════════
+
+La última historia generada ("Tus clientes te buscan en Google... y 
+encuentran a tu competencia") tiene 5 problemas graves de layout:
+
+1. TEXTO DEL TÍTULO DEMASIADO GRANDE:
+   Ocupa 4 líneas y casi un tercio superior de la imagen. Se ve 
+   desproporcionado. Los títulos de historias deben ser SHORT y PUNCHY.
+
+2. SUB-COPY ENCIMA DEL ZORRO:
+   "Sin SEO, tu negocio es invisible..." atraviesa el cuerpo del zorro, 
+   queda ilegible y se ve amateur.
+
+3. ELEMENTOS CORTADOS DETRÁS DEL ZORRO:
+   Se ven iconos detrás del zorro (lupas, pantallas) que quedan cortados 
+   o mal compuestos. El zorro debería tener fondo limpio.
+
+4. COMPOSICIÓN APLASTADA:
+   El zorro queda apretado entre texto arriba y texto abajo, sin respirar.
+
+5. HASHTAGS MUY PEGADOS AL BORDE INFERIOR:
+   Sin padding suficiente.
+
+REDISEÑO OBLIGATORIO DE HISTORIAS (9:16, 1080x1920px):
+
+LAYOUT NUEVO ESTRUCTURADO POR ZONAS:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ZONA 1 - TÍTULO (0px a 420px = 22%):
+- Padding top: 80px
+- Padding lateral: 80px
+- Tipografía: Inter 900 Black
+- Tamaño: 72-88px (auto-fit)
+- Color: white puro
+- Text-shadow: 0 4px 12px rgba(0,0,0,0.6)
+- Máximo 2 líneas, NUNCA 3 o 4
+- Si el título no cabe en 2 líneas → reducir fuente a 64px antes de hacer 3
+- Si aún así no cabe → PEDIR AL LLM que reescriba el título más corto
+
+REGLA DE COPY: Título máximo 40 caracteres. Si Claude genera algo más largo, 
+truncar y pedir versión corta.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ZONA 2 - IMAGEN DEL ZORRO (420px a 1280px = 45%):
+- ÚNICAMENTE el zorro + 1 o 2 objetos acompañantes pequeños
+- Fondo de esta zona: gradiente slate con glow naranja (como ya está)
+- El zorro debe ocupar el centro, con al menos 60px de respiración a cada 
+  lado y arriba/abajo
+- LOS OBJETOS NO DEBEN OVERLAPEAR AL ZORRO
+- MÁXIMO 2 objetos/iconos de apoyo, ubicados a los lados del zorro, NUNCA 
+  detrás
+
+IMPORTANTE: Menos es más. En historias, el zorro debe ser el protagonista 
+absoluto. No saturar con iconos.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ZONA 3 - SUB-COPY (1280px a 1500px = 11%):
+- Separador visual: línea horizontal fina en naranja al 30% de opacidad 
+  arriba de esta zona (opcional pero ayuda a separar)
+- Tipografía: Inter 600 SemiBold
+- Tamaño: 44-52px
+- Color: white al 90% de opacidad
+- Text-shadow: 0 2px 8px rgba(0,0,0,0.5)
+- Máximo 2 líneas
+- Padding lateral: 100px
+- NUNCA debe invadir la zona del zorro
+
+REGLA: Sub-copy máximo 80 caracteres.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ZONA 4 - BOTÓN CTA (1500px a 1720px = 11%):
+- Botón pill-shape centrado
+- Fondo: #E86A30 (naranja marca)
+- Tipografía del botón: Inter 700 Bold, 44px, white
+- Padding interno del botón: 32px vertical, 64px horizontal
+- Border-radius: 999px (pill completo)
+- Sombra sutil bajo el botón: 0 8px 24px rgba(232,106,48,0.3)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ZONA 5 - HASHTAGS (1720px a 1860px = 7%):
+- Tipografía: Inter 500 Medium
+- Tamaño: 32px
+- Color: naranja #E86A30 al 70% de opacidad
+- Máximo 2 líneas, centrado
+- Padding lateral: 80px
+- Padding bottom respecto al borde de la imagen: MÍNIMO 60px
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+REGLAS GENERALES DE LA HISTORIA:
+
+1. SEPARACIÓN VISUAL ENTRE ZONAS: mínimo 40px de aire entre cada zona. 
+   Nunca dos elementos pegados.
+
+2. JERARQUÍA CLARA: título grande → zorro (protagonista) → sub-copy → CTA 
+   → hashtags. Siempre en ese orden, nunca mezclado.
+
+3. EL ZORRO NUNCA COMPARTE ZONA CON TEXTO: su zona es sagrada. Si el título 
+   necesita más espacio, reducir la fuente antes de invadir la zona del 
+   zorro.
+
+4. VALIDACIÓN ANTES DE RENDERIZAR: el sistema debe calcular si todo el 
+   contenido cabe. Si no cabe (título muy largo, sub-copy muy largo), 
+   pedir al LLM versión más corta ANTES de generar la imagen.
+
+═══════════════════════════════════════════════════════════════
+AJUSTE ADICIONAL: LONGITUD DE COPYS GENERADOS POR CLAUDE
+═══════════════════════════════════════════════════════════════
+
+Ajustar el system prompt de generación de textos para historias:
+
+"REGLAS ESTRICTAS DE LONGITUD (OBLIGATORIAS):
+- copy_principal: MÁXIMO 40 caracteres (incluyendo espacios). Debe caber 
+  en 2 líneas de ~20 caracteres cada una.
+- sub_copy: MÁXIMO 80 caracteres en 2 líneas.
+- cta: MÁXIMO 25 caracteres, accionable (empezar con verbo).
+- hashtags: MÁXIMO 5 hashtags que quepan en 2 líneas.
+
+Si cualquier texto excede estos límites, REESCRÍBELO MÁS CORTO antes de 
+responder. Prefiere impacto sobre información."
+
+EJEMPLOS DE COPY PRINCIPAL QUE SÍ FUNCIONAN (40 caracteres o menos):
+✅ "Tu web vende mientras duermes"
+✅ "¿Tu web se ve mal en celular?"
+✅ "Sé encontrado. O sé olvidado."
+✅ "Clientes 24/7 con un chatbot"
+
+EJEMPLOS QUE NO FUNCIONAN (muy largos):
+❌ "Tus clientes te buscan en Google... y encuentran a tu competencia" (64 
+   caracteres)
+❌ "Por qué tu negocio pierde clientes cada día sin una web profesional" 
+   (muy largo)
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN FINAL
+═══════════════════════════════════════════════════════════════
+
+Después de implementar los cambios:
+
+TEST 1: Generar 1 historia con tema "Chatbots con IA para mi negocio"
+Esperado:
+- Título corto (máximo 2 líneas, no 4)
+- Zorro claramente separado del texto
+- Sub-copy NO encima del zorro
+- Todo respira
+
+TEST 2: Generar 1 carrusel de 5 slides con tema "3 razones para automatizar 
+tu negocio con IA"
+Esperado:
+- Las 5 slides con el MISMO estilo de zorro (ojos simples, nariz negra, 
+  cara estilizada)
+- Sin variaciones tipo Disney/Pixar en ninguna slide
+
+Mándame la historia + las 5 slides del carrusel. Quiero ver que ambos 
+problemas están resueltos.

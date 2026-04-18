@@ -344,35 +344,42 @@ ${FOX_BRAND_SPEC}
 
 REGLAS ADICIONALES PARA ESTA HISTORIA:
 - Cuerpo completo SIEMPRE visible (cabeza, torso, brazos, piernas, cola). Nunca cortado por los bordes ni recortado.
-- Ocupa al menos 35% del área visual CENTRAL. Es el PROTAGONISTA.
+- El zorro es el PROTAGONISTA ABSOLUTO. Ocupa el centro de la zona de imagen.
 - POSE Y EXPRESIÓN específica (categoría narrativa: "${categoria}"): ${pose}
-- POSICIÓN VERTICAL: el zorro debe estar ELEVADO en el cuadro. Sus PIES deben terminar ANTES del píxel 1370. La cabeza debe estar a partir del píxel 420 aproximadamente. Esto deja libre la franja inferior 1370-1920 para el texto overlay.
+- POSICIÓN VERTICAL EXACTA: la cabeza del zorro debe empezar después del píxel 480, y sus PIES deben terminar ANTES del píxel 1240. Es decir, todo el zorro vive entre y=480 y y=1240 (860 px de altura). Esto deja franjas TOTALMENTE libres arriba (0-420) y abajo (1280-1920) para el texto overlay.
+- RESPIRACIÓN: el zorro debe tener al menos 100 px de aire vacío por TODOS sus lados (arriba, abajo, izquierda, derecha). Nada lo toca.
 
 CONTENIDO Y CONTEXTO:
 TIPO de historia: "${tipoHistoria}"
 CONCEPTO/TEMA del día: "${concepto}"
 
-OBJETOS DE LA ESCENA (REGLAS ESTRICTAS):
-- Extrae las PALABRAS CLAVE VISUALES del tema y úsalas como objetos. Ejemplos:
-  * "chatbot" / "responder" / "WhatsApp" → burbuja de chat verde estilo WhatsApp, smartphone, robot pequeño amigable
-  * "web" / "sitio" / "landing" → pantalla de laptop o monitor mostrando una web abstracta (sin texto), cursor del mouse
-  * "ventas" / "vender más" / "ingresos" → carrito de compras, gráfico de barras ascendente, signos de moneda ($)
-  * "rápido" / "carga" / "velocidad" → cohete, velocímetro, líneas de movimiento
-  * "automatización" / "IA" / "ahorro de tiempo" → engranajes interconectados, reloj, cerebro digital estilizado
-  * "clientes" / "atención" → siluetas de personas pequeñas, corazones, manos saludando
-  * "SEO" / "Google" / "encontrar" → lupa, gráfico de búsqueda, primera posición/podio
-  * "móvil" / "app" → smartphone con interfaz abstracta, notificación
-- 1 a 3 objetos máximo, todos RELACIONADOS al tema
-- Los objetos deben INTERACTUAR con el zorro o entre sí, NO flotar al azar:
-  * El zorro SEÑALA / SOSTIENE / EMPUJA / MUESTRA el objeto principal
-  * O los objetos se conectan visualmente entre sí (flechas, líneas de movimiento, sucesión)
-- ESCENA NARRATIVA: la imagen debe contar visualmente la idea del tema, no ser un montón de iconos sueltos
+OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
+- Extrae 1-2 PALABRAS CLAVE VISUALES del tema y úsalas como acompañantes pequeños. Ejemplos:
+  * "chatbot" / "responder" / "WhatsApp" → burbuja de chat verde
+  * "web" / "sitio" / "landing" → laptop/monitor con web abstracta (sin texto)
+  * "ventas" / "vender más" / "ingresos" → carrito O gráfico ascendente (uno solo)
+  * "rápido" / "carga" / "velocidad" → cohete O velocímetro
+  * "automatización" / "IA" / "ahorro de tiempo" → engranajes O reloj
+  * "clientes" / "atención" → 2-3 siluetas pequeñas O corazones
+  * "SEO" / "Google" / "encontrar" → lupa O podio
+  * "móvil" / "app" → smartphone con interfaz abstracta
+- MÁXIMO ABSOLUTO: 2 objetos de apoyo (no 3, no más). En historias el zorro es el rey.
+- POSICIÓN DE LOS OBJETOS: a los LADOS del zorro (izquierda y/o derecha), a su altura, NUNCA detrás de él, NUNCA encima ni debajo invadiendo otra zona.
+- Los objetos PUEDEN ser señalados/sostenidos por el zorro, pero su silueta debe verse completa y separada del zorro.
+- PROHIBIDO: amontonar iconos, llenar el fondo de elementos, hacer un collage. Si dudas, elimina objetos.
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
-- 22% SUPERIOR (0px a 420px) = fondo limpio SIN elementos (reservado para texto)
-- 29% INFERIOR (1370px a 1920px) = fondo limpio SIN elementos (reservado para sub-copy + botón CTA + hashtags)
-- Toda la acción visual (zorro y objetos) va estrictamente entre los píxeles 420 y 1370 (zona central)
-- NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo (el glow es decorativo del fondo plano sin elementos sólidos arriba)
+- 22% SUPERIOR (0px a 420px) = fondo limpio SIN elementos sólidos (reservado para título)
+- 33% INFERIOR (1280px a 1920px) = fondo limpio SIN elementos sólidos (reservado para sub-copy + CTA + hashtags)
+- Toda la acción visual (zorro + 1-2 objetos pequeños) va estrictamente entre los píxeles 420 y 1280 (zona central de 860 px)
+- NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo
+
+VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
+1. ¿El zorro está 100% IDÉNTICO a la referencia (ojos pequeños, nariz negra, pelaje plano #E86A30, sin estilo Disney/Pixar)?
+2. ¿Hay un máximo de 2 objetos de apoyo y están a los lados, NUNCA detrás del zorro?
+3. ¿La franja superior 0-420 está LIMPIA sin objetos, y la inferior 1280-1920 también?
+4. ¿El zorro tiene 100+ px de aire alrededor?
+Si respondes NO a cualquiera, REGENERA mentalmente antes de devolver la imagen.
 
 FONDO PREMIUM (consistencia de marca):
 - Gradiente radial desde el centro: #1E293B (slate 800) hacia #0F172A (slate 900) en los bordes
@@ -400,24 +407,39 @@ EJEMPLOS MALOS (PROHIBIDOS salvo audiencia dev explícita):
 ❌ "Mejores hooks de React"
 ❌ "Tutorial de async/await"
 
-Genera el TEXTO que va a acompañar una HISTORIA (story 9:16). Reglas:
-- copy_principal: 1-2 líneas, MÁX 70 caracteres totales, hook orientado a beneficio de negocio
-- sub_copy: 1 línea de contexto/explicación, MÁX 90 caracteres
-- cta: llamada a acción corta y específica, MÁX 30 caracteres (ej: "Agenda tu reunión", "Escríbenos", "Guarda este tip")
-- hashtags: 3-5 hashtags. Incluye al menos 1 de marca (#WebMakerLatam, #WebMaker, #ComunidadWebMaker) y 2-3 de la industria del cliente (#Emprendedores, #PymesLatam, #NegociosOnline, #Marketing, #Ecommerce, #Chatbot, #IA, #PaginasWeb, #Automatizacion, etc.)
+Genera el TEXTO que va a acompañar una HISTORIA (story 9:16).
 
-Tono: cercano, latino, accesible, sin cringe. Habla de "tú". Emojis con moderación (0-2 totales en todo el texto).
+REGLAS ESTRICTAS DE LONGITUD (OBLIGATORIAS - NO NEGOCIABLES):
+- copy_principal: MÁXIMO 40 CARACTERES (incluyendo espacios). Debe caber en 2 líneas de ~20 caracteres. Hook punzante orientado a beneficio.
+- sub_copy: MÁXIMO 80 CARACTERES en 2 líneas. Contexto breve.
+- cta: MÁXIMO 25 CARACTERES, accionable, EMPIEZA con verbo (Agenda, Escríbenos, Descubre, Guarda, etc.)
+- hashtags: MÁXIMO 5 hashtags, deben caber en 2 líneas. Al menos 1 de marca (#WebMakerLatam, #WebMaker o #ComunidadWebMaker) y 2-3 de industria (#Emprendedores, #PymesLatam, #NegociosOnline, #Ecommerce, #Chatbot, #IA, #PaginasWeb, etc.)
+
+Si cualquier texto excede estos límites, REESCRÍBELO MÁS CORTO antes de responder. PREFIERE IMPACTO sobre información.
+
+EJEMPLOS DE COPY_PRINCIPAL QUE FUNCIONAN (≤40 chars):
+✅ "Tu web vende mientras duermes" (29)
+✅ "¿Tu web se ve mal en celular?" (29)
+✅ "Sé encontrado. O sé olvidado." (30)
+✅ "Clientes 24/7 con un chatbot" (28)
+✅ "Deja de perder clientes hoy" (27)
+
+EJEMPLOS QUE NO FUNCIONAN (muy largos - PROHIBIDOS):
+❌ "Tus clientes te buscan en Google y encuentran a tu competencia" (62)
+❌ "Por qué tu negocio pierde clientes cada día sin una web profesional" (66)
+
+Tono: cercano, latino, accesible, sin cringe. Habla de "tú". CERO emojis (interfieren con el render).
 
 FORMATO DE SALIDA: SOLO un objeto JSON válido, sin markdown, sin texto adicional. Estructura:
 { "copy_principal": "...", "sub_copy": "...", "cta": "...", "hashtags": "#... #..." }`;
 
-async function generarTextoHistoria(tipoHistoria: string, concepto: string): Promise<{
-  copy_principal: string; sub_copy: string; cta: string; hashtags: string;
-}> {
+async function callClaudeHistoria(
+  tipoHistoria: string, concepto: string, extraInstruction?: string,
+): Promise<{ copy_principal: string; sub_copy: string; cta: string; hashtags: string }> {
   const userMessage = `TIPO de historia: ${tipoHistoria}
 TEMA/CONCEPTO: ${concepto}
 
-Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.`;
+Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.${extraInstruction ? "\n\n" + extraInstruction : ""}`;
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
@@ -429,14 +451,57 @@ Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.`;
   const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
   const parsed = JSON.parse(cleaned);
   return {
-    copy_principal: String(parsed.copy_principal || "").slice(0, 90),
-    sub_copy: String(parsed.sub_copy || "").slice(0, 110),
-    cta: String(parsed.cta || "").slice(0, 40),
-    hashtags: String(parsed.hashtags || ""),
+    copy_principal: stripEmojis(String(parsed.copy_principal || "")),
+    sub_copy: stripEmojis(String(parsed.sub_copy || "")),
+    cta: stripEmojis(String(parsed.cta || "")),
+    hashtags: stripEmojis(String(parsed.hashtags || "")),
   };
 }
 
-// Render texto sobre historia 9:16 con auto-fit, padding, fondos semi-transparentes y SIN emojis
+// Limites estrictos del nuevo layout
+const HIST_LIMITS = { copy_principal: 40, sub_copy: 80, cta: 25 };
+
+function excedeLimites(t: { copy_principal: string; sub_copy: string; cta: string }): string[] {
+  const issues: string[] = [];
+  if (t.copy_principal.length > HIST_LIMITS.copy_principal)
+    issues.push(`copy_principal tiene ${t.copy_principal.length} chars, máximo ${HIST_LIMITS.copy_principal}`);
+  if (t.sub_copy.length > HIST_LIMITS.sub_copy)
+    issues.push(`sub_copy tiene ${t.sub_copy.length} chars, máximo ${HIST_LIMITS.sub_copy}`);
+  if (t.cta.length > HIST_LIMITS.cta)
+    issues.push(`cta tiene ${t.cta.length} chars, máximo ${HIST_LIMITS.cta}`);
+  return issues;
+}
+
+async function generarTextoHistoria(tipoHistoria: string, concepto: string): Promise<{
+  copy_principal: string; sub_copy: string; cta: string; hashtags: string;
+}> {
+  let texto = await callClaudeHistoria(tipoHistoria, concepto);
+  const issues = excedeLimites(texto);
+  if (issues.length > 0) {
+    console.log("[Historias] copy excede límites, pidiendo versión más corta:", issues);
+    try {
+      texto = await callClaudeHistoria(
+        tipoHistoria, concepto,
+        `IMPORTANTE: tu intento anterior excedió los límites: ${issues.join("; ")}. REESCRIBE TODO el JSON con versiones MÁS CORTAS y PUNZANTES que sí respeten los máximos. Prefiere impacto sobre información.`,
+      );
+    } catch (e) {
+      console.warn("[Historias] retry de copy falló, uso truncamiento duro:", e);
+    }
+  }
+  return {
+    copy_principal: texto.copy_principal.slice(0, HIST_LIMITS.copy_principal),
+    sub_copy: texto.sub_copy.slice(0, HIST_LIMITS.sub_copy),
+    cta: texto.cta.slice(0, HIST_LIMITS.cta),
+    hashtags: texto.hashtags,
+  };
+}
+
+// Render texto sobre historia 9:16 con LAYOUT POR ZONAS FIJAS (1080x1920):
+//   Z1 Título    : 0     - 420   (centro 210)
+//   Z2 Imagen    : 420   - 1280  (zorro vive aquí, sin overlay)
+//   Z3 Sub-copy  : 1280  - 1500  (centro 1390)
+//   Z4 Botón CTA : 1500  - 1720  (centro 1610)
+//   Z5 Hashtags  : 1720  - 1860  (centro 1790, padding 60 al borde inferior)
 async function renderTextoEnHistoria(
   imagenBase64: string,
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string },
@@ -448,108 +513,104 @@ async function renderTextoEnHistoria(
   const sidePadding = 80;
   const innerWidth = w - sidePadding * 2;
 
-  // Strip emojis para evitar cajitas con códigos unicode
   const principal = stripEmojis(texto.copy_principal);
   const sub = stripEmojis(texto.sub_copy);
   const cta = stripEmojis(texto.cta);
   const hashtags = stripEmojis(texto.hashtags);
 
-  // Zona superior reservada: 0-420px. Padding interno 60.
-  const topZoneTop = 60;
-  const topZoneBottom = 420 - 30;
-  const topZoneCenterY = (topZoneTop + topZoneBottom) / 2;
-  const topMaxHeight = topZoneBottom - topZoneTop;
+  // Centros de cada zona
+  const Z1_TOP = 0,       Z1_BOTTOM = 420;
+  const Z3_TOP = 1280,    Z3_BOTTOM = 1500;
+  const Z4_TOP = 1500,    Z4_BOTTOM = 1720;
+  const Z5_TOP = 1720,    Z5_BOTTOM = 1860; // 60 px de padding al borde inferior (h=1920)
 
-  // Zona inferior reservada: 1370-1920 (550px). Layout vertical:
-  //   sub_copy → 30px → CTA (botón pill) → 30px → hashtags → 60px al borde
-  const bottomEdgePadding = 60; // padding al borde inferior de la imagen
-  const ctaButtonHeight = 96;
-  const subMaxHeight = 200; // hasta 4 líneas a 32-44px
-  const hashMaxHeight = 100; // hasta 2 líneas a 28-36px
-  const gapBetween = 30;
+  const z1Center = (Z1_TOP + Z1_BOTTOM) / 2;       // 210
+  const z3Center = (Z3_TOP + Z3_BOTTOM) / 2;       // 1390
+  const z4Center = (Z4_TOP + Z4_BOTTOM) / 2;       // 1610
+  const z5Center = (Z5_TOP + Z5_BOTTOM) / 2;       // 1790
 
+  // Título: 72-88px, máximo 2 líneas. Si no cabe en 2 líneas a 64px, baja a 56 antes de 3.
   const principalFit = principal ? fitTextBlock(principal, {
-    maxWidth: innerWidth - 48,
-    maxHeight: topMaxHeight - 48,
-    maxFontSize: 84,
-    minFontSize: 48,
-  }) : null;
-
-  const subFit = sub ? fitTextBlock(sub, {
-    maxWidth: innerWidth - 48,
-    maxHeight: subMaxHeight - 36,
-    maxFontSize: 44,
-    minFontSize: 32,
-    charWidthRatio: 0.5,
-  }) : null;
-
-  const ctaFit = cta ? fitTextBlock(cta, {
-    maxWidth: innerWidth - 80,
-    maxHeight: ctaButtonHeight - 28,
-    maxFontSize: 44,
-    minFontSize: 30,
+    maxWidth: innerWidth,
+    maxHeight: Z1_BOTTOM - Z1_TOP - 160, // padding top 80, bottom 80
+    maxFontSize: 88,
+    minFontSize: 56,
     charWidthRatio: 0.55,
   }) : null;
 
-  const hashFit = hashtags ? fitTextBlock(hashtags, {
-    maxWidth: innerWidth - 48, // RESPETA el padding lateral de 80px + 24px del bg
-    maxHeight: hashMaxHeight - 16,
-    maxFontSize: 36,
-    minFontSize: 28,
+  // Sub-copy: 44-52px Inter 600
+  const subFit = sub ? fitTextBlock(sub, {
+    maxWidth: w - 200, // padding lateral 100
+    maxHeight: Z3_BOTTOM - Z3_TOP - 40,
+    maxFontSize: 52,
+    minFontSize: 36,
     charWidthRatio: 0.5,
   }) : null;
 
-  // Stack desde el borde inferior hacia arriba:
-  // hashtags al fondo → CTA → sub_copy
-  const subBlockH = subFit ? subFit.blockHeight + 36 : 0; // bg padding 18 c/lado
-  const ctaBlockH = ctaFit ? ctaFit.blockHeight + 36 : 0; // padY 18
-  const hashBlockH = hashFit ? hashFit.blockHeight + 24 : 0; // bg padding 12 c/lado
+  // CTA: 44px Inter 700
+  const ctaFit = cta ? fitTextBlock(cta, {
+    maxWidth: innerWidth - 128,
+    maxHeight: 80,
+    maxFontSize: 44,
+    minFontSize: 32,
+    charWidthRatio: 0.55,
+  }) : null;
 
-  // Posiciones bottom-up
-  const hashBottom = h - bottomEdgePadding;
-  const hashCenterY = hashBottom - hashBlockH / 2;
-  const ctaBottom = hashFit ? hashCenterY - hashBlockH / 2 - gapBetween : h - bottomEdgePadding;
-  const ctaCenterY = ctaBottom - ctaBlockH / 2;
-  const subBottom = ctaFit ? ctaCenterY - ctaBlockH / 2 - gapBetween : (hashFit ? hashCenterY - hashBlockH / 2 - gapBetween : h - bottomEdgePadding);
-  const subCenterY = subBottom - subBlockH / 2;
+  // Hashtags: 32px Inter 500
+  const hashFit = hashtags ? fitTextBlock(hashtags, {
+    maxWidth: innerWidth,
+    maxHeight: Z5_BOTTOM - Z5_TOP - 20,
+    maxFontSize: 32,
+    minFontSize: 24,
+    charWidthRatio: 0.5,
+  }) : null;
 
-  // Construir CTA tipo botón con su propio fondo (naranja sólido)
+  // CTA pill button con sombra
   const ctaSvg = ctaFit ? (() => {
-    const padX = 44, padY = 18;
+    const padX = 64, padY = 26;
     const btnWidth = Math.min(innerWidth, ctaFit.blockWidth + padX * 2);
-    const btnHeight = ctaFit.blockHeight + padY * 2;
+    const btnHeight = Math.max(88, ctaFit.blockHeight + padY * 2);
     const btnX = (w - btnWidth) / 2;
-    const btnY = ctaCenterY - btnHeight / 2;
-    const baselineY = btnY + padY + ctaFit.fontSize * 0.85;
+    const btnY = z4Center - btnHeight / 2;
+    const baselineY = btnY + (btnHeight - ctaFit.blockHeight) / 2 + ctaFit.fontSize * 0.82;
     return `
+      <rect x="${btnX.toFixed(1)}" y="${(btnY + 8).toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
+        rx="${btnHeight / 2}" fill="#E86A30" fill-opacity="0.30" filter="url(#ctashadow)"/>
       <rect x="${btnX.toFixed(1)}" y="${btnY.toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
-        rx="${btnHeight / 2}" fill="#E86A30" />
+        rx="${btnHeight / 2}" fill="#E86A30"/>
       ${ctaFit.lines.map((line, i) => `
         <text x="${w / 2}" y="${(baselineY + i * ctaFit.lineHeight).toFixed(1)}" text-anchor="middle"
-          font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="800"
+          font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="700"
           font-size="${ctaFit.fontSize}" fill="#ffffff">${escapeXml(line)}</text>
       `).join("")}
     `;
   })() : "";
 
-  // Gradientes sutiles en zonas reservadas para mejorar legibilidad SIN parecer cajas
-  const topFadeH = 420;
-  const botFadeH = h - 1370;
+  // Separador naranja sutil arriba de la zona de sub-copy
+  const separatorSvg = subFit
+    ? `<line x1="${(w/2 - 100).toFixed(1)}" y1="${Z3_TOP - 10}" x2="${(w/2 + 100).toFixed(1)}" y2="${Z3_TOP - 10}" stroke="#E86A30" stroke-opacity="0.35" stroke-width="3"/>`
+    : "";
+
+  // Gradientes en las zonas reservadas para mejorar legibilidad sin parecer cajas
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
     ${SVG_DEFS}
-    <rect x="0" y="0" width="${w}" height="${topFadeH}" fill="url(#topfade)"/>
-    <rect x="0" y="${1370}" width="${w}" height="${botFadeH}" fill="url(#botfade)"/>
+    <filter id="ctashadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14"/>
+    </filter>
+    <rect x="0" y="0" width="${w}" height="${Z1_BOTTOM}" fill="url(#topfade)"/>
+    <rect x="0" y="${Z3_TOP}" width="${w}" height="${h - Z3_TOP}" fill="url(#botfade)"/>
     ${principalFit ? renderTextBlockSvg(principalFit, {
-      canvasWidth: w, centerY: topZoneCenterY, fontWeight: 900, color: "#ffffff",
+      canvasWidth: w, centerY: z1Center, fontWeight: 900, color: "#ffffff",
       bgOpacity: 0, filterId: "textds", letterSpacing: -2,
     } as any) : ""}
+    ${separatorSvg}
     ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: subCenterY, fontWeight: 600, color: "#f1f5f9",
+      canvasWidth: w, centerY: z3Center, fontWeight: 600, color: "#f1f5f9",
       bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
     } as any) : ""}
     ${ctaSvg}
     ${hashFit ? renderTextBlockSvg(hashFit, {
-      canvasWidth: w, centerY: hashCenterY, fontWeight: 500, color: "#fb923c",
+      canvasWidth: w, centerY: z5Center, fontWeight: 500, color: "#fb923c",
       bgOpacity: 0, filterId: "textds", letterSpacing: 0,
     } as any) : ""}
   </svg>`;
@@ -755,20 +816,21 @@ TÍTULO de esta slide: "${slide.titulo}"
 SUBTÍTULO de esta slide: "${slide.subtitulo}"
 ${enfoqueVisual}
 
-OBJETOS DE LA ESCENA (REGLAS ESTRICTAS):
-- Extrae las PALABRAS CLAVE VISUALES del tema y del foco de esta slide. Mapeo:
-  * chatbot/responder/WhatsApp → burbuja de chat verde estilo WhatsApp + smartphone + robot pequeño
-  * web/sitio/landing → laptop o monitor con web abstracta sin texto + cursor
-  * ventas/vender/ingresos → carrito + gráfico de barras ascendente + signos $
-  * rápido/carga/velocidad → cohete + velocímetro + líneas de movimiento
-  * automatización/IA/ahorro de tiempo → engranajes + reloj + cerebro digital
-  * clientes/atención → siluetas pequeñas de personas + corazones + manos saludando
-  * SEO/Google/encontrar → lupa + podio + gráfico
-  * móvil/app → smartphone con interfaz abstracta + notificación
-  * agendar/reunión → calendario + checkmark
-- 1 a 3 objetos máximo, TODOS relacionados al tema y al rol de la slide
-- Los objetos INTERACTÚAN con el zorro o entre sí (el zorro señala/sostiene/empuja, o flechas conectan los objetos), NUNCA flotan al azar
-- ESCENA NARRATIVA, no un montón de iconos sueltos
+OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
+- MÁXIMO 2-3 objetos principales en TODA la escena (no 5, no 7). Cuando hay demasiados elementos, el zorro pierde consistencia visual porque el modelo "balancea" estilos.
+- Extrae las PALABRAS CLAVE VISUALES del tema y del foco de esta slide. Mapeo (elige UNO o DOS, no todos):
+  * chatbot/WhatsApp → burbuja de chat verde O smartphone (uno solo)
+  * web/sitio → laptop con web abstracta (sin texto)
+  * ventas → carrito O gráfico ascendente (uno)
+  * velocidad → cohete O velocímetro
+  * automatización/IA → engranajes O cerebro digital
+  * clientes → 2-3 siluetas pequeñas
+  * SEO → lupa O podio
+  * móvil/app → smartphone
+  * agendar → calendario
+- Los objetos INTERACTÚAN con el zorro (señala/sostiene/empuja), NUNCA flotan amontonados
+- Colores planos vibrantes y SIMPLES; NUNCA muchos elementos coloridos juntos compitiendo con el zorro
+- ESCENA NARRATIVA SIMPLE: zorro + 1-2 objetos clave bien colocados
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
 - 22% SUPERIOR (formato 1:1: 0-220px / formato 4:5: 0-280px) = fondo limpio SIN elementos (reservado para título)
@@ -785,6 +847,16 @@ FONDO PREMIUM (consistencia entre todas las slides del carrusel):
 PALETA: fondo slate oscuro + glow naranja. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
 
 CONSISTENCIA DEL CARRUSEL: esta slide debe verse del MISMO universo visual que las demás (mismo fondo, paleta, estilo flat cartoon). El zorro siempre IDÉNTICO a la referencia.
+
+VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
+1. ¿Los OJOS del zorro son PEQUEÑOS y simples (NO grandes, redondos y brillosos estilo Disney/Pixar/chibi)?
+2. ¿La NARIZ del zorro es NEGRA (NO rosada)?
+3. ¿La CARA es ESTILIZADA y ligeramente alargada (NO redonda y "cute" estilo chibi)?
+4. ¿El PELAJE es UN SOLO color naranja plano #E86A30 SIN brillos, reflejos, sombras ni gradientes?
+5. ¿Los CRISTALES de los lentes están totalmente transparentes SIN reflejos blancos?
+6. ¿Las LÍNEAS del contorno son negras, gruesas y uniformes (NO finas ni con variación de grosor)?
+7. ¿Hay MÁXIMO 2-3 objetos en escena (no un montón amontonados)?
+Si respondiste NO a cualquiera de estas, el zorro está INCORRECTO y debes REGENERAR mentalmente la imagen antes de entregarla. Cualquier desviación rompe el branding registrado.
 
 RECUERDA: CERO TEXTO. Ni una letra ni número en NINGUNA parte.`;
 }

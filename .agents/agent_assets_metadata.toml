@@ -30,3 +30,9 @@ id = "TK9ADxGA647Ov5UpVDXhz"
 uri = "file://attached_assets/render-tests/slide-v3-indicador.png"
 type = "image"
 title = "Slide carrusel 4:5 v3 — con indicador 02/05"
+
+[[outputs]]
+id = "GhOdfJRGBhjy505IkA3s1"
+uri = "file://attached_assets/render-tests/historia-v4-zonas.png"
+type = "image"
+title = "Historia v4 — layout por zonas (5 secciones)"
