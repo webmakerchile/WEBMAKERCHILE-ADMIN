@@ -735,12 +735,18 @@ PROHIBIDOS (salvo audiencia dev explícita):
 ❌ Tutoriales de código, librerías, frameworks técnicos
 
 REGLAS DE ESCRITURA (NO NEGOCIABLES):
-1. MÁXIMO 5 LÍNEAS por descripción
-2. Tono cercano, latino, accesible, sin cringe
-3. SIEMPRE pregunta o CTA al final para generar comentarios
-4. Emojis con moderación (0-3)
-5. Habla de "tú"
-6. Conecta con servicios de la agencia cuando sea natural
+1. Largo por defecto: MÁXIMO 5 LÍNEAS por descripción
+2. EXCEPCIÓN — TEMA ENUMERADO (cuando el tema menciona un número explícito: "5 señales", "3 razones", "7 errores", "10 tips", etc.):
+   - La descripción DEBE enumerar y explicar BREVEMENTE los N puntos (1 línea por punto, formato "1. ... 2. ... 3. ..." o con emojis numéricos).
+   - Aplica TANTO si la publicación es única (una sola imagen) COMO si es un carrusel (en el carrusel la descripción ofrece el resumen de los N puntos para quien no haga swipe).
+   - Esta regla aplica a TIKTOK, INSTAGRAM y YOUTUBE SHORTS.
+   - TWITTER mantiene su límite de 280 caracteres: si no caben los N puntos enteros, lista los títulos cortos numerados (ej: "1) Web lenta 2) Sin móvil 3) Sin CTA 4) Sin chat 5) Sin SEO") + CTA + hashtags.
+   - Cierra siempre con pregunta/CTA después de la lista.
+3. Tono cercano, latino, accesible, sin cringe
+4. SIEMPRE pregunta o CTA al final para generar comentarios
+5. Emojis con moderación (0-3, salvo numéricos 1️⃣2️⃣3️⃣ permitidos en listas)
+6. Habla de "tú"
+7. Conecta con servicios de la agencia cuando sea natural
 
 ESTRUCTURA POR RED:
 📱 TIKTOK: hook + 1-2 líneas + CTA + 5-7 hashtags (mezcla nicho+trending+marca)
