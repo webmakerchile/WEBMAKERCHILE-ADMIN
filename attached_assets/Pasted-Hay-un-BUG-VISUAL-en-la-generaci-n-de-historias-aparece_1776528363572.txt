@@ -1,0 +1,123 @@
+Hay un BUG VISUAL en la generación de historias: aparece una línea 
+horizontal sutil atravesando la imagen aproximadamente al 25-30% desde 
+arriba (justo debajo del título, antes de la zona del zorro).
+
+Esta línea NO debe estar ahí. Hace que la imagen se vea "partida en dos" 
+y rompe el acabado profesional.
+
+═══════════════════════════════════════════════════════════════
+EVIDENCIA VISUAL
+═══════════════════════════════════════════════════════════════
+
+Te adjunto 2 historias generadas recientemente ("De invisible a lleno 
+en 7 días" y "3x visitas en 3 semanas"). En AMBAS aparece la misma 
+línea horizontal al mismo nivel vertical. No es coincidencia, es un 
+bug sistemático del renderizado.
+
+═══════════════════════════════════════════════════════════════
+CAUSAS POSIBLES A INVESTIGAR
+═══════════════════════════════════════════════════════════════
+
+Revisa EN ORDEN estas 4 posibles causas:
+
+CAUSA A (más probable): Separador de zonas hardcodeado
+En algún punto recordamos agregar "una línea horizontal fina en naranja 
+al 30% de opacidad arriba de esta zona (opcional)" como separador entre 
+el título y el zorro. Probablemente quedó hardcodeado en el código.
+
+ACCIÓN:
+Busca en el código del renderizador de historias (sharp/canvas) 
+cualquier:
+- svg con <line> horizontal
+- rectángulo fino con fill naranja/blanco
+- border-top o border-bottom entre zonas
+- stroke horizontal
+
+Si lo encuentras, eliminarlo por completo. No queremos separador visual 
+entre zonas.
+
+CAUSA B: Fondo compuesto por múltiples capas con salto
+Si el fondo se genera pegando la "zona del título" + "zona del zorro" 
++ "zona del sub-copy" como capas separadas, el borde entre capas puede 
+ser visible por un pixel de diferencia.
+
+ACCIÓN:
+Verifica que el fondo sea UNA SOLA CAPA que cubra toda la imagen 
+1080x1920 continua. El título, el zorro y el texto se renderizan 
+ENCIMA del fondo completo, no en "zonas recortadas".
+
+Estructura correcta:
+Layer 1 (completo 1080x1920): gradiente + grid + glow (sin cortes)
+Layer 2 (encima): título en la zona superior
+Layer 3 (encima): imagen del zorro en la zona central
+Layer 4 (encima): sub-copy + CTA + hashtags en la zona inferior
+
+Estructura incorrecta:
+Layer 1: fondo zona superior (0-420px)
+Layer 2: fondo zona central (420-1280px)  ← aquí se ve la línea
+Layer 3: fondo zona inferior (1280-1920px)
+
+CAUSA C: Gradiente cortado
+Si el gradiente de fondo se define con stops cercanos ("0% slate-900, 
+25% slate-800, 100% slate-900"), puede generar una "banda" visible.
+
+ACCIÓN:
+Usar un gradiente SUAVE con máximo 2 stops bien separados:
+
+```css
+background: linear-gradient(180deg, #0F172A 0%, #1E293B 100%);
+/* O un radial suave */
+background: radial-gradient(ellipse at center, #1E293B 0%, #0F172A 100%);
+```
+
+Evitar transiciones abruptas.
+
+CAUSA D: Grid con borde exterior
+El grid de fondo puede tener un borde/stroke en sus límites que se 
+vea como línea.
+
+ACCIÓN:
+Revisa el SVG/pattern del grid. Debe ser un patrón REPETIDO que cubra 
+toda la imagen sin bordes. Si tiene un <rect> exterior con stroke, 
+eliminarlo.
+
+═══════════════════════════════════════════════════════════════
+SOLUCIÓN OBLIGATORIA
+═══════════════════════════════════════════════════════════════
+
+1. Encuentra la causa (probablemente es la A o la B).
+
+2. Elimina el separador o recompón las capas.
+
+3. El resultado debe ser: fondo COMPLETAMENTE LIMPIO y CONTINUO de 
+arriba a abajo, sin líneas, sin bandas, sin saltos de color visibles. 
+El glow naranja del zorro debe ser la única variación de color en el 
+fondo, y debe fundirse suavemente.
+
+4. REGLA DE DISEÑO:
+El fondo de las historias debe verse como una sola pieza. Las 
+"zonas" (título, zorro, sub-copy) son conceptuales para posicionar 
+el contenido, pero NO deben ser visualmente divididas con líneas o 
+bordes.
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+Cuando termines, genera 3 historias de prueba con diferentes temas:
+
+TEST 1: Tema motivacional simple
+TEST 2: Tema con caso de éxito (como los adjuntos)
+TEST 3: Tema educativo
+
+En las 3 verifica que:
+✅ NO hay línea horizontal atravesando la imagen
+✅ El fondo se ve como una sola pieza continua
+✅ El glow naranja del zorro se funde suavemente con el fondo
+✅ No hay saltos de color perceptibles
+
+Mándame las 3 imágenes para confirmar que el bug está resuelto.
+
+IMPORTANTE: No toques el layout ni el contenido del texto, solo el 
+tema del fondo. Las historias actuales funcionan perfecto en todo lo 
+demás.

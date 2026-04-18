@@ -1208,10 +1208,11 @@ async function renderTextoEnHistoria(
     `;
   })() : "";
 
-  // Separador naranja sutil arriba de la zona de sub-copy
-  const separatorSvg = subFit
-    ? `<line x1="${(w/2 - 100).toFixed(1)}" y1="${Z3_TOP - 10}" x2="${(w/2 + 100).toFixed(1)}" y2="${Z3_TOP - 10}" stroke="#E86A30" stroke-opacity="0.35" stroke-width="3"/>`
-    : "";
+  // (Antes había un separador naranja entre el título y el sub-copy, pero
+  // se veía como una línea horizontal partiendo la imagen — eliminado.
+  // Las zonas se distinguen visualmente por los gradientes topfade/botfade
+  // y por la jerarquía tipográfica.)
+  const separatorSvg = "";
 
   // Gradientes en las zonas reservadas para mejorar legibilidad sin parecer cajas
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
