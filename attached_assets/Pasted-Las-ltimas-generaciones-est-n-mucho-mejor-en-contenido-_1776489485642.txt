@@ -1,0 +1,184 @@
+Las últimas generaciones están mucho mejor en contenido, pero hay 3 
+problemas CRÍTICOS de CONSISTENCIA DE MARCA y CALIDAD VISUAL que debemos 
+resolver. Son detalles profesionales que marcan la diferencia entre un 
+contenido amateur y uno de agencia seria.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 1 (EL MÁS CRÍTICO): EL ZORRO CAMBIA DE ESTILO ENTRE IMÁGENES
+═══════════════════════════════════════════════════════════════
+
+El zorro de la marca WebMakerLatam se ve DIFERENTE en cada generación:
+
+- A veces sale flat cartoon correcto (como la referencia original) ✅
+- A veces sale con pelaje realista, sombras y degradados (estilo 3D) ❌
+- A veces sale con ojos grandes estilo Disney/Pixar ❌
+- A veces la cara es más redonda, otras más alargada ❌
+- El color naranja varía entre tonos ❌
+
+Esto ROMPE la identidad visual de la marca. Los seguidores deben reconocer 
+AL INSTANTE que es "el zorro de WebMakerLatam", no un zorro genérico que 
+cambia cada día.
+
+CAUSA DEL PROBLEMA:
+Gemini está reinterpretando el zorro en cada llamada en lugar de replicar 
+EXACTAMENTE la referencia. Esto pasa cuando:
+1. No se está pasando la imagen de referencia del zorro en cada llamada
+2. El prompt permite libertad de interpretación ("un zorro antropomórfico")
+3. No se especifica el estilo con suficiente rigor
+
+SOLUCIÓN OBLIGATORIA:
+
+1. VERIFICAR que la imagen de referencia del zorro se esté adjuntando en 
+   CADA llamada a Gemini (tanto en historias como en TODAS las slides del 
+   carrusel). Muéstrame el código donde se adjunta.
+
+2. BLOQUEAR el estilo del zorro con especificaciones rigurosas en el prompt:
+
+   "El zorro DEBE ser una REPLICA EXACTA de la imagen de referencia adjunta. 
+   No es 'un zorro', es EL MISMO zorro de la referencia. Características 
+   obligatorias y no negociables:
+   
+   - Estilo: FLAT CARTOON 2D PURO (NO 3D, NO realista, NO Disney/Pixar)
+   - Líneas de contorno: NEGRAS, GRUESAS y uniformes
+   - Pelaje: UN SOLO COLOR NARANJA PLANO (#E86A30), sin texturas, sin 
+     sombras, sin degradados, sin variaciones tonales
+   - Vientre y hocico: blanco cremoso plano (#F5E6D3)
+   - Punta de la cola: blanca plana
+   - Ojos: PEQUEÑOS, NO grandes estilo anime/Disney. Pupila negra simple.
+   - Lentes: rectangulares, gruesos, negros
+   - Polera: verde oscuro plano (#4A6B3D), sin arrugas ni texturas
+   - Forma de la cara: estilizada y alargada, NO redonda estilo chibi
+   - NUNCA agregar: sombras de cuerpo, brillos, reflejos en los lentes, 
+     texturas de pelaje, gradientes, iluminación volumétrica
+   
+   Si el zorro generado tiene CUALQUIERA de estos elementos prohibidos, 
+   es INCORRECTO y hay que regenerar."
+
+3. USAR "IMAGE TO IMAGE" O "REFERENCE IMAGE" MODE:
+   Verifica si Gemini 3 Pro Image tiene un modo donde la imagen de referencia 
+   actúa como base visual (no solo como contexto). Si es así, actívalo para 
+   que el modelo copie el estilo más fielmente.
+
+4. AUMENTAR LA PENALIDAD A VARIACIONES:
+   Agrega al prompt: "Este no es un zorro genérico, es la MASCOTA OFICIAL de 
+   una marca registrada. Debe ser 100% idéntica entre todas las imágenes. 
+   Cualquier variación en estilo, color, proporciones o detalles es un ERROR 
+   de branding."
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 2: EL TEXTO RENDERIZADO SE VE AMATEUR
+═══════════════════════════════════════════════════════════════
+
+Las cajas negras detrás del texto (especialmente en el carrusel) hacen que 
+se vea como un sticker pegado encima, no como parte del diseño. Es el típico 
+look de "meme de Facebook", no de agencia profesional.
+
+REFERENCIA VISUAL DE LO QUE QUEREMOS:
+Piensa en cómo se ve un carrusel de Apple, Nike, Notion, Linear, Vercel. 
+Ellos NO usan cajas negras detrás del texto. Usan:
+
+- Tipografía PREMIUM con contraste natural contra el fondo
+- Sombras MUY SUTILES alrededor de las letras (text-shadow blur, no cajas)
+- Jerarquía clara entre copy principal y sub-copy
+- Espaciado amplio y generoso (breathing room)
+- Alineación consistente
+
+SOLUCIONES OBLIGATORIAS:
+
+1. ELIMINAR LAS CAJAS NEGRAS DETRÁS DEL TEXTO (rectángulos con bordes 
+   redondeados al 60% de opacidad). Reemplazar por:
+   
+   - Text-shadow sutil: sombra negra blur 8px, opacity 60%, offset 0px 2px
+   - O un degradado MUY sutil en la zona superior/inferior del fondo 
+     (del slate oscuro hacia ligeramente más oscuro) que mejore legibilidad 
+     sin parecer caja
+
+2. CAMBIAR LA TIPOGRAFÍA A UNA PREMIUM:
+   Actualmente parece Poppins Bold (genérica). Cambiar a:
+   
+   - PRIMERA OPCIÓN: Inter (pesos 700 y 900) - tipografía de Linear, Vercel, 
+     se ve moderna y profesional
+   - SEGUNDA OPCIÓN: Satoshi (gratis en Fontshare) - muy moderna y tech
+   - TERCERA OPCIÓN: Space Grotesk (Google Fonts) - moderna con personalidad
+   
+   NO usar: Poppins, Roboto, Open Sans (demasiado genéricas)
+
+3. MEJORAR LA JERARQUÍA VISUAL DEL TEXTO:
+   - Copy principal: Inter 900 (Black), 72-88px, white, letter-spacing -2px 
+     para que se vea apretado y moderno
+   - Sub-copy: Inter 600 (SemiBold), 40-48px, white con 85% opacity
+   - CTA: Inter 700 (Bold), 44px, fondo naranja pill-shape (como el botón 
+     de "Mejora tu presencia hoy" de la imagen 4, que SÍ se ve bien)
+   - Hashtags: Inter 500 (Medium), 32px, naranja (#E86A30) con 80% opacity
+   - Espaciado entre líneas: 1.1 para títulos, 1.4 para párrafos
+
+4. ALINEACIÓN Y PADDING CONSISTENTES:
+   - Todo el texto centrado horizontalmente
+   - Padding lateral de 80px mínimo en 1080 de ancho
+   - Separación vertical entre bloques: mínimo 40px
+   - El copy principal SIEMPRE en la parte superior, nunca desplazado
+
+5. REVISAR LA IMAGEN 4 COMO REFERENCIA DE LO QUE FUNCIONA:
+   La imagen de "Tu competencia aparece en Google. Tú no." SÍ tiene un 
+   layout correcto (botón naranja pill, hashtags en naranja, jerarquía 
+   clara). USAR ESE MISMO LAYOUT como estándar para todas las generaciones.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA 3: FALTA DE CONSISTENCIA ENTRE SLIDES DEL CARRUSEL
+═══════════════════════════════════════════════════════════════
+
+En el carrusel actual (slide 1, 2, 3):
+- Slide 1: zorro cartoon flat ✅
+- Slide 2: zorro 3D con sombras ❌ (rompe la serie)
+- Slide 3: zorro cartoon pero con cara distinta ❌
+
+Un carrusel profesional se ve como una SERIE, no como 3 imágenes random. 
+Debe haber:
+
+1. MISMO ESTILO DE ZORRO en todas las slides (resolver con problema 1)
+
+2. MISMO FONDO en todas las slides (mismo gradiente, mismo grid, mismo glow 
+   naranja en la misma posición)
+
+3. MISMA PALETA DE COLORES en los iconos/objetos
+
+4. MISMO TRATAMIENTO DE TEXTO (misma tipografía, mismos tamaños, misma 
+   posición)
+
+5. ELEMENTO DE CONTINUIDAD VISUAL: agregar en cada slide un pequeño número 
+   indicador de slide (tipo "01/05", "02/05") en la esquina superior derecha, 
+   con estilo minimalista (Inter 600, 24px, white con 50% opacity). Esto 
+   ayuda al usuario a saber que hay más slides.
+
+═══════════════════════════════════════════════════════════════
+REQUISITOS ADICIONALES
+═══════════════════════════════════════════════════════════════
+
+1. NO MODIFICAR el layout de la imagen 4 ("Tu competencia aparece en 
+   Google. Tú no.") porque ESE layout SÍ funciona. Usarlo como referencia.
+
+2. ANTES DE GENERAR cada imagen, el sistema debe validar internamente:
+   - ¿La imagen de referencia del zorro se adjuntó? Sí/No
+   - ¿El prompt incluye las restricciones de estilo del zorro? Sí/No
+   Si alguna es No, no generar.
+
+3. PROBAR CON UN CARRUSEL DE 5 SLIDES tema "Por qué tu negocio pierde 
+   clientes sin una web profesional" y mándame las 5 slides + la imagen de 
+   historia que ya mejoraste. Quiero ver:
+   - Las 5 slides con el MISMO zorro (flat cartoon idéntico)
+   - El texto SIN cajas negras, con tipografía premium
+   - El indicador de slide (01/05, 02/05, etc.)
+   - Narrativa coherente portada → problema → solución → beneficio → CTA
+
+═══════════════════════════════════════════════════════════════
+RESUMEN DE PRIORIDADES (POR IMPORTANCIA)
+═══════════════════════════════════════════════════════════════
+
+🔴 CRÍTICO: Consistencia del zorro (siempre flat cartoon idéntico)
+🔴 CRÍTICO: Eliminar cajas negras del texto (text-shadow en su lugar)
+🟡 IMPORTANTE: Tipografía premium (Inter, Satoshi o Space Grotesk)
+🟡 IMPORTANTE: Jerarquía visual clara entre copy/subcopy/CTA/hashtags
+🟢 NICE TO HAVE: Indicador de slide 01/05 en carruseles
+
+No me digas "terminé" hasta que el carrusel de prueba pase visualmente bien 
+y el zorro se vea IDÉNTICO en las 5 slides.

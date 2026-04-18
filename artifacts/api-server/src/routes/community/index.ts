@@ -167,28 +167,61 @@ function renderTextBlockSvg(
   // baseline de cada línea
   const firstBaselineY = bgY + bgPadding + fit.fontSize * 0.85;
 
+  const letterSpacing = (opts as any).letterSpacing ?? 0;
   return `
-    <rect x="${bgX.toFixed(1)}" y="${bgY.toFixed(1)}" width="${bgWidth.toFixed(1)}" height="${bgHeight.toFixed(1)}"
-      rx="${bgRadius}" fill="${bgColor}" fill-opacity="${bgOpacity}" />
+    ${bgOpacity > 0 ? `<rect x="${bgX.toFixed(1)}" y="${bgY.toFixed(1)}" width="${bgWidth.toFixed(1)}" height="${bgHeight.toFixed(1)}" rx="${bgRadius}" fill="${bgColor}" fill-opacity="${bgOpacity}" />` : ""}
     ${fit.lines.map((line, i) => `
       <text x="${opts.canvasWidth / 2}" y="${(firstBaselineY + i * fit.lineHeight).toFixed(1)}"
         text-anchor="middle" font-family="'Inter','Helvetica Neue',Arial,sans-serif"
-        font-weight="${opts.fontWeight}" font-size="${fit.fontSize}" fill="${opts.color}"
-        filter="url(#${opts.filterId})">${escapeXml(line)}</text>
+        font-weight="${opts.fontWeight}" font-size="${fit.fontSize}" letter-spacing="${letterSpacing}"
+        fill="${opts.color}" filter="url(#${opts.filterId})">${escapeXml(line)}</text>
     `).join("")}
   `;
 }
 
-const SVG_FILTER_DEFS = `
+// Defs SVG: gradientes premium para zonas reservadas + drop-shadow fuerte
+const SVG_DEFS = `
   <defs>
-    <filter id="textds" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
-      <feOffset dx="0" dy="2" result="offsetblur"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.85"/></feComponentTransfer>
+    <linearGradient id="topfade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.92"/>
+      <stop offset="60%" stop-color="#0F172A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="botfade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0F172A" stop-opacity="0"/>
+      <stop offset="40%" stop-color="#0F172A" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95"/>
+    </linearGradient>
+    <filter id="textds" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8"/>
+      <feOffset dx="0" dy="3" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.9"/></feComponentTransfer>
       <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
 `;
+// Backwards-compat alias
+const SVG_FILTER_DEFS = SVG_DEFS;
+void SVG_FILTER_DEFS;
+
+// Especificación rigurosa del zorro de marca - obligatoria en TODOS los prompts de imagen
+const FOX_BRAND_SPEC = `PERSONAJE - REPLICA EXACTA DE LA IMAGEN DE REFERENCIA ADJUNTA (no es "un zorro", es EL MISMO zorro de la marca registrada WebMakerLatam, llamado Webi):
+
+Características OBLIGATORIAS Y NO NEGOCIABLES (cualquier desviación es un ERROR de branding):
+- Estilo: FLAT CARTOON 2D PURO. PROHIBIDO: 3D, render realista, estilo Disney/Pixar, anime
+- Líneas de contorno: NEGRAS, GRUESAS y uniformes (mismo grosor en toda la silueta)
+- Pelaje: UN SOLO COLOR NARANJA PLANO (#E86A30 aprox), sin texturas, sin sombras de cuerpo, sin degradados, sin variaciones tonales, sin pelos visibles
+- Vientre y hocico: blanco cremoso plano (#F5E6D3), sin sombreado
+- Punta de la cola: blanca plana
+- Ojos: PEQUEÑOS y simples (NO grandes estilo anime/Disney/chibi). Pupila negra circular, sin brillos ni reflejos blancos
+- Lentes: rectangulares, gruesos, marco negro sólido, cristales transparentes SIN reflejos ni highlights
+- Polera/sudadera: verde oscuro plano (#4A6B3D aprox), SIN arrugas, SIN texturas de tela, SIN sombras
+- Forma de la cabeza: estilizada y ligeramente alargada con orejas triangulares, NO redonda estilo chibi
+- Proporciones idénticas a la referencia: cabeza grande, cuerpo proporcionado, brazos y piernas cortos pero visibles
+
+PROHIBIDO ABSOLUTAMENTE en el zorro: sombras de cuerpo, brillos especulares, reflejos en los lentes, texturas de pelaje, gradientes de color, iluminación volumétrica, ambient occlusion, cualquier efecto 3D.
+
+Este zorro es la MASCOTA OFICIAL de una marca registrada. Debe ser 100% IDÉNTICO entre todas las imágenes — los seguidores deben reconocerlo al instante. Si dudas en algún detalle, COPIA LA REFERENCIA tal cual.`;
 
 // ============================================
 // SORPRÉNDEME (audiencia: emprendedores/pymes)
@@ -307,13 +340,13 @@ function buildHistoriaPrompt(tipoHistoria: string, concepto: string, poseOverrid
 REGLA ABSOLUTA - SIN TEXTO:
 NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, ni texto en pantallas/objetos. CERO caracteres alfanuméricos. Pantallas/monitores muestran formas abstractas de colores, NUNCA texto. Esta regla no tiene excepciones.
 
-PERSONAJE - ESTILO FLAT CARTOON PURO (copiar EXACTAMENTE de la imagen de referencia adjunta):
-- Zorro naranja antropomórfico llamado Webi, con lentes rectangulares negros gruesos y polera verde oscuro
-- SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado
-- Ocupa al menos 35% del área visual CENTRAL. Es el PROTAGONISTA
-- ESTILO OBLIGATORIO: FLAT CARTOON PURO con colores planos sólidos. SIN sombras realistas, SIN sombreados degradados, SIN texturas en el pelaje, SIN volumen 3D, SIN highlights brillantes. Solo líneas de contorno NEGRAS GRUESAS y colores totalmente PLANOS (naranja vibrante uniforme, verde uniforme, blanco, negro). Debe verse IDÉNTICO al zorro de la imagen de referencia (mismas proporciones, misma cabeza grande, mismos ojos detrás de los lentes, misma polera verde oscuro). Si dudas, copia la referencia.
-- POSE Y EXPRESIÓN ESPECÍFICA para esta historia (categoría narrativa: "${categoria}"): ${pose}
-- POSICIÓN VERTICAL: el zorro debe estar ELEVADO en el cuadro. Sus PIES deben terminar ANTES del píxel 1370 (no más abajo). La cabeza debe estar a partir del píxel 420 aproximadamente. Esto deja libre la franja inferior 1370-1920 para el texto.
+${FOX_BRAND_SPEC}
+
+REGLAS ADICIONALES PARA ESTA HISTORIA:
+- Cuerpo completo SIEMPRE visible (cabeza, torso, brazos, piernas, cola). Nunca cortado por los bordes ni recortado.
+- Ocupa al menos 35% del área visual CENTRAL. Es el PROTAGONISTA.
+- POSE Y EXPRESIÓN específica (categoría narrativa: "${categoria}"): ${pose}
+- POSICIÓN VERTICAL: el zorro debe estar ELEVADO en el cuadro. Sus PIES deben terminar ANTES del píxel 1370. La cabeza debe estar a partir del píxel 420 aproximadamente. Esto deja libre la franja inferior 1370-1920 para el texto overlay.
 
 CONTENIDO Y CONTEXTO:
 TIPO de historia: "${tipoHistoria}"
@@ -499,21 +532,26 @@ async function renderTextoEnHistoria(
     `;
   })() : "";
 
+  // Gradientes sutiles en zonas reservadas para mejorar legibilidad SIN parecer cajas
+  const topFadeH = 420;
+  const botFadeH = h - 1370;
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    ${SVG_FILTER_DEFS}
+    ${SVG_DEFS}
+    <rect x="0" y="0" width="${w}" height="${topFadeH}" fill="url(#topfade)"/>
+    <rect x="0" y="${1370}" width="${w}" height="${botFadeH}" fill="url(#botfade)"/>
     ${principalFit ? renderTextBlockSvg(principalFit, {
       canvasWidth: w, centerY: topZoneCenterY, fontWeight: 900, color: "#ffffff",
-      bgOpacity: 0.7, bgPadding: 24, bgRadius: 22, filterId: "textds",
-    }) : ""}
+      bgOpacity: 0, filterId: "textds", letterSpacing: -2,
+    } as any) : ""}
     ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: subCenterY, fontWeight: 700, color: "#f8fafc",
-      bgOpacity: 0.7, bgPadding: 18, bgRadius: 16, filterId: "textds",
-    }) : ""}
+      canvasWidth: w, centerY: subCenterY, fontWeight: 600, color: "#f1f5f9",
+      bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
+    } as any) : ""}
     ${ctaSvg}
     ${hashFit ? renderTextBlockSvg(hashFit, {
-      canvasWidth: w, centerY: hashCenterY, fontWeight: 700, color: "#fb923c",
-      bgOpacity: 0.55, bgPadding: 12, bgRadius: 12, filterId: "textds",
-    }) : ""}
+      canvasWidth: w, centerY: hashCenterY, fontWeight: 500, color: "#fb923c",
+      bgOpacity: 0, filterId: "textds", letterSpacing: 0,
+    } as any) : ""}
   </svg>`;
 
   const composed = await sharp(imgBuffer)
@@ -704,10 +742,9 @@ function buildSlidePrompt(
 REGLA ABSOLUTA - SIN TEXTO:
 NO incluyas NINGUNA letra, palabra, número, rótulo ni texto en la imagen. CERO caracteres alfanuméricos. Pantallas muestran formas abstractas, NUNCA texto legible.
 
-PERSONAJE - ESTILO FLAT CARTOON PURO (copiar EXACTAMENTE de la imagen de referencia adjunta):
-- Zorro naranja antropomórfico Webi, lentes rectangulares negros gruesos, polera verde oscuro
-- ESTILO OBLIGATORIO: FLAT CARTOON PURO con colores planos sólidos. SIN sombras realistas, SIN sombreados degradados, SIN texturas en el pelaje, SIN volumen 3D, SIN highlights brillantes. Solo líneas de contorno NEGRAS GRUESAS y colores totalmente PLANOS (naranja vibrante uniforme, verde uniforme, blanco, negro).
-- IDÉNTICO a la referencia en proporciones, cabeza grande, ojos detrás de los lentes, polera verde oscuro y nivel de detalle, sin importar la pose. Si dudas, copia la referencia.
+${FOX_BRAND_SPEC}
+
+CONSISTENCIA CRÍTICA DEL CARRUSEL: este zorro debe verse 100% IDÉNTICO al de las otras slides del mismo carrusel. Mismo color, mismas proporciones, mismo trazo, mismo estilo flat cartoon. Solo cambia su POSE y EXPRESIÓN según el rol narrativo de esta slide.
 
 ROL NARRATIVO DE ESTA SLIDE:
 ${rolDescripcion}
@@ -792,6 +829,7 @@ async function generarImagenSlideConRetry(
 async function renderTextoEnSlide(
   imagenBase64: string,
   slide: SlidePlan,
+  totalSlides: number = 1,
 ): Promise<string> {
   const imgBuffer = Buffer.from(imagenBase64, "base64");
   const meta = await sharp(imgBuffer).metadata();
@@ -829,16 +867,24 @@ async function renderTextoEnSlide(
     charWidthRatio: 0.5,
   }) : null;
 
+  // Indicador de slide (esquina superior derecha) si hay más de 1 slide
+  const indicador = totalSlides > 1
+    ? `<text x="${w - 50}" y="60" text-anchor="end" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="600" font-size="28" fill="#ffffff" fill-opacity="0.55" filter="url(#textds)">${String(slide.numero).padStart(2, "0")} / ${String(totalSlides).padStart(2, "0")}</text>`
+    : "";
+
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    ${SVG_FILTER_DEFS}
+    ${SVG_DEFS}
+    <rect x="0" y="0" width="${w}" height="${topZoneEnd}" fill="url(#topfade)"/>
+    <rect x="0" y="${bottomZoneStart}" width="${w}" height="${h - bottomZoneStart}" fill="url(#botfade)"/>
     ${tituloFit ? renderTextBlockSvg(tituloFit, {
       canvasWidth: w, centerY: topCenterY, fontWeight: 900, color: "#ffffff",
-      bgOpacity: 0.7, bgPadding: 24, bgRadius: 22, filterId: "textds",
-    }) : ""}
+      bgOpacity: 0, filterId: "textds", letterSpacing: -2,
+    } as any) : ""}
     ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: bottomCenterY, fontWeight: 700, color: "#f8fafc",
-      bgOpacity: 0.7, bgPadding: 18, bgRadius: 16, filterId: "textds",
-    }) : ""}
+      canvasWidth: w, centerY: bottomCenterY, fontWeight: 600, color: "#f1f5f9",
+      bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
+    } as any) : ""}
+    ${indicador}
   </svg>`;
 
   const composed = await sharp(imgBuffer)
@@ -919,7 +965,7 @@ Solo el JSON.`;
         let imgBase64 = r.value;
         if (body.texto_en_imagen) {
           try {
-            imgBase64 = await renderTextoEnSlide(imgBase64, slide);
+            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad);
           } catch (e) {
             console.error("[Descripciones] render texto fallo slide", slide.numero, e);
           }
