@@ -303,44 +303,35 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
       return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
     }
 
-    const cleanTitle = body.title.replace(/\*\*/g, "").toUpperCase().trim();
-    const lines = splitLines(cleanTitle, 15).slice(0, 5);
+    // Sentence case (sin toUpperCase) + Inter, mismo stack que historias y descripciones.
+    const cleanTitle = body.title.replace(/\*\*/g, "").trim();
+    const lines = splitLines(cleanTitle, 18).slice(0, 5);
     const lineCount = lines.length;
 
     let fontSize = lineCount <= 2 ? 115 : lineCount <= 3 ? 100 : lineCount <= 4 ? 85 : 72;
     const maxTextWidth = COVER_WIDTH - TEXT_ZONE_SIDE_PADDING * 2;
     const maxLineChars = Math.max(...lines.map(l => l.length));
-    const estimatedWidth = maxLineChars * fontSize * 0.58;
+    const estimatedWidth = maxLineChars * fontSize * 0.55;
     if (estimatedWidth > maxTextWidth) fontSize = Math.floor(fontSize * (maxTextWidth / estimatedWidth));
 
-    const lineHeight = fontSize * 1.18;
+    const lineHeight = fontSize * 1.12;
     const totalTextHeight = lineCount * lineHeight;
     const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
 
-    const fontCandidates = [
-      path.join(process.cwd(), "public", "fonts", "LuckiestGuy-Regular.ttf"),
-      path.join(process.cwd(), "artifacts", "api-server", "public", "fonts", "LuckiestGuy-Regular.ttf"),
-    ];
-    let fontPath = fontCandidates[0];
-    for (const p of fontCandidates) {
-      try { await readFile(p); fontPath = p; break; } catch {}
-    }
-    const fontBuffer = await readFile(fontPath);
-    const fontBase64 = fontBuffer.toString("base64");
-
-    const strokeWidth = Math.max(6, Math.round(fontSize * 0.07));
+    const fontFamily = "'Inter','Helvetica Neue','Arial',sans-serif";
+    const fontWeight = 800;
+    const strokeWidth = Math.max(5, Math.round(fontSize * 0.055));
     const shadowOff = Math.max(3, Math.round(fontSize * 0.035));
     const textEls = lines.map((line, i) => {
       const y = startY + i * lineHeight;
       const esc = escXml(line);
       return [
-        `<text x="${COVER_WIDTH / 2 + shadowOff}" y="${y + shadowOff}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${esc}</text>`,
-        `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="LuckiestGuy" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${esc}</text>`,
+        `<text x="${COVER_WIDTH / 2 + shadowOff}" y="${y + shadowOff}" text-anchor="middle" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${esc}</text>`,
+        `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${esc}</text>`,
       ].join("\n    ");
     }).join("\n    ");
 
     const svgOverlay = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    <defs><style>@font-face { font-family: 'LuckiestGuy'; src: url('data:font/ttf;base64,${fontBase64}'); }</style></defs>
     ${textEls}
   </svg>`;
 

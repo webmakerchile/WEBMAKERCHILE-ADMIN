@@ -1,0 +1,212 @@
+Tengo 2 mejoras que necesito aplicar al GENERADOR DE PORTADAS de 
+carruseles:
+
+1. VARIEDAD DE POSES (como describí en el mensaje anterior sobre 
+   banco de poses rotativas con anti-repetición)
+
+2. UNIFICAR TIPOGRAFÍA con el resto del sistema
+
+Voy a enfocarme en el punto 2 aquí porque es un problema de 
+consistencia de marca crítico.
+
+═══════════════════════════════════════════════════════════════
+PROBLEMA: TIPOGRAFÍA INCONSISTENTE ENTRE APARTADOS
+═══════════════════════════════════════════════════════════════
+
+Cada apartado de la app usa una tipografía diferente para el texto 
+renderizado sobre las imágenes:
+
+- HISTORIAS: Inter 900 Black, sentence case → ✅ se ve premium
+- DESCRIPCIONES: Inter 900 Black, sentence case → ✅ se ve premium
+- PORTADAS DE CARRUSEL: Fuente desconocida (tipo Impact/Oswald), 
+  TODO EN MAYÚSCULAS → ❌ se ve distinta y rompe la marca
+
+Evidencia visual: te adjunto la portada "AUTOMATIZA TU NEGOCIO" — 
+comparada con cualquier historia reciente, se nota que son 
+tipografías completamente diferentes.
+
+═══════════════════════════════════════════════════════════════
+OBJETIVO
+═══════════════════════════════════════════════════════════════
+
+Unificar la tipografía del texto renderizado en PORTADAS de 
+carruseles con la que ya usan Historias y Descripciones.
+
+═══════════════════════════════════════════════════════════════
+SOLUCIÓN
+═══════════════════════════════════════════════════════════════
+
+PASO 1: INVESTIGAR LA CONFIG ACTUAL
+
+1. Busca en el código dónde se renderiza el texto sobre las portadas 
+   del carrusel. Puede estar en:
+   - El prompt a Gemini (pidiéndole que incluya texto en la imagen)
+   - Un renderizador post-proceso con sharp/canvas
+
+2. Confirma cuál de las dos opciones estamos usando:
+   
+   Opción A: Gemini renderiza el texto DENTRO de la imagen (por eso 
+   usa una fuente distinta a las nuestras)
+   
+   Opción B: Nosotros renderizamos el texto ENCIMA con sharp/canvas 
+   (en cuyo caso estamos aplicando la fuente incorrecta)
+
+PASO 2: SOLUCIÓN SEGÚN EL CASO
+
+CASO A (Gemini renderiza el texto):
+Este es el caso más probable viendo el resultado. Gemini está 
+interpretando el tema y poniendo el texto "AUTOMATIZA TU NEGOCIO" 
+usando su propia fuente. Esto es el problema.
+
+SOLUCIÓN CASO A:
+Cambiar el enfoque: en vez de pedirle a Gemini que renderice el 
+texto, pedirle que genere la imagen SIN texto y luego renderizar 
+nosotros el texto encima con sharp (igual que hacemos en Historias 
+y slides intermedias del carrusel).
+
+1. Modificar el prompt de Gemini para portadas de carruseles:
+   - ANTES: "Cover image with large title text 'AUTOMATIZA TU NEGOCIO'"
+   - AHORA: "Cover image WITHOUT any text. Clean illustration only. 
+     Text will be added in post-processing."
+
+2. En el prompt agregar restricción explícita:
+```
+   CRITICAL: Generate ONLY the illustration. Do NOT include any 
+   text, letters, words, or typography in the image. Leave the top 
+   zone (0-430px) and bottom zone (1300px-end) with clean background 
+   ONLY — no text, no labels, no readable characters anywhere.
+```
+
+3. Después de recibir la imagen de Gemini, usar el mismo 
+   renderizador de sharp que ya usamos en Historias para poner el 
+   texto encima con la tipografía correcta (Inter 900 Black).
+
+CASO B (ya renderizamos con sharp pero con fuente incorrecta):
+Menos probable pero posible. En este caso solo hay que cambiar la 
+config de la fuente.
+
+SOLUCIÓN CASO B:
+Busca el archivo donde se renderiza el texto de portadas con sharp 
+y cambia:
+```javascript
+// ANTES (incorrecto):
+font-family: 'Impact', 'Oswald', sans-serif;
+font-weight: bold;
+text-transform: uppercase;
+
+// DESPUÉS (correcto, igual que Historias):
+font-family: 'Inter', sans-serif;
+font-weight: 900;  // Black
+text-transform: none;  // Sentence case, no uppercase
+```
+
+═══════════════════════════════════════════════════════════════
+CONFIG DE TIPOGRAFÍA UNIFICADA (REFERENCIA DEFINITIVA)
+═══════════════════════════════════════════════════════════════
+
+Todas las tipografías de texto renderizado sobre imágenes deben 
+seguir esta config maestra (que es la que usan Historias y 
+Descripciones y quedó muy bien):
+
+TÍTULO PRINCIPAL:
+- Font family: Inter
+- Font weight: 900 (Black)
+- Text transform: none (sentence case, con mayúscula inicial)
+- Size: 72-88px (auto-fit según largo)
+- Color: white puro (#FFFFFF)
+- Letter spacing: -2px (tight)
+- Line height: 1.1
+- Text shadow: 0 4px 12px rgba(0,0,0,0.6)
+- Text alignment: center
+- Padding lateral: 80px mínimo
+
+SUB-COPY:
+- Font family: Inter
+- Font weight: 600 (SemiBold)
+- Size: 40-52px
+- Color: white 90% opacity
+- Text shadow: 0 2px 8px rgba(0,0,0,0.5)
+
+CTA (BOTÓN):
+- Font family: Inter
+- Font weight: 700 (Bold)
+- Size: 44px
+- Color: white
+- Padding botón: 28px vertical, 56px horizontal
+- Border-radius: 999px (pill)
+- Background: #E86A30
+
+HASHTAGS:
+- Font family: Inter
+- Font weight: 500 (Medium)
+- Size: 32px
+- Color: #E86A30 al 70% opacity
+
+NUMERACIÓN DE SLIDE (01/07):
+- Font family: Inter
+- Font weight: 600 (SemiBold)
+- Size: 24px
+- Color: white 50% opacity
+- Position: esquina superior derecha con padding 40px
+
+REGLA DE ORO:
+Nada de Impact, Oswald, Bebas Neue, Arial, Roboto ni ninguna otra 
+fuente. SOLO Inter en todos los apartados. Si Inter no está 
+instalada, descargarla desde rsms.me/inter o Google Fonts.
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+Después de implementar:
+
+TEST 1: Generar una portada de carrusel con tema "Automatiza tu 
+negocio con IA"
+Esperado: 
+✅ Tipografía Inter 900 Black (NO Impact)
+✅ Texto "Automatiza tu negocio con IA" (NO "AUTOMATIZA TU NEGOCIO" 
+   en mayúsculas)
+✅ Mismo look premium que las historias
+
+TEST 2: Generar una historia y una portada con el mismo tema 
+("Chatbots para atender 24/7") una al lado de la otra.
+Esperado:
+✅ Ambas usan LA MISMA tipografía (Inter 900 Black)
+✅ Ambas usan sentence case
+✅ Son visualmente coherentes entre sí
+
+TEST 3: Generar un carrusel completo de 5 slides con tema "5 razones 
+para tener un chatbot"
+Esperado:
+✅ La portada (slide 1) tiene la misma tipografía que las slides 
+   2-5 (que ya usan Inter)
+✅ Todo el carrusel se ve como una unidad visual coherente
+
+Mándame las 3 pruebas para confirmar.
+
+IMPORTANTE: 
+- NO tocar Historias ni Descripciones (ya están perfectas con Inter)
+- NO tocar la tipografía de slides intermedias de carruseles (ya 
+  están perfectas)
+- SOLO unificar la tipografía de las PORTADAS de carruseles (slide 1)
+
+═══════════════════════════════════════════════════════════════
+RECORDATORIO: COMBINAR CON POSES ROTATIVAS
+═══════════════════════════════════════════════════════════════
+
+Este fix de tipografía debe aplicarse JUNTO con la mejora de poses 
+rotativas del prompt anterior. Ambas mejoras atacan el mismo 
+problema: que las portadas se vean variadas y coherentes con la 
+marca. Una sin la otra queda incompleta.
+
+Orden sugerido:
+1. Implementar unificación de tipografía primero (más simple, 
+   cambio de config)
+2. Implementar banco de poses rotativas después (más complejo, 
+   lógica nueva)
+
+Cuando termines AMBAS mejoras, mándame 5 portadas consecutivas de 
+temas distintos para validar:
+- Tipografía Inter consistente en todas
+- Poses variadas del zorro en todas
+- Se ven como serie profesional de marca
