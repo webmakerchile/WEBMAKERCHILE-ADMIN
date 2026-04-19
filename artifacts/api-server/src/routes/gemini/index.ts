@@ -149,7 +149,8 @@ router.post("/gemini/generate-cover", async (req, res) => {
   const temaParaEmocion = `${body.title} ${body.description || ""}`;
   const poseElegida = seleccionarPosePortada(temaParaEmocion);
   const selectedPose = poseElegida.descripcion;
-  console.log(`[CoverGen] Pose seleccionada: ${poseElegida.id} (emoción detectada: ${poseElegida.emocion || "ninguna"})`);
+  console.log(`[PORTADA] Pose seleccionada: ${poseElegida.id} (emoción: ${poseElegida.emocion || "ninguna"}) | tema: "${body.title}"`);
+  console.log(`[PORTADA] Descripción: ${poseElegida.descripcion}`);
 
   const basePrompt = `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
@@ -175,11 +176,13 @@ ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
 - NADA puede existir en esa zona: ni el zorro, ni objetos, ni sombras, ni líneas, ni bordes
 - Toda la acción visual comienza DEBAJO del píxel 670
 
-COMPOSICIÓN:
+COMPOSICIÓN (CRÍTICA - LIMPIA Y MINIMALISTA):
 - El zorro y los objetos ocupan el 65% INFERIOR de la imagen
-- Composición LIMPIA: el zorro es el protagonista, los objetos complementan la escena
-- Dejar espacio entre elementos, no abarrotar la imagen
-- Se pueden incluir 2-4 elementos/objetos además del zorro, pero deben ser parte de la escena narrativa
+- MÁXIMO 3 elementos visuales de apoyo alrededor del zorro. NUNCA más de 3.
+- Los elementos de apoyo deben estar AGRUPADOS A UN SOLO LADO del zorro (izquierda O derecha), dejando el otro lado con fondo limpio.
+- PROHIBIDO rodear al zorro con objetos por todos lados (saturación visual). PROHIBIDO collage de iconos.
+- El zorro debe ser SIEMPRE el protagonista visualmente claro, no "uno más" entre elementos.
+- Si dudas si añadir un objeto extra, NO lo añadas. Menos es más.
 
 CONTRASTE DE ESTILOS (IMPORTANTE):
 - El ZORRO y los OBJETOS/ICONOS se dibujan en estilo FLAT CARTOON: líneas de contorno gruesas negras, colores planos y vibrantes, sin degradados, sin sombras realistas
@@ -276,8 +279,9 @@ ${bloquePoseRequerida(poseElegida)}`;
 
     const COVER_WIDTH = 1080;
     const COVER_HEIGHT = 1920;
-    const TEXT_ZONE_TOP = 60;
-    const TEXT_ZONE_BOTTOM = 630;
+    // Mismo layout que historias: 150px de aire arriba, título centrado en zona 150-430.
+    const TEXT_ZONE_TOP = 150;
+    const TEXT_ZONE_BOTTOM = 430;
     const TEXT_ZONE_HEIGHT = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
     const TEXT_ZONE_SIDE_PADDING = 60;
 

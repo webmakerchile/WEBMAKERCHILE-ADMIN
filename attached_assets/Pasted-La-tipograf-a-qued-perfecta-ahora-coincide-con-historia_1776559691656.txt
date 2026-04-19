@@ -1,0 +1,117 @@
+La tipografía quedó perfecta, ahora coincide con historias y 
+descripciones. Pero quedan 3 detalles que afinar antes de darlo por 
+cerrado:
+
+═══════════════════════════════════════════════════════════════
+AJUSTE 1: PADDING SUPERIOR DEL TÍTULO EN PORTADAS
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+El título de las portadas está muy pegado al borde superior de la 
+imagen (aprox 60px del borde). Se ve apretado.
+
+En HISTORIAS ya resolvimos esto aplicando un padding superior de 
+150px. Hay que aplicar el mismo patrón en portadas de carrusel.
+
+SOLUCIÓN:
+En el renderizador de portadas de carrusel, aplicar el mismo layout 
+vertical que aprobamos para historias:
+
+- 0-150px     → padding superior (aire limpio)
+- 150-430px   → TÍTULO (centrado vertical en su zona)
+- 430-550px   → Transición con glow
+- 550px+      → Ilustración del zorro
+
+El título NO debe tocar el borde superior. Necesita aire.
+
+═══════════════════════════════════════════════════════════════
+AJUSTE 2: CONFIRMAR BANCO DE POSES ROTATIVAS
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Te pedí antes implementar un banco de 10-12 poses rotativas con 
+anti-repetición para que las portadas no salgan siempre con el zorro 
+en la misma pose (3/4 señalando a la izquierda/derecha).
+
+Acabo de generar 2 portadas consecutivas con el mismo tema 
+("Automatiza tu negocio") y ambas tienen el zorro en la MISMA pose:
+- Cuerpo 3/4 girado a la derecha
+- Brazo izquierdo extendido señalando a la izquierda
+- Misma expresión facial
+
+Esto indica que el banco de poses NO se está aplicando, o no está 
+funcionando bien.
+
+ACCIÓN OBLIGATORIA:
+
+1. Confirma si el banco de poses (PORTADA_POSES con 10-12 opciones) 
+   se implementó. Si NO, impleméntalo ahora siguiendo el prompt 
+   anterior.
+
+2. Si ya está implementado, investiga por qué no rota. Posibles 
+   causas:
+   a) El sistema detecta "automatización" y siempre elige la misma 
+      categoría de poses → verificar que el array de emociones 
+      tenga al menos 3 poses por categoría
+   b) La memoria de últimas poses usadas no se está guardando → 
+      verificar que se persista entre requests
+   c) La descripción de la pose no se está inyectando en el prompt 
+      final de Gemini → verificar el string del prompt
+
+3. Loggea la pose seleccionada en cada generación:
+console.log([PORTADA] Pose seleccionada: ${pose.id} - ${pose.descripcion});
+   Así podemos confirmar en los logs que realmente varía.
+
+4. VALIDACIÓN: Genera 5 portadas consecutivas con temas distintos 
+   y muéstrame los logs de las 5 poses seleccionadas. Deben ser 5 
+   poses DIFERENTES (no la misma, no variaciones de la misma).
+
+═══════════════════════════════════════════════════════════════
+AJUSTE 3: SIMPLIFICAR COMPOSICIÓN DE LA ESCENA
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Algunas portadas están saturadas de elementos visuales. En la 
+portada 1 ("Automatiza tu negocio") hay tubos, engranajes, paneles 
+de control, monedas, cohete, flechas, servidores, carritos... todo 
+alrededor del zorro creando sensación de caos.
+
+La portada 2 quedó mejor: zorro + maquinaria solo a la izquierda + 
+cohete abajo. Más limpia y legible.
+
+SOLUCIÓN:
+Reforzar en el prompt de Gemini la regla:
+"MAXIMUM 3 supporting visual elements around the character. Do NOT 
+surround the character with objects from all sides. Supporting 
+elements should be grouped ON ONE SIDE (left OR right) of the 
+character, leaving the other side with clean background. The 
+character must always be visually clear and not overwhelmed by 
+objects."
+
+Esto aplica a portadas y a slides de desarrollo. El zorro siempre 
+debe ser el protagonista claro, no "uno más" entre elementos.
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN FINAL
+═══════════════════════════════════════════════════════════════
+
+Genera 5 portadas de carruseles consecutivas con temas distintos:
+
+TEST 1: "Automatiza tu negocio con IA"
+TEST 2: "¿Tu web pierde clientes?"
+TEST 3: "Cómo triplicamos las ventas de una pyme"
+TEST 4: "5 señales de que necesitas un chatbot"
+TEST 5: "El secreto detrás de un e-commerce exitoso"
+
+Para cada una, muéstrame:
+1. La imagen generada
+2. La pose del zorro que fue seleccionada (log)
+3. Un mini-análisis: ¿las 5 son visualmente distintas entre sí?
+
+Esperado:
+✅ Título con padding superior de 150px (no pegado al borde)
+✅ 5 poses diferentes del zorro (sin repeticiones)
+✅ Composición limpia, máximo 3 elementos de apoyo por escena
+✅ Todas con tipografía Inter 900 Black consistente
+
+Con esto queda cerrado el sistema de portadas al 100%.

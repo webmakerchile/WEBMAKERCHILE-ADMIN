@@ -73,7 +73,7 @@ export function detectarEmocion(tema: string): Emocion | null {
 
 // Memoria FIFO en proceso (se reinicia con cada restart del server, suficiente
 // para evitar repetición dentro de una sesión normal de creación de contenido).
-const MEMORIA_MAX = 5;
+const MEMORIA_MAX = 8;
 const ultimasPosesPortada: PoseId[] = [];
 
 export interface PoseSeleccionada {
