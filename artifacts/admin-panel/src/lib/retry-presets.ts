@@ -89,4 +89,33 @@ export const RETRY_PRESETS: RetryPreset[] = [
       "Regenera la imagen completamente limpia: cero letras, cero números, cero palabras en cualquier idioma, en cualquier parte. " +
       "Los rectángulos/zonas donde habría texto deben quedar como bloques de color planos o líneas decorativas abstractas.",
   },
+  {
+    id: "expresion-rara",
+    label: "Expresión facial rara",
+    emoji: "🎭",
+    prompt:
+      "La expresión facial del zorro es exagerada o no encaja con el mensaje. " +
+      "Hazla SUTIL y natural: ojos pequeños como puntos negros sólidos (NUNCA grandes ni con brillos Disney), " +
+      "boca pequeña sin lengua ni dientes visibles, sin cejas tipo anime. " +
+      "La emoción debe ser legible pero contenida, coherente con el tono del slide.",
+  },
+  {
+    id: "composicion-saturada",
+    label: "Composición saturada",
+    emoji: "📐",
+    prompt:
+      "La escena está abarrotada de elementos rodeando al zorro por todos lados. Simplifica: " +
+      "MÁXIMO 3 objetos de apoyo en TOTAL, AGRUPADOS A UN SOLO LADO del zorro (izquierda O derecha), " +
+      "dejando el lado opuesto con fondo limpio. PROHIBIDO el collage de iconos o rodear al zorro. " +
+      "El zorro debe ser visualmente el protagonista claro, no uno más entre objetos.",
+  },
+  {
+    id: "objetos-cortados",
+    label: "Objetos cortados por bordes",
+    emoji: "✂️",
+    prompt:
+      "Hay objetos (laptop, celular, props) cortados por los bordes de la imagen o mal posicionados. " +
+      "Reposiciónalos para que estén COMPLETOS dentro del frame con un margen mínimo de 60px desde cualquier borde. " +
+      "Si no caben enteros, redúcelos de tamaño. Nada debe verse partido por los bordes.",
+  },
 ];

@@ -462,7 +462,21 @@ PROHIBIDO ABSOLUTAMENTE:
 × Expresiones exageradas (muy feliz, muy triste, muy enojado)
 × Cualquier efecto 3D, volumen, iluminación volumétrica o ambient occlusion
 
-REGLA DE ORO: si NO se puede confundir con la imagen master adjunta, es INCORRECTA y debe regenerarse.`;
+REGLA DE ORO: si NO se puede confundir con la imagen master adjunta, es INCORRECTA y debe regenerarse.
+
+CHECKLIST FINAL DE RECHAZO — antes de devolver la imagen, RECHÁZALA y rehazla si:
+1. Los ojos del zorro tienen brillos, reflejos, iris o aspecto Disney/Pixar/anime.
+2. La cara del zorro es redonda, chibi o "cute" en lugar de alargada.
+3. La nariz es rosada, marrón o cualquier color que no sea negra.
+4. Los lentes son redondos, marrones, naranjas o tienen reflejos en los cristales.
+5. La polera, el pelaje o cualquier parte del personaje tiene sombras, gradientes, texturas, volumen 3D u oclusión ambiental.
+6. Hay líneas de contorno finas, irregulares o ausentes — TODO el zorro debe tener líneas negras gruesas y uniformes.
+7. La escena tiene MÁS de 3 objetos de apoyo, o están distribuidos rodeando al zorro en lugar de agrupados a un lado.
+8. Hay objetos cortados por los bordes de la imagen (laptop, celular, props sin margen).
+9. Hay texto, letras o números visibles dentro del arte (en pantallas, pancartas, etc.).
+10. El estilo se ve fotográfico, 3D, anime, render o cualquier cosa que NO sea flat cartoon 2D vector plano.
+
+Si CUALQUIERA de estas 10 condiciones se cumple, la imagen es INVÁLIDA y debe regenerarse desde cero.`;
 
 // ============================================
 // SORPRÉNDEME (audiencia: emprendedores/pymes)
@@ -1704,6 +1718,62 @@ Responde EXCLUSIVAMENTE con una sola palabra: SI o NO. Sin explicación.` },
   }
 }
 
+// Auto-diagnóstico con Gemini Vision: compara la imagen generada vs la master
+// y devuelve correcciones específicas que se inyectan al prompt en el siguiente reintento.
+async function diagnosticarImagenConVision(
+  imagenGeneradaBase64: string,
+  referenceBase64: string | null,
+): Promise<string | null> {
+  if (!referenceBase64) return null;
+  try {
+    const resp = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [
+        { inlineData: { data: referenceBase64, mimeType: "image/png" } },
+        { inlineData: { data: imagenGeneradaBase64, mimeType: "image/png" } },
+        { text: `Eres un director de arte experto en branding flat cartoon 2D. La PRIMERA imagen es la MASTER OFICIAL del zorro Webi (mascota de WebMakerLatam). La SEGUNDA es una imagen recién generada que debe replicar al zorro idéntico y respetar la composición de marca.
+
+Diagnostica EXCLUSIVAMENTE los defectos visibles en la SEGUNDA imagen comparándola con la PRIMERA y con estas reglas:
+- Cara alargada (NO redonda chibi), ojos pequeños puntos negros (NO Disney/Pixar con brillos), nariz negra triangular (NO rosada), lentes RECTANGULARES marco negro (NO redondos/marrones).
+- Pelaje plano #E86A30, polera verde plana #4A5D3A, líneas negras gruesas y uniformes, estilo flat cartoon 2D vector (NO 3D, NO anime, NO realista).
+- Composición: máximo 3 objetos AGRUPADOS a un lado, nada cortado por bordes, sin texto/letras dentro del arte, sin fondos saturados.
+
+Devuelve EXCLUSIVAMENTE un objeto JSON válido con ESTA estructura exacta (sin markdown, sin texto extra):
+{
+  "problemas": ["problema 1 concreto", "problema 2 concreto", "problema 3 concreto"],
+  "correcciones": ["instrucción imperativa 1 para arreglarlo", "instrucción imperativa 2", "instrucción imperativa 3"]
+}
+
+Reglas:
+- Máximo 4 problemas + 4 correcciones (uno por defecto real). Si hay menos, devuelve menos.
+- Si la imagen está PERFECTA y no requiere cambios, devuelve {"problemas": [], "correcciones": []}.
+- Las correcciones deben ser instrucciones imperativas en español, concretas y accionables (ej. "Reemplaza los ojos grandes por dos puntos negros pequeños sin brillo").
+- NO repitas el mismo defecto en problemas y correcciones; sé conciso.` },
+      ] }],
+    });
+    const txt = (resp.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "").trim();
+    // Limpia posible bloque markdown ```json ... ```
+    const limpio = txt.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+    const json = JSON.parse(limpio);
+    const correcciones: string[] = Array.isArray(json?.correcciones) ? json.correcciones.filter((c: any) => typeof c === "string" && c.trim()) : [];
+    const problemas: string[] = Array.isArray(json?.problemas) ? json.problemas.filter((c: any) => typeof c === "string" && c.trim()) : [];
+    if (correcciones.length === 0) {
+      console.log("[Auto-diagnóstico] Imagen aprobada por Vision, sin correcciones.");
+      return null;
+    }
+    console.log(`[Auto-diagnóstico] Vision detectó ${problemas.length} problema(s):`, problemas);
+    const bloque = `AUTO-DIAGNÓSTICO VISION (alta prioridad — corrige estos defectos detectados en el intento anterior):
+PROBLEMAS DETECTADOS:
+${problemas.map((p, i) => `${i + 1}. ${p}`).join("\n")}
+CORRECCIONES OBLIGATORIAS:
+${correcciones.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
+    return bloque;
+  } catch (e) {
+    console.warn("[Auto-diagnóstico] Vision falló:", (e as Error).message);
+    return null;
+  }
+}
+
 async function generarImagenSlideConValidacion(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
@@ -1971,8 +2041,9 @@ const ReintentarSlideBody = z.object({
   formato: z.enum(["1:1", "4:5"]).default("4:5"),
   texto_en_imagen: z.boolean().optional().default(false),
   total_slides: z.number().int().min(1).max(10).optional().default(1),
-  modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).optional().default("imagen"),
+  modo: z.enum(["imagen", "texto", "ambos", "personalizado", "auto-diagnose"]).optional().default("imagen"),
   prompt_personalizado: z.string().max(2000).optional(),
+  imagen_actual_base64: z.string().optional(), // sin prefijo data:; usado por auto-diagnose
 });
 
 // Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
@@ -2038,13 +2109,19 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
       return;
     }
 
-    // 3) Regenerar imagen — para "personalizado", inyectamos ajuste al prompt visual
+    // 3) Regenerar imagen — para "personalizado"/"auto-diagnose", inyectamos ajuste al prompt visual
     const referenceBase64 = await getFoxRefBase64();
     let slideParaImagen = slide;
-    if (body.modo === "personalizado" && body.prompt_personalizado) {
+    let ajusteFinal: string | undefined = body.modo === "personalizado" ? body.prompt_personalizado : undefined;
+    if (body.modo === "auto-diagnose" && body.imagen_actual_base64) {
+      const diagnostico = await diagnosticarImagenConVision(body.imagen_actual_base64, referenceBase64);
+      if (diagnostico) ajusteFinal = diagnostico;
+      else ajusteFinal = "La imagen anterior fue aprobada por Vision pero el usuario pidió un nuevo intento — varía la pose y el encuadre manteniendo el mismo concepto.";
+    }
+    if (ajusteFinal) {
       slideParaImagen = {
         ...slide,
-        prompt_visual: `${slide.prompt_visual || ""}. AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${body.prompt_personalizado}`.trim(),
+        prompt_visual: `${slide.prompt_visual || ""}. AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${ajusteFinal}`.trim(),
       };
     }
     let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides);
@@ -2082,8 +2159,9 @@ const ReintentarHistoriaBody = z.object({
     hashtags: z.string(),
   }).optional(),
   texto_en_imagen: z.boolean().optional().default(false),
-  modo: z.enum(["imagen", "texto", "ambos", "personalizado"]).default("imagen"),
+  modo: z.enum(["imagen", "texto", "ambos", "personalizado", "auto-diagnose"]).default("imagen"),
   prompt_personalizado: z.string().max(2000).optional(),
+  imagen_actual_base64: z.string().optional(), // sin prefijo data:; usado por auto-diagnose
   // Soporte de serie: regenerar UN frame específico
   numero_frame: z.number().int().min(1).max(5).optional(),
   total_frames: z.number().int().min(1).max(5).optional(),
@@ -2116,14 +2194,19 @@ router.post("/community/historias/reintentar", async (req, res) => {
     // 3) Regenerar imagen (con contexto de frame si aplica)
     // El ajuste personalizado debe afectar a la IMAGEN tanto en modo "personalizado"
     // como en modo "ambos" (texto + imagen) cuando viene un prompt del usuario.
-    const promptOverride = body.prompt_personalizado &&
+    const referenceBase64 = await getFoxRefBase64();
+    let promptOverride: string | undefined = body.prompt_personalizado &&
       (body.modo === "personalizado" || body.modo === "ambos")
       ? body.prompt_personalizado
       : undefined;
-    const referenceBase64 = await getFoxRefBase64();
+    if (body.modo === "auto-diagnose" && body.imagen_actual_base64) {
+      const diagnostico = await diagnosticarImagenConVision(body.imagen_actual_base64, referenceBase64);
+      promptOverride = diagnostico
+        ?? "La imagen anterior fue aprobada por Vision pero el usuario pidió un nuevo intento — varía la pose y el encuadre manteniendo el mismo concepto.";
+    }
     // Si NO regeneramos texto en este modo y el cliente envió texto_actual,
     // preservamos el texto y evitamos llamar a Claude (más rápido y robusto).
-    const textoPreservado = (body.modo === "imagen" || body.modo === "personalizado") && body.texto_actual
+    const textoPreservado = (body.modo === "imagen" || body.modo === "personalizado" || body.modo === "auto-diagnose") && body.texto_actual
       ? body.texto_actual
       : undefined;
     const frame = await generarFrameHistoria({

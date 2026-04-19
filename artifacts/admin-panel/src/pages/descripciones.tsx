@@ -179,7 +179,7 @@ export default function DescripcionesPage() {
 
   const handleReintentarSlide = async (
     slide: SlideImagen,
-    modo: "imagen" | "texto" | "ambos" | "personalizado" = "imagen",
+    modo: "imagen" | "texto" | "ambos" | "personalizado" | "auto-diagnose" = "imagen",
     promptPersonalizado?: string,
   ) => {
     if (!resultado) return;
@@ -188,6 +188,11 @@ export default function DescripcionesPage() {
     setMenuOpen(null);
     setError(null);
     try {
+      let imagenActualBase64: string | undefined;
+      if (modo === "auto-diagnose" && slide.imagen) {
+        const m = slide.imagen.match(/^data:[^;]+;base64,(.+)$/);
+        if (m) imagenActualBase64 = m[1];
+      }
       const res = await fetch(`${API_BASE}/community/descripciones/reintentar-slide`, {
         method: "POST",
         credentials: "include",
@@ -204,6 +209,7 @@ export default function DescripcionesPage() {
           total_slides: resultado.imagenes.length,
           modo,
           prompt_personalizado: promptPersonalizado,
+          imagen_actual_base64: imagenActualBase64,
         }),
       });
       const data = await res.json();
@@ -641,6 +647,16 @@ export default function DescripcionesPage() {
                               className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
                             >
                               <Repeat className="w-4 h-4 text-emerald-400" />Reintentar todo
+                            </button>
+                            <div className="border-t border-white/10 my-1" />
+                            <button
+                              type="button"
+                              onClick={() => handleReintentarSlide(slideShown, "auto-diagnose")}
+                              disabled={!slideShown.imagen}
+                              title="Gemini Vision compara la imagen actual vs la master del zorro y aplica las correcciones automáticamente"
+                              className="w-full text-left px-3 py-2 text-sm text-white bg-gradient-to-r from-emerald-600/80 to-teal-600/80 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 font-bold"
+                            >
+                              <Wand2 className="w-4 h-4" />Auto-diagnosticar y reintentar (IA)
                             </button>
                             <div className="border-t border-white/10 my-1" />
                             <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Ajustes rápidos</div>

@@ -192,7 +192,7 @@ export default function HistoriasPage() {
 
   const handleReintentar = async (
     frameIndex: number,
-    modo: "imagen" | "texto" | "ambos" | "personalizado",
+    modo: "imagen" | "texto" | "ambos" | "personalizado" | "auto-diagnose",
     promptPersonalizado?: string,
   ) => {
     if (!resultado) return;
@@ -201,6 +201,11 @@ export default function HistoriasPage() {
     setReintentando((prev) => ({ ...prev, [frameIndex]: modo }));
     setError(null);
     try {
+      let imagenActualBase64: string | undefined;
+      if (modo === "auto-diagnose" && frame.imagen) {
+        const m = frame.imagen.match(/^data:[^;]+;base64,(.+)$/);
+        if (m) imagenActualBase64 = m[1];
+      }
       const res = await fetch(`${API_BASE}/community/historias/reintentar`, {
         method: "POST",
         credentials: "include",
@@ -212,6 +217,7 @@ export default function HistoriasPage() {
           texto_en_imagen: resultado.texto_en_imagen,
           modo,
           prompt_personalizado: promptPersonalizado,
+          imagen_actual_base64: imagenActualBase64,
           numero_frame: frame.numero_frame,
           total_frames: frame.total_frames,
           rol: frame.rol,
@@ -665,6 +671,15 @@ export default function HistoriasPage() {
                   </p>
                 )}
                 <div className="mt-3">
+                  <button
+                    onClick={() => handleReintentar(frameActivo, "auto-diagnose")}
+                    disabled={!!reintentando[frameActivo] || !resultado.frames[frameActivo]?.imagen}
+                    title="Gemini Vision compara la imagen actual vs la master del zorro y aplica las correcciones automáticamente"
+                    className="w-full mb-3 bg-gradient-to-r from-emerald-500/90 to-teal-500/90 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold px-3 py-2 rounded-lg text-xs sm:text-sm transition flex items-center justify-center gap-1.5"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    {reintentando[frameActivo] === "auto-diagnose" ? "Diagnosticando con Vision…" : "Auto-diagnosticar y reintentar (IA)"}
+                  </button>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1.5 flex items-center gap-1.5">
                     <Wand2 className="w-3 h-3" />Ajustes rápidos
                   </div>

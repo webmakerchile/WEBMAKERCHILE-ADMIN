@@ -1,0 +1,248 @@
+Me pasaste un análisis de costos que estaba sobredimensionado para mi 
+volumen real. Mi volumen es mucho menor: ~8 imágenes base por día (3 
+slides + 1 historia de 3 frames + 2 portadas de video). Mi gasto real 
+ronda los $60-$120 USD/mes, no los $450-$900 que estimaste.
+
+Con ese volumen, NO tiene sentido cambiar a Gemini Flash o implementar 
+modo borrador. Quiero mantener Gemini Pro siempre para máxima calidad. 
+Lo que sí necesito es REDUCIR LA TASA DE REINTENTOS para bajar el 
+gasto del 50-60% que hoy se va en regeneraciones.
+
+═══════════════════════════════════════════════════════════════
+OBJETIVO
+═══════════════════════════════════════════════════════════════
+
+Bajar la tasa de reintentos promedio de 2-3 a <1 reintento por slide, 
+sin sacrificar calidad. Esto reduce el gasto sin cambiar de modelo.
+
+Estrategia de 3 mejoras quirúrgicas en orden de ROI:
+
+═══════════════════════════════════════════════════════════════
+MEJORA 1 (ALTO IMPACTO): REINTENTO DIRIGIDO CON CONTEXTO DE FALLO
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Actualmente cuando reintento una slide, el sistema llama a Gemini con 
+el MISMO prompt que falló. Es pura lotería esperar que salga mejor por 
+azar. Tasa de éxito del reintento ciego: ~50%.
+
+SOLUCIÓN:
+Cuando el usuario hace click en "Reintentar", el sistema primero analiza 
+automáticamente QUÉ estuvo mal en la imagen anterior usando Gemini Vision, 
+y luego inyecta esa información como contexto correctivo en el nuevo 
+prompt.
+
+FLUJO NUEVO:
+
+1. Usuario hace click en "Reintentar" sobre una imagen
+2. Sistema llama a Gemini Vision preguntando:
+   "Comparando esta imagen con la referencia master del zorro, 
+   identifica TRES problemas específicos. Responde en formato JSON:
+   { 
+     'problemas': ['problema 1', 'problema 2', 'problema 3'],
+     'sugerencias_correccion': ['corrección 1', 'corrección 2', 'corrección 3']
+   }"
+3. Sistema inyecta estas correcciones en el prompt de generación:
+   
+```
+   <previous_attempt_issues>
+   The previous generation had these problems (MUST be fixed):
+   - [problema 1]
+   - [problema 2]  
+   - [problema 3]
+   
+   Specific corrections required:
+   - [corrección 1]
+   - [corrección 2]
+   - [corrección 3]
+   </previous_attempt_issues>
+```
+4. Genera 1 sola imagen nueva con el prompt corregido
+
+RESULTADO ESPERADO:
+Tasa de éxito del reintento sube de ~50% a ~85%. Esto significa que la 
+mayoría de slides que fallan se arreglan en 1 reintento dirigido en vez 
+de 2-4 reintentos ciegos.
+
+AHORRO ESTIMADO:
+Si hoy gastas ~$2/día en reintentos (promedio 2-3 por slide), con esto 
+bajas a ~$0.60/día (promedio 0.5-1 reintento). Ahorro: ~$45/mes.
+
+COSTO EXTRA DE LA VALIDACIÓN:
+Gemini Vision por análisis: <$0.01. Insignificante.
+
+IMPLEMENTACIÓN:
+Este análisis solo se activa cuando el usuario hace click manual en 
+"Reintentar". NO en generación normal (para no agregar latencia 
+innecesaria si la primera sale bien).
+
+═══════════════════════════════════════════════════════════════
+MEJORA 2 (ALTO IMPACTO): MODAL DE REINTENTO CON INSTRUCCIONES RÁPIDAS
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Actualmente el botón "Reintentar" es un solo click ciego. El usuario 
+no puede decir "está mal porque X" sin escribir manualmente en el 
+modal de prompt personalizado (que es poco usado).
+
+SOLUCIÓN:
+Reemplazar el botón único de reintentar por un MODAL RÁPIDO con chips 
+de problemas comunes pre-definidos. El usuario marca 1-3 chips y 
+reintenta.
+
+UI DEL MODAL:
+
+Título: "¿Qué está mal en esta imagen?"
+
+Chips (seleccionables múltiples):
+- 🎨 "Zorro inconsistente con la marca"
+- 🤸 "Pose o postura incorrecta"
+- 🎭 "Expresión facial rara"
+- 📐 "Composición desordenada"
+- 🎪 "Objetos cortados o raros"
+- 📏 "Zorro demasiado pequeño/grande"
+- 🌈 "Colores fuera de paleta"
+- ✂️ "Zorro cortado por bordes"
+- ❓ "Otro problema específico" → abre input de texto libre
+
+Botón: "🔄 Regenerar con correcciones"
+
+Cada chip se traduce internamente a una instrucción específica en el 
+prompt:
+
+```javascript
+const CORRECCIONES_CHIPS = {
+  "zorro_inconsistente": "The fox character MUST match EXACTLY the master reference image. Flat 2D cartoon style only, no Disney, no 3D, no chibi.",
+  "pose_incorrecta": "Use a DIFFERENT pose than the previous attempt. Choose from: arms crossed, hand on chin, shrug, triumph arms up, pointing, whispering.",
+  "expresion_rara": "The fox's facial expression must be natural and subtle. Simple eyes (small black circles), no exaggerated features.",
+  "composicion_desordenada": "Simplify composition: fox + maximum 2 supporting objects on ONE side. Clean background on the other side.",
+  "objetos_cortados": "All supporting objects must be COMPLETE, not cut by image borders. Position them with safe margins.",
+  "tamaño_incorrecto": "The fox must occupy 40-50% of the visible area. Full body visible from ears to feet.",
+  "colores_paleta": "Strict color palette: fox orange #E86A30, shirt olive green #4A5D3A, background slate #0F172A to #1E293B.",
+  "zorro_cortado": "Fox character must be FULLY VISIBLE: entire body from ear tips to feet, with at least 60px margin from image borders."
+};
+```
+
+El usuario puede seleccionar múltiples chips y se concatenan las 
+instrucciones en el prompt corregido.
+
+BONUS UX: Guardar estadística de qué chips son más clickeados. Los 
+top 3 problemas pueden informar mejoras futuras del prompt base.
+
+AHORRO ESTIMADO:
+Convertir reintentos ciegos (50% éxito) en reintentos dirigidos (90% 
+éxito) = ~$30/mes adicional.
+
+═══════════════════════════════════════════════════════════════
+MEJORA 3 (IMPACTO MEDIO): REFINAR PROMPT BASE (MATAR PROBLEMAS EN ORIGEN)
+═══════════════════════════════════════════════════════════════
+
+PROBLEMA:
+Algunos problemas del zorro (chibi, ojos grandes, sombras 3D) se 
+repiten mucho porque el prompt actual no es lo suficientemente 
+estricto en negaciones.
+
+SOLUCIÓN:
+Auditar el prompt base actual del zorro y reforzarlo con negaciones 
+explícitas en las zonas críticas. Las IAs suelen ignorar instrucciones 
+positivas pero respetan negaciones directas cuando están bien 
+redactadas.
+
+AGREGAR al bloque <critical_final_requirements> del prompt base:
+
+```
+ABSOLUTELY FORBIDDEN IN THIS IMAGE (will cause rejection):
+- Chibi or "cute" style with oversized head or round face
+- Disney/Pixar style eyes (big, shiny, with highlights/reflections)
+- Realistic fur textures, shading, or gradients on the character
+- 3D rendering or volumetric lighting on the character
+- Pink or brown nose (MUST be black)
+- Glasses that are round, oval, or without frame (MUST be rectangular with thick dark frame)
+- Body cut or partially visible (MUST be full body)
+- More than 3 supporting objects around the character
+- Objects surrounding the character from all sides (objects must be on ONE side only)
+- Typography or text rendered directly in the illustration
+- Any character detail that differs from the master reference
+
+IF ANY OF THE ABOVE IS PRESENT: The image is INCORRECT and must be regenerated internally before returning.
+```
+
+IMPACTO:
+Reduce la tasa de "fallos grandes" (chibi, ojos Disney) en un ~30%. 
+Menos fallos grandes = menos reintentos necesarios.
+
+═══════════════════════════════════════════════════════════════
+MEJORA 4 (OPCIONAL): DASHBOARD DE GASTO EN TIEMPO REAL
+═══════════════════════════════════════════════════════════════
+
+Ya que no sabía mi gasto real, sería útil tener visibilidad:
+
+Agregar una sección simple en el admin:
+- 💰 Gasto del día actual: $X.XX
+- 💰 Gasto del mes: $X.XX
+- 📊 Slides generadas este mes: X
+- 🔄 Reintentos promedio por slide: X.X
+- 🏆 Tasa de éxito primera pasada: X%
+
+Esto me permite monitorear si las mejoras 1-3 realmente están 
+reduciendo reintentos.
+
+Calcular así:
+- Cada llamada a gemini-3-pro-image-preview = $0.13
+- Cada llamada a gemini-3-pro-preview (Vision/análisis) = $0.001 
+  aprox
+- Cada llamada a claude-sonnet-4-6 = $0.005-0.015
+
+Guardar log en la DB con cada llamada y fecha, luego agregar por día/mes.
+
+═══════════════════════════════════════════════════════════════
+LO QUE NO HACEMOS (IMPORTANTE)
+═══════════════════════════════════════════════════════════════
+
+❌ NO agregar modo "borrador con Flash" → el usuario quiere Pro siempre
+❌ NO cambiar el modelo actual → calidad es prioridad
+❌ NO generar N candidatos en paralelo automáticamente → con 8 
+   imágenes/día sería sobreingeniería, agrega complejidad
+❌ NO agregar cache de resultados similares → los temas son variados, 
+   no repetitivos
+
+═══════════════════════════════════════════════════════════════
+ORDEN DE IMPLEMENTACIÓN
+═══════════════════════════════════════════════════════════════
+
+1. MEJORA 3 primero (refinar prompt base) → menor esfuerzo, impacto 
+   directo en calidad de primera pasada
+2. MEJORA 2 segundo (modal con chips) → mejor UX + mejor uso de 
+   reintentos
+3. MEJORA 1 tercero (análisis automático con Vision) → más complejo 
+   pero gran impacto
+4. MEJORA 4 opcional (dashboard) → cuando las otras 3 estén estables
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+Después de implementar mejoras 1-3, correr un test de 10 slides 
+consecutivas y medir:
+
+MÉTRICA PRE-MEJORAS (situación actual):
+- Tasa de éxito primera pasada: ~60%
+- Reintentos promedio por slide: 2.5
+- Costo por slide entregado: $0.13 × (1 + 2.5) = ~$0.45
+
+MÉTRICA POST-MEJORAS (objetivo):
+- Tasa de éxito primera pasada: >80%
+- Reintentos promedio por slide: <1.0
+- Costo por slide entregado: $0.13 × (1 + 1) = ~$0.26
+
+AHORRO ESPERADO: ~42% del gasto mensual actual, sin cambiar de 
+modelo, sin sacrificar calidad.
+
+Con mi volumen de 8 imágenes base/día: de $90/mes bajo a $50/mes 
+aprox. Ahorro anual: ~$480 USD.
+
+Cuando termines mejoras 1-3, muéstrame:
+1. Los cambios en el prompt base (mejora 3)
+2. Captura del modal con chips (mejora 2)
+3. Video o screenshots del flujo de reintento dirigido (mejora 1)
+4. Resultados del test de 10 slides (tasa de éxito primera pasada)
