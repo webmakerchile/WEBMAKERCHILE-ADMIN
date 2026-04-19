@@ -1,0 +1,236 @@
+Las portadas de los carruseles están quedando visualmente EXCELENTES 
+(orden, colores, zorro consistente). Pero tengo un problema de 
+VARIEDAD: todas las portadas tienen prácticamente la misma pose del 
+zorro (3/4 derecha, señalando algo con el brazo), lo que hace que el 
+feed se vea repetitivo.
+
+Te adjunto captura de 3 portadas consecutivas donde se nota el 
+problema: cuerpo girado igual, brazo derecho extendido igual, solo 
+cambia el objeto que señala.
+
+═══════════════════════════════════════════════════════════════
+OBJETIVO
+═══════════════════════════════════════════════════════════════
+
+Forzar al generador a ROTAR la pose/reacción del zorro entre portadas 
+para que cada carrusel tenga un "personaje visual distinto" y el feed 
+se vea variado.
+
+═══════════════════════════════════════════════════════════════
+SOLUCIÓN: POSE ROTATIVA FORZADA
+═══════════════════════════════════════════════════════════════
+
+PASO 1: CREAR UN BANCO DE POSES PARA PORTADAS
+
+En el código del generador de carruseles, crear un array con 10-12 
+poses/reacciones distintas que el zorro puede adoptar en la slide 1 
+(portada). Cada pose debe describir:
+- Posición del cuerpo (frontal, 3/4 izquierda, 3/4 derecha, perfil)
+- Expresión facial (curiosidad, sorpresa, confianza, pensativo, 
+  preocupación, alegría, shock)
+- Gesto de brazos/manos (cruzado, señalando, mano en mentón, brazos 
+  arriba, sosteniendo algo, shrug)
+- Interacción con elementos de la escena
+
+EJEMPLO DEL ARRAY:
+
+```javascript
+const PORTADA_POSES = [
+  {
+    id: "pointing_right",
+    descripcion: "body 3/4 turned right, right arm extended pointing at scene element on the right, confident smile, raised eyebrows"
+  },
+  {
+    id: "pointing_left",
+    descripcion: "body 3/4 turned left, left arm extended pointing at scene element on the left, curious expression, slightly tilted head"
+  },
+  {
+    id: "shocked_front",
+    descripcion: "body facing front, both paws raised near the face in surprise, wide open eyes, open mouth, shocked expression"
+  },
+  {
+    id: "thinking_hand_chin",
+    descripcion: "body 3/4, right paw resting on chin in pensive pose, looking upward as if thinking, thoughtful expression, slight frown"
+  },
+  {
+    id: "arms_crossed_confident",
+    descripcion: "body facing front, arms crossed across chest, confident smirk, head slightly tilted, relaxed posture"
+  },
+  {
+    id: "shrug_confused",
+    descripcion: "body facing front, both paws raised in shrug gesture (palms up), confused or questioning expression, shoulders slightly lifted"
+  },
+  {
+    id: "triumphant_arms_up",
+    descripcion: "body facing front, both arms raised up in triumph or celebration, huge smile, eyes closed in joy"
+  },
+  {
+    id: "worried_head_hold",
+    descripcion: "body 3/4, one paw on side of head in worry or frustration, worried expression, mouth slightly open"
+  },
+  {
+    id: "presenting_with_hand",
+    descripcion: "body 3/4, right arm extended with palm up as if presenting something, welcoming smile, inviting gesture"
+  },
+  {
+    id: "whispering_secret",
+    descripcion: "body 3/4 leaning forward toward viewer, one paw near mouth as if telling a secret, mischievous expression, raised eyebrows"
+  },
+  {
+    id: "reading_document",
+    descripcion: "body 3/4, both paws holding a document or tablet in front of chest, looking down at it with focused expression"
+  },
+  {
+    id: "thumbs_up_confident",
+    descripcion: "body facing front, right paw giving thumbs up, big confident smile, direct eye contact with viewer"
+  }
+];
+```
+
+PASO 2: SELECCIÓN INTELIGENTE DE POSE SEGÚN EL TEMA
+
+Al generar una portada, NO usar pose aleatoria pura. Mapear según 
+el tipo emocional del tema:
+
+```javascript
+function seleccionarPosePortada(tema) {
+  // Extraer emoción dominante del tema
+  const emocion = detectarEmocion(tema);
+  
+  const posesPorEmocion = {
+    pregunta: ["thinking_hand_chin", "shrug_confused", "whispering_secret"],
+    problema: ["worried_head_hold", "shocked_front", "shrug_confused"],
+    revelacion: ["shocked_front", "pointing_right", "pointing_left"],
+    confianza: ["arms_crossed_confident", "thumbs_up_confident", "presenting_with_hand"],
+    celebracion: ["triumphant_arms_up", "thumbs_up_confident"],
+    educativo: ["presenting_with_hand", "reading_document", "pointing_right"],
+    alerta: ["shocked_front", "worried_head_hold", "pointing_left"]
+  };
+  
+  const posesCompatibles = posesPorEmocion[emocion] || 
+                           Object.values(posesPorEmocion).flat();
+  
+  // Seleccionar una aleatoriamente del subset compatible
+  return posesCompatibles[Math.floor(Math.random() * posesCompatibles.length)];
+}
+
+function detectarEmocion(tema) {
+  const temaLower = tema.toLowerCase();
+  
+  if (/\?|por qué|cómo|qué|cuándo/.test(temaLower)) return "pregunta";
+  if (/error|problema|falla|pierde|riesgo|peligro/.test(temaLower)) return "problema";
+  if (/secreto|revelo|descubre|verdad|nadie/.test(temaLower)) return "revelacion";
+  if (/confía|garantía|experto|profesional/.test(temaLower)) return "confianza";
+  if (/éxito|logra|triplica|resultados|conseguir/.test(temaLower)) return "celebracion";
+  if (/aprende|guía|pasos|tutorial|razones/.test(temaLower)) return "educativo";
+  if (/urgente|cuidado|importante|atención/.test(temaLower)) return "alerta";
+  
+  return null; // Fallback a cualquier pose
+}
+```
+
+PASO 3: MEMORIA DE ÚLTIMAS POSES USADAS (ANTI-REPETICIÓN)
+
+Guardar las últimas 3-5 poses usadas en portadas recientes. Al 
+seleccionar una nueva pose, EXCLUIR las que ya se usaron 
+recientemente.
+
+```javascript
+// En la DB o en un cache simple, guardar:
+const ULTIMAS_POSES_USADAS = []; // máximo 5 elementos, FIFO
+
+function seleccionarPoseEvitandoRepeticion(posesCompatibles) {
+  const disponibles = posesCompatibles.filter(
+    pose => !ULTIMAS_POSES_USADAS.includes(pose)
+  );
+  
+  // Si todas fueron usadas recientemente, permitir repetir la más 
+  // antigua
+  const candidatos = disponibles.length > 0 ? disponibles : posesCompatibles;
+  
+  const elegida = candidatos[Math.floor(Math.random() * candidatos.length)];
+  
+  // Actualizar memoria
+  ULTIMAS_POSES_USADAS.push(elegida);
+  if (ULTIMAS_POSES_USADAS.length > 5) {
+    ULTIMAS_POSES_USADAS.shift();
+  }
+  
+  return elegida;
+}
+```
+
+PASO 4: INCORPORAR LA POSE EN EL PROMPT DE GEMINI
+
+Cuando construyas el prompt de la portada del carrusel, inyectar 
+la descripción de la pose seleccionada en el bloque <scene_description>:
+
+```
+<scene_description>
+[DESCRIPCIÓN DE LA ESCENA ORIGINAL]
+
+CHARACTER POSE FOR THIS COVER (mandatory): 
+[descripcion de la pose seleccionada del banco]
+
+The character must adopt this specific pose. Do NOT default to 
+"pointing at laptop" or "arm extended right" if the pose above 
+specifies something different.
+</scene_description>
+```
+
+═══════════════════════════════════════════════════════════════
+PASO 5 (CRÍTICO): EVITAR QUE EL MODELO DEFAULTE A LA POSE "POR DEFECTO"
+═══════════════════════════════════════════════════════════════
+
+Agregar al final del prompt, en el bloque <critical_final_requirements>:
+
+```
+POSE REQUIREMENT (non-negotiable):
+The character MUST follow the pose described above. 
+AVOID these overused poses unless explicitly requested:
+- Body 3/4 right with arm extended pointing
+- Body 3/4 looking at laptop screen
+- Default "presenter" stance
+
+If the requested pose is "arms crossed", the character's arms MUST 
+be crossed (not pointing). If the pose is "shocked", both paws must 
+be near the face (not pointing). Verify the pose before finalizing.
+```
+
+═══════════════════════════════════════════════════════════════
+EXTENSIÓN: APLICAR TAMBIÉN A HISTORIAS ÚNICAS
+═══════════════════════════════════════════════════════════════
+
+Esta misma lógica de poses rotativas con detección emocional + 
+anti-repetición debe aplicarse también al generador de HISTORIAS 
+(formato único). Actualmente las historias también tienen el 
+problema de que el zorro adopta poses muy similares.
+
+Crear un banco de poses adicional para historias si las necesidades 
+son distintas (por ejemplo, para historias motivacionales se necesitan 
+más poses de "triunfo" y "celebración", para tips tech más de 
+"presentando" y "explicando").
+
+═══════════════════════════════════════════════════════════════
+VERIFICACIÓN
+═══════════════════════════════════════════════════════════════
+
+Genera 5 portadas de carruseles con temas distintos en sucesión:
+
+TEST 1: "¿Tu web aleja clientes?" (pregunta)
+TEST 2: "5 errores al vender online" (educativo/alerta)
+TEST 3: "Automatiza tu negocio con IA" (confianza/revelacion)
+TEST 4: "Cómo triplicamos las ventas de un cliente" (celebracion)
+TEST 5: "El secreto de las marcas que venden 24/7" (revelacion)
+
+Esperado:
+✅ Las 5 portadas tienen poses CLARAMENTE distintas del zorro
+✅ Ninguna de las 5 usa la pose "3/4 señalando a la derecha"
+✅ La pose de cada una es coherente con la emoción del tema
+✅ En un mockup de feed de Instagram se ven variadas y no monótonas
+
+Mándame las 5 portadas juntas en una grilla para comparar.
+
+IMPORTANTE: NO tocar el resto del layout, colores, tipografía o 
+estructura. Solo agregar la lógica de selección de pose en el 
+generador de portadas.

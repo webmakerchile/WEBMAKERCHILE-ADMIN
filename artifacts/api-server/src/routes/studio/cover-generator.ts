@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { seleccionarPosePortada, bloquePoseRequerida } from "../../lib/pose-bank.js";
 
 async function resolveAsset(...segments: string[]): Promise<string> {
   const candidates = [
@@ -21,21 +22,10 @@ const TEXT_ZONE_BOTTOM = 630;
 const TEXT_ZONE_HEIGHT = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
 const TEXT_ZONE_SIDE_PADDING = 60;
 
-const FOX_POSES = [
-  "El zorro está de pie con los brazos cruzados y expresión segura y desafiante, mirando directo al frente con una sonrisa de lado.",
-  "El zorro salta o levita ligeramente con los brazos abiertos y expresión emocionada y sorprendida, como celebrando una victoria.",
-  "El zorro señala hacia el costado con un dedo índice extendido y guiña un ojo con expresión pícara y confiada.",
-  "El zorro está agachado en posición dinámica como si estuviera en acción, con expresión concentrada e intensa.",
-  "El zorro tiene una mano en la cadera y la otra sosteniendo un objeto relacionado al tema, con expresión relajada y cool.",
-  "El zorro inclina la cabeza hacia un lado con expresión curiosa y pensativa, un brazo apoyado en la barbilla.",
-  "El zorro hace un gesto de pulgar hacia arriba con una gran sonrisa y expresión entusiasta y positiva.",
-  "El zorro está en una pose de superhéroe: manos en las caderas, pecho hacia adelante y mirada heroica hacia el horizonte.",
-  "El zorro tiene los brazos extendidos hacia arriba celebrando, expresión de euforia y triunfo total.",
-  "El zorro está inclinado hacia adelante señalando al espectador con un dedo, como diciéndole algo directamente, con expresión seria y directa.",
-];
-
 function buildIllustrationPrompt(videoDescription: string): string {
-  const selectedPose = FOX_POSES[Math.floor(Math.random() * FOX_POSES.length)];
+  const poseElegida = seleccionarPosePortada(videoDescription);
+  const selectedPose = poseElegida.descripcion;
+  console.log(`[CoverGen] Pose seleccionada: ${poseElegida.id} (emoción: ${poseElegida.emocion || "ninguna"})`);
   return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
 REGLA ABSOLUTA - SIN TEXTO:
@@ -81,7 +71,9 @@ PALETA:
 - Objetos: colores planos y vibrantes estilo flat icon (naranja, verde, blanco, azul, rojo), con contornos gruesos negros
 - Los objetos tecnológicos pueden tener pequeños acentos brillantes (pantallas con glow verde o naranja)
 
-RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.`;
+RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.
+
+${bloquePoseRequerida(poseElegida)}`;
 }
 
 function splitTextIntoLines(text: string, maxCharsPerLine: number): string[] {

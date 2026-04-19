@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-zod";
 import { readFile } from "fs/promises";
 import path from "path";
+import { seleccionarPosePortada, bloquePoseRequerida } from "../../lib/pose-bank.js";
 
 const router: IRouter = Router();
 
@@ -144,19 +145,11 @@ router.post("/gemini/generate-image", async (req, res) => {
 router.post("/gemini/generate-cover", async (req, res) => {
   const body = GenerateCoverBody.parse(req.body);
 
-  const foxPoses = [
-    "El zorro está de pie con los brazos cruzados y expresión segura y desafiante, mirando directo al frente con una sonrisa de lado.",
-    "El zorro salta o levita ligeramente con los brazos abiertos y expresión emocionada y sorprendida, como celebrando una victoria.",
-    "El zorro señala hacia el costado con un dedo índice extendido y guiña un ojo con expresión pícara y confiada.",
-    "El zorro está agachado en posición dinámica como si estuviera en acción, con expresión concentrada e intensa.",
-    "El zorro tiene una mano en la cadera y la otra sosteniendo un objeto relacionado al tema, con expresión relajada y cool.",
-    "El zorro inclina la cabeza hacia un lado con expresión curiosa y pensativa, un brazo apoyado en la barbilla.",
-    "El zorro hace un gesto de pulgar hacia arriba con una gran sonrisa y expresión entusiasta y positiva.",
-    "El zorro está en una pose de superhéroe: manos en las caderas, pecho hacia adelante y mirada heroica hacia el horizonte.",
-    "El zorro tiene los brazos extendidos hacia arriba celebrando, expresión de euforia y triunfo total.",
-    "El zorro está inclinado hacia adelante señalando al espectador con un dedo, como diciéndole algo directamente, con expresión seria y directa.",
-  ];
-  const selectedPose = foxPoses[Math.floor(Math.random() * foxPoses.length)];
+  // Pose rotativa con detección emocional + memoria anti-repetición.
+  const temaParaEmocion = `${body.title} ${body.description || ""}`;
+  const poseElegida = seleccionarPosePortada(temaParaEmocion);
+  const selectedPose = poseElegida.descripcion;
+  console.log(`[CoverGen] Pose seleccionada: ${poseElegida.id} (emoción detectada: ${poseElegida.emocion || "ninguna"})`);
 
   const basePrompt = `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
@@ -204,7 +197,9 @@ PALETA:
 - Zorro: naranja vibrante PLANO (como la referencia), verde sólido en la camiseta, líneas gruesas negras
 - Objetos: colores planos y vibrantes estilo flat icon (naranja, verde, blanco, azul, rojo), con contornos gruesos negros
 
-RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.`;
+RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.
+
+${bloquePoseRequerida(poseElegida)}`;
 
   const MAX_RETRIES = 4;
   const RETRY_DELAYS = [5000, 15000, 30000];
