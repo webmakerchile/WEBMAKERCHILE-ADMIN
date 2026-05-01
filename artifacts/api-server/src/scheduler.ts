@@ -9,6 +9,7 @@ import path from "path";
 import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-serve";
 import { publishLinkedInPost, publishLinkedInVideo } from "./routes/linkedin";
 import { publishXPost, publishXTweetWithVideo } from "./routes/x";
+import { publishToFacebook } from "./routes/facebook";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -341,6 +342,34 @@ async function publishToX(video: any, user: any): Promise<{ success: boolean; er
   return result;
 }
 
+async function publishToFacebookStep(video: any, user: any): Promise<{ success: boolean; error?: string }> {
+  if (video.facebookPostId) return { success: true };
+  if (!user.facebookPageId || !user.facebookPageAccessToken) {
+    const error = "Facebook not connected";
+    await db.update(videos).set({ facebookStatus: "error", facebookError: error, updatedAt: new Date() }).where(eq(videos.id, video.id));
+    return { success: false, error };
+  }
+
+  const result = await publishToFacebook(user, video);
+
+  if (result.success) {
+    await db.update(videos).set({
+      facebookPostId: result.postId || "ok",
+      facebookStatus: "published",
+      facebookError: null,
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
+    console.log(`[Scheduler] Facebook publish success: ${result.postId}`);
+  } else {
+    await db.update(videos).set({
+      facebookStatus: "error",
+      facebookError: result.error || "unknown",
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
+  }
+  return result;
+}
+
 async function uploadToInstagram(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (video.instagramMediaId) {
     return { success: true };
@@ -488,19 +517,22 @@ async function processScheduledVideos() {
         instagram: StepResult;
         linkedin: StepResult;
         x: StepResult;
+        facebook: StepResult;
       } = {
         youtube: { success: false },
         tiktok: { success: false },
         instagram: { success: false },
         linkedin: { success: false },
         x: { success: false },
+        facebook: { success: false },
       };
 
       if (!video.videoFileDriveId) {
         results.youtube = { success: true };
         results.tiktok = { success: true };
         results.instagram = { success: true };
-        console.log(`[Scheduler] YT/TT/IG skipped (no video file in Drive)`);
+        results.facebook = { success: true };
+        console.log(`[Scheduler] YT/TT/IG/FB skipped (no video file in Drive)`);
       } else {
         if (video.youtubeTitle || video.youtubeDescription) {
           results.youtube = await uploadToYouTube(video, freshUser);
@@ -550,18 +582,35 @@ async function processScheduledVideos() {
         }
       }
 
+      const freshUser6 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
+      if (freshUser6) {
+        if (video.facebookDescription || video.description) {
+          if (video.videoFileDriveId) {
+            results.facebook = await publishToFacebookStep(video, freshUser6);
+          } else {
+            results.facebook = { success: true };
+            console.log(`[Scheduler] Facebook skipped (no video file in Drive)`);
+          }
+        } else {
+          results.facebook = { success: true };
+          console.log(`[Scheduler] Facebook skipped (no description)`);
+        }
+      }
+
       const allSuccess =
         results.youtube.success &&
         results.tiktok.success &&
         results.instagram.success &&
         results.linkedin.success &&
-        results.x.success;
+        results.x.success &&
+        results.facebook.success;
       const errors = [
         !results.youtube.success && results.youtube.error ? `YT: ${results.youtube.error}` : "",
         !results.tiktok.success && results.tiktok.error ? `TT: ${results.tiktok.error}` : "",
         !results.instagram.success && results.instagram.error ? `IG: ${results.instagram.error}` : "",
         !results.linkedin.success && results.linkedin.error ? `LI: ${results.linkedin.error}` : "",
         !results.x.success && results.x.error ? `X: ${results.x.error}` : "",
+        !results.facebook.success && results.facebook.error ? `FB: ${results.facebook.error}` : "",
       ].filter(Boolean).join("; ");
 
       const anyAttempted =
@@ -569,13 +618,15 @@ async function processScheduledVideos() {
         video.tiktokDescription || video.description ||
         video.instagramDescription ||
         video.linkedinDescription ||
-        video.xDescription;
+        video.xDescription ||
+        (video.videoFileDriveId && (video.facebookDescription || video.description));
       const anyRealSuccess =
         (results.youtube.success && (video.youtubeTitle || video.youtubeDescription)) ||
         (results.tiktok.success && (video.tiktokDescription || video.description)) ||
         (results.instagram.success && (video.instagramDescription || video.description)) ||
         (results.linkedin.success && video.linkedinDescription) ||
-        (results.x.success && video.xDescription);
+        (results.x.success && video.xDescription) ||
+        (results.facebook.success && video.videoFileDriveId && (video.facebookDescription || video.description));
 
       let nextStatus: string;
       if (allSuccess && anyAttempted) nextStatus = "published";

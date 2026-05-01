@@ -1,0 +1,84 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+Ayuda
+
+
+WebMakerChile Redes Sociales
+Identificador de la aplicación 1317067910325181
+Modo de la aplicación: En desarrollo
+
+En producción
+Tipo de aplicación: Empresa
+Guardado
+Identificador de la aplicación
+1317067910325181
+Clave secreta de la aplicación
+Clave secreta de la aplicación
+372200275f711c39235668cb72bcf0d0
+​
+No compartas esto con nadie por tu seguridad
+Nombre para mostrar
+Nombre para mostrar
+WebMakerChile Redes Sociales
+Espacio de nombres
+Espacio de nombres
+Dominios de la aplicación
+https://admin.webmakerlatam.com/api/facebook/callback
+Correo electrónico de contacto
+​
+Correo electrónico de contacto
+webmakerchile@gmail.com
+URL de la Política de privacidad
+URL de la Política de privacidad
+https://admin.webmakerlatam.com/privacy
+URL de las Condiciones del servicio
+URL de las Condiciones del servicio
+https://admin.webmakerlatam.com/terms
+Eliminación de datos de usuario
+URL de las instrucciones para la eliminación de datos
+​
+Eliminación de datos de usuario
+También puedes proporcionar un enlace
+Icono de la aplicación (1024 x 1024)
+1024 x 1024
+Categoría
+​
+Portfolio comercial
+Verificación del negocio
+Esta acción es necesaria para acceder a datos de los usuarios (en algunas aplicaciones se denomina "acceso avanzado"). Solo las personas con control total de una cuenta empresarial pueden completar el proceso. Más información sobre la verificación de la empresa.
+Webmakerchile
+Identificador: 816262257499288
+Sin verificar
+Verificación del acceso
+Verifica que tu empresa sea un proveedor de tecnología. Se trata de un paso adicional obligatorio para acceder a los activos comerciales de Meta, así como a la información de otras empresas. Revisamos las solicitudes y nos ponemos en contacto en un plazo de 5 días. Más información sobre la verificación del acceso
+Para iniciar la verificación de acceso, tienes que completar la verificación de la empresa.
+Iniciar verificación de la empresa
+Información de contacto del delegado de protección de datos
+El Reglamento General de Protección de Datos (RGPD) exige que determinadas empresas con actividad comercial en la Unión Europea designen un delegado de protección de datos para que las personas puedan ponerse en contacto con él para obtener información sobre el tratamiento de sus datos.
+Las personas podrán consultar los datos de contacto del delegado, así como otra información relativa a tu aplicación o sitio web en Facebook. Más información.
+Nombre
+∙
+Opcional
+Nombre∙Opcional
+Correo electrónico
+Correo electrónico
+Dirección
+Dirección postal
+Dirección postal
+Apartamento/oficina/otro∙Opcional
+Ciudad/distrito
+Estado/provincia/región
+Código postal
+Country
+United States
+​
+Guardar cambiosDescartar
+Se ha encontrado 1 resultado

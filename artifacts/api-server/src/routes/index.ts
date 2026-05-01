@@ -9,6 +9,7 @@ import tiktokRouter from "./tiktok";
 import instagramRouter from "./instagram";
 import linkedinRouter from "./linkedin";
 import xRouter from "./x";
+import facebookRouter from "./facebook";
 import communityRouter from "./community";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.use(tiktokRouter);
 router.use(instagramRouter);
 router.use(linkedinRouter);
 router.use(xRouter);
+router.use(facebookRouter);
 router.use(communityRouter);
 
 export default router;

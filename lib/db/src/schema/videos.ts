@@ -27,6 +27,7 @@ export const videos = pgTable("videos", {
   youtubeDescription: text("youtube_description"),
   linkedinDescription: text("linkedin_description"),
   xDescription: text("x_description"),
+  facebookDescription: text("facebook_description"),
   tiktokPublishId: text("tiktok_publish_id"),
   tiktokStatus: text("tiktok_status").default("pending"),
   instagramMediaId: text("instagram_media_id"),
@@ -39,6 +40,9 @@ export const videos = pgTable("videos", {
   xPostId: text("x_post_id"),
   xStatus: text("x_status").default("pending"),
   xError: text("x_error"),
+  facebookPostId: text("facebook_post_id"),
+  facebookStatus: text("facebook_status").default("pending"),
+  facebookError: text("facebook_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

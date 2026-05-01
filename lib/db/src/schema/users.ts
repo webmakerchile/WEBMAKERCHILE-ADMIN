@@ -25,6 +25,12 @@ export const users = pgTable("users", {
   xAccessToken: text("x_access_token"),
   xRefreshToken: text("x_refresh_token"),
   xTokenExpiresAt: timestamp("x_token_expires_at"),
+  facebookPageId: text("facebook_page_id"),
+  facebookPageName: text("facebook_page_name"),
+  facebookPagePicture: text("facebook_page_picture"),
+  facebookPageAccessToken: text("facebook_page_access_token"),
+  facebookUserAccessToken: text("facebook_user_access_token"),
+  facebookTokenExpiresAt: timestamp("facebook_token_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
 });

@@ -15,6 +15,13 @@
       "when": 1777664747543,
       "tag": "0001_linkedin_x_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1893456000000,
+      "tag": "0002_facebook_columns",
+      "breakpoints": true
     }
   ]
 }
