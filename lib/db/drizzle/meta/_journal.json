@@ -8,6 +8,13 @@
       "when": 1777663723427,
       "tag": "0000_breezy_amazoness",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777664747543,
+      "tag": "0001_linkedin_x_columns",
+      "breakpoints": true
     }
   ]
 }
