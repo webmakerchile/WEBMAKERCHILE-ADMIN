@@ -9,6 +9,8 @@ id = "artifacts/mockup-sandbox"
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+run = ["bash", "-c", "PORT=${PORT:-5000} node artifacts/api-server/dist/index.cjs"]
+build = ["bash", "-c", "pnpm install && pnpm --filter @workspace/admin-panel run build && pnpm --filter @workspace/api-server run build"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]

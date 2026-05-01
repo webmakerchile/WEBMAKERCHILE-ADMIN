@@ -56,4 +56,12 @@ app.get("/api/instagram/temp-video/:token", serveTempVideo);
 
 app.use("/api", requireAuth, router);
 
+if (process.env.NODE_ENV === "production") {
+  const frontendDist = path.join(process.cwd(), "artifacts", "admin-panel", "dist", "public");
+  app.use(express.static(frontendDist));
+  app.get("/{*splat}", (_req, res) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
+
 export default app;
