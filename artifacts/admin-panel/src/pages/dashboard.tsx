@@ -30,6 +30,10 @@ export default function Dashboard() {
   const [tiktokLoading, setTiktokLoading] = useState(true);
   const [igStatus, setIgStatus] = useState<any>(null);
   const [igLoading, setIgLoading] = useState(true);
+  const [linkedinStatus, setLinkedinStatus] = useState<any>(null);
+  const [linkedinLoading, setLinkedinLoading] = useState(true);
+  const [xStatus, setXStatus] = useState<any>(null);
+  const [xLoading, setXLoading] = useState(true);
 
   useEffect(() => {
     fetch(`${API_BASE}/youtube/channel`, { credentials: "include" })
@@ -50,8 +54,24 @@ export default function Dashboard() {
       .catch(() => setIgStatus({ connected: false, message: "Error de conexión" }))
       .finally(() => setIgLoading(false));
 
+    fetch(`${API_BASE}/linkedin/status`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setLinkedinStatus(data))
+      .catch(() => setLinkedinStatus({ connected: false, message: "Error de conexión" }))
+      .finally(() => setLinkedinLoading(false));
+
+    fetch(`${API_BASE}/x/status`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setXStatus(data))
+      .catch(() => setXStatus({ connected: false, message: "Error de conexión" }))
+      .finally(() => setXLoading(false));
+
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tiktok") === "connected") {
+    if (
+      params.get("tiktok") === "connected" ||
+      params.get("linkedin") === "connected" ||
+      params.get("x") === "connected"
+    ) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -220,7 +240,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         <div className="glass-card rounded-2xl p-5 border border-white/5">
           <h2 className="text-lg font-display font-bold mb-4 flex items-center">
             <span className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center mr-2.5 flex-shrink-0">
@@ -324,6 +344,88 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground truncate">{igStatus?.message || "Configura Instagram"}</p>
               </div>
             </div>
+          )}
+        </div>
+
+        <div className="glass-card rounded-2xl p-5 border border-white/5">
+          <h2 className="text-lg font-display font-bold mb-4 flex items-center">
+            <span className="w-7 h-7 rounded-lg bg-[#0A66C2] flex items-center justify-center mr-2.5 flex-shrink-0">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M19 0h-14c-2.76 0-5 2.24-5 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5v-14c0-2.76-2.24-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.27c-.97 0-1.75-.79-1.75-1.76s.78-1.76 1.75-1.76 1.75.79 1.75 1.76-.78 1.76-1.75 1.76zm13.5 12.27h-3v-5.6c0-3.37-4-3.11-4 0v5.6h-3v-11h3v1.76c1.4-2.59 7-2.78 7 2.48v6.76z"/></svg>
+            </span>
+            LinkedIn
+          </h2>
+
+          {linkedinLoading ? (
+            <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
+          ) : linkedinStatus?.connected ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              {linkedinStatus.user?.picture && (
+                <img src={linkedinStatus.user.picture} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-semibold text-sm text-foreground truncate">
+                    {linkedinStatus.user?.name || "LinkedIn"}
+                  </h3>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                </div>
+                <p className="text-xs text-muted-foreground">Conectado · ~100 posts/día</p>
+              </div>
+            </div>
+          ) : (
+            <a
+              href={`${API_BASE}/linkedin/auth`}
+              className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
+            >
+              <XCircle className="w-6 h-6 text-amber-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm text-amber-400">No conectado</h3>
+                <p className="text-xs text-muted-foreground truncate">
+                  {linkedinStatus?.message || "Conectar LinkedIn"}
+                </p>
+              </div>
+            </a>
+          )}
+        </div>
+
+        <div className="glass-card rounded-2xl p-5 border border-white/5">
+          <h2 className="text-lg font-display font-bold mb-4 flex items-center">
+            <span className="w-7 h-7 rounded-lg bg-black flex items-center justify-center mr-2.5 flex-shrink-0 border border-white/10">
+              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            </span>
+            X (Twitter)
+          </h2>
+
+          {xLoading ? (
+            <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
+          ) : xStatus?.connected ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center flex-shrink-0 border border-white/10">
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-semibold text-sm text-foreground truncate">
+                    @{xStatus.user?.username || "X"}
+                  </h3>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                </div>
+                <p className="text-xs text-muted-foreground">Conectado · 1500 posts/mes (Free)</p>
+              </div>
+            </div>
+          ) : (
+            <a
+              href={`${API_BASE}/x/auth`}
+              className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
+            >
+              <XCircle className="w-6 h-6 text-amber-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm text-amber-400">No conectado</h3>
+                <p className="text-xs text-muted-foreground truncate">
+                  {xStatus?.message || "Conectar X"}
+                </p>
+              </div>
+            </a>
           )}
         </div>
         </div>

@@ -7,6 +7,8 @@ import studioRouter from "./studio";
 import youtubeRouter from "./youtube";
 import tiktokRouter from "./tiktok";
 import instagramRouter from "./instagram";
+import linkedinRouter from "./linkedin";
+import xRouter from "./x";
 import communityRouter from "./community";
 
 const router: IRouter = Router();
@@ -19,6 +21,8 @@ router.use(studioRouter);
 router.use(youtubeRouter);
 router.use(tiktokRouter);
 router.use(instagramRouter);
+router.use(linkedinRouter);
+router.use(xRouter);
 router.use(communityRouter);
 
 export default router;

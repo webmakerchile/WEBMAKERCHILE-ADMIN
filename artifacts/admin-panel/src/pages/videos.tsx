@@ -59,23 +59,30 @@ type VideoData = {
   instagramDescription?: string | null;
   youtubeTitle?: string | null;
   youtubeDescription?: string | null;
+  linkedinDescription?: string | null;
+  xDescription?: string | null;
   tiktokPublishId?: string | null;
   tiktokStatus?: string | null;
   instagramMediaId?: string | null;
   instagramStatus?: string | null;
   youtubeVideoId?: string | null;
   youtubeStatus?: string | null;
+  linkedinPostId?: string | null;
+  linkedinStatus?: string | null;
+  xPostId?: string | null;
+  xStatus?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-type WizardStep = "info" | "cover" | "tiktok-instagram" | "youtube" | "review";
+type WizardStep = "info" | "cover" | "tiktok-instagram" | "youtube" | "linkedin-x" | "review";
 
 const STEPS: { key: WizardStep; label: string; shortLabel: string }[] = [
   { key: "info", label: "Información Básica", shortLabel: "Info" },
   { key: "cover", label: "Portada", shortLabel: "Portada" },
   { key: "tiktok-instagram", label: "TikTok e Instagram", shortLabel: "TikTok/IG" },
   { key: "youtube", label: "YouTube", shortLabel: "YouTube" },
+  { key: "linkedin-x", label: "LinkedIn y X", shortLabel: "LinkedIn/X" },
   { key: "review", label: "Revisar y Programar", shortLabel: "Programar" },
 ];
 
@@ -90,6 +97,8 @@ function isStepComplete(video: VideoData | null, step: WizardStep): boolean {
       return !!video.tiktokDescription && !!video.instagramDescription;
     case "youtube":
       return !!video.youtubeTitle && !!video.youtubeDescription;
+    case "linkedin-x":
+      return !!video.linkedinDescription && !!video.xDescription;
     case "review":
       return video.status === "scheduled" || video.status === "published";
     default:
@@ -103,8 +112,9 @@ function getVideoProgress(video: VideoData): number {
   if (video.coverImageBase64) done++;
   if (video.tiktokDescription && video.instagramDescription) done++;
   if (video.youtubeTitle && video.youtubeDescription) done++;
+  if (video.linkedinDescription && video.xDescription) done++;
   if (video.status === "scheduled" || video.status === "published") done++;
-  return Math.round((done / 5) * 100);
+  return Math.round((done / 6) * 100);
 }
 
 function getStatusBadge(video: VideoData) {
@@ -272,6 +282,7 @@ export default function VideosPage() {
                     if (!video.coverImageBase64) setWizardStep("cover");
                     else if (!video.tiktokDescription || !video.instagramDescription) setWizardStep("tiktok-instagram");
                     else if (!video.youtubeTitle || !video.youtubeDescription) setWizardStep("youtube");
+                    else if (!video.linkedinDescription || !video.xDescription) setWizardStep("linkedin-x");
                     else setWizardStep("review");
                   }}
                 >
@@ -371,6 +382,8 @@ function VideoWizard({
     instagramDescription: video?.instagramDescription || "",
     youtubeTitle: video?.youtubeTitle || "",
     youtubeDescription: video?.youtubeDescription || "",
+    linkedinDescription: video?.linkedinDescription || "",
+    xDescription: video?.xDescription || "",
   });
 
   useEffect(() => {
@@ -387,6 +400,8 @@ function VideoWizard({
         instagramDescription: video.instagramDescription || "",
         youtubeTitle: video.youtubeTitle || "",
         youtubeDescription: video.youtubeDescription || "",
+        linkedinDescription: video.linkedinDescription || "",
+        xDescription: video.xDescription || "",
       });
     }
   }, [video]);
@@ -601,6 +616,23 @@ function VideoWizard({
                 handleSavePlatforms({
                   youtubeTitle: formData.youtubeTitle,
                   youtubeDescription: formData.youtubeDescription,
+                })
+              }
+              onPrev={goPrev}
+              isPending={isUpdating}
+              copyText={copyText}
+            />
+          )}
+
+          {currentStep === "linkedin-x" && video && (
+            <StepLinkedInX
+              formData={formData}
+              setFormData={setFormData}
+              video={video}
+              onSave={() =>
+                handleSavePlatforms({
+                  linkedinDescription: formData.linkedinDescription,
+                  xDescription: formData.xDescription,
                 })
               }
               onPrev={goPrev}
@@ -1436,6 +1468,107 @@ function StepYouTube({
   );
 }
 
+function StepLinkedInX({
+  formData,
+  setFormData,
+  video,
+  onSave,
+  onPrev,
+  isPending,
+  copyText,
+}: {
+  formData: any;
+  setFormData: (data: any) => void;
+  video: VideoData;
+  onSave: () => void;
+  onPrev: () => void;
+  isPending: boolean;
+  copyText: (text: string) => void;
+}) {
+  const xLen = (formData.xDescription || "").length;
+  return (
+    <Card className="bg-card/50 border-white/5">
+      <CardHeader>
+        <CardTitle className="text-xl flex items-center gap-2">
+          <span className="text-2xl">💼</span>
+          LinkedIn y X (Twitter)
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Texto para publicaciones de LinkedIn (máx. 3000) y X (máx. 280). Solo texto: el scheduler publica las descripciones automáticamente.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-[#0A66C2] flex items-center justify-center">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M19 0h-14c-2.76 0-5 2.24-5 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5v-14c0-2.76-2.24-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.27c-.97 0-1.75-.79-1.75-1.76s.78-1.76 1.75-1.76 1.75.79 1.75 1.76-.78 1.76-1.75 1.76zm13.5 12.27h-3v-5.6c0-3.37-4-3.11-4 0v5.6h-3v-11h3v1.76c1.4-2.59 7-2.78 7 2.48v6.76z"/></svg>
+                </span>
+                LinkedIn
+              </label>
+              {formData.linkedinDescription && (
+                <button onClick={() => copyText(formData.linkedinDescription)} className="text-xs text-primary hover:text-primary/80">
+                  <Copy className="w-3 h-3 inline mr-1" />Copiar
+                </button>
+              )}
+            </div>
+            <textarea
+              value={formData.linkedinDescription}
+              onChange={(e) => setFormData({ ...formData, linkedinDescription: e.target.value })}
+              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+              placeholder={"💡 [Insight profesional]\n\n📌 [Descripción extendida con contexto de negocio]\n\n#WebDev #ChileTech #DesarrolloWeb"}
+              maxLength={3000}
+            />
+            <p className="text-[10px] text-muted-foreground">Máximo 3000 caracteres · {(formData.linkedinDescription || "").length}/3000</p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold flex items-center gap-2">
+                <span className="w-6 h-6 rounded bg-black flex items-center justify-center">
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                </span>
+                X (Twitter)
+              </label>
+              {formData.xDescription && (
+                <button onClick={() => copyText(formData.xDescription)} className="text-xs text-primary hover:text-primary/80">
+                  <Copy className="w-3 h-3 inline mr-1" />Copiar
+                </button>
+              )}
+            </div>
+            <textarea
+              value={formData.xDescription}
+              onChange={(e) => setFormData({ ...formData, xDescription: e.target.value })}
+              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+              placeholder={"🚀 [Tweet corto y directo]\n\n#WebDev #Chile"}
+              maxLength={280}
+            />
+            <p className={`text-[10px] ${xLen > 280 ? "text-red-400" : "text-muted-foreground"}`}>
+              Máximo 280 caracteres · {xLen}/280
+            </p>
+          </div>
+        </div>
+
+        <div className="pt-4 flex justify-between">
+          <Button variant="outline" onClick={onPrev} className="border-white/10">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Anterior
+          </Button>
+          <Button
+            onClick={onSave}
+            disabled={isPending || !formData.linkedinDescription || !formData.xDescription || xLen > 280}
+            className="bg-primary"
+          >
+            {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
+            Guardar y Continuar
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function StepReview({
   video,
   onSchedule,
@@ -1682,7 +1815,9 @@ function StepReview({
     video.tiktokDescription &&
     video.instagramDescription &&
     video.youtubeTitle &&
-    video.youtubeDescription;
+    video.youtubeDescription &&
+    video.linkedinDescription &&
+    video.xDescription;
 
   const isScheduled = video.status === "scheduled" || video.status === "published";
 
@@ -1720,6 +1855,28 @@ function StepReview({
       content: video.youtubeTitle ? `${video.youtubeTitle}\n\n${video.youtubeDescription || ""}` : "",
       ready: !!video.youtubeTitle && !!video.youtubeDescription,
     },
+    {
+      name: "LinkedIn",
+      icon: (
+        <span className="w-8 h-8 rounded-lg bg-[#0A66C2] flex items-center justify-center">
+          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19 0h-14c-2.76 0-5 2.24-5 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5v-14c0-2.76-2.24-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.27c-.97 0-1.75-.79-1.75-1.76s.78-1.76 1.75-1.76 1.75.79 1.75 1.76-.78 1.76-1.75 1.76zm13.5 12.27h-3v-5.6c0-3.37-4-3.11-4 0v5.6h-3v-11h3v1.76c1.4-2.59 7-2.78 7 2.48v6.76z"/></svg>
+        </span>
+      ),
+      status: video.linkedinStatus,
+      content: video.linkedinDescription || "",
+      ready: !!video.linkedinDescription,
+    },
+    {
+      name: "X (Twitter)",
+      icon: (
+        <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center">
+          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </span>
+      ),
+      status: video.xStatus,
+      content: video.xDescription || "",
+      ready: !!video.xDescription,
+    },
   ];
 
   return (
@@ -1731,7 +1888,7 @@ function StepReview({
             Revisar y Programar
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Revisa todo antes de programar en las 3 plataformas
+            Revisa todo antes de programar en las 5 plataformas
           </p>
         </CardHeader>
         <CardContent className="space-y-6">

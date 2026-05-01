@@ -173,7 +173,9 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.instagramStatus !== undefined) updateData.instagramStatus = body.instagramStatus;
   if (body.youtubeStatus !== undefined) updateData.youtubeStatus = body.youtubeStatus;
   if (body.linkedinStatus !== undefined) updateData.linkedinStatus = body.linkedinStatus;
+  if (body.linkedinPostId !== undefined) updateData.linkedinPostId = body.linkedinPostId;
   if (body.xStatus !== undefined) updateData.xStatus = body.xStatus;
+  if (body.xPostId !== undefined) updateData.xPostId = body.xPostId;
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
   if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
 

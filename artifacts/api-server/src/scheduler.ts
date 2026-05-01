@@ -7,6 +7,8 @@ import { randomBytes } from "crypto";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import path from "path";
 import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-serve";
+import { publishLinkedInPost } from "./routes/linkedin";
+import { publishXPost } from "./routes/x";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -235,6 +237,48 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
   }
 }
 
+async function publishToLinkedIn(video: any, user: any): Promise<{ success: boolean; error?: string }> {
+  if (video.linkedinPostId) return { success: true };
+  if (!user.linkedinAccessToken || !user.linkedinPersonUrn) {
+    return { success: false, error: "LinkedIn not connected" };
+  }
+  const content = video.linkedinDescription || video.description || video.title;
+  if (!content || !content.trim()) {
+    return { success: false, error: "Empty LinkedIn content" };
+  }
+  const result = await publishLinkedInPost(user, content);
+  if (result.success) {
+    await db.update(videos).set({
+      linkedinPostId: result.postId || "ok",
+      linkedinStatus: "published",
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
+    console.log(`[Scheduler] LinkedIn publish success: ${result.postId}`);
+  }
+  return result;
+}
+
+async function publishToX(video: any, user: any): Promise<{ success: boolean; error?: string }> {
+  if (video.xPostId) return { success: true };
+  if (!user.xAccessToken || !user.xUserId) {
+    return { success: false, error: "X not connected" };
+  }
+  const content = video.xDescription || video.description || video.title;
+  if (!content || !content.trim()) {
+    return { success: false, error: "Empty X content" };
+  }
+  const result = await publishXPost(user, content);
+  if (result.success) {
+    await db.update(videos).set({
+      xPostId: result.postId || "ok",
+      xStatus: "published",
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
+    console.log(`[Scheduler] X publish success: ${result.postId}`);
+  }
+  return result;
+}
+
 async function uploadToInstagram(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (video.instagramMediaId) {
     return { success: true };
@@ -376,10 +420,19 @@ async function processScheduledVideos() {
       const freshUser = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (!freshUser) continue;
 
-      const results = {
-        youtube: { success: false, error: "" },
-        tiktok: { success: false, error: "" },
-        instagram: { success: false, error: "" },
+      type StepResult = { success: boolean; error?: string };
+      const results: {
+        youtube: StepResult;
+        tiktok: StepResult;
+        instagram: StepResult;
+        linkedin: StepResult;
+        x: StepResult;
+      } = {
+        youtube: { success: false },
+        tiktok: { success: false },
+        instagram: { success: false },
+        linkedin: { success: false },
+        x: { success: false },
       };
 
       if (video.youtubeTitle || video.youtubeDescription) {
@@ -409,11 +462,38 @@ async function processScheduledVideos() {
         }
       }
 
-      const allSuccess = results.youtube.success && results.tiktok.success && results.instagram.success;
+      const freshUser4 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
+      if (freshUser4) {
+        if (video.linkedinDescription) {
+          results.linkedin = await publishToLinkedIn(video, freshUser4);
+        } else {
+          results.linkedin = { success: true };
+          console.log(`[Scheduler] LinkedIn skipped (no description)`);
+        }
+      }
+
+      const freshUser5 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
+      if (freshUser5) {
+        if (video.xDescription) {
+          results.x = await publishToX(video, freshUser5);
+        } else {
+          results.x = { success: true };
+          console.log(`[Scheduler] X skipped (no description)`);
+        }
+      }
+
+      const allSuccess =
+        results.youtube.success &&
+        results.tiktok.success &&
+        results.instagram.success &&
+        results.linkedin.success &&
+        results.x.success;
       const errors = [
         !results.youtube.success && results.youtube.error ? `YT: ${results.youtube.error}` : "",
         !results.tiktok.success && results.tiktok.error ? `TT: ${results.tiktok.error}` : "",
         !results.instagram.success && results.instagram.error ? `IG: ${results.instagram.error}` : "",
+        !results.linkedin.success && results.linkedin.error ? `LI: ${results.linkedin.error}` : "",
+        !results.x.success && results.x.error ? `X: ${results.x.error}` : "",
       ].filter(Boolean).join("; ");
 
       await db.update(videos).set({

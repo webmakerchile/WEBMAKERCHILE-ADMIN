@@ -44,8 +44,8 @@ artifacts-monorepo/
 
 ### Admin Panel (Content Admin Panel)
 - **Mobile-first layout**: Responsive design with bottom navigation bar on mobile, slide-out hamburger menu for additional items, desktop sidebar hidden on mobile. Uses `100dvh` for proper mobile viewport height. Safe area insets for iOS notch support.
-- **Dashboard**: Overview of video content stats, quick actions, recent activity, YouTube/TikTok/Instagram connection status cards
-- **Video Manager**: Guided step-by-step wizard for the editor to complete each video without leaving the page. Steps: Basic Info → Cover (AI generation) → TikTok & Instagram descriptions → YouTube title & description → Review & Schedule to all 3 platforms. Each video shows progress percentage. DB includes per-platform status fields (tiktokStatus, instagramStatus, youtubeStatus) ready for API integration. Step 1 includes Drive file picker modal to select video files directly from Google Drive (browsable with folder navigation).
+- **Dashboard**: Overview of video content stats, quick actions, recent activity, YouTube/TikTok/Instagram/LinkedIn/X connection status cards
+- **Video Manager**: Guided step-by-step wizard for the editor to complete each video without leaving the page. Steps: Basic Info → Cover (AI generation) → TikTok & Instagram descriptions → YouTube title & description → LinkedIn & X descriptions → Review & Schedule to all 5 platforms. Each video shows progress percentage. DB includes per-platform status fields (tiktokStatus, instagramStatus, youtubeStatus, linkedinStatus, xStatus) ready for API integration. Step 1 includes Drive file picker modal to select video files directly from Google Drive (browsable with folder navigation).
 - **Cover Generator**: AI-powered cover image generation using OpenAI gpt-image-1 with reference images
 - **Google Drive Browser**: Browse and manage files in connected Google Drive folder
 - **Estudio de Trabajo (Recording Studio)**: Full video content creation workspace (migrated from webmakerchile.com)
@@ -98,6 +98,19 @@ artifacts-monorepo/
   - Dashboard shows TikTok connection card with connect/disconnect
   - StepReview has TikTok upload button alongside YouTube upload
   - Redirect URI: https://admin.webmakerchile.com/api/tiktok/callback
+- **LinkedIn (UGC posts API)**: Text-only post publishing via the LinkedIn /v2/ugcPosts endpoint
+  - OAuth 2.0 (OpenID Connect) with scopes `openid profile email w_member_social`
+  - Routes: GET /api/linkedin/auth, GET /api/linkedin/callback, GET /api/linkedin/status, POST /api/linkedin/disconnect, POST /api/linkedin/publish/:videoId
+  - Tokens (access/refresh + expiresAt + personUrn/name/picture) stored on the users table; auto-refresh helper `getValidLinkedInToken`
+  - Free tier: ~100 posts/day. Image/video uploads (asset registration) skipped for MVP — text-only with the `linkedinDescription` field on videos
+  - Redirect URI: https://admin.webmakerchile.com/api/linkedin/callback
+- **X / Twitter (v2 tweets API)**: Text-only tweet publishing via OAuth 2.0 + PKCE confidential client
+  - Scopes: `tweet.read tweet.write users.read offline.access`
+  - Routes: GET /api/x/auth, GET /api/x/callback, GET /api/x/status, POST /api/x/disconnect, POST /api/x/publish/:videoId
+  - Tokens (access/refresh + expiresAt + xUserId/xUsername) stored on the users table; auto-refresh helper `getValidXToken`
+  - Free tier: 1500 posts/month. 280 char limit enforced in the wizard and at publish time (truncation safeguard)
+  - Redirect URI: https://admin.webmakerchile.com/api/x/callback
+- **Scheduler**: Runs every 60s in `artifacts/api-server/src/scheduler.ts`. For each video reaching its `scheduledAt`, it sequentially publishes to YouTube → TikTok → Instagram → LinkedIn → X (each step skipped when no per-platform description is configured). Sets `status = "published"` only when every requested step succeeds.
 
 ### Authentication
 - Google OAuth 2.0 login via Passport.js
@@ -108,7 +121,7 @@ artifacts-monorepo/
 - Callback URL: https://admin.webmakerchile.com/api/auth/google/callback
 
 ### Database Tables
-- `users` - Authenticated admin users (Google OAuth, email whitelist, YouTube access/refresh tokens, TikTok open_id/access/refresh tokens)
+- `users` - Authenticated admin users (Google OAuth, email whitelist, YouTube access/refresh tokens, TikTok open_id/access/refresh tokens, LinkedIn access/refresh tokens + personUrn/name/picture, X access/refresh tokens + userId/username)
 - `conversations` - Gemini AI chat conversations
 - `messages` - Chat messages within conversations  
 - `videos` - Video content entries with cover images, scheduling, and Drive integration
