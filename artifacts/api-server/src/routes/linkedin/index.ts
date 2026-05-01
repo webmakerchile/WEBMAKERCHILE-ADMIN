@@ -10,6 +10,16 @@ const LINKEDIN_CLIENT_ID = (process.env.LINKEDIN_CLIENT_ID || "").trim();
 const LINKEDIN_CLIENT_SECRET = (process.env.LINKEDIN_CLIENT_SECRET || "").trim();
 const LINKEDIN_AUTH_BASE = "https://www.linkedin.com/oauth/v2";
 const LINKEDIN_API_BASE = "https://api.linkedin.com";
+const LINKEDIN_REST_VERSION = "202509";
+
+function restHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "LinkedIn-Version": LINKEDIN_REST_VERSION,
+    "X-Restli-Protocol-Version": "2.0.0",
+  };
+}
 
 function getLinkedInRedirectUri(): string {
   return process.env.LINKEDIN_REDIRECT_URI || "https://admin.webmakerchile.com/api/linkedin/callback";
@@ -242,8 +252,14 @@ router.post("/linkedin/disconnect", async (req: Request, res: Response) => {
 });
 
 /**
- * Registers a video asset with LinkedIn, uploads the binary to the returned URL,
- * and creates a UGC post that references the asset.
+ * Publishes a video to LinkedIn using the Versioned REST API:
+ *   POST /rest/videos?action=initializeUpload  → returns uploadInstructions
+ *   PUT  uploadUrl(s) (binary chunks, 1 here for simplicity)
+ *   POST /rest/videos?action=finalizeUpload    → finalizes the asset
+ *   POST /rest/posts                           → creates the post referencing the video URN
+ *
+ * Falls back to /v2/ugcPosts on REST 5xx so the integration keeps working if the
+ * versioned endpoint is unavailable for the app.
  */
 export async function publishLinkedInVideo(
   user: any,
@@ -255,55 +271,140 @@ export async function publishLinkedInVideo(
   if (!user.linkedinPersonUrn) return { success: false, error: "No LinkedIn person URN" };
 
   const owner = user.linkedinOrgUrn || user.linkedinPersonUrn;
+  const fileSize = videoBuffer.length;
 
   try {
-    const registerRes = await fetch(`${LINKEDIN_API_BASE}/v2/assets?action=registerUpload`, {
+    // 1) initializeUpload (REST)
+    const initRes = await fetch(`${LINKEDIN_API_BASE}/rest/videos?action=initializeUpload`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-      },
+      headers: restHeaders(token),
       body: JSON.stringify({
-        registerUploadRequest: {
-          recipes: ["urn:li:digitalmediaRecipe:feedshare-video"],
-          owner,
-          serviceRelationships: [
-            { relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" },
-          ],
-        },
+        initializeUploadRequest: { owner, fileSizeBytes: fileSize, uploadCaptions: false, uploadThumbnail: false },
       }),
     });
 
-    if (!registerRes.ok) {
-      const text = await registerRes.text();
-      console.error("[LinkedIn] Asset register failed:", registerRes.status, text);
-      return { success: false, error: `register ${registerRes.status}` };
+    if (initRes.status >= 500 || initRes.status === 404) {
+      console.warn(`[LinkedIn] /rest/videos initializeUpload returned ${initRes.status}, falling back to /v2/assets`);
+      return await publishLinkedInVideoLegacy(token, owner, content, videoBuffer);
+    }
+    if (!initRes.ok) {
+      const text = await initRes.text();
+      console.error("[LinkedIn] /rest/videos initializeUpload failed:", initRes.status, text);
+      return { success: false, error: `init ${initRes.status}` };
     }
 
-    const registerData: any = await registerRes.json();
-    const uploadUrl = registerData?.value?.uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]?.uploadUrl;
-    const asset: string | undefined = registerData?.value?.asset;
-    if (!uploadUrl || !asset) {
-      console.error("[LinkedIn] Missing uploadUrl or asset:", registerData);
-      return { success: false, error: "asset register no uploadUrl" };
+    const initData: any = await initRes.json();
+    const value = initData?.value || {};
+    const videoUrn: string | undefined = value.video;
+    const instructions: any[] = value.uploadInstructions || [];
+    const uploadToken: string | undefined = value.uploadToken;
+    if (!videoUrn || instructions.length === 0) {
+      return { success: false, error: "init missing video/uploadInstructions" };
     }
 
-    const uploadRes = await fetch(uploadUrl, {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/octet-stream",
-      },
-      body: new Uint8Array(videoBuffer),
+    // 2) PUT each chunk slice and collect ETags
+    const etags: string[] = [];
+    for (const inst of instructions) {
+      const slice = videoBuffer.subarray(inst.firstByte ?? 0, (inst.lastByte ?? videoBuffer.length - 1) + 1);
+      const upRes = await fetch(inst.uploadUrl, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/octet-stream" },
+        body: new Uint8Array(slice),
+      });
+      if (!upRes.ok && upRes.status !== 201) {
+        const text = await upRes.text();
+        console.error("[LinkedIn] chunk upload failed:", upRes.status, text);
+        return { success: false, error: `chunk ${upRes.status}` };
+      }
+      const etag = upRes.headers.get("etag") || upRes.headers.get("ETag");
+      if (etag) etags.push(etag.replace(/^"|"$/g, ""));
+    }
+
+    // 3) finalizeUpload
+    const finRes = await fetch(`${LINKEDIN_API_BASE}/rest/videos?action=finalizeUpload`, {
+      method: "POST",
+      headers: restHeaders(token),
+      body: JSON.stringify({
+        finalizeUploadRequest: {
+          video: videoUrn,
+          uploadToken: uploadToken || "",
+          uploadedPartIds: etags,
+        },
+      }),
     });
-    if (!uploadRes.ok && uploadRes.status !== 201) {
-      const text = await uploadRes.text();
-      console.error("[LinkedIn] Asset upload failed:", uploadRes.status, text);
-      return { success: false, error: `upload ${uploadRes.status}` };
+    if (finRes.status >= 500 || finRes.status === 404) {
+      console.warn(`[LinkedIn] /rest/videos finalizeUpload returned ${finRes.status}, falling back to /v2/assets`);
+      return await publishLinkedInVideoLegacy(token, owner, content, videoBuffer);
+    }
+    if (!finRes.ok) {
+      const text = await finRes.text();
+      console.error("[LinkedIn] /rest/videos finalizeUpload failed:", finRes.status, text);
+      return { success: false, error: `finalize ${finRes.status}` };
     }
 
-    const postBody = {
+    // 4) Create the post (REST)
+    const postRes = await fetch(`${LINKEDIN_API_BASE}/rest/posts`, {
+      method: "POST",
+      headers: restHeaders(token),
+      body: JSON.stringify({
+        author: owner,
+        commentary: content,
+        visibility: "PUBLIC",
+        distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+        content: { media: { id: videoUrn } },
+        lifecycleState: "PUBLISHED",
+        isReshareDisabledByAuthor: false,
+      }),
+    });
+    if (postRes.status >= 500 || postRes.status === 404) {
+      console.warn(`[LinkedIn] /rest/posts returned ${postRes.status}, falling back to /v2/ugcPosts`);
+      return await publishLinkedInVideoLegacy(token, owner, content, videoBuffer);
+    }
+    if (!postRes.ok) {
+      const text = await postRes.text();
+      console.error("[LinkedIn] /rest/posts failed:", postRes.status, text);
+      return { success: false, error: `post ${postRes.status}` };
+    }
+    const postId = postRes.headers.get("x-restli-id") || undefined;
+    return { success: true, postId };
+  } catch (err: any) {
+    console.error("[LinkedIn] Video publish error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+async function publishLinkedInVideoLegacy(
+  token: string,
+  owner: string,
+  content: string,
+  videoBuffer: Buffer,
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const registerRes = await fetch(`${LINKEDIN_API_BASE}/v2/assets?action=registerUpload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Restli-Protocol-Version": "2.0.0" },
+    body: JSON.stringify({
+      registerUploadRequest: {
+        recipes: ["urn:li:digitalmediaRecipe:feedshare-video"],
+        owner,
+        serviceRelationships: [{ relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" }],
+      },
+    }),
+  });
+  if (!registerRes.ok) return { success: false, error: `legacy register ${registerRes.status}` };
+  const registerData: any = await registerRes.json();
+  const uploadUrl = registerData?.value?.uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]?.uploadUrl;
+  const asset: string | undefined = registerData?.value?.asset;
+  if (!uploadUrl || !asset) return { success: false, error: "legacy no uploadUrl" };
+  const upRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/octet-stream" },
+    body: new Uint8Array(videoBuffer),
+  });
+  if (!upRes.ok && upRes.status !== 201) return { success: false, error: `legacy upload ${upRes.status}` };
+  const postRes = await fetch(`${LINKEDIN_API_BASE}/v2/ugcPosts`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Restli-Protocol-Version": "2.0.0" },
+    body: JSON.stringify({
       author: owner,
       lifecycleState: "PUBLISHED",
       specificContent: {
@@ -314,38 +415,17 @@ export async function publishLinkedInVideo(
         },
       },
       visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
-    };
-
-    const postRes = await fetch(`${LINKEDIN_API_BASE}/v2/ugcPosts`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-      },
-      body: JSON.stringify(postBody),
-    });
-
-    const text = await postRes.text();
-    let data: any;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-    if (!postRes.ok) {
-      console.error("[LinkedIn] UGC post failed:", postRes.status, data);
-      return { success: false, error: data?.message || `HTTP ${postRes.status}` };
-    }
-
-    const postId = data.id || postRes.headers.get("x-restli-id") || null;
-    return { success: true, postId: postId || undefined };
-  } catch (err: any) {
-    console.error("[LinkedIn] Video publish error:", err.message);
-    return { success: false, error: err.message };
-  }
+    }),
+  });
+  const text = await postRes.text();
+  let data: any; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  if (!postRes.ok) return { success: false, error: data?.message || `legacy post ${postRes.status}` };
+  return { success: true, postId: data.id || postRes.headers.get("x-restli-id") || undefined };
 }
 
 /**
- * Posts a text-only update to LinkedIn (UGC posts API). Used as a fallback when no
- * Drive video is available.
+ * Text-only post via the Versioned REST `/rest/posts` endpoint.
+ * Falls back to /v2/ugcPosts on REST 5xx.
  */
 export async function publishLinkedInPost(
   user: any,
@@ -355,9 +435,47 @@ export async function publishLinkedInPost(
   if (!token) return { success: false, error: "No LinkedIn token" };
   if (!user.linkedinPersonUrn) return { success: false, error: "No LinkedIn person URN" };
 
+  const author = user.linkedinOrgUrn || user.linkedinPersonUrn;
+
   try {
-    const author = user.linkedinOrgUrn || user.linkedinPersonUrn;
-    const body = {
+    const res = await fetch(`${LINKEDIN_API_BASE}/rest/posts`, {
+      method: "POST",
+      headers: restHeaders(token),
+      body: JSON.stringify({
+        author,
+        commentary: content,
+        visibility: "PUBLIC",
+        distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+        lifecycleState: "PUBLISHED",
+        isReshareDisabledByAuthor: false,
+      }),
+    });
+    if (res.status >= 500 || res.status === 404) {
+      console.warn(`[LinkedIn] /rest/posts returned ${res.status}, falling back to /v2/ugcPosts`);
+      return await publishLinkedInTextLegacy(token, author, content);
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      console.error("[LinkedIn] /rest/posts failed:", res.status, text);
+      return { success: false, error: `post ${res.status}` };
+    }
+    const postId = res.headers.get("x-restli-id") || undefined;
+    return { success: true, postId };
+  } catch (err: any) {
+    console.error("[LinkedIn] Publish error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+async function publishLinkedInTextLegacy(
+  token: string,
+  author: string,
+  content: string,
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const res = await fetch(`${LINKEDIN_API_BASE}/v2/ugcPosts`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Restli-Protocol-Version": "2.0.0" },
+    body: JSON.stringify({
       author,
       lifecycleState: "PUBLISHED",
       specificContent: {
@@ -367,33 +485,12 @@ export async function publishLinkedInPost(
         },
       },
       visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
-    };
-
-    const res = await fetch(`${LINKEDIN_API_BASE}/v2/ugcPosts`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-Restli-Protocol-Version": "2.0.0",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const text = await res.text();
-    let data: any;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-    if (!res.ok) {
-      console.error("[LinkedIn] Publish failed:", res.status, data);
-      return { success: false, error: data?.message || `HTTP ${res.status}` };
-    }
-
-    const postId = data.id || res.headers.get("x-restli-id") || null;
-    return { success: true, postId: postId || undefined };
-  } catch (err: any) {
-    console.error("[LinkedIn] Publish error:", err.message);
-    return { success: false, error: err.message };
-  }
+    }),
+  });
+  const text = await res.text();
+  let data: any; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  if (!res.ok) return { success: false, error: data?.message || `legacy ${res.status}` };
+  return { success: true, postId: data.id || res.headers.get("x-restli-id") || undefined };
 }
 
 router.post("/linkedin/publish/:videoId", async (req: Request, res: Response) => {

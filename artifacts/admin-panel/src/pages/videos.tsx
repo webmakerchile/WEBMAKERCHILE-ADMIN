@@ -663,11 +663,11 @@ function VideoWizard({
                 }
                 onUpdate({
                   status: "scheduled",
-                  tiktokStatus: "scheduled",
-                  instagramStatus: "scheduled",
-                  youtubeStatus: "scheduled",
-                  linkedinStatus: "scheduled",
-                  xStatus: "scheduled",
+                  tiktokStatus: "pending",
+                  instagramStatus: "pending",
+                  youtubeStatus: "pending",
+                  linkedinStatus: "pending",
+                  xStatus: "pending",
                   scheduledAt: scheduledDate.toISOString(),
                 });
                 toast({

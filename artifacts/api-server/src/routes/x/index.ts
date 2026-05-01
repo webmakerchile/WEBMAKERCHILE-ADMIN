@@ -269,12 +269,94 @@ export async function publishXPost(
   }
 }
 
-const X_MEDIA_UPLOAD_URL = "https://api.x.com/2/media/upload";
+const X_MEDIA_UPLOAD_URL_V2 = "https://api.x.com/2/media/upload";
+const X_MEDIA_UPLOAD_URL_V1 = "https://upload.twitter.com/1.1/media/upload.json";
+
+async function uploadVideoChunked(
+  baseUrl: string,
+  token: string,
+  videoBuffer: Buffer,
+): Promise<{ mediaId: string } | { error: string; status: number }> {
+  const totalBytes = videoBuffer.length;
+  const initParams = new URLSearchParams({
+    command: "INIT",
+    total_bytes: String(totalBytes),
+    media_type: "video/mp4",
+    media_category: "tweet_video",
+  });
+  const initRes = await fetch(`${baseUrl}?${initParams.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!initRes.ok) {
+    const t = await initRes.text();
+    console.error(`[X] media INIT failed (${baseUrl}):`, initRes.status, t);
+    return { error: `media INIT ${initRes.status}`, status: initRes.status };
+  }
+  const initData: any = await initRes.json();
+  const mediaId: string | undefined = initData?.data?.id || initData?.media_id_string || initData?.media_id;
+  if (!mediaId) return { error: "media INIT no id", status: 0 };
+
+  const chunkSize = 4 * 1024 * 1024;
+  const totalChunks = Math.max(1, Math.ceil(totalBytes / chunkSize));
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, totalBytes);
+    const chunk = videoBuffer.subarray(start, end);
+    const form = new FormData();
+    form.append("command", "APPEND");
+    form.append("media_id", mediaId);
+    form.append("segment_index", String(i));
+    form.append("media", new Blob([new Uint8Array(chunk)], { type: "application/octet-stream" }));
+    const appRes = await fetch(baseUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!appRes.ok) {
+      const t = await appRes.text();
+      console.error(`[X] media APPEND failed (${baseUrl}):`, appRes.status, t);
+      return { error: `media APPEND ${appRes.status}`, status: appRes.status };
+    }
+  }
+
+  const finParams = new URLSearchParams({ command: "FINALIZE", media_id: mediaId });
+  const finRes = await fetch(`${baseUrl}?${finParams.toString()}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!finRes.ok) {
+    const t = await finRes.text();
+    console.error(`[X] media FINALIZE failed (${baseUrl}):`, finRes.status, t);
+    return { error: `media FINALIZE ${finRes.status}`, status: finRes.status };
+  }
+  const finData: any = await finRes.json();
+  let processingInfo = finData?.data?.processing_info || finData?.processing_info;
+  while (processingInfo && (processingInfo.state === "pending" || processingInfo.state === "in_progress")) {
+    await new Promise((r) => setTimeout(r, (processingInfo.check_after_secs || 5) * 1000));
+    const statusParams = new URLSearchParams({ command: "STATUS", media_id: mediaId });
+    const statusRes = await fetch(`${baseUrl}?${statusParams.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!statusRes.ok) return { error: `media STATUS ${statusRes.status}`, status: statusRes.status };
+    const statusData: any = await statusRes.json();
+    processingInfo = statusData?.data?.processing_info || statusData?.processing_info;
+  }
+  if (processingInfo && processingInfo.state === "failed") {
+    return { error: `media processing failed: ${processingInfo?.error?.message || "unknown"}`, status: 0 };
+  }
+  return { mediaId };
+}
 
 /**
- * Uploads a video to X via the v2 chunked media/upload endpoint (INIT/APPEND/FINALIZE +
- * STATUS polling) using OAuth 2.0 user-context Bearer token, then publishes a tweet
- * referencing the resulting media_id. Requires the `media.write` scope.
+ * Uploads a video to X via the chunked media/upload endpoint (INIT/APPEND/FINALIZE +
+ * STATUS polling) using the OAuth 2.0 user-context Bearer token, then publishes a
+ * tweet referencing the resulting media_id. Requires the `media.write` scope.
+ *
+ * Tries the v2 endpoint first (api.x.com/2/media/upload). If v2 returns 403/404
+ * (typical when the app/tier hasn't enabled v2 media), it falls back to the
+ * legacy v1.1 endpoint (upload.twitter.com/1.1/media/upload.json) which is
+ * available on the Free tier.
  */
 export async function publishXTweetWithVideo(
   user: any,
@@ -287,80 +369,15 @@ export async function publishXTweetWithVideo(
   const text = (content || "").slice(0, 280);
 
   try {
-    const totalBytes = videoBuffer.length;
-    const initParams = new URLSearchParams({
-      command: "INIT",
-      total_bytes: String(totalBytes),
-      media_type: "video/mp4",
-      media_category: "tweet_video",
-    });
-    const initRes = await fetch(`${X_MEDIA_UPLOAD_URL}?${initParams.toString()}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!initRes.ok) {
-      const t = await initRes.text();
-      console.error("[X] media INIT failed:", initRes.status, t);
-      return { success: false, error: `media INIT ${initRes.status}` };
+    let upload = await uploadVideoChunked(X_MEDIA_UPLOAD_URL_V2, token, videoBuffer);
+    if ("error" in upload && (upload.status === 403 || upload.status === 404)) {
+      console.warn(`[X] v2 media upload returned ${upload.status}; falling back to v1.1`);
+      upload = await uploadVideoChunked(X_MEDIA_UPLOAD_URL_V1, token, videoBuffer);
     }
-    const initData: any = await initRes.json();
-    const mediaId: string | undefined = initData?.data?.id || initData?.media_id_string || initData?.media_id;
-    if (!mediaId) {
-      console.error("[X] media INIT no id:", initData);
-      return { success: false, error: "media INIT no id" };
+    if ("error" in upload) {
+      return { success: false, error: upload.error };
     }
-
-    const chunkSize = 4 * 1024 * 1024;
-    const totalChunks = Math.max(1, Math.ceil(totalBytes / chunkSize));
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, totalBytes);
-      const chunk = videoBuffer.subarray(start, end);
-      const form = new FormData();
-      form.append("command", "APPEND");
-      form.append("media_id", mediaId);
-      form.append("segment_index", String(i));
-      form.append("media", new Blob([new Uint8Array(chunk)], { type: "application/octet-stream" }));
-      const appRes = await fetch(X_MEDIA_UPLOAD_URL, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-      if (!appRes.ok) {
-        const t = await appRes.text();
-        console.error("[X] media APPEND failed:", appRes.status, t);
-        return { success: false, error: `media APPEND ${appRes.status}` };
-      }
-    }
-
-    const finParams = new URLSearchParams({ command: "FINALIZE", media_id: mediaId });
-    const finRes = await fetch(`${X_MEDIA_UPLOAD_URL}?${finParams.toString()}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!finRes.ok) {
-      const t = await finRes.text();
-      console.error("[X] media FINALIZE failed:", finRes.status, t);
-      return { success: false, error: `media FINALIZE ${finRes.status}` };
-    }
-    const finData: any = await finRes.json();
-    let processingInfo = finData?.data?.processing_info || finData?.processing_info;
-
-    while (processingInfo && (processingInfo.state === "pending" || processingInfo.state === "in_progress")) {
-      await new Promise((r) => setTimeout(r, (processingInfo.check_after_secs || 5) * 1000));
-      const statusParams = new URLSearchParams({ command: "STATUS", media_id: mediaId });
-      const statusRes = await fetch(`${X_MEDIA_UPLOAD_URL}?${statusParams.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!statusRes.ok) {
-        return { success: false, error: `media STATUS ${statusRes.status}` };
-      }
-      const statusData: any = await statusRes.json();
-      processingInfo = statusData?.data?.processing_info || statusData?.processing_info;
-    }
-    if (processingInfo && processingInfo.state === "failed") {
-      return { success: false, error: `media processing failed: ${processingInfo?.error?.message || "unknown"}` };
-    }
+    const mediaId = upload.mediaId;
 
     const tweetBody: any = { media: { media_ids: [mediaId] } };
     if (text.trim()) tweetBody.text = text;
