@@ -475,8 +475,7 @@ async function processScheduledVideos() {
       console.log(`[Scheduler] Processing video #${video.id}: "${video.title}" (driveId: ${video.videoFileDriveId || "NONE"})`);
 
       if (!video.videoFileDriveId) {
-        console.log(`[Scheduler] Video #${video.id} skipped - no video file in Drive`);
-        continue;
+        console.log(`[Scheduler] Video #${video.id} has no video file in Drive — only LinkedIn/X (text-only) will be attempted`);
       }
 
       const freshUser = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
@@ -497,30 +496,37 @@ async function processScheduledVideos() {
         x: { success: false },
       };
 
-      if (video.youtubeTitle || video.youtubeDescription) {
-        results.youtube = await uploadToYouTube(video, freshUser);
-      } else {
+      if (!video.videoFileDriveId) {
         results.youtube = { success: true };
-        console.log(`[Scheduler] YouTube skipped (no title/desc configured)`);
-      }
-
-      const freshUser2 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
-      if (freshUser2) {
-        if (video.tiktokDescription || video.description) {
-          results.tiktok = await uploadToTikTok(video, freshUser2);
+        results.tiktok = { success: true };
+        results.instagram = { success: true };
+        console.log(`[Scheduler] YT/TT/IG skipped (no video file in Drive)`);
+      } else {
+        if (video.youtubeTitle || video.youtubeDescription) {
+          results.youtube = await uploadToYouTube(video, freshUser);
         } else {
-          results.tiktok = { success: true };
-          console.log(`[Scheduler] TikTok skipped (no description)`);
+          results.youtube = { success: true };
+          console.log(`[Scheduler] YouTube skipped (no title/desc configured)`);
         }
-      }
 
-      const freshUser3 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
-      if (freshUser3) {
-        if (video.instagramDescription || video.description) {
-          results.instagram = await uploadToInstagram(video, freshUser3);
-        } else {
-          results.instagram = { success: true };
-          console.log(`[Scheduler] Instagram skipped (no description)`);
+        const freshUser2 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
+        if (freshUser2) {
+          if (video.tiktokDescription || video.description) {
+            results.tiktok = await uploadToTikTok(video, freshUser2);
+          } else {
+            results.tiktok = { success: true };
+            console.log(`[Scheduler] TikTok skipped (no description)`);
+          }
+        }
+
+        const freshUser3 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
+        if (freshUser3) {
+          if (video.instagramDescription || video.description) {
+            results.instagram = await uploadToInstagram(video, freshUser3);
+          } else {
+            results.instagram = { success: true };
+            console.log(`[Scheduler] Instagram skipped (no description)`);
+          }
         }
       }
 

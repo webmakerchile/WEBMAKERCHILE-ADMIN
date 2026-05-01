@@ -69,8 +69,10 @@ type VideoData = {
   youtubeStatus?: string | null;
   linkedinPostId?: string | null;
   linkedinStatus?: string | null;
+  linkedinError?: string | null;
   xPostId?: string | null;
   xStatus?: string | null;
+  xError?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -510,7 +512,7 @@ function VideoWizard({
           </h1>
           {video && (
             <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-1">
-              Completa todos los pasos para programar en las 3 plataformas
+              Completa todos los pasos para programar en las 5 plataformas
             </p>
           )}
         </div>
@@ -2019,7 +2021,21 @@ function StepReview({
               <div className="flex items-start gap-3">
                 <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-emerald-400">Programado en las 3 plataformas</p>
+                  <p className="text-sm font-medium text-emerald-400">Programado en las plataformas configuradas</p>
+                  {(video.linkedinError || video.xError) && (
+                    <div className="mt-2 space-y-1">
+                      {video.linkedinError && (
+                        <div className="text-xs px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300">
+                          <span className="font-semibold">LinkedIn:</span> {video.linkedinError}
+                        </div>
+                      )}
+                      {video.xError && (
+                        <div className="text-xs px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300">
+                          <span className="font-semibold">X:</span> {video.xError}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {video.scheduleHour && (
                     <div className="flex items-center gap-2 mt-2 bg-white/5 rounded-lg px-3 py-2">
                       <Clock className="w-4 h-4 text-primary" />
