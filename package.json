@@ -10,7 +10,7 @@
   },
   "private": true,
   "pnpm": {
-    "onlyBuiltDependencies": ["sharp"]
+    "onlyBuiltDependencies": ["sharp", "esbuild", "protobufjs"]
   },
   "devDependencies": {
     "typescript": "~5.9.2",
