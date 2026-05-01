@@ -2018,26 +2018,41 @@ function StepReview({
             </div>
           )}
 
+          {(video.linkedinError || video.xError || video.status === "partial" || video.status === "error") && (
+            <div className={`rounded-xl p-4 space-y-2 border ${
+              video.status === "partial"
+                ? "bg-amber-500/10 border-amber-500/30"
+                : "bg-rose-500/10 border-rose-500/30"
+            }`}>
+              <div className="flex items-start gap-2">
+                <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${video.status === "partial" ? "text-amber-400" : "text-rose-400"}`} />
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold ${video.status === "partial" ? "text-amber-300" : "text-rose-300"}`}>
+                    {video.status === "partial" ? "Publicado parcialmente" : "Hubo errores al publicar"}
+                  </p>
+                  <div className="mt-2 space-y-1">
+                    {video.linkedinError && (
+                      <div className="text-xs px-2 py-1.5 rounded bg-black/20 text-rose-200 border border-rose-500/20">
+                        <span className="font-semibold">LinkedIn:</span> {video.linkedinError}
+                      </div>
+                    )}
+                    {video.xError && (
+                      <div className="text-xs px-2 py-1.5 rounded bg-black/20 text-rose-200 border border-rose-500/20">
+                        <span className="font-semibold">X:</span> {video.xError}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {isScheduled && (
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-start gap-3">
                 <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-emerald-400">Programado en las plataformas configuradas</p>
-                  {(video.linkedinError || video.xError) && (
-                    <div className="mt-2 space-y-1">
-                      {video.linkedinError && (
-                        <div className="text-xs px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300">
-                          <span className="font-semibold">LinkedIn:</span> {video.linkedinError}
-                        </div>
-                      )}
-                      {video.xError && (
-                        <div className="text-xs px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-300">
-                          <span className="font-semibold">X:</span> {video.xError}
-                        </div>
-                      )}
-                    </div>
-                  )}
                   {video.scheduleHour && (
                     <div className="flex items-center gap-2 mt-2 bg-white/5 rounded-lg px-3 py-2">
                       <Clock className="w-4 h-4 text-primary" />
