@@ -662,10 +662,12 @@ function VideoWizard({
                   tiktokStatus: "scheduled",
                   instagramStatus: "scheduled",
                   youtubeStatus: "scheduled",
+                  linkedinStatus: "scheduled",
+                  xStatus: "scheduled",
                   scheduledAt: scheduledDate.toISOString(),
                 });
                 toast({
-                  title: "¡Programado en las 3 plataformas!",
+                  title: "¡Programado en las 5 plataformas!",
                   description: hour
                     ? `Se subirá automáticamente a las ${hour} hrs`
                     : "Se subirá automáticamente ahora",
@@ -1486,16 +1488,50 @@ function StepLinkedInX({
   copyText: (text: string) => void;
 }) {
   const xLen = (formData.xDescription || "").length;
+  const [aiBusy, setAiBusy] = useState(false);
+  const generateAi = async () => {
+    if (!video?.id) return;
+    setAiBusy(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/generate-descriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platforms: ["linkedin", "x"] }),
+      });
+      if (!res.ok) throw new Error("Error generando descripciones");
+      const data = await res.json();
+      const next = { ...formData };
+      if (typeof data?.descriptions?.linkedin === "string") next.linkedinDescription = data.descriptions.linkedin;
+      if (typeof data?.descriptions?.x === "string") next.xDescription = data.descriptions.x.slice(0, 280);
+      setFormData(next);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAiBusy(false);
+    }
+  };
   return (
     <Card className="bg-card/50 border-white/5">
       <CardHeader>
-        <CardTitle className="text-xl flex items-center gap-2">
-          <span className="text-2xl">💼</span>
-          LinkedIn y X (Twitter)
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Texto para publicaciones de LinkedIn (máx. 3000) y X (máx. 280). Solo texto: el scheduler publica las descripciones automáticamente.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <span className="text-2xl">💼</span>
+              LinkedIn y X (Twitter)
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Texto para publicaciones de LinkedIn (máx. 3000) y X (máx. 280). El scheduler publica el video y la descripción automáticamente.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={generateAi}
+            disabled={aiBusy}
+            className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
+          >
+            {aiBusy ? "Generando..." : "✨ Generar con IA"}
+          </button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

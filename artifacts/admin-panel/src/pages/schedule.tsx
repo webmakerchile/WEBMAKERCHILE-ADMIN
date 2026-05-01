@@ -3,6 +3,23 @@ import { Layout } from "@/components/layout";
 import { CalendarClock, AlertCircle, CheckCircle2, Play } from "lucide-react";
 import { motion } from "framer-motion";
 
+function StatusBadge({ label, value, error }: { label: string; value?: string | null; error?: string | null }) {
+  if (!value) return null;
+  const cls =
+    value === "published" ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" :
+    value === "uploaded" ? "bg-blue-500/20 text-blue-300 border-blue-500/30" :
+    value === "error" ? "bg-rose-500/20 text-rose-300 border-rose-500/30" :
+    "bg-white/10 text-muted-foreground border-white/10";
+  return (
+    <span
+      title={error || undefined}
+      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-medium border ${cls}`}
+    >
+      {label}: {value}
+    </span>
+  );
+}
+
 export default function SchedulePage() {
   const { data: videos } = useListVideos();
   const checkSchedule = useCheckScheduledVideos();
@@ -51,7 +68,11 @@ export default function SchedulePage() {
                   {checkSchedule.data.details.map((d: any) => (
                     <p key={d.videoId} className="text-xs text-emerald-400/60">
                       Video #{d.videoId}: {d.status}
-                      {d.youtube && d.youtube !== "skipped" && ` | YouTube: ${d.youtube}`}
+                      {d.youtube && d.youtube !== "skipped" && ` | YT: ${d.youtube}`}
+                      {d.tiktok && d.tiktok !== "skipped" && ` | TT: ${d.tiktok}`}
+                      {d.instagram && d.instagram !== "skipped" && ` | IG: ${d.instagram}`}
+                      {d.linkedin && d.linkedin !== "skipped" && ` | LI: ${d.linkedin}`}
+                      {d.x && d.x !== "skipped" && ` | X: ${d.x}`}
                       {d.error && ` (${d.error})`}
                     </p>
                   ))}
@@ -77,15 +98,22 @@ export default function SchedulePage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {scheduledVideos.map(video => (
-                    <div key={video.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <div>
+                  {scheduledVideos.map((video: any) => (
+                    <div key={video.id} className="flex flex-col sm:flex-row sm:items-start justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                      <div className="min-w-0 flex-1">
                         <h4 className="font-bold text-foreground">{video.title}</h4>
                         <p className="text-sm text-muted-foreground mt-1">
                           Carpeta destino: {video.month}/{video.week}/{video.day}/#{video.videoNumber}
                         </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <StatusBadge label="YT" value={video.youtubeStatus} />
+                          <StatusBadge label="TT" value={video.tiktokStatus} />
+                          <StatusBadge label="IG" value={video.instagramStatus} />
+                          <StatusBadge label="LI" value={video.linkedinStatus} error={video.linkedinError} />
+                          <StatusBadge label="X" value={video.xStatus} error={video.xError} />
+                        </div>
                       </div>
-                      <div className="mt-4 sm:mt-0 text-right">
+                      <div className="mt-4 sm:mt-0 sm:ml-4 text-right shrink-0">
                         <div className="text-xs text-muted-foreground mb-1">Fecha Programada</div>
                         <div className="text-sm font-medium text-orange-400">
                           {video.scheduledAt ? new Date(video.scheduledAt).toLocaleString() : 'No definida'}

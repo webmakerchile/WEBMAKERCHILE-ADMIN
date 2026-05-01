@@ -174,8 +174,10 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.youtubeStatus !== undefined) updateData.youtubeStatus = body.youtubeStatus;
   if (body.linkedinStatus !== undefined) updateData.linkedinStatus = body.linkedinStatus;
   if (body.linkedinPostId !== undefined) updateData.linkedinPostId = body.linkedinPostId;
+  if (body.linkedinError !== undefined) updateData.linkedinError = body.linkedinError;
   if (body.xStatus !== undefined) updateData.xStatus = body.xStatus;
   if (body.xPostId !== undefined) updateData.xPostId = body.xPostId;
+  if (body.xError !== undefined) updateData.xError = body.xError;
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
   if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
 
@@ -342,6 +344,71 @@ router.get("/content/videos/:id/download-video", async (req, res) => {
   } catch (err: any) {
     console.error("[Download] Error:", err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
+  const id = Number(req.params.id);
+  const { platforms } = req.body || {};
+  const targets: string[] = Array.isArray(platforms) && platforms.length
+    ? platforms.filter((p: any) => typeof p === "string")
+    : ["tiktok", "instagram", "youtube", "linkedin", "x"];
+
+  const [video] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
+  if (!video) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+
+  const baseInfo = `Título: "${video.title}"\nDescripción base: "${video.description || ""}"`;
+  const guides: Record<string, string> = {
+    tiktok: "TikTok (máx 2200): tono cercano, hook fuerte en la 1ra línea, 4-6 hashtags relevantes en español.",
+    instagram: "Instagram (máx 2200): tono inspirador, emojis moderados, 5-10 hashtags al final en español.",
+    youtube: "YouTube (máx 5000): primer párrafo descriptivo con keywords SEO, luego beneficios, sin hashtags.",
+    linkedin: "LinkedIn (~150-300 caracteres): tono profesional, sin emojis excesivos, 2-3 hashtags al final.",
+    x: "X/Twitter (HASTA 280 caracteres ESTRICTOS, incluyendo hashtags): un solo tweet conciso, 1-2 hashtags.",
+  };
+
+  const wanted = targets.filter((t) => guides[t]);
+  const prompt = `Eres un copywriter experto para WebMakerChile (emprendimiento, agencia digital, Chile). Genera descripciones para un video, una por red social.
+
+${baseInfo}
+
+Devuelve EXCLUSIVAMENTE JSON válido (sin markdown, sin backticks) con las claves solicitadas y nada más:
+
+${wanted.map((t) => `- ${t}: ${guides[t]}`).join("\n")}
+
+Formato de salida:
+{ ${wanted.map((t) => `"${t}": "..."`).join(", ")} }`;
+
+  try {
+    const resp = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    });
+    const text = (resp as any)?.candidates?.[0]?.content?.parts?.[0]?.text
+      || (resp as any)?.text
+      || "";
+    let cleaned = String(text).trim();
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+    let parsed: Record<string, string>;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) {
+        res.status(500).json({ error: "Gemini no devolvió JSON válido", raw: cleaned.slice(0, 500) });
+        return;
+      }
+      parsed = JSON.parse(match[0]);
+    }
+
+    if (typeof parsed.x === "string") parsed.x = parsed.x.slice(0, 280);
+
+    res.json({ descriptions: parsed });
+  } catch (err: any) {
+    console.error("[generate-descriptions] error:", err.message);
+    res.status(500).json({ error: err.message || "Error generando descripciones" });
   }
 });
 

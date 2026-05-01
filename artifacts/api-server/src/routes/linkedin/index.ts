@@ -72,7 +72,7 @@ router.get("/linkedin/auth", (req: Request, res: Response) => {
     client_id: LINKEDIN_CLIENT_ID,
     redirect_uri: redirectUri,
     state: csrfState,
-    scope: "openid profile email w_member_social",
+    scope: "openid profile email w_member_social w_organization_social rw_organization_admin",
   });
   const authUrl = `${LINKEDIN_AUTH_BASE}/authorization?${params.toString()}`;
   console.log(`[LinkedIn] Redirecting to: ${authUrl}`);
@@ -180,10 +180,51 @@ router.get("/linkedin/status", async (req: Request, res: Response) => {
     connected: true,
     user: {
       personUrn: user.linkedinPersonUrn,
+      orgUrn: user.linkedinOrgUrn,
       name: user.linkedinName,
       picture: user.linkedinPicture,
     },
   });
+});
+
+router.get("/linkedin/organizations", async (req: Request, res: Response) => {
+  const user = req.user as any;
+  const token = await getValidLinkedInToken(user);
+  if (!token) {
+    res.status(401).json({ error: "LinkedIn no conectado" });
+    return;
+  }
+  try {
+    const r = await fetch(
+      `${LINKEDIN_API_BASE}/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organizationalTarget~(id,localizedName,vanityName,logoV2(original~:playableStreams))))`,
+      { headers: { Authorization: `Bearer ${token}`, "X-Restli-Protocol-Version": "2.0.0" } },
+    );
+    if (!r.ok) {
+      const text = await r.text();
+      console.warn("[LinkedIn] organizations fetch failed:", r.status, text);
+      res.json({ organizations: [], note: "Sin permisos de organización (requiere scope rw_organization_admin)" });
+      return;
+    }
+    const data: any = await r.json();
+    const orgs = (data.elements || []).map((el: any) => {
+      const target = el["organizationalTarget~"] || {};
+      return { urn: el.organizationalTarget, name: target.localizedName, vanity: target.vanityName };
+    });
+    res.json({ organizations: orgs });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/linkedin/select-org", async (req: Request, res: Response) => {
+  const user = req.user as any;
+  const { orgUrn } = req.body || {};
+  if (orgUrn !== null && (typeof orgUrn !== "string" || !orgUrn.startsWith("urn:li:organization:"))) {
+    res.status(400).json({ error: "orgUrn inválido" });
+    return;
+  }
+  await db.update(users).set({ linkedinOrgUrn: orgUrn || null }).where(eq(users.id, user.id));
+  res.json({ success: true, orgUrn: orgUrn || null });
 });
 
 router.post("/linkedin/disconnect", async (req: Request, res: Response) => {
@@ -193,6 +234,7 @@ router.post("/linkedin/disconnect", async (req: Request, res: Response) => {
     linkedinRefreshToken: null,
     linkedinTokenExpiresAt: null,
     linkedinPersonUrn: null,
+    linkedinOrgUrn: null,
     linkedinName: null,
     linkedinPicture: null,
   }).where(eq(users.id, user.id));
@@ -200,9 +242,110 @@ router.post("/linkedin/disconnect", async (req: Request, res: Response) => {
 });
 
 /**
- * Posts a text-only update to LinkedIn (UGC posts API).
- * For free LinkedIn API, image/video uploads require additional asset upload steps; we
- * post a text-only update that links to the configured website.
+ * Registers a video asset with LinkedIn, uploads the binary to the returned URL,
+ * and creates a UGC post that references the asset.
+ */
+export async function publishLinkedInVideo(
+  user: any,
+  content: string,
+  videoBuffer: Buffer,
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const token = await getValidLinkedInToken(user);
+  if (!token) return { success: false, error: "No LinkedIn token" };
+  if (!user.linkedinPersonUrn) return { success: false, error: "No LinkedIn person URN" };
+
+  const owner = user.linkedinOrgUrn || user.linkedinPersonUrn;
+
+  try {
+    const registerRes = await fetch(`${LINKEDIN_API_BASE}/v2/assets?action=registerUpload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+      },
+      body: JSON.stringify({
+        registerUploadRequest: {
+          recipes: ["urn:li:digitalmediaRecipe:feedshare-video"],
+          owner,
+          serviceRelationships: [
+            { relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" },
+          ],
+        },
+      }),
+    });
+
+    if (!registerRes.ok) {
+      const text = await registerRes.text();
+      console.error("[LinkedIn] Asset register failed:", registerRes.status, text);
+      return { success: false, error: `register ${registerRes.status}` };
+    }
+
+    const registerData: any = await registerRes.json();
+    const uploadUrl = registerData?.value?.uploadMechanism?.["com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"]?.uploadUrl;
+    const asset: string | undefined = registerData?.value?.asset;
+    if (!uploadUrl || !asset) {
+      console.error("[LinkedIn] Missing uploadUrl or asset:", registerData);
+      return { success: false, error: "asset register no uploadUrl" };
+    }
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/octet-stream",
+      },
+      body: new Uint8Array(videoBuffer),
+    });
+    if (!uploadRes.ok && uploadRes.status !== 201) {
+      const text = await uploadRes.text();
+      console.error("[LinkedIn] Asset upload failed:", uploadRes.status, text);
+      return { success: false, error: `upload ${uploadRes.status}` };
+    }
+
+    const postBody = {
+      author: owner,
+      lifecycleState: "PUBLISHED",
+      specificContent: {
+        "com.linkedin.ugc.ShareContent": {
+          shareCommentary: { text: content },
+          shareMediaCategory: "VIDEO",
+          media: [{ status: "READY", media: asset, description: { text: "" }, title: { text: "" } }],
+        },
+      },
+      visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+    };
+
+    const postRes = await fetch(`${LINKEDIN_API_BASE}/v2/ugcPosts`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+      },
+      body: JSON.stringify(postBody),
+    });
+
+    const text = await postRes.text();
+    let data: any;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+    if (!postRes.ok) {
+      console.error("[LinkedIn] UGC post failed:", postRes.status, data);
+      return { success: false, error: data?.message || `HTTP ${postRes.status}` };
+    }
+
+    const postId = data.id || postRes.headers.get("x-restli-id") || null;
+    return { success: true, postId: postId || undefined };
+  } catch (err: any) {
+    console.error("[LinkedIn] Video publish error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Posts a text-only update to LinkedIn (UGC posts API). Used as a fallback when no
+ * Drive video is available.
  */
 export async function publishLinkedInPost(
   user: any,
@@ -213,8 +356,9 @@ export async function publishLinkedInPost(
   if (!user.linkedinPersonUrn) return { success: false, error: "No LinkedIn person URN" };
 
   try {
+    const author = user.linkedinOrgUrn || user.linkedinPersonUrn;
     const body = {
-      author: user.linkedinPersonUrn,
+      author,
       lifecycleState: "PUBLISHED",
       specificContent: {
         "com.linkedin.ugc.ShareContent": {

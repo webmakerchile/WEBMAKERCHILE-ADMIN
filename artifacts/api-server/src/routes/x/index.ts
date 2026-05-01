@@ -92,7 +92,7 @@ router.get("/x/auth", (req: Request, res: Response) => {
     response_type: "code",
     client_id: X_CLIENT_ID,
     redirect_uri: redirectUri,
-    scope: "tweet.read tweet.write users.read offline.access",
+    scope: "tweet.read tweet.write users.read media.write offline.access",
     state: csrfState,
     code_challenge: challenge,
     code_challenge_method: "S256",
@@ -265,6 +265,119 @@ export async function publishXPost(
     return { success: true, postId: data.data?.id };
   } catch (err: any) {
     console.error("[X] Publish error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+const X_MEDIA_UPLOAD_URL = "https://api.x.com/2/media/upload";
+
+/**
+ * Uploads a video to X via the v2 chunked media/upload endpoint (INIT/APPEND/FINALIZE +
+ * STATUS polling) using OAuth 2.0 user-context Bearer token, then publishes a tweet
+ * referencing the resulting media_id. Requires the `media.write` scope.
+ */
+export async function publishXTweetWithVideo(
+  user: any,
+  content: string,
+  videoBuffer: Buffer,
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const token = await getValidXToken(user);
+  if (!token) return { success: false, error: "No X token" };
+
+  const text = (content || "").slice(0, 280);
+
+  try {
+    const totalBytes = videoBuffer.length;
+    const initParams = new URLSearchParams({
+      command: "INIT",
+      total_bytes: String(totalBytes),
+      media_type: "video/mp4",
+      media_category: "tweet_video",
+    });
+    const initRes = await fetch(`${X_MEDIA_UPLOAD_URL}?${initParams.toString()}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!initRes.ok) {
+      const t = await initRes.text();
+      console.error("[X] media INIT failed:", initRes.status, t);
+      return { success: false, error: `media INIT ${initRes.status}` };
+    }
+    const initData: any = await initRes.json();
+    const mediaId: string | undefined = initData?.data?.id || initData?.media_id_string || initData?.media_id;
+    if (!mediaId) {
+      console.error("[X] media INIT no id:", initData);
+      return { success: false, error: "media INIT no id" };
+    }
+
+    const chunkSize = 4 * 1024 * 1024;
+    const totalChunks = Math.max(1, Math.ceil(totalBytes / chunkSize));
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, totalBytes);
+      const chunk = videoBuffer.subarray(start, end);
+      const form = new FormData();
+      form.append("command", "APPEND");
+      form.append("media_id", mediaId);
+      form.append("segment_index", String(i));
+      form.append("media", new Blob([new Uint8Array(chunk)], { type: "application/octet-stream" }));
+      const appRes = await fetch(X_MEDIA_UPLOAD_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!appRes.ok) {
+        const t = await appRes.text();
+        console.error("[X] media APPEND failed:", appRes.status, t);
+        return { success: false, error: `media APPEND ${appRes.status}` };
+      }
+    }
+
+    const finParams = new URLSearchParams({ command: "FINALIZE", media_id: mediaId });
+    const finRes = await fetch(`${X_MEDIA_UPLOAD_URL}?${finParams.toString()}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!finRes.ok) {
+      const t = await finRes.text();
+      console.error("[X] media FINALIZE failed:", finRes.status, t);
+      return { success: false, error: `media FINALIZE ${finRes.status}` };
+    }
+    const finData: any = await finRes.json();
+    let processingInfo = finData?.data?.processing_info || finData?.processing_info;
+
+    while (processingInfo && (processingInfo.state === "pending" || processingInfo.state === "in_progress")) {
+      await new Promise((r) => setTimeout(r, (processingInfo.check_after_secs || 5) * 1000));
+      const statusParams = new URLSearchParams({ command: "STATUS", media_id: mediaId });
+      const statusRes = await fetch(`${X_MEDIA_UPLOAD_URL}?${statusParams.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!statusRes.ok) {
+        return { success: false, error: `media STATUS ${statusRes.status}` };
+      }
+      const statusData: any = await statusRes.json();
+      processingInfo = statusData?.data?.processing_info || statusData?.processing_info;
+    }
+    if (processingInfo && processingInfo.state === "failed") {
+      return { success: false, error: `media processing failed: ${processingInfo?.error?.message || "unknown"}` };
+    }
+
+    const tweetBody: any = { media: { media_ids: [mediaId] } };
+    if (text.trim()) tweetBody.text = text;
+    const tweetRes = await fetch(`${X_API_BASE}/tweets`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(tweetBody),
+    });
+    const tweetData: any = await tweetRes.json();
+    if (!tweetRes.ok || tweetData.errors) {
+      const msg = tweetData.errors?.[0]?.message || tweetData.detail || tweetData.title || `HTTP ${tweetRes.status}`;
+      console.error("[X] tweet with media failed:", tweetRes.status, tweetData);
+      return { success: false, error: msg };
+    }
+    return { success: true, postId: tweetData.data?.id };
+  } catch (err: any) {
+    console.error("[X] Publish video error:", err.message);
     return { success: false, error: err.message };
   }
 }

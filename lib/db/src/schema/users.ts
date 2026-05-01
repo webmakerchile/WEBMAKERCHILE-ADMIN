@@ -14,6 +14,7 @@ export const users = pgTable("users", {
   tiktokRefreshToken: text("tiktok_refresh_token"),
   tiktokTokenExpiresAt: timestamp("tiktok_token_expires_at"),
   linkedinPersonUrn: text("linkedin_person_urn"),
+  linkedinOrgUrn: text("linkedin_org_urn"),
   linkedinAccessToken: text("linkedin_access_token"),
   linkedinRefreshToken: text("linkedin_refresh_token"),
   linkedinTokenExpiresAt: timestamp("linkedin_token_expires_at"),

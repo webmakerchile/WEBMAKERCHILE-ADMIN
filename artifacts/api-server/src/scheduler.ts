@@ -7,8 +7,8 @@ import { randomBytes } from "crypto";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import path from "path";
 import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-serve";
-import { publishLinkedInPost } from "./routes/linkedin";
-import { publishXPost } from "./routes/x";
+import { publishLinkedInPost, publishLinkedInVideo } from "./routes/linkedin";
+import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -237,23 +237,62 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
   }
 }
 
+async function downloadDriveVideo(video: any, user: any): Promise<Buffer | null> {
+  if (!video.videoFileDriveId) return null;
+  try {
+    const auth = getOAuth2Client(user);
+    const drive = google.drive({ version: "v3", auth });
+    const driveRes = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "arraybuffer" }
+    );
+    return Buffer.from(driveRes.data as ArrayBuffer);
+  } catch (err: any) {
+    console.error(`[Scheduler] Drive download failed: ${err.message}`);
+    return null;
+  }
+}
+
 async function publishToLinkedIn(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (video.linkedinPostId) return { success: true };
   if (!user.linkedinAccessToken || !user.linkedinPersonUrn) {
-    return { success: false, error: "LinkedIn not connected" };
+    const error = "LinkedIn not connected";
+    await db.update(videos).set({ linkedinStatus: "error", linkedinError: error, updatedAt: new Date() }).where(eq(videos.id, video.id));
+    return { success: false, error };
   }
   const content = video.linkedinDescription || video.description || video.title;
   if (!content || !content.trim()) {
-    return { success: false, error: "Empty LinkedIn content" };
+    const error = "Empty LinkedIn content";
+    await db.update(videos).set({ linkedinStatus: "error", linkedinError: error, updatedAt: new Date() }).where(eq(videos.id, video.id));
+    return { success: false, error };
   }
-  const result = await publishLinkedInPost(user, content);
+
+  let result: { success: boolean; postId?: string; error?: string };
+  if (video.videoFileDriveId) {
+    const buf = await downloadDriveVideo(video, user);
+    if (!buf) {
+      result = await publishLinkedInPost(user, content);
+    } else {
+      result = await publishLinkedInVideo(user, content, buf);
+    }
+  } else {
+    result = await publishLinkedInPost(user, content);
+  }
+
   if (result.success) {
     await db.update(videos).set({
       linkedinPostId: result.postId || "ok",
       linkedinStatus: "published",
+      linkedinError: null,
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
     console.log(`[Scheduler] LinkedIn publish success: ${result.postId}`);
+  } else {
+    await db.update(videos).set({
+      linkedinStatus: "error",
+      linkedinError: result.error || "unknown",
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
   }
   return result;
 }
@@ -261,20 +300,43 @@ async function publishToLinkedIn(video: any, user: any): Promise<{ success: bool
 async function publishToX(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (video.xPostId) return { success: true };
   if (!user.xAccessToken || !user.xUserId) {
-    return { success: false, error: "X not connected" };
+    const error = "X not connected";
+    await db.update(videos).set({ xStatus: "error", xError: error, updatedAt: new Date() }).where(eq(videos.id, video.id));
+    return { success: false, error };
   }
   const content = video.xDescription || video.description || video.title;
   if (!content || !content.trim()) {
-    return { success: false, error: "Empty X content" };
+    const error = "Empty X content";
+    await db.update(videos).set({ xStatus: "error", xError: error, updatedAt: new Date() }).where(eq(videos.id, video.id));
+    return { success: false, error };
   }
-  const result = await publishXPost(user, content);
+
+  let result: { success: boolean; postId?: string; error?: string };
+  if (video.videoFileDriveId) {
+    const buf = await downloadDriveVideo(video, user);
+    if (!buf) {
+      result = await publishXPost(user, content);
+    } else {
+      result = await publishXTweetWithVideo(user, content, buf);
+    }
+  } else {
+    result = await publishXPost(user, content);
+  }
+
   if (result.success) {
     await db.update(videos).set({
       xPostId: result.postId || "ok",
       xStatus: "published",
+      xError: null,
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
     console.log(`[Scheduler] X publish success: ${result.postId}`);
+  } else {
+    await db.update(videos).set({
+      xStatus: "error",
+      xError: result.error || "unknown",
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
   }
   return result;
 }

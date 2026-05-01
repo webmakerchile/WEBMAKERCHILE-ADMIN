@@ -98,19 +98,23 @@ artifacts-monorepo/
   - Dashboard shows TikTok connection card with connect/disconnect
   - StepReview has TikTok upload button alongside YouTube upload
   - Redirect URI: https://admin.webmakerchile.com/api/tiktok/callback
-- **LinkedIn (UGC posts API)**: Text-only post publishing via the LinkedIn /v2/ugcPosts endpoint
-  - OAuth 2.0 (OpenID Connect) with scopes `openid profile email w_member_social`
-  - Routes: GET /api/linkedin/auth, GET /api/linkedin/callback, GET /api/linkedin/status, POST /api/linkedin/disconnect, POST /api/linkedin/publish/:videoId
-  - Tokens (access/refresh + expiresAt + personUrn/name/picture) stored on the users table; auto-refresh helper `getValidLinkedInToken`
-  - Free tier: ~100 posts/day. Image/video uploads (asset registration) skipped for MVP — text-only with the `linkedinDescription` field on videos
+- **LinkedIn (UGC posts API)**: Text + video post publishing via the LinkedIn /v2/ugcPosts endpoint
+  - OAuth 2.0 (OpenID Connect) with scopes `openid profile email w_member_social w_organization_social rw_organization_admin`
+  - Routes: GET /api/linkedin/auth, GET /api/linkedin/callback, GET /api/linkedin/status, GET /api/linkedin/organizations, POST /api/linkedin/select-org, POST /api/linkedin/disconnect, POST /api/linkedin/publish/:videoId
+  - Tokens (access/refresh + expiresAt + personUrn/orgUrn/name/picture) stored on the users table; auto-refresh helper `getValidLinkedInToken`
+  - Personal profile + company page: `/linkedin/organizations` lists company pages the user administers (requires `rw_organization_admin`); `/linkedin/select-org` stores the chosen `linkedinOrgUrn` and posts are authored as that org URN when set, falling back to the personal `personUrn` otherwise
+  - Video flow: `publishLinkedInVideo` registers an asset (`/v2/assets?action=registerUpload` with `feedshare-video` recipe), PUTs the binary to the returned uploadUrl, then creates the UGC post with `shareMediaCategory: "VIDEO"` and the asset URN. Falls back to `publishLinkedInPost` (text-only) when the video has no Drive file
+  - Free tier: ~100 posts/day
   - Redirect URI: https://admin.webmakerchile.com/api/linkedin/callback
-- **X / Twitter (v2 tweets API)**: Text-only tweet publishing via OAuth 2.0 + PKCE confidential client
-  - Scopes: `tweet.read tweet.write users.read offline.access`
+- **X / Twitter (v2 tweets API)**: Text + video tweet publishing via OAuth 2.0 + PKCE confidential client
+  - Scopes: `tweet.read tweet.write users.read media.write offline.access`
   - Routes: GET /api/x/auth, GET /api/x/callback, GET /api/x/status, POST /api/x/disconnect, POST /api/x/publish/:videoId
   - Tokens (access/refresh + expiresAt + xUserId/xUsername) stored on the users table; auto-refresh helper `getValidXToken`
-  - Free tier: 1500 posts/month. 280 char limit enforced in the wizard and at publish time (truncation safeguard)
+  - Video flow: `publishXTweetWithVideo` uses the v2 chunked `media/upload` endpoint (INIT/APPEND/FINALIZE + STATUS polling) with the user's OAuth 2.0 Bearer token, then posts with `media.media_ids`. Falls back to `publishXPost` (text-only) if no Drive file
+  - Free tier: 1500 posts/month, video <= 512MB / 140s. 280 char limit enforced in the wizard and at publish time (truncation safeguard)
   - Redirect URI: https://admin.webmakerchile.com/api/x/callback
-- **Scheduler**: Runs every 60s in `artifacts/api-server/src/scheduler.ts`. For each video reaching its `scheduledAt`, it sequentially publishes to YouTube → TikTok → Instagram → LinkedIn → X (each step skipped when no per-platform description is configured). Sets `status = "published"` only when every requested step succeeds.
+- **AI description generation**: POST /api/content/videos/:id/generate-descriptions accepts `{ platforms: ["tiktok","instagram","youtube","linkedin","x"] }` (any subset) and returns a per-platform description tuned to each network (LinkedIn = professional + 2-3 hashtags; X ≤ 280 chars). Uses Gemini 2.5 Flash via `@workspace/integrations-gemini-ai`. The wizard's "LinkedIn y X" step exposes a "✨ Generar con IA" button that calls this endpoint with `["linkedin","x"]`
+- **Scheduler**: Runs every 60s in `artifacts/api-server/src/scheduler.ts`. For each video reaching its `scheduledAt`, it sequentially publishes to YouTube → TikTok → Instagram → LinkedIn → X (each step skipped when no per-platform description is configured). On per-platform failure it sets `<platform>Status = "error"` and persists the error message to `<platform>Error` (LinkedIn/X) so the schedule page can show it as a tooltip. Sets the parent `status = "published"` only when every requested step succeeds.
 
 ### Authentication
 - Google OAuth 2.0 login via Passport.js
