@@ -15,7 +15,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
-- **AI**: Gemini AI via Replit AI Integrations (gemini-3.1-pro-preview for idea generation, gemini-2.5-flash for descriptions/chat, gemini-3-pro-image-preview for image generation)
+- **AI**: OpenAI via Replit AI Integrations (gpt-4.1 for text generation, gpt-4.1-mini for fast tasks, gpt-image-1 for image generation). All Gemini/Anthropic calls replaced by an OpenAI compatibility shim in `lib/integrations-gemini-ai`.
 - **Authentication**: Google OAuth 2.0 (Passport.js + express-session)
 - **Google Drive**: Replit Connectors SDK (@replit/connectors-sdk)
 
@@ -46,12 +46,12 @@ artifacts-monorepo/
 - **Mobile-first layout**: Responsive design with bottom navigation bar on mobile, slide-out hamburger menu for additional items, desktop sidebar hidden on mobile. Uses `100dvh` for proper mobile viewport height. Safe area insets for iOS notch support.
 - **Dashboard**: Overview of video content stats, quick actions, recent activity, YouTube/TikTok/Instagram connection status cards
 - **Video Manager**: Guided step-by-step wizard for the editor to complete each video without leaving the page. Steps: Basic Info → Cover (AI generation) → TikTok & Instagram descriptions → YouTube title & description → Review & Schedule to all 3 platforms. Each video shows progress percentage. DB includes per-platform status fields (tiktokStatus, instagramStatus, youtubeStatus) ready for API integration. Step 1 includes Drive file picker modal to select video files directly from Google Drive (browsable with folder navigation).
-- **Cover Generator**: AI-powered cover image generation using Gemini with reference images
+- **Cover Generator**: AI-powered cover image generation using OpenAI gpt-image-1 with reference images
 - **Google Drive Browser**: Browse and manage files in connected Google Drive folder
 - **Estudio de Trabajo (Recording Studio)**: Full video content creation workspace (migrated from webmakerchile.com)
   - AI idea generation by category (Corto Viral, Problema/Solución, Marketing, Historia, Educativo, Behind the Scenes, Opinión, Pack del Día)
   - Video ideas queue with filtering, saving, marking as recorded, bulk operations, batch date grouping
-  - AI cover image generation using Gemini 3-pro-image-preview with fox mascot reference (fox-reference.png)
+  - AI cover image generation using OpenAI gpt-image-1 with fox mascot reference (fox-reference.png)
   - Cover images saved locally to public/uploads/covers/ (served at /uploads/covers/)
   - Teleprompter with speed control, mirror mode, fullscreen, font size adjustment, voice recognition
   - Camera recording with pause/resume, camera switching, mirror, timer, video preview/download
@@ -64,10 +64,10 @@ artifacts-monorepo/
 - **Schedule Manager**: Schedule videos for automatic publishing to Google Drive
 - **Generador de Comunidad**:
   - **Descripciones (Carruseles)**: Multi-slide carrusel generation with per-slide retry, ZIP download, granular regenerate controls
-  - **Historias (Stories 9:16)**: Single frame ("única") or narrative series (2–5 frames). Series use role-based structure: 2=[hook,cta], 3=[hook,desarrollo,cta], 4=[hook,problema,solucion,cta], 5=[hook,contexto,problema,solucion,cta]. Each role has its own pose+visualHint and CTA style (microCTA "Sigue viendo" for intermediate frames, conversion CTA with WhatsApp for final). "Auto" mode calls Claude (`/community/historias/detectar-formato`) to recommend formato + cantidad based on the concept (e.g., "N tips" → N+2 frames). Frames are generated in parallel via `Promise.allSettled` so partial failures surface as per-frame retry buttons. UI shows carousel thumbnail strip with role labels, frame counter pill (N/Total) rendered top-right, ZIP download with textos.txt.
+  - **Historias (Stories 9:16)**: Single frame ("única") or narrative series (2–5 frames). Series use role-based structure: 2=[hook,cta], 3=[hook,desarrollo,cta], 4=[hook,problema,solucion,cta], 5=[hook,contexto,problema,solucion,cta]. Each role has its own pose+visualHint and CTA style (microCTA "Sigue viendo" for intermediate frames, conversion CTA with WhatsApp for final). "Auto" mode calls OpenAI gpt-4.1 (`/community/historias/detectar-formato`) to recommend formato + cantidad based on the concept (e.g., "N tips" → N+2 frames). Frames are generated in parallel via `Promise.allSettled` so partial failures surface as per-frame retry buttons. UI shows carousel thumbnail strip with role labels, frame counter pill (N/Total) rendered top-right, ZIP download with textos.txt.
 
 ### Integrations
-- **Gemini AI**: Image generation (covers/portadas) with reference image support via Replit AI Integrations proxy
+- **OpenAI**: Text (gpt-4.1/gpt-4.1-mini) and image generation (gpt-image-1) via Replit AI Integrations proxy. Shim in `lib/integrations-gemini-ai` preserves the Gemini API shape so routes work without rewriting call sites. Anthropic calls (community route) also replaced with OpenAI.
   - Reference image for covers: `artifacts/api-server/assets/reference-cover.jpg` (fox mascot, flat vector art style)
   - All cover generations automatically use this reference image for consistent branding
 - **Google Drive**: File management via Replit Connectors SDK (folder: 1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB)
@@ -129,7 +129,7 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
-Express 5 API server with routes for health, Gemini AI, Google Drive, and content management.
+Express 5 API server with routes for health, OpenAI (via Gemini shim), Google Drive, and content management.
 
 ### `artifacts/admin-panel` (`@workspace/admin-panel`)
 React + Vite admin panel. Dark mode professional UI with orange accents. All UI in Spanish.
@@ -138,7 +138,7 @@ React + Vite admin panel. Dark mode professional UI with orange accents. All UI 
 Drizzle ORM with PostgreSQL. Tables: conversations, messages, videos.
 
 ### `lib/integrations-gemini-ai` (`@workspace/integrations-gemini-ai`)
-Gemini AI integration with client, image generation, and batch processing utilities.
+OpenAI compatibility shim that exposes a Gemini-shaped API (`ai.models.generateContent`, `ai.models.generateContentStream`, `ai.images`) backed by OpenAI models (gpt-4.1, gpt-4.1-mini, gpt-image-1). Also exports `generateImage` helper for image generation with optional reference image (uses `images.edit`).
 
 ### `lib/api-spec` (`@workspace/api-spec`)
 OpenAPI 3.1 spec with endpoints for health, gemini, drive, and content management.

@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod/v4";
-import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { db } from "@workspace/db";
 import { communityContent } from "@workspace/db/schema";
@@ -11,10 +10,28 @@ import path from "path";
 
 const router: IRouter = Router();
 
-const anthropic = new Anthropic({
-  apiKey: process.env["AI_INTEGRATIONS_ANTHROPIC_API_KEY"]!,
-  baseURL: process.env["AI_INTEGRATIONS_ANTHROPIC_BASE_URL"]!,
-});
+const anthropic = {
+  messages: {
+    create: async (params: {
+      model: string;
+      max_tokens: number;
+      system?: string;
+      messages: { role: "user" | "assistant"; content: string }[];
+      temperature?: number;
+    }) => {
+      const msgs: { role: "system" | "user" | "assistant"; content: string }[] = [];
+      if (params.system) msgs.push({ role: "system", content: params.system });
+      msgs.push(...params.messages);
+      const resp = await ai._openai.chat.completions.create({
+        model: "gpt-4.1",
+        messages: msgs,
+        max_completion_tokens: params.max_tokens,
+      });
+      const text = resp.choices[0]?.message?.content ?? "";
+      return { content: [{ type: "text" as const, text }] };
+    },
+  },
+};
 
 async function resolveAsset(...segments: string[]): Promise<string> {
   const candidates = [

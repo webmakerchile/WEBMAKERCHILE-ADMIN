@@ -6,6 +6,7 @@ import multer from "multer";
 import path from "path";
 import crypto from "crypto";
 import { mkdirSync } from "fs";
+import { ai } from "@workspace/integrations-gemini-ai";
 
 const router: IRouter = Router();
 
@@ -41,15 +42,6 @@ router.get("/studio/ideas", async (_req, res) => {
 
 router.post("/studio/ideas/generate", async (req, res) => {
   try {
-    const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI({
-      apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-      httpOptions: {
-        apiVersion: "",
-        baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-      },
-    });
-
     const today = new Date().toLocaleDateString("es-CL", {
       timeZone: "America/Santiago",
       year: "numeric",
@@ -906,12 +898,6 @@ router.post("/studio/finalize-upload", async (req, res) => {
         const vidDescText = ideaDataForDesc?.descripcion || ideaTitle;
         const vidGuionText = ideaDataForDesc?.guion || ideaGuion || "";
 
-        const { GoogleGenAI: DescGenAI } = await import("@google/genai");
-        const descAiClient = new DescGenAI({
-          apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY!,
-          httpOptions: { apiVersion: "", baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL },
-        });
-
         const descPromptText = `Genera descripciones para redes sociales de un video de WebMakerChile (empresa chilena de tecnologia, automatizacion, software a medida, chatbots IA, apps moviles e integraciones).
 
 TITULO DEL VIDEO: "${ideaTitle}"
@@ -945,7 +931,7 @@ REGLAS:
 - Hashtags en minusculas sin espacios
 - Cada descripcion UNICA y adaptada a cada plataforma`;
 
-        const descResp = await descAiClient.models.generateContent({
+        const descResp = await ai.models.generateContent({
           model: "gemini-2.5-flash",
           contents: [{ role: "user", parts: [{ text: descPromptText }] }],
         });

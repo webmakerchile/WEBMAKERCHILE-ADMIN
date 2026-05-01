@@ -1,24 +1,5 @@
-import { GoogleGenAI, Modality } from "@google/genai";
-
-if (!process.env.AI_INTEGRATIONS_GEMINI_BASE_URL) {
-  throw new Error(
-    "AI_INTEGRATIONS_GEMINI_BASE_URL must be set. Did you forget to provision the Gemini AI integration?",
-  );
-}
-
-if (!process.env.AI_INTEGRATIONS_GEMINI_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_GEMINI_API_KEY must be set. Did you forget to provision the Gemini AI integration?",
-  );
-}
-
-export const ai = new GoogleGenAI({
-  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
-  httpOptions: {
-    apiVersion: "",
-    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-  },
-});
+import { ai } from "../client";
+import { toFile } from "openai";
 
 export interface GenerateImageOptions {
   prompt: string;
@@ -29,42 +10,37 @@ export interface GenerateImageOptions {
 export async function generateImage(
   promptOrOptions: string | GenerateImageOptions
 ): Promise<{ b64_json: string; mimeType: string }> {
-  const options = typeof promptOrOptions === "string"
-    ? { prompt: promptOrOptions }
-    : promptOrOptions;
-
-  const parts: any[] = [];
+  const options =
+    typeof promptOrOptions === "string"
+      ? { prompt: promptOrOptions }
+      : promptOrOptions;
 
   if (options.referenceImageBase64) {
-    parts.push({
-      inlineData: {
-        data: options.referenceImageBase64,
-        mimeType: options.referenceImageMimeType || "image/jpeg",
-      },
+    const mimeType = (options.referenceImageMimeType || "image/png") as string;
+    const ext = mimeType.split("/")[1] || "png";
+    const refBuf = Buffer.from(options.referenceImageBase64, "base64");
+    const imageFile = await toFile(refBuf, `reference.${ext}`, { type: mimeType });
+    const response = await ai.images.edit({
+      model: "gpt-image-1",
+      image: imageFile,
+      prompt: options.prompt,
+      size: "1024x1536",
     });
+    const b64_json = response.data[0]?.b64_json ?? "";
+    if (!b64_json) throw new Error("No image data in response");
+    return { b64_json, mimeType: "image/png" };
   }
 
-  parts.push({ text: options.prompt });
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3-pro-image-preview",
-    contents: [{ role: "user", parts }],
-    config: {
-      responseModalities: [Modality.TEXT, Modality.IMAGE],
-    },
+  const response = await ai.images.generate({
+    model: "gpt-image-1",
+    prompt: options.prompt,
+    n: 1,
+    size: "1024x1536",
   });
 
-  const candidate = response.candidates?.[0];
-  const imagePart = candidate?.content?.parts?.find(
-    (part: { inlineData?: { data?: string; mimeType?: string } }) => part.inlineData
-  );
-
-  if (!imagePart?.inlineData?.data) {
-    throw new Error("No image data in response");
-  }
-
-  return {
-    b64_json: imagePart.inlineData.data,
-    mimeType: imagePart.inlineData.mimeType || "image/png",
-  };
+  const b64_json = response.data[0]?.b64_json ?? "";
+  if (!b64_json) throw new Error("No image data in response");
+  return { b64_json, mimeType: "image/png" };
 }
+
+export { ai };

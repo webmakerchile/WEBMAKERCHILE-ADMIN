@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { seleccionarPosePortada, bloquePoseRequerida } from "../../lib/pose-bank.js";
+import { ai } from "@workspace/integrations-gemini-ai";
 
 async function resolveAsset(...segments: string[]): Promise<string> {
   const candidates = [
@@ -161,15 +162,6 @@ async function buildTextOverlay(title: string): Promise<Buffer> {
 }
 
 async function generateFoxIllustration(videoDescription: string): Promise<Buffer> {
-  const { GoogleGenAI, Modality } = await import("@google/genai");
-  const ai = new GoogleGenAI({
-    apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY!,
-    httpOptions: {
-      apiVersion: "",
-      baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
-    },
-  });
-
   const refImageBuffer = await readFile(await resolveAsset("public", "fox-reference.png"));
   const refImageBase64 = refImageBuffer.toString("base64");
   const prompt = buildIllustrationPrompt(videoDescription);
@@ -202,7 +194,7 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
           },
         ],
         config: {
-          responseModalities: [Modality.TEXT, Modality.IMAGE],
+          responseModalities: ["TEXT", "IMAGE"],
         },
       });
 

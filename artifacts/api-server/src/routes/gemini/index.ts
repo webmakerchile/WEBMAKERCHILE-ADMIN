@@ -10,8 +10,7 @@ import {
   GenerateGeminiImageBody,
   GenerateCoverBody,
 } from "@workspace/api-zod";
-import { readFile } from "fs/promises";
-import path from "path";
+import { toFile } from "openai";
 import { seleccionarPosePortada, bloquePoseRequerida } from "../../lib/pose-bank.js";
 
 const router: IRouter = Router();
@@ -79,7 +78,7 @@ router.post("/gemini/conversations/:id/messages", async (req, res) => {
   const id = Number(req.params.id);
   const body = SendGeminiMessageBody.parse(req.body);
 
-  const [userMsg] = await db
+  await db
     .insert(messages)
     .values({ conversationId: id, role: "user", content: body.content })
     .returning();
@@ -97,17 +96,17 @@ router.post("/gemini/conversations/:id/messages", async (req, res) => {
   let fullResponse = "";
 
   try {
-    const stream = await ai.models.generateContentStream({
+    const stream = ai.models.generateContentStream({
       model: "gemini-2.5-flash",
       contents: chatHistory.map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
+        role: m.role === "assistant" ? "model" : "user" as "model" | "user",
         parts: [{ text: m.content }],
       })),
       config: { maxOutputTokens: 8192 },
     });
 
-    for await (const chunk of stream) {
-      const text = chunk.text;
+    for await (const chunk of await stream) {
+      const text = chunk.text || "";
       if (text) {
         fullResponse += text;
         res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
@@ -145,7 +144,6 @@ router.post("/gemini/generate-image", async (req, res) => {
 router.post("/gemini/generate-cover", async (req, res) => {
   const body = GenerateCoverBody.parse(req.body);
 
-  // Pose rotativa con detección emocional + memoria anti-repetición.
   const temaParaEmocion = `${body.title} ${body.description || ""}`;
   const poseElegida = seleccionarPosePortada(temaParaEmocion);
   const selectedPose = poseElegida.descripcion;
@@ -209,47 +207,24 @@ ${bloquePoseRequerida(poseElegida)}`;
 
   function isRateLimitError(err: any): boolean {
     const msg = typeof err?.message === "string" ? err.message : "";
-    return msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Resource exhausted");
+    return msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Resource exhausted") || msg.includes("rate limit");
   }
 
   async function attemptGenerate(attempt: number): Promise<{ b64_json: string; mimeType: string }> {
     console.log(`[CoverGen] Attempt ${attempt}/${MAX_RETRIES}...`);
     try {
       if (body.referenceImageBase64) {
-        const response = await ai.models.generateContent({
-          model: "gemini-3-pro-image-preview",
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  inlineData: {
-                    data: body.referenceImageBase64,
-                    mimeType: "image/png",
-                  },
-                },
-                { text: basePrompt },
-              ],
-            },
-          ],
-          config: {
-            responseModalities: ["TEXT", "IMAGE"],
-          },
+        const refBuffer = Buffer.from(body.referenceImageBase64, "base64");
+        const imageFile = await toFile(refBuffer, "reference.png", { type: "image/png" });
+        const response = await ai.images.edit({
+          model: "gpt-image-1",
+          image: imageFile,
+          prompt: basePrompt,
+          size: "1024x1536",
         });
-
-        const candidate = response.candidates?.[0];
-        const imagePart = candidate?.content?.parts?.find(
-          (part: any) => part.inlineData
-        );
-
-        if (!imagePart?.inlineData?.data) {
-          throw new Error("Gemini no devolvió imagen en este intento");
-        }
-
-        return {
-          b64_json: imagePart.inlineData.data,
-          mimeType: imagePart.inlineData.mimeType || "image/png",
-        };
+        const b64_json = response.data[0]?.b64_json ?? "";
+        if (!b64_json) throw new Error("No se recibió imagen en la respuesta");
+        return { b64_json, mimeType: "image/png" };
       } else {
         return await generateImage(basePrompt);
       }
@@ -264,9 +239,7 @@ ${bloquePoseRequerida(poseElegida)}`;
         await new Promise(r => setTimeout(r, delay));
         return attemptGenerate(attempt + 1);
       }
-      if (rateLimited) {
-        throw new Error("RATE_LIMIT");
-      }
+      if (rateLimited) throw new Error("RATE_LIMIT");
       throw err;
     }
   }
@@ -279,7 +252,6 @@ ${bloquePoseRequerida(poseElegida)}`;
 
     const COVER_WIDTH = 1080;
     const COVER_HEIGHT = 1920;
-    // Mismo layout que historias: 150px de aire arriba, título centrado en zona 150-430.
     const TEXT_ZONE_TOP = 150;
     const TEXT_ZONE_BOTTOM = 430;
     const TEXT_ZONE_HEIGHT = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
@@ -302,7 +274,6 @@ ${bloquePoseRequerida(poseElegida)}`;
       return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
     }
 
-    // Sentence case (sin toUpperCase) + Inter, mismo stack que historias y descripciones.
     const cleanTitle = body.title.replace(/\*\*/g, "").trim();
     const lines = splitLines(cleanTitle, 18).slice(0, 5);
     const lineCount = lines.length;

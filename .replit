@@ -26,22 +26,38 @@ author = "agent"
 task = "workflow.run"
 args = "Backend API"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Frontend"
+
 [[workflows.workflow]]
 name = "Backend API"
 author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=3001 pnpm --filter @workspace/api-server run dev"
 waitForPort = 3001
 
+[[workflows.workflow]]
+name = "Frontend"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/admin-panel run dev"
+waitForPort = 5000
+
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
-integrations = ["google-drive:1.0.0"]
+integrations = ["google-drive:1.0.0", "javascript_openai_ai_integrations:2.0.0"]
 
 [postMerge]
 path = "scripts/post-merge.sh"
