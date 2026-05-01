@@ -32,8 +32,59 @@ export default function Dashboard() {
   const [igLoading, setIgLoading] = useState(true);
   const [linkedinStatus, setLinkedinStatus] = useState<any>(null);
   const [linkedinLoading, setLinkedinLoading] = useState(true);
+  const [linkedinOrgs, setLinkedinOrgs] = useState<any[]>([]);
+  const [linkedinOrgsLoading, setLinkedinOrgsLoading] = useState(false);
   const [xStatus, setXStatus] = useState<any>(null);
   const [xLoading, setXLoading] = useState(true);
+
+  const refreshLinkedin = () => {
+    setLinkedinLoading(true);
+    fetch(`${API_BASE}/linkedin/status`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setLinkedinStatus(data))
+      .catch(() => setLinkedinStatus({ connected: false, message: "Error de conexión" }))
+      .finally(() => setLinkedinLoading(false));
+  };
+  const refreshX = () => {
+    setXLoading(true);
+    fetch(`${API_BASE}/x/status`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => setXStatus(data))
+      .catch(() => setXStatus({ connected: false, message: "Error de conexión" }))
+      .finally(() => setXLoading(false));
+  };
+  const disconnectLinkedin = async () => {
+    if (!confirm("¿Desconectar LinkedIn?")) return;
+    await fetch(`${API_BASE}/linkedin/disconnect`, { method: "POST", credentials: "include" });
+    setLinkedinOrgs([]);
+    refreshLinkedin();
+  };
+  const disconnectX = async () => {
+    if (!confirm("¿Desconectar X?")) return;
+    await fetch(`${API_BASE}/x/disconnect`, { method: "POST", credentials: "include" });
+    refreshX();
+  };
+  const loadLinkedinOrgs = async () => {
+    setLinkedinOrgsLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/linkedin/organizations`, { credentials: "include" });
+      const data = await r.json();
+      setLinkedinOrgs(data.organizations || []);
+    } catch {
+      setLinkedinOrgs([]);
+    } finally {
+      setLinkedinOrgsLoading(false);
+    }
+  };
+  const selectLinkedinOrg = async (orgUrn: string | null) => {
+    await fetch(`${API_BASE}/linkedin/select-org`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orgUrn }),
+    });
+    refreshLinkedin();
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/youtube/channel`, { credentials: "include" })
@@ -358,19 +409,56 @@ export default function Dashboard() {
           {linkedinLoading ? (
             <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
           ) : linkedinStatus?.connected ? (
-            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-              {linkedinStatus.user?.picture && (
-                <img src={linkedinStatus.user.picture} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="font-semibold text-sm text-foreground truncate">
-                    {linkedinStatus.user?.name || "LinkedIn"}
-                  </h3>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                {linkedinStatus.user?.picture && (
+                  <img src={linkedinStatus.user.picture} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-semibold text-sm text-foreground truncate">
+                      {linkedinStatus.user?.name || "LinkedIn"}
+                    </h3>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {linkedinStatus.user?.orgUrn ? "Publicando como Página" : "Publicando como perfil personal"} · ~100/día
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">Conectado · ~100 posts/día</p>
               </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  onClick={() => { if (linkedinOrgs.length === 0) loadLinkedinOrgs(); else setLinkedinOrgs([]); }}
+                  className="px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/5 text-muted-foreground"
+                >
+                  {linkedinOrgs.length > 0 ? "Ocultar páginas" : (linkedinOrgsLoading ? "Cargando..." : "Páginas de empresa")}
+                </button>
+                <button
+                  onClick={disconnectLinkedin}
+                  className="px-2.5 py-1 rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10"
+                >
+                  Desconectar
+                </button>
+              </div>
+              {linkedinOrgs.length > 0 && (
+                <div className="space-y-1 pt-1 border-t border-white/5">
+                  <button
+                    onClick={() => selectLinkedinOrg(null)}
+                    className={`w-full text-left text-xs px-2 py-1.5 rounded ${!linkedinStatus.user?.orgUrn ? "bg-emerald-500/10 text-emerald-300" : "hover:bg-white/5 text-muted-foreground"}`}
+                  >
+                    Perfil personal
+                  </button>
+                  {linkedinOrgs.map((o) => (
+                    <button
+                      key={o.urn}
+                      onClick={() => selectLinkedinOrg(o.urn)}
+                      className={`w-full text-left text-xs px-2 py-1.5 rounded ${linkedinStatus.user?.orgUrn === o.urn ? "bg-emerald-500/10 text-emerald-300" : "hover:bg-white/5 text-muted-foreground"}`}
+                    >
+                      {o.name || o.urn}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <a
@@ -399,18 +487,28 @@ export default function Dashboard() {
           {xLoading ? (
             <div className="h-16 rounded-xl bg-white/5 animate-pulse" />
           ) : xStatus?.connected ? (
-            <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-              <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center flex-shrink-0 border border-white/10">
-                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <h3 className="font-semibold text-sm text-foreground truncate">
-                    @{xStatus.user?.username || "X"}
-                  </h3>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                <div className="w-10 h-10 rounded-full bg-black flex items-center justify-center flex-shrink-0 border border-white/10">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
                 </div>
-                <p className="text-xs text-muted-foreground">Conectado · 1500 posts/mes (Free)</p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-semibold text-sm text-foreground truncate">
+                      @{xStatus.user?.username || "X"}
+                    </h3>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Conectado · 1500 posts/mes (Free)</p>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={disconnectX}
+                  className="px-2.5 py-1 text-xs rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10"
+                >
+                  Desconectar
+                </button>
               </div>
             </div>
           ) : (
