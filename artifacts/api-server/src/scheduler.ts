@@ -564,14 +564,34 @@ async function processScheduledVideos() {
         !results.x.success && results.x.error ? `X: ${results.x.error}` : "",
       ].filter(Boolean).join("; ");
 
+      const anyAttempted =
+        (video.youtubeTitle || video.youtubeDescription) ||
+        video.tiktokDescription || video.description ||
+        video.instagramDescription ||
+        video.linkedinDescription ||
+        video.xDescription;
+      const anyRealSuccess =
+        (results.youtube.success && (video.youtubeTitle || video.youtubeDescription)) ||
+        (results.tiktok.success && (video.tiktokDescription || video.description)) ||
+        (results.instagram.success && (video.instagramDescription || video.description)) ||
+        (results.linkedin.success && video.linkedinDescription) ||
+        (results.x.success && video.xDescription);
+
+      let nextStatus: string;
+      if (allSuccess && anyAttempted) nextStatus = "published";
+      else if (anyRealSuccess) nextStatus = "partial";
+      else nextStatus = "error";
+
       await db.update(videos).set({
-        status: allSuccess ? "published" : "error",
-        publishedAt: allSuccess ? new Date() : undefined,
+        status: nextStatus,
+        publishedAt: nextStatus === "published" || nextStatus === "partial" ? new Date() : undefined,
         updatedAt: new Date(),
       }).where(eq(videos.id, video.id));
 
-      if (allSuccess) {
+      if (nextStatus === "published") {
         console.log(`[Scheduler] Video #${video.id} published to all platforms!`);
+      } else if (nextStatus === "partial") {
+        console.warn(`[Scheduler] Video #${video.id} published partially. Errors: ${errors}`);
       } else {
         console.error(`[Scheduler] Video #${video.id} had errors: ${errors}`);
       }

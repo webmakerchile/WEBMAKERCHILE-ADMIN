@@ -122,6 +122,8 @@ function getVideoProgress(video: VideoData): number {
 function getStatusBadge(video: VideoData) {
   const progress = getVideoProgress(video);
   if (video.status === "published") return { label: "Publicado", className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" };
+  if (video.status === "partial") return { label: "Parcial", className: "bg-amber-500/10 text-amber-400 border-amber-500/20" };
+  if (video.status === "error") return { label: "Error", className: "bg-rose-500/10 text-rose-400 border-rose-500/20" };
   if (video.status === "scheduled") return { label: "Programado", className: "bg-orange-500/10 text-orange-400 border-orange-500/20" };
   if (progress === 100) return { label: "Listo", className: "bg-blue-500/10 text-blue-400 border-blue-500/20" };
   if (progress > 0) return { label: `${progress}% completo`, className: "bg-purple-500/10 text-purple-400 border-purple-500/20" };
