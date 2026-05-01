@@ -50,20 +50,43 @@ function stripCData(s: string): string {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
 }
 
+// Allow only http(s) URLs from feeds. Drop javascript:, data:, etc. that
+// would otherwise reach <a href> / <img src> in the dashboard.
+function safeHttpUrl(raw: string | undefined | null): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = decodeXmlEntities(raw).trim();
+  if (!trimmed) return undefined;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function extractThumbnail(block: string, description: string): string | undefined {
-  const mediaThumb = block.match(/<media:thumbnail[^>]*url="([^"]+)"/i);
-  if (mediaThumb) return mediaThumb[1];
-  const mediaContent = block.match(/<media:content[^>]*url="([^"]+)"[^>]*medium="image"/i)
-    || block.match(/<media:content[^>]*medium="image"[^>]*url="([^"]+)"/i)
-    || block.match(/<media:content[^>]*url="([^"]+)"/i);
-  if (mediaContent) return mediaContent[1];
-  const enclosure = block.match(/<enclosure[^>]*url="([^"]+)"[^>]*type="image\//i)
-    || block.match(/<enclosure[^>]*type="image\/[^"]*"[^>]*url="([^"]+)"/i);
-  if (enclosure) return enclosure[1];
-  const itunesImg = block.match(/<itunes:image[^>]*href="([^"]+)"/i);
-  if (itunesImg) return itunesImg[1];
-  const inDesc = description.match(/<img[^>]*src="([^"]+)"/i);
-  if (inDesc) return inDesc[1];
+  const attr = `(?:"([^"]+)"|'([^']+)')`;
+  const tryMatch = (re: RegExp): string | undefined => {
+    const m = block.match(re);
+    if (!m) return undefined;
+    return safeHttpUrl(m[1] || m[2]);
+  };
+  const candidates = [
+    new RegExp(`<media:thumbnail[^>]*url=${attr}`, "i"),
+    new RegExp(`<media:content[^>]*url=${attr}[^>]*medium="image"`, "i"),
+    new RegExp(`<media:content[^>]*medium="image"[^>]*url=${attr}`, "i"),
+    new RegExp(`<media:content[^>]*url=${attr}`, "i"),
+    new RegExp(`<enclosure[^>]*url=${attr}[^>]*type="image\\/`, "i"),
+    new RegExp(`<enclosure[^>]*type="image\\/[^"]*"[^>]*url=${attr}`, "i"),
+    new RegExp(`<itunes:image[^>]*href=${attr}`, "i"),
+  ];
+  for (const re of candidates) {
+    const found = tryMatch(re);
+    if (found) return found;
+  }
+  const inDesc = description.match(/<img[^>]*src=(?:"([^"]+)"|'([^']+)')/i);
+  if (inDesc) return safeHttpUrl(inDesc[1] || inDesc[2]);
   return undefined;
 }
 
@@ -84,7 +107,7 @@ function parseRssItems(xml: string, source: string): FeedItem[] {
     if (!title) continue;
     items.push({
       title,
-      link,
+      link: safeHttpUrl(link) ?? "",
       pubDate,
       description: rawDescription.replace(/<[^>]+>/g, "").slice(0, 240),
       source,
@@ -110,7 +133,7 @@ function parseAtomEntries(xml: string, source: string): FeedItem[] {
     const rawDescription = descMatch ? decodeXmlEntities(stripCData(descMatch[1] || "")) : "";
     items.push({
       title,
-      link: linkMatch ? linkMatch[1] : "",
+      link: safeHttpUrl(linkMatch ? linkMatch[1] : "") ?? "",
       pubDate: pubMatch ? (pubMatch[1] || "").trim() : "",
       description: rawDescription.replace(/<[^>]+>/g, "").slice(0, 240),
       source,

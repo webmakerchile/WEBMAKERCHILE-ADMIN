@@ -1,7 +1,10 @@
 import path from "path";
+import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import { build as esbuild } from "esbuild";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, copyFile } from "fs/promises";
+
+const require = createRequire(import.meta.url);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +70,15 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // connect-pg-simple loads ./table.sql at runtime via fs.readFile relative
+  // to its own __dirname. esbuild bundles the JS but not the SQL data file,
+  // so the bundle ends up looking for `<distDir>/table.sql`. Copy it.
+  // This MUST succeed: without it, session table bootstrap throws ENOENT
+  // in production and login redirects fail with a 500. Fail the build.
+  const tableSqlPath = require.resolve("connect-pg-simple/table.sql");
+  await copyFile(tableSqlPath, path.resolve(distDir, "table.sql"));
+  console.log("copied connect-pg-simple/table.sql -> dist/table.sql");
 }
 
 buildAll().catch((err) => {
