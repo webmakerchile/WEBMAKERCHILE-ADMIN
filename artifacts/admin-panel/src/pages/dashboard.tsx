@@ -531,21 +531,25 @@ function IdeasKanban() {
 
 /* ------------------------- Inspirations ------------------------- */
 
-type NewsItem = { title: string; link: string; pubDate?: string; source?: string };
+type NewsItem = { title: string; link: string; pubDate?: string; source?: string; thumbnail?: string };
+type CompetitorPostsResponse = { items?: NewsItem[]; error?: string; cached?: boolean };
 type Competitor = { id: number; platform: string; handle: string; displayName?: string | null };
 
 function CompetitorPosts({ competitorId }: { competitorId: number }) {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery<CompetitorPostsResponse>({
     queryKey: ["competitor-posts", competitorId],
     queryFn: async () => {
       const r = await fetch(`${API_BASE}/inspirations/competitors/${competitorId}/posts`, {
         credentials: "include",
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
     staleTime: 5 * 60_000,
+    retry: 1,
   });
   const items: NewsItem[] = data?.items || [];
+  const adapterError = data?.error;
   if (isLoading) {
     return (
       <div className="space-y-1.5 mt-2 pl-9">
@@ -555,29 +559,58 @@ function CompetitorPosts({ competitorId }: { competitorId: number }) {
       </div>
     );
   }
+  if (isError) {
+    return (
+      <p className="text-[11px] text-rose-300/80 mt-2 pl-9">
+        No se pudo cargar: {error instanceof Error ? error.message : "error de red"}
+      </p>
+    );
+  }
   if (items.length === 0) {
     return (
       <p className="text-[11px] text-muted-foreground/70 mt-2 pl-9">
-        Sin posts recientes disponibles.
+        {adapterError
+          ? `Sin posts disponibles (${adapterError}).`
+          : "Sin posts recientes disponibles."}
       </p>
     );
   }
   return (
     <div className="space-y-1 mt-2 pl-9">
+      {adapterError && (
+        <p className="text-[10px] text-amber-300/80 px-1.5">
+          Aviso: {adapterError}
+        </p>
+      )}
       {items.slice(0, 5).map((it, i) => (
         <a
           key={i}
           href={it.link}
           target="_blank"
           rel="noreferrer noopener"
-          className="block rounded-md p-1.5 hover:bg-white/5 transition group"
+          className="flex items-start gap-2 rounded-md p-1.5 hover:bg-white/5 transition group"
         >
-          <p className="text-[12px] font-medium leading-snug line-clamp-2 group-hover:text-primary">
-            {it.title}
-          </p>
-          {it.pubDate && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">{relativeTime(it.pubDate)}</p>
+          {it.thumbnail ? (
+            <img
+              src={it.thumbnail}
+              alt=""
+              loading="lazy"
+              className="w-12 h-12 rounded-md object-cover flex-shrink-0 bg-white/5"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <span className="w-12 h-12 rounded-md bg-white/5 flex-shrink-0" />
           )}
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-medium leading-snug line-clamp-2 group-hover:text-primary">
+              {it.title}
+            </p>
+            {it.pubDate && (
+              <p className="text-[10px] text-muted-foreground mt-0.5">{relativeTime(it.pubDate)}</p>
+            )}
+          </div>
         </a>
       ))}
     </div>

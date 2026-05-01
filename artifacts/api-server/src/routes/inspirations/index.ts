@@ -17,6 +17,7 @@ type FeedItem = {
   pubDate: string;
   description: string;
   source: string;
+  thumbnail?: string;
 };
 
 const NEWS_FEEDS_DEFAULT = [
@@ -49,6 +50,23 @@ function stripCData(s: string): string {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
 }
 
+function extractThumbnail(block: string, description: string): string | undefined {
+  const mediaThumb = block.match(/<media:thumbnail[^>]*url="([^"]+)"/i);
+  if (mediaThumb) return mediaThumb[1];
+  const mediaContent = block.match(/<media:content[^>]*url="([^"]+)"[^>]*medium="image"/i)
+    || block.match(/<media:content[^>]*medium="image"[^>]*url="([^"]+)"/i)
+    || block.match(/<media:content[^>]*url="([^"]+)"/i);
+  if (mediaContent) return mediaContent[1];
+  const enclosure = block.match(/<enclosure[^>]*url="([^"]+)"[^>]*type="image\//i)
+    || block.match(/<enclosure[^>]*type="image\/[^"]*"[^>]*url="([^"]+)"/i);
+  if (enclosure) return enclosure[1];
+  const itunesImg = block.match(/<itunes:image[^>]*href="([^"]+)"/i);
+  if (itunesImg) return itunesImg[1];
+  const inDesc = description.match(/<img[^>]*src="([^"]+)"/i);
+  if (inDesc) return inDesc[1];
+  return undefined;
+}
+
 function parseRssItems(xml: string, source: string): FeedItem[] {
   const items: FeedItem[] = [];
   const itemRegex = /<item[\s\S]*?<\/item>/gi;
@@ -62,14 +80,15 @@ function parseRssItems(xml: string, source: string): FeedItem[] {
     const title = get("title");
     const link = get("link");
     const pubDate = get("pubDate");
-    const description = get("description");
+    const rawDescription = get("description");
     if (!title) continue;
     items.push({
       title,
       link,
       pubDate,
-      description: description.replace(/<[^>]+>/g, "").slice(0, 240),
+      description: rawDescription.replace(/<[^>]+>/g, "").slice(0, 240),
       source,
+      thumbnail: extractThumbnail(item, rawDescription),
     });
   }
   return items;
@@ -88,12 +107,14 @@ function parseAtomEntries(xml: string, source: string): FeedItem[] {
       || entry.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i);
     const title = titleMatch ? decodeXmlEntities(stripCData(titleMatch[1] || "")).trim() : "";
     if (!title) continue;
+    const rawDescription = descMatch ? decodeXmlEntities(stripCData(descMatch[1] || "")) : "";
     items.push({
       title,
       link: linkMatch ? linkMatch[1] : "",
       pubDate: pubMatch ? (pubMatch[1] || "").trim() : "",
-      description: descMatch ? decodeXmlEntities(stripCData(descMatch[1] || "")).replace(/<[^>]+>/g, "").slice(0, 240) : "",
+      description: rawDescription.replace(/<[^>]+>/g, "").slice(0, 240),
       source,
+      thumbnail: extractThumbnail(entry, rawDescription),
     });
   }
   return items;
@@ -202,7 +223,82 @@ router.delete("/inspirations/competitors/:id", async (req: Request, res: Respons
   res.json({ success: true });
 });
 
-const competitorPostsCache = new Map<string, { fetchedAt: number; items: FeedItem[] }>();
+type AdapterResult = { items: FeedItem[]; error?: string };
+
+const UA = { "User-Agent": "Mozilla/5.0 WebMakerAdmin/1.0" };
+
+async function fetchFeedXml(urls: string[], source: string): Promise<AdapterResult> {
+  let lastError: string | undefined;
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: UA });
+      if (!r.ok) {
+        lastError = `${source}: HTTP ${r.status}`;
+        continue;
+      }
+      const xml = await r.text();
+      const items = (xml.includes("<entry") ? parseAtomEntries(xml, source) : parseRssItems(xml, source)).slice(0, 10);
+      if (items.length > 0) return { items };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  return { items: [], error: lastError };
+}
+
+async function fetchYoutube(handle: string): Promise<AdapterResult> {
+  const h = handle.replace(/^@/, "");
+  const urls = h.startsWith("UC")
+    ? [`https://www.youtube.com/feeds/videos.xml?channel_id=${h}`]
+    : [
+        `https://www.youtube.com/feeds/videos.xml?user=${h}`,
+        `https://www.youtube.com/feeds/videos.xml?channel_id=${h}`,
+      ];
+  const result = await fetchFeedXml(urls, "youtube.com");
+  if (result.items.length === 0 && !result.error) {
+    return { items: [], error: "No se encontró el canal en YouTube" };
+  }
+  return result;
+}
+
+const RSSHUB_BASE = (process.env.RSSHUB_BASE || "https://rsshub.app").replace(/\/$/, "");
+const NITTER_BASE = (process.env.NITTER_BASE || "https://nitter.net").replace(/\/$/, "");
+
+async function fetchTikTok(handle: string): Promise<AdapterResult> {
+  const h = handle.replace(/^@/, "");
+  return fetchFeedXml([`${RSSHUB_BASE}/tiktok/user/@${h}`], "tiktok.com");
+}
+
+async function fetchInstagram(handle: string): Promise<AdapterResult> {
+  const h = handle.replace(/^@/, "");
+  return fetchFeedXml([`${RSSHUB_BASE}/instagram/user/${h}`], "instagram.com");
+}
+
+async function fetchX(handle: string): Promise<AdapterResult> {
+  const h = handle.replace(/^@/, "");
+  const result = await fetchFeedXml([`${NITTER_BASE}/${h}/rss`], "x.com");
+  if (result.items.length > 0) {
+    for (const it of result.items) {
+      if (it.link && it.link.includes("nitter")) {
+        it.link = it.link.replace(NITTER_BASE, "https://x.com");
+      }
+    }
+  }
+  return result;
+}
+
+async function fetchPostsFor(platform: string, handle: string): Promise<AdapterResult> {
+  switch (platform) {
+    case "youtube": return fetchYoutube(handle);
+    case "tiktok": return fetchTikTok(handle);
+    case "instagram": return fetchInstagram(handle);
+    case "x": return fetchX(handle);
+    default:
+      return { items: [], error: `Aún no soportado: ${platform}` };
+  }
+}
+
+const competitorPostsCache = new Map<string, { fetchedAt: number; items: FeedItem[]; error?: string }>();
 const COMP_POSTS_CACHE_MS = 30 * 60 * 1000;
 
 router.get("/inspirations/competitors/:id/posts", async (req: Request, res: Response) => {
@@ -225,37 +321,17 @@ router.get("/inspirations/competitors/:id/posts", async (req: Request, res: Resp
   const cacheKey = `${row.platform}:${row.handle}`;
   const cached = competitorPostsCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < COMP_POSTS_CACHE_MS) {
-    res.json({ items: cached.items, cached: true });
+    res.json({ items: cached.items, error: cached.error, cached: true });
     return;
   }
 
-  let items: FeedItem[] = [];
-
+  let result: AdapterResult = { items: [] };
   try {
-    if (row.platform === "youtube") {
-      const handle = row.handle.replace(/^@/, "");
-      const candidates = handle.startsWith("UC")
-        ? [`https://www.youtube.com/feeds/videos.xml?channel_id=${handle}`]
-        : [
-            `https://www.youtube.com/feeds/videos.xml?user=${handle}`,
-            `https://www.youtube.com/feeds/videos.xml?channel_id=${handle}`,
-          ];
-      for (const url of candidates) {
-        try {
-          const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 WebMakerAdmin/1.0" } });
-          if (!r.ok) continue;
-          const xml = await r.text();
-          items = parseAtomEntries(xml, "youtube.com").slice(0, 10);
-          if (items.length > 0) break;
-        } catch (innerErr) {
-          const msg = innerErr instanceof Error ? innerErr.message : String(innerErr);
-          console.warn(`[Inspirations][competitors] feed ${url} failed:`, msg);
-        }
-      }
-    }
+    result = await fetchPostsFor(row.platform, row.handle);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[Inspirations][competitors] error:", msg);
+    console.error("[Inspirations][competitors] adapter crashed:", row.platform, msg);
+    result = { items: [], error: msg };
   }
 
   await db
@@ -263,8 +339,8 @@ router.get("/inspirations/competitors/:id/posts", async (req: Request, res: Resp
     .set({ lastFetchedAt: new Date() })
     .where(eq(competitors.id, id));
 
-  competitorPostsCache.set(cacheKey, { fetchedAt: Date.now(), items });
-  res.json({ items, cached: false });
+  competitorPostsCache.set(cacheKey, { fetchedAt: Date.now(), items: result.items, error: result.error });
+  res.json({ items: result.items, error: result.error, cached: false });
 });
 
 export default router;
