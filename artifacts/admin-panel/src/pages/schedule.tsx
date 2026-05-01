@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCheckScheduledVideos, useListVideos } from "@workspace/api-client-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import {
@@ -13,9 +14,19 @@ import {
   Filter,
   Calendar as CalendarIcon,
   Plus,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { NetworkIcon, NETWORK_BG, type Network } from "@/components/social-icons";
+import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -121,6 +132,23 @@ type StatusFilter = "all" | "scheduled" | "uploaded" | "published" | "error";
 type NetworkFilter = "all" | Network;
 type TypeFilter = "all" | "video" | "single_network" | "multi_network";
 
+const ALL_NETWORKS: Network[] = ["youtube", "instagram", "tiktok", "linkedin", "x", "facebook"];
+
+const VIDEOS_QUERY_KEY = ["/api/content/videos"] as const;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function buildScheduledAt(day: Date, hour: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hour);
+  const h = m ? Math.min(23, Math.max(0, Number(m[1]))) : 9;
+  const mm = m ? Math.min(59, Math.max(0, Number(m[2]))) : 0;
+  const d = new Date(day);
+  d.setHours(h, mm, 0, 0);
+  return d.toISOString();
+}
+
 const NETWORK_FILTER_OPTIONS: { value: NetworkFilter; label: string }[] = [
   { value: "all", label: "Todas las redes" },
   { value: "youtube", label: "YouTube" },
@@ -155,6 +183,8 @@ function videoType(v: VideoSummary): "video" | "single_network" | "multi_network
 export default function SchedulePage() {
   const { data: videos } = useListVideos();
   const checkSchedule = useCheckScheduledVideos();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -163,6 +193,91 @@ export default function SchedulePage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [memberFilter, setMemberFilter] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [quickCreateDate, setQuickCreateDate] = useState<Date | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const draggingIdRef = useRef<number | null>(null);
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ id, scheduledAt }: { id: number; scheduledAt: string }) => {
+      const res = await fetch(`${API_BASE}/content/videos/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledAt }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+    onMutate: async ({ id, scheduledAt }) => {
+      await queryClient.cancelQueries({ queryKey: VIDEOS_QUERY_KEY });
+      const prev = queryClient.getQueryData<VideoSummary[]>(VIDEOS_QUERY_KEY) || [];
+      queryClient.setQueryData<VideoSummary[]>(VIDEOS_QUERY_KEY, (old) =>
+        (old || []).map((v) => (v.id === id ? { ...v, scheduledAt } : v)),
+      );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(VIDEOS_QUERY_KEY, ctx.prev);
+      toast({ title: "No se pudo mover la publicación", variant: "destructive" });
+    },
+    onSuccess: () => {
+      toast({ title: "Publicación reprogramada" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+    },
+  });
+
+  const quickCreateMutation = useMutation({
+    mutationFn: async (input: {
+      title: string;
+      description: string;
+      day: Date;
+      hour: string;
+      networks: Network[];
+    }) => {
+      const createRes = await fetch(`${API_BASE}/content/videos`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: input.title, description: input.description }),
+      });
+      if (!createRes.ok) throw new Error(`HTTP ${createRes.status} al crear`);
+      const created = await createRes.json();
+
+      const scheduledAt = buildScheduledAt(input.day, input.hour);
+      const patchBody: Record<string, unknown> = {
+        status: "scheduled",
+        scheduledAt,
+      };
+      for (const net of input.networks) {
+        patchBody[`${net}Status`] = "pending";
+      }
+      const patchRes = await fetch(`${API_BASE}/content/videos/${created.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patchBody),
+      });
+      if (!patchRes.ok) throw new Error(`HTTP ${patchRes.status} al programar`);
+      return patchRes.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Publicación programada" });
+      setQuickCreateDate(null);
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+    },
+    onError: (err) => {
+      const description = err instanceof Error ? err.message : "Inténtalo de nuevo";
+      toast({
+        title: "No se pudo crear la publicación",
+        description,
+        variant: "destructive",
+      });
+    },
+  });
 
   const [me, setMe] = useState<{ id: number; name: string } | null>(null);
   useEffect(() => {
@@ -434,17 +549,58 @@ export default function SchedulePage() {
               {days.map((d, i) => {
                 const items = videosByDay[d.toDateString()] || [];
                 const isToday = d.toDateString() === today;
+                const dayKey = d.toDateString();
+                const isDragOver = dragOverKey === dayKey;
                 return (
                   <div
                     key={i}
-                    className={`min-h-[300px] border-r border-white/5 last:border-r-0 p-2 space-y-2 ${
+                    className={`group relative min-h-[300px] border-r border-white/5 last:border-r-0 p-2 space-y-2 transition ${
                       isToday ? "bg-primary/[0.03]" : ""
-                    }`}
+                    } ${isDragOver ? "bg-primary/15 ring-1 ring-primary/40" : ""}`}
+                    onDragOver={(e) => {
+                      if (draggingIdRef.current != null) {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        if (dragOverKey !== dayKey) setDragOverKey(dayKey);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverKey === dayKey) setDragOverKey(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverKey(null);
+                      const raw = e.dataTransfer.getData("text/plain");
+                      const id = Number(raw);
+                      if (!Number.isFinite(id)) return;
+                      const list = (videos || []) as VideoSummary[];
+                      const v = list.find((x) => x.id === id);
+                      if (!v?.scheduledAt) return;
+                      const old = new Date(v.scheduledAt);
+                      const next = new Date(d);
+                      next.setHours(old.getHours(), old.getMinutes(), 0, 0);
+                      if (next.getTime() === old.getTime()) return;
+                      rescheduleMutation.mutate({ id, scheduledAt: next.toISOString() });
+                    }}
                   >
+                    <button
+                      type="button"
+                      onClick={() => setQuickCreateDate(d)}
+                      className="absolute top-1 right-1 z-10 inline-flex items-center justify-center w-6 h-6 rounded-md bg-primary/15 text-primary opacity-0 group-hover:opacity-100 hover:bg-primary/25 focus:opacity-100 transition"
+                      aria-label={`Nueva publicación el ${d.toLocaleDateString("es-CL", { day: "numeric", month: "short" })}`}
+                      title="Crear publicación rápida"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
                     {items.length === 0 ? (
-                      <div className="h-full flex items-center justify-center text-[10px] text-muted-foreground/40 py-8">
-                        —
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setQuickCreateDate(d)}
+                        className="w-full h-full min-h-[260px] flex flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground/40 hover:text-primary hover:bg-white/5 rounded-lg transition"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Agregar</span>
+                      </button>
                     ) : (
                       items.map((v: VideoSummary) => {
                         const dt = new Date(v.scheduledAt!);
@@ -454,14 +610,23 @@ export default function SchedulePage() {
                         const cap = caption(v);
                         const agg = aggregateStatus(v);
                         return (
-                          <motion.div
-                            layout
+                          <div
                             key={v.id}
+                            draggable
+                            onDragStart={(e) => {
+                              draggingIdRef.current = v.id;
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", String(v.id));
+                            }}
+                            onDragEnd={() => {
+                              draggingIdRef.current = null;
+                              setDragOverKey(null);
+                            }}
                             className={`rounded-lg bg-white/5 border border-white/5 p-2 text-xs ring-1 overflow-hidden ${statusColor(
                               agg,
-                            )} hover:bg-white/10 cursor-pointer transition`}
+                            )} hover:bg-white/10 cursor-grab active:cursor-grabbing transition`}
                             onClick={() => setSelectedDay(i)}
-                            title={v.title}
+                            title={`${v.title} — arrastra para mover`}
                           >
                             {cover ? (
                               <div className="aspect-video rounded-md overflow-hidden bg-black/40 mb-1.5">
@@ -490,7 +655,7 @@ export default function SchedulePage() {
                             {cap && (
                               <p className="line-clamp-1 leading-tight text-[10px] text-muted-foreground mt-0.5">{cap}</p>
                             )}
-                          </motion.div>
+                          </div>
                         );
                       })
                     )}
@@ -593,6 +758,182 @@ export default function SchedulePage() {
         <Plus className="w-5 h-5" />
         <span className="hidden sm:inline">Crear publicación</span>
       </Link>
+
+      <QuickPostModal
+        date={quickCreateDate}
+        onClose={() => {
+          if (!quickCreateMutation.isPending) setQuickCreateDate(null);
+        }}
+        onSubmit={(values) => quickCreateMutation.mutate(values)}
+        isPending={quickCreateMutation.isPending}
+      />
     </Layout>
+  );
+}
+
+type QuickPostValues = {
+  title: string;
+  description: string;
+  day: Date;
+  hour: string;
+  networks: Network[];
+};
+
+function QuickPostModal({
+  date,
+  onClose,
+  onSubmit,
+  isPending,
+}: {
+  date: Date | null;
+  onClose: () => void;
+  onSubmit: (values: QuickPostValues) => void;
+  isPending: boolean;
+}) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [hour, setHour] = useState("09:00");
+  const [networks, setNetworks] = useState<Network[]>(["instagram", "tiktok"]);
+
+  useEffect(() => {
+    if (date) {
+      setTitle("");
+      setDescription("");
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const defaultHour = isToday
+        ? `${pad2(Math.min(23, now.getHours() + 1))}:00`
+        : "09:00";
+      setHour(defaultHour);
+      setNetworks(["instagram", "tiktok"]);
+    }
+  }, [date]);
+
+  const open = date != null;
+  const dayLabel = date
+    ? date.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })
+    : "";
+
+  const canSubmit =
+    !!date && title.trim().length > 0 && description.trim().length > 0 && networks.length > 0 && !isPending;
+
+  const toggleNetwork = (n: Network) => {
+    setNetworks((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="max-w-lg bg-background border-white/10">
+        <DialogHeader>
+          <DialogTitle>Nueva publicación rápida</DialogTitle>
+          <DialogDescription>
+            {date ? `Programar para el ${dayLabel}.` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!canSubmit || !date) return;
+            onSubmit({
+              title: title.trim(),
+              description: description.trim(),
+              day: date,
+              hour,
+              networks,
+            });
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Título</label>
+            <input
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ej: Promo de viernes"
+              className="w-full bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60"
+              maxLength={120}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Descripción</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Texto base que se usará en cada red…"
+              rows={3}
+              className="w-full bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60 resize-y"
+              maxLength={2200}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Hora</label>
+            <input
+              type="time"
+              value={hour}
+              onChange={(e) => setHour(e.target.value || "09:00")}
+              className="w-full bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Redes</label>
+            <div className="flex flex-wrap gap-2">
+              {ALL_NETWORKS.map((n) => {
+                const active = networks.includes(n);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => toggleNetwork(n)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs border transition ${
+                      active
+                        ? "bg-primary/20 border-primary/50 text-primary"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                    }`}
+                    aria-pressed={active}
+                  >
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center ${NETWORK_BG[n]}`}>
+                      <NetworkIcon network={n} className="w-2.5 h-2.5" />
+                    </span>
+                    {NETWORK_LABELS[n]}
+                  </button>
+                );
+              })}
+            </div>
+            {networks.length === 0 && (
+              <p className="text-[10px] text-rose-400">Selecciona al menos una red.</p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isPending}
+              className="px-4 py-2 rounded-lg text-sm border border-white/10 hover:bg-white/5 transition disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-orange-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isPending ? "Programando…" : "Programar"}
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

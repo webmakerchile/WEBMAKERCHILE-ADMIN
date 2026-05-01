@@ -169,6 +169,7 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.youtubeDescription !== undefined) updateData.youtubeDescription = body.youtubeDescription;
   if (body.linkedinDescription !== undefined) updateData.linkedinDescription = body.linkedinDescription;
   if (body.xDescription !== undefined) updateData.xDescription = body.xDescription;
+  if (body.facebookDescription !== undefined) updateData.facebookDescription = body.facebookDescription;
   if (body.tiktokStatus !== undefined) updateData.tiktokStatus = body.tiktokStatus;
   if (body.instagramStatus !== undefined) updateData.instagramStatus = body.instagramStatus;
   if (body.youtubeStatus !== undefined) updateData.youtubeStatus = body.youtubeStatus;
@@ -178,6 +179,9 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.xStatus !== undefined) updateData.xStatus = body.xStatus;
   if (body.xPostId !== undefined) updateData.xPostId = body.xPostId;
   if (body.xError !== undefined) updateData.xError = body.xError;
+  if (body.facebookStatus !== undefined) updateData.facebookStatus = body.facebookStatus;
+  if (body.facebookPostId !== undefined) updateData.facebookPostId = body.facebookPostId;
+  if (body.facebookError !== undefined) updateData.facebookError = body.facebookError;
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
   if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
 
