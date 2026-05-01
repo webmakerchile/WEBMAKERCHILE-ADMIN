@@ -11,6 +11,7 @@ import SchedulePage from "./pages/schedule";
 import StudioPage from "./pages/studio";
 import HistoriasPage from "./pages/historias";
 import DescripcionesPage from "./pages/descripciones";
+import CuentasPage from "./pages/cuentas";
 import LoginPage from "./pages/login";
 import TermsPage from "./pages/terms";
 import PrivacyPage from "./pages/privacy";
@@ -116,6 +117,7 @@ function Router() {
       <Route path="/estudio" component={StudioPage} />
       <Route path="/historias" component={HistoriasPage} />
       <Route path="/descripciones" component={DescripcionesPage} />
+      <Route path="/cuentas" component={CuentasPage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -11,6 +11,9 @@ import linkedinRouter from "./linkedin";
 import xRouter from "./x";
 import facebookRouter from "./facebook";
 import communityRouter from "./community";
+import ideasRouter from "./ideas";
+import analyticsRouter from "./analytics";
+import inspirationsRouter from "./inspirations";
 
 const router: IRouter = Router();
 
@@ -26,5 +29,8 @@ router.use(linkedinRouter);
 router.use(xRouter);
 router.use(facebookRouter);
 router.use(communityRouter);
+router.use(ideasRouter);
+router.use(analyticsRouter);
+router.use(inspirationsRouter);
 
 export default router;

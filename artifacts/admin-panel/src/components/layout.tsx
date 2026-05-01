@@ -12,6 +12,7 @@ import {
   Clapperboard,
   Sparkles,
   MessageSquareText,
+  Users2,
   LogOut,
   Menu,
   X,
@@ -21,14 +22,15 @@ import { motion, AnimatePresence } from "framer-motion";
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/", icon: LayoutDashboard, label: "Inicio" },
+  { href: "/schedule", icon: CalendarClock, label: "Publicaciones" },
+  { href: "/cuentas", icon: Users2, label: "Cuentas Sociales" },
   { href: "/videos", icon: Video, label: "Gestor de Videos" },
   { href: "/cover", icon: ImageIcon, label: "Portadas" },
   { href: "/historias", icon: Sparkles, label: "Historias" },
   { href: "/descripciones", icon: MessageSquareText, label: "Descripciones" },
   { href: "/drive", icon: FolderTree, label: "Drive" },
   { href: "/estudio", icon: Clapperboard, label: "Estudio" },
-  { href: "/schedule", icon: CalendarClock, label: "Programación" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

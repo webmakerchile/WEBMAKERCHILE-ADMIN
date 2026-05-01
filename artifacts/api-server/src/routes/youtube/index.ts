@@ -39,6 +39,24 @@ function getOAuth2Client(user: any) {
   return oauth2Client;
 }
 
+router.post("/youtube/disconnect", async (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!user?.id) {
+    res.status(401).json({ error: "No autenticado" });
+    return;
+  }
+  try {
+    await db
+      .update(users)
+      .set({ googleAccessToken: null, googleRefreshToken: null })
+      .where(eq(users.id, user.id));
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[YouTube] disconnect failed:", err?.message ?? err);
+    res.status(500).json({ error: "No se pudieron limpiar las credenciales de YouTube" });
+  }
+});
+
 router.get("/youtube/channel", async (req: Request, res: Response) => {
   const user = req.user as any;
 

@@ -44,7 +44,11 @@ artifacts-monorepo/
 
 ### Admin Panel (Content Admin Panel)
 - **Mobile-first layout**: Responsive design with bottom navigation bar on mobile, slide-out hamburger menu for additional items, desktop sidebar hidden on mobile. Uses `100dvh` for proper mobile viewport height. Safe area insets for iOS notch support.
-- **Dashboard**: Overview of video content stats, quick actions, recent activity, YouTube/TikTok/Instagram/LinkedIn/X connection status cards
+- **Publer-style redesign** (Task #3 "Rediseño Publer"): Navigation reorganized as Inicio / Publicaciones / Cuentas Sociales (+ legacy items). Shared `components/social-icons.tsx` provides brand SVGs and gradient backgrounds for the 6 networks (Facebook, Instagram, LinkedIn, X, TikTok, YouTube).
+- **Inicio (`/`)**: Greeting (time-aware) + "Crear publicación" CTA, 7-day analytics summary (totals: views, engagements, followers, posts) with per-network mini stats, Ideas kanban (4 columns: por_hacer / en_progreso / en_revision / hecho with native HTML5 drag-and-drop), inspirations panel (Google News RSS feed + competitors list), and a sticky right sidebar listing the next 8 scheduled publications.
+- **Publicaciones (`/schedule`)**: Weekly calendar (Mon–Sun) with day navigation (prev/next/Hoy), each day shows scheduled video cards with time, network icons, and aggregate publish status. Selecting a day reveals a detail panel with per-network status badges. Retains the original "Ejecutar Cola" button to manually process the queue.
+- **Cuentas Sociales (`/cuentas`)**: Unified connection grid for all 6 networks. Each card fetches its `/status` endpoint and shows connected account info (avatar, handle, follower count, etc.) or a Connect CTA pointing to that network's `/auth` endpoint. Disconnect button calls `/disconnect` where supported.
+- **Dashboard (legacy `/`)**: REPLACED with the Publer-style Inicio above.
 - **Video Manager**: Guided step-by-step wizard for the editor to complete each video without leaving the page. Steps: Basic Info → Cover (AI generation) → TikTok & Instagram descriptions → YouTube title & description → LinkedIn & X descriptions → Review & Schedule to all 5 platforms. Each video shows progress percentage. DB includes per-platform status fields (tiktokStatus, instagramStatus, youtubeStatus, linkedinStatus, xStatus) ready for API integration. Step 1 includes Drive file picker modal to select video files directly from Google Drive (browsable with folder navigation).
 - **Cover Generator**: AI-powered cover image generation using OpenAI gpt-image-1 with reference images
 - **Google Drive Browser**: Browse and manage files in connected Google Drive folder
@@ -116,6 +120,12 @@ artifacts-monorepo/
 - **AI description generation**: POST /api/content/videos/:id/generate-descriptions accepts `{ platforms: ["tiktok","instagram","youtube","linkedin","x"] }` (any subset) and returns a per-platform description tuned to each network (LinkedIn = professional + 2-3 hashtags; X ≤ 280 chars). Uses Gemini 2.5 Flash via `@workspace/integrations-gemini-ai`. The wizard's "LinkedIn y X" step exposes a "✨ Generar con IA" button that calls this endpoint with `["linkedin","x"]`
 - **Dashboard cards**: LinkedIn and X cards include a "Desconectar" button (POST /api/{linkedin,x}/disconnect with `confirm()`). The LinkedIn card additionally has a "Páginas de empresa" toggle that lazy-loads `/linkedin/organizations` and lets the user switch the publishing identity between the personal profile and any administered org via `/linkedin/select-org` (highlighted with an emerald background on the active option). The status sub-line reads "Publicando como Página" or "Publicando como perfil personal" based on `linkedinStatus.user.orgUrn`
 - **Scheduler**: Runs every 60s in `artifacts/api-server/src/scheduler.ts`. For each video reaching its `scheduledAt`, it sequentially publishes to YouTube → TikTok → Instagram → LinkedIn → X (each step skipped when no per-platform description is configured). On per-platform failure it sets `<platform>Status = "error"` and persists the error message to `<platform>Error` (LinkedIn/X) so the schedule page can show it as a tooltip. Sets the parent `status = "published"` only when every requested step succeeds.
+- **Ideas API**: GET/POST/PATCH/DELETE /api/ideas — kanban-style note board scoped per user. Backed by the `ideas` table (id, userId, title, description, kanbanStatus ∈ por_hacer|en_progreso|en_revision|hecho, kanbanOrder, timestamps). Used by Inicio kanban; PATCH supports moving cards between columns and reordering.
+- **Analytics aggregation**: GET /api/analytics/summary?days=7 returns `{ totals: { views, engagements, followers, posts }, networks: [{ network, connected, metrics }] }` aggregated from YouTube Analytics, Instagram Insights, Facebook Page Insights, LinkedIn org stats, X user metrics and TikTok user info. Each adapter is isolated in try/catch and reports `connected: false` if the user hasn't linked that network — never silently fails. Uses existing `getValidLinkedInToken`, `getValidXToken`, and refreshes the TikTok token internally.
+- **Inspirations API**:
+  - GET /api/inspirations/news — fetches headlines (RSS+Atom parser, 10-min in-memory cache) from Google News (es-CL by default, configurable via `INSPIRATIONS_NEWS_FEEDS` env). Returns `{ items: [{ title, link, pubDate, source }] }`.
+  - GET/POST/DELETE /api/inspirations/competitors — competitor list per user (table `competitors`: id, userId, platform, handle, displayName, lastFetchedAt).
+  - GET /api/inspirations/competitors/:id/posts — pulls recent posts for a competitor (currently YouTube via channel RSS; other platforms are placeholders).
 
 ### Authentication
 - Google OAuth 2.0 login via Passport.js
@@ -131,6 +141,8 @@ artifacts-monorepo/
 - `messages` - Chat messages within conversations  
 - `videos` - Video content entries with cover images, scheduling, and Drive integration
 - `video_ideas` - AI-generated video ideas for the recording studio with categories, scripts, and recording status
+- `ideas` - Kanban notes for the Inicio page (title, description, kanbanStatus, kanbanOrder, scoped per user)
+- `competitors` - Per-user competitor list for the inspirations panel (platform, handle, displayName, lastFetchedAt)
 
 ## TypeScript & Composite Projects
 

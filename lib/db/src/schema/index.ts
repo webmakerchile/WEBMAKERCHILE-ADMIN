@@ -4,3 +4,5 @@ export * from "./videos";
 export * from "./video-ideas";
 export * from "./users";
 export * from "./community-content";
+export * from "./ideas";
+export * from "./competitors";
