@@ -16,7 +16,7 @@ const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || "";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
-const IG_API_BASE = "https://graph.instagram.com/v21.0";
+const IG_API_BASE = "https://graph.facebook.com/v19.0";
 const TEMP_DIR = path.join(process.cwd(), "tmp-ig-videos");
 
 function getPublicBaseUrl(): string {
@@ -106,7 +106,7 @@ router.get("/instagram/status", async (_req: Request, res: Response) => {
 
   try {
     const response = await fetch(
-      `${IG_API_BASE}/${INSTAGRAM_USER_ID}?fields=user_id,username,name,profile_picture_url,followers_count,media_count&access_token=${INSTAGRAM_ACCESS_TOKEN}`
+      `${IG_API_BASE}/${INSTAGRAM_USER_ID}?fields=id,username,name,profile_picture_url,followers_count,media_count&access_token=${INSTAGRAM_ACCESS_TOKEN}`
     );
     const data = await response.json() as any;
 
@@ -121,7 +121,7 @@ router.get("/instagram/status", async (_req: Request, res: Response) => {
     res.json({
       connected: true,
       account: {
-        id: data.user_id || data.id,
+        id: data.id,
         username: data.username,
         name: data.name,
         profilePicture: data.profile_picture_url,
