@@ -355,7 +355,8 @@ router.get("/content/videos/:id/download-video", async (req, res) => {
 
 router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
   const id = Number(req.params.id);
-  const { platforms } = req.body || {};
+  const { platforms, force } = req.body || {};
+  const forceOverwrite = force === true;
   const targets: string[] = Array.isArray(platforms) && platforms.length
     ? platforms.filter((p: any) => typeof p === "string")
     : ["tiktok", "instagram", "youtube", "linkedin", "x"];
@@ -366,17 +367,35 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
     return;
   }
 
+  // When force is false (default), skip platforms that already have content
+  const effectiveTargets = forceOverwrite
+    ? targets
+    : targets.filter((t) => {
+        if (t === "tiktok") return !video.tiktokDescription;
+        if (t === "instagram") return !video.instagramDescription;
+        if (t === "youtube") return !video.youtubeTitle;
+        if (t === "linkedin") return !video.linkedinDescription;
+        if (t === "x") return !video.xDescription;
+        if (t === "facebook") return !video.facebookDescription;
+        return true;
+      });
+
+  if (effectiveTargets.length === 0) {
+    res.json({ descriptions: {}, video, skipped: true });
+    return;
+  }
+
   const baseInfo = `Título: "${video.title}"\nDescripción base: "${video.description || ""}"`;
   const guides: Record<string, string> = {
     tiktok: "TikTok (máx 2200): tono cercano, hook fuerte en la 1ra línea, 4-6 hashtags relevantes en español.",
     instagram: "Instagram (máx 2200): tono inspirador, emojis moderados, 5-10 hashtags al final en español.",
-    youtube: "YouTube (máx 5000): primer párrafo descriptivo con keywords SEO, luego beneficios, sin hashtags.",
+    youtube: "YouTube descripción (máx 5000): primer párrafo descriptivo con keywords SEO, luego beneficios, sin hashtags.",
     linkedin: "LinkedIn (~150-300 caracteres): tono profesional, sin emojis excesivos, 2-3 hashtags al final.",
     x: "X/Twitter (HASTA 280 caracteres ESTRICTOS, incluyendo hashtags): un solo tweet conciso, 1-2 hashtags.",
     facebook: "Facebook (máx 500 caracteres): tono cercano y conversacional, 1-3 hashtags, invita a interactuar (comentar/compartir).",
   };
 
-  const wanted = targets.filter((t) => guides[t]);
+  const wanted = effectiveTargets.filter((t) => guides[t]);
   const prompt = `Eres un copywriter experto para WebMakerChile (emprendimiento, agencia digital, Chile). Genera descripciones para un video, una por red social.
 
 ${baseInfo}
@@ -411,8 +430,33 @@ Formato de salida:
     }
 
     if (typeof parsed.x === "string") parsed.x = parsed.x.slice(0, 280);
+    if (typeof parsed.facebook === "string") parsed.facebook = parsed.facebook.slice(0, 500);
 
-    res.json({ descriptions: parsed });
+    // Persist generated descriptions to the database
+    const updateData: Record<string, any> = { updatedAt: new Date() };
+    if (typeof parsed.tiktok === "string" && effectiveTargets.includes("tiktok"))
+      updateData.tiktokDescription = parsed.tiktok;
+    if (typeof parsed.instagram === "string" && effectiveTargets.includes("instagram"))
+      updateData.instagramDescription = parsed.instagram;
+    if (effectiveTargets.includes("youtube")) {
+      // Use base title as YouTube title if not set; store generated text as description
+      if (!video.youtubeTitle) updateData.youtubeTitle = video.title;
+      if (typeof parsed.youtube === "string") updateData.youtubeDescription = parsed.youtube;
+    }
+    if (typeof parsed.linkedin === "string" && effectiveTargets.includes("linkedin"))
+      updateData.linkedinDescription = parsed.linkedin;
+    if (typeof parsed.x === "string" && effectiveTargets.includes("x"))
+      updateData.xDescription = parsed.x;
+    if (typeof parsed.facebook === "string" && effectiveTargets.includes("facebook"))
+      updateData.facebookDescription = parsed.facebook;
+
+    const [updated] = await db
+      .update(videos)
+      .set(updateData)
+      .where(eq(videos.id, id))
+      .returning();
+
+    res.json({ descriptions: parsed, video: updated });
   } catch (err: any) {
     console.error("[generate-descriptions] error:", err.message);
     res.status(500).json({ error: err.message || "Error generando descripciones" });

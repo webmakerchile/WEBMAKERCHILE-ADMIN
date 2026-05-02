@@ -163,6 +163,25 @@ export default function VideosPage() {
     },
   });
 
+  const autoGenerateMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}/generate-descriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: false }),
+      });
+      if (!res.ok) throw new Error("Auto-generation failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      if (data.video) setSelectedVideo(data.video);
+    },
+    onError: () => {
+      // Non-blocking: auto-generation failure doesn't stop the flow
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; month?: string; week?: string; day?: string; videoNumber?: string; scheduleHour?: string }) => {
       const res = await apiFetch(`${API_BASE}/content/videos`, {
@@ -177,7 +196,9 @@ export default function VideosPage() {
       setSelectedVideo(data);
       setIsCreating(false);
       setWizardStep("cover");
-      toast({ title: "Video creado", description: "Ahora agrega la portada" });
+      // Auto-generate descriptions in the background for new videos
+      autoGenerateMutation.mutate(data.id);
+      toast({ title: "Video creado", description: "Generando contenido con IA en segundo plano..." });
     },
   });
 
@@ -243,6 +264,7 @@ export default function VideosPage() {
           onGenerateCover={() => {
             if (selectedVideo) generateCoverMutation.mutate(selectedVideo.id);
           }}
+          onAutoGenerate={(videoId) => autoGenerateMutation.mutate(videoId)}
           onDelete={() => {
             if (selectedVideo && confirm("¿Eliminar este video?")) {
               deleteMutation.mutate(selectedVideo.id);
@@ -251,6 +273,7 @@ export default function VideosPage() {
           isCreatingPending={createMutation.isPending}
           isUpdating={updateMutation.isPending}
           isGeneratingCover={generateCoverMutation.isPending}
+          isAutoGenerating={autoGenerateMutation.isPending}
           toast={toast}
         />
       </Layout>
@@ -349,6 +372,11 @@ export default function VideosPage() {
                           <Badge variant="outline" className={statusBadge.className + " text-[10px] sm:text-xs"}>
                             {statusBadge.label}
                           </Badge>
+                          {!video.tiktokDescription && !video.instagramDescription && !video.youtubeTitle && !video.linkedinDescription && !video.xDescription && video.status !== "published" && (
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] sm:text-xs">
+                              Sin descripciones
+                            </Badge>
+                          )}
                           <div className="w-16 sm:w-24 h-1.5 bg-white/5 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full transition-all"
@@ -635,10 +663,12 @@ function VideoWizard({
   onCreate,
   onUpdate,
   onGenerateCover,
+  onAutoGenerate,
   onDelete,
   isCreatingPending,
   isUpdating,
   isGeneratingCover,
+  isAutoGenerating,
   toast,
 }: {
   video: VideoData | null;
@@ -649,10 +679,12 @@ function VideoWizard({
   onCreate: (data: any) => void;
   onUpdate: (data: any) => void;
   onGenerateCover: () => void;
+  onAutoGenerate: (videoId: number) => void;
   onDelete: () => void;
   isCreatingPending: boolean;
   isUpdating: boolean;
   isGeneratingCover: boolean;
+  isAutoGenerating: boolean;
   toast: any;
 }) {
   const queryClient = useQueryClient();
@@ -756,6 +788,7 @@ function VideoWizard({
         videoNumber: formData.videoNumber || undefined,
         scheduleHour: formData.scheduleHour || undefined,
       });
+      // Auto-generation for new videos is triggered in createMutation.onSuccess (VideosPage)
     } else {
       onUpdate({
         title: formData.title,
@@ -766,6 +799,16 @@ function VideoWizard({
         videoNumber: formData.videoNumber || undefined,
         scheduleHour: formData.scheduleHour || undefined,
       });
+      // Trigger auto-generation for existing videos that have no descriptions yet
+      const hasNoDescriptions =
+        !video?.tiktokDescription &&
+        !video?.instagramDescription &&
+        !video?.youtubeTitle &&
+        !video?.linkedinDescription &&
+        !video?.xDescription;
+      if (hasNoDescriptions && video?.id) {
+        onAutoGenerate(video.id);
+      }
       goNext();
     }
   };
@@ -846,6 +889,13 @@ function VideoWizard({
           );
         })}
       </div>
+
+      {isAutoGenerating && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          <span>Generando contenido con IA para todas las plataformas...</span>
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -1790,7 +1840,7 @@ function StepLinkedInX({
       const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/generate-descriptions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms: ["linkedin", "x", "facebook"] }),
+        body: JSON.stringify({ platforms: ["linkedin", "x", "facebook"], force: true }),
       });
       if (!res.ok) throw new Error("Error generando descripciones");
       const data = await res.json();
