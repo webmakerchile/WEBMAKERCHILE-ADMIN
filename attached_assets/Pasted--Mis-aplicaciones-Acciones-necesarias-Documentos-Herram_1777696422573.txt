@@ -1,0 +1,75 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+Ayuda
+
+
+WebMakerChile Redes Sociales
+Identificador de la aplicación 1317067910325181
+Modo de la aplicación: En desarrollo
+
+En producción
+Tipo de aplicación: Empresa
+Guardado
+​
+Necesitas acceso avanzado para usar Facebook Login for Business
+Tu aplicación tiene acceso estándar a public_profile. Si quieres usar Facebook Login for Business, cambia al acceso avanzado para public_profile.
+Obtener acceso avanzado
+Validador de URI de redireccionamiento
+URI de redireccionamiento para verificar
+https://admin.webmakerlatam.com/api/facebook/callback
+Verificar URI
+check
+URI de redireccionamiento válido para esta aplicación
+Configuración del cliente de OAuth
+
+Acceso del cliente de OAuth
+Activa el flujo de identificador de acceso del cliente de OAuth estándar. Asegura tu aplicación y evita su uso incorrecto especificando qué URI de redirección del identificador de acceso quieres permitir mediante las siguientes opciones. Desactiva esta opción globalmente si no la utilizas.
+
+Acceso de OAuth web
+Activa el acceso del cliente de OAuth basado en web.
+
+Aplicar HTTPS
+Aplica el uso de HTTPS para los URI de redireccionamiento y el SDK de JavaScript. Muy recomendable.
+
+Forzar la reautenticación OAuth web
+Si se activa, solicita a las personas que introduzcan su contraseña de Facebook para iniciar sesión en el sitio web.
+
+Inicio de sesión de OAuth de navegador integrado
+Activa los URI de redireccionamiento de la vista web para el acceso del cliente de OAuth.
+
+Usar modo estricto para URI de redireccionamiento
+Permite únicamente los redireccionamientos que coinciden exactamente con los URI de redireccionamiento de OAuth válidos. Opción altamente recomendada.
+URI de redireccionamiento de OAuth válidos
+El campo "redirect_uri" especificado manualmente que se usa con el inicio de sesión en la web debe coincidir exactamente con uno de los URI de esta lista. El SDK para JavaScript también usa esta lista para los navegadores en la aplicación que bloquean las ventajas emergentes.
+https://admin.webmakerlatam.com/api/facebook/callbackSuprimir
+
+Copiar en el portapapeles
+
+Inicio de sesión desde dispositivos
+Activa el flujo de acceso del cliente de OAuth a dispositivos como un Smart TV
+
+Iniciar sesión con el SDK de JavaScript
+Activa el inicio de sesión y la funcionalidad de sesión iniciada con el SDK para JavaScript.
+Dominios admitidos para el SDK de JavaScript
+El inicio de sesión y la funcionalidad de sesión iniciada del SDK para JavaScript solo estará disponible en estos dominios.
+Dominios admitidos para el SDK para JavaScript
+Desautorizar
+URL de devolución de llamada de retirada de autorización
+¿A qué debemos hacer ping cuando un usuario cancela la autorización de tu aplicación?
+Solicitudes de eliminación de datos
+URL de la solicitud de eliminación de datos
+¿A qué debemos enviar un ping cuando alguien solicite que elimines sus datos?
+Conexión de inicio de sesión con Messenger
+Esto ofrece a la gente una forma de optar por recibir mensajes tuyos en Messenger como parte de su experiencia de inicio de sesión. Para mostrar un cuadro de diálogo de permisos de Messenger durante el inicio de sesión, tendrás que activar al menos una página.
+Tus páginasEliminarAñadir
+	Nombre	Identificador de la página	Activado
+AnteriorSiguiente
+Guardar cambiosDescartar
