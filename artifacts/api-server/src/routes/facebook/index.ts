@@ -133,23 +133,27 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
     );
     const pagesData: any = await pagesRes.json();
 
-    if (!pagesData.data || pagesData.data.length === 0) {
-      console.error("[Facebook] No pages returned for user:", pagesData);
-      res.redirect("/?facebook=error&msg=no_pages");
-      return;
-    }
-
-    // Pick first page (selection UI lives in the redesign task)
-    const page = pagesData.data[0];
-    const pageId: string = page.id;
-    const pageName: string = page.name;
-    const pageAccessToken: string = page.access_token;
-    const pagePicture: string | null = page.picture?.data?.url || null;
-
     const currentUser = req.user as any;
     if (!currentUser) {
       res.redirect("/?facebook=error&msg=not_logged_in");
       return;
+    }
+
+    // Try to get page info if pages_show_list was granted
+    let pageId: string | null = null;
+    let pageName: string | null = null;
+    let pageAccessToken: string | null = null;
+    let pagePicture: string | null = null;
+
+    if (pagesData.data && pagesData.data.length > 0) {
+      const page = pagesData.data[0];
+      pageId = page.id;
+      pageName = page.name;
+      pageAccessToken = page.access_token;
+      pagePicture = page.picture?.data?.url || null;
+      console.log(`[Facebook] Connected page "${pageName}" (${pageId}) for user ${currentUser.id}`);
+    } else {
+      console.log(`[Facebook] No pages found — saving user token only for user ${currentUser.id}`);
     }
 
     await db.update(users).set({
@@ -161,8 +165,7 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
       facebookTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
     }).where(eq(users.id, currentUser.id));
 
-    console.log(`[Facebook] Connected page "${pageName}" (${pageId}) for user ${currentUser.id}`);
-    res.redirect("/?facebook=connected");
+    res.redirect("/cuentas?facebook=connected");
   } catch (err: any) {
     console.error("[Facebook] Callback error:", err.message);
     res.redirect("/?facebook=error&msg=" + encodeURIComponent(err.message));
@@ -171,14 +174,14 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
 
 router.get("/facebook/status", async (req: Request, res: Response) => {
   const user = req.user as any;
-  if (!user.facebookPageAccessToken || !user.facebookPageId) {
+  if (!user.facebookUserAccessToken) {
     res.json({ connected: false, message: "Facebook no conectado. Usa el botón para conectar tu página." });
     return;
   }
   res.json({
     connected: true,
-    pageName: user.facebookPageName,
-    pagePicture: user.facebookPagePicture,
+    pageName: user.facebookPageName || "Cuenta conectada (sin página)",
+    pagePicture: user.facebookPagePicture || null,
   });
 });
 
