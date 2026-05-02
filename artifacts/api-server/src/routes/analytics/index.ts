@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
 
@@ -900,13 +901,25 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
 
 // ---- Best times to publish per network ----
 // Returns top-3 (dayOfWeek 0-6 = Mon-Sun, hour 0-23) suggestions per network.
-// Strategy: query the user's own published posts per network, bucket by
-// (dow, hour) using the `publishedAt` timestamp interpreted in the server's
-// local timezone (matches how the calendar UI displays scheduled times).
-// If the user has fewer than 3 distinct buckets for a network, fall back to
-// industry-standard defaults so the UI always has something useful to show.
+//
+// Scoring model
+// -------------
+// We bucket the user's published posts per network by (dow, hour) and score
+// each bucket as a sum of "engagement weights" rather than a raw post count.
+// Today the engagement weight is a *recency decay* (exp(-days_since/30)),
+// so a post from yesterday counts as ~1.0 and one from a year ago as ~5e-6.
+// This biases the suggestion toward when the user has been *actively and
+// recently* successful — a meaningful proxy for engagement when per-post
+// metrics (views/likes/comments) are not yet stored alongside the videos
+// table. Once a sync job populates per-post engagement (see follow-up
+// task), `weightOf()` is the single function to upgrade: replace the
+// recency decay with `(views + likes + comments)` (normalised) and the
+// rest of the pipeline keeps working unchanged.
+//
 // `score` is normalised 0–100 (the top bucket = 100). `source` tells the
-// frontend whether it's history-driven or a default heuristic.
+// frontend whether the bucket came from the user's own history or from
+// industry-standard defaults (used as fallback when fewer than 3 buckets
+// have any signal).
 type BestTimeSlot = { dow: number; hour: number; score: number; source: "history" | "default" };
 type Net = "youtube" | "instagram" | "tiktok" | "linkedin" | "x" | "facebook";
 
@@ -944,18 +957,31 @@ const BEST_TIME_DEFAULTS: Record<Net, { dow: number; hour: number; score: number
   ],
 };
 
+// Map network → status column. Using AnyPgColumn keeps this typed end-to-end
+// instead of bypassing typing with `any` (the columns are all `text(...)`
+// so the runtime shape is identical, but keeping the column type lets
+// drizzle still validate `eq()` / etc. against the underlying type).
+const STATUS_COL: Record<Net, AnyPgColumn> = {
+  youtube: videos.youtubeStatus,
+  instagram: videos.instagramStatus,
+  tiktok: videos.tiktokStatus,
+  linkedin: videos.linkedinStatus,
+  x: videos.xStatus,
+  facebook: videos.facebookStatus,
+};
+
+// Engagement weight for a post. Today: recency decay only. When per-post
+// engagement (views/likes/comments) is denormalised onto `videos`, fold it
+// in here — everything downstream sums the result.
+function weightOf(ts: Date, now: number): number {
+  const days = Math.max(0, (now - ts.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.exp(-days / 30);
+}
+
 router.get("/analytics/best-times", async (_req: Request, res: Response) => {
   const NETS: Net[] = ["youtube", "instagram", "tiktok", "linkedin", "x", "facebook"];
-  // Map network → status column for the published filter
-  const STATUS_COL: Record<Net, ReturnType<typeof eq> extends never ? never : any> = {
-    youtube: videos.youtubeStatus,
-    instagram: videos.instagramStatus,
-    tiktok: videos.tiktokStatus,
-    linkedin: videos.linkedinStatus,
-    x: videos.xStatus,
-    facebook: videos.facebookStatus,
-  };
   const out: Record<Net, BestTimeSlot[]> = {} as Record<Net, BestTimeSlot[]>;
+  const now = Date.now();
 
   await Promise.all(
     NETS.map(async (net) => {
@@ -983,7 +1009,7 @@ router.get("/analytics/best-times", async (_req: Request, res: Response) => {
           const dow = (d.getDay() + 6) % 7;
           const hour = d.getHours();
           const key = `${dow}_${hour}`;
-          buckets.set(key, (buckets.get(key) || 0) + 1);
+          buckets.set(key, (buckets.get(key) || 0) + weightOf(d, now));
         }
         if (buckets.size >= 3) {
           const sorted = Array.from(buckets.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);

@@ -320,6 +320,11 @@ export default function SchedulePage() {
   const [activeDragId, setActiveDragId] = useState<number | null>(null);
   const [showConflictDetail, setShowConflictDetail] = useState(false);
   const [autoResolving, setAutoResolving] = useState(false);
+  // Set of conflict cluster keys the user has explicitly dismissed for the
+  // current session. Filtered out before the banner is rendered. We keep
+  // it in state (not localStorage) on purpose: a hidden conflict that
+  // disappears after a refresh is safer than one silently buried forever.
+  const [ignoredConflictKeys, setIgnoredConflictKeys] = useState<Set<string>>(new Set());
 
   // Best-times for the QuickPostModal. Cached for 5 minutes — these are
   // aggregate stats that don't change minute-to-minute.
@@ -535,8 +540,12 @@ export default function SchedulePage() {
   }, [filteredVideos, dayDate]);
 
   // Conflict detection runs over all filtered videos so the banner stays
-  // accurate regardless of which view is active.
-  const conflicts = useMemo(() => detectConflicts(filteredVideos), [filteredVideos]);
+  // accurate regardless of which view is active. Clusters dismissed via the
+  // "Ignorar" action are filtered out for the rest of the session.
+  const conflicts = useMemo(
+    () => detectConflicts(filteredVideos).filter((c) => !ignoredConflictKeys.has(c.key)),
+    [filteredVideos, ignoredConflictKeys],
+  );
   const totalConflictPosts = useMemo(() => {
     const ids = new Set<number>();
     for (const c of conflicts) for (const v of c.videos) ids.add(v.id);
@@ -857,6 +866,21 @@ export default function SchedulePage() {
               onToggleDetail={() => setShowConflictDetail((v) => !v)}
               onAutoResolve={autoResolveConflicts}
               autoResolving={autoResolving}
+              onIgnore={(key) => {
+                setIgnoredConflictKeys((prev) => {
+                  const next = new Set(prev);
+                  next.add(key);
+                  return next;
+                });
+              }}
+              onIgnoreAll={() => {
+                setIgnoredConflictKeys((prev) => {
+                  const next = new Set(prev);
+                  for (const c of conflicts) next.add(c.key);
+                  return next;
+                });
+                setShowConflictDetail(false);
+              }}
             />
           )}
 
@@ -996,6 +1020,8 @@ function ConflictBanner({
   onToggleDetail,
   onAutoResolve,
   autoResolving,
+  onIgnore,
+  onIgnoreAll,
 }: {
   conflicts: ConflictCluster[];
   total: number;
@@ -1003,6 +1029,8 @@ function ConflictBanner({
   onToggleDetail: () => void;
   onAutoResolve: () => void;
   autoResolving: boolean;
+  onIgnore: (key: string) => void;
+  onIgnoreAll: () => void;
 }) {
   return (
     <motion.div
@@ -1020,12 +1048,20 @@ function ConflictBanner({
             {total} publicaciones programadas a menos de {CONFLICT_WINDOW_MIN} min en la misma red.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={onToggleDetail}
             className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 border border-amber-500/30 transition"
           >
             {showDetail ? "Ocultar detalle" : "Ver detalle"}
+          </button>
+          <button
+            onClick={onIgnoreAll}
+            disabled={autoResolving}
+            className="text-xs px-3 py-1.5 rounded-lg bg-transparent hover:bg-amber-500/15 text-amber-200/80 border border-amber-500/30 transition disabled:opacity-50"
+            title="Oculta los avisos hasta que recargues la página."
+          >
+            Ignorar todo
           </button>
           <button
             onClick={onAutoResolve}
@@ -1048,6 +1084,13 @@ function ConflictBanner({
                 </span>
                 <span className="text-xs font-semibold text-amber-100">{NETWORK_LABELS[c.network]}</span>
                 <span className="ml-auto text-[10px] text-amber-200/70">{c.videos.length} posts</span>
+                <button
+                  onClick={() => onIgnore(c.key)}
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-200/80 border border-amber-500/20 transition"
+                  title="Ocultar este aviso para esta sesión."
+                >
+                  Ignorar
+                </button>
               </div>
               <ul className="text-[11px] text-amber-100/80 space-y-0.5">
                 {c.videos.map((v) => {
@@ -1695,36 +1738,22 @@ function QuickPostModal({
     setNetworks((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
   };
 
-  // Aggregate the best-time slots across the currently-selected networks so
-  // the user sees one consolidated set of suggestions in the modal. We keep
-  // the network attribution so the chip can render the right icon.
-  type AggSlot = { dow: number; hour: number; networks: Network[]; sources: Set<"history" | "default"> };
-  const suggestions: AggSlot[] = useMemo(() => {
-    if (!bestTimes || networks.length === 0) return [];
-    const map = new Map<string, AggSlot>();
-    for (const n of networks) {
-      const slots = bestTimes[n] || [];
-      for (const s of slots) {
-        const k = `${s.dow}_${s.hour}`;
-        const existing = map.get(k);
-        if (existing) {
-          if (!existing.networks.includes(n)) existing.networks.push(n);
-          existing.sources.add(s.source);
-        } else {
-          map.set(k, { dow: s.dow, hour: s.hour, networks: [n], sources: new Set([s.source]) });
-        }
-      }
-    }
-    // Sort by number-of-networks (consensus) then by hour for stable order.
-    return Array.from(map.values())
-      .sort((a, b) => b.networks.length - a.networks.length || a.hour - b.hour)
-      .slice(0, 6);
+  // Best-time suggestions are presented *per selected network* (top-3 each)
+  // rather than as a consolidated cross-network consensus. Each network has
+  // its own posting rhythm, so showing one mixed list misrepresents the
+  // signal. The list is keyed by network so the modal renders one section
+  // per row with the network icon as a header.
+  const perNetworkSuggestions = useMemo(() => {
+    if (!bestTimes || networks.length === 0) return [] as { network: Network; slots: BestTimeSlot[] }[];
+    return networks
+      .map((n) => ({ network: n, slots: (bestTimes[n] || []).slice(0, 3) }))
+      .filter((g) => g.slots.length > 0);
   }, [bestTimes, networks]);
 
   // Apply a suggestion: align day-of-week and set the hour. We pick the
   // *next* occurrence of that dow on or after the originally-clicked date so
   // suggestions never silently pull the user backwards in time.
-  const applySuggestion = (s: AggSlot) => {
+  const applySuggestion = (s: BestTimeSlot) => {
     if (!day) return;
     // (date.getDay()+6)%7 → Mon-first dow. Find delta to target dow.
     const baseDow = (day.getDay() + 6) % 7;
@@ -1843,44 +1872,49 @@ function QuickPostModal({
             )}
           </div>
 
-          {suggestions.length > 0 && (
-            <div className="space-y-1.5">
+          {perNetworkSuggestions.length > 0 && (
+            <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                 <Sparkles className="w-3 h-3 text-primary" />
-                Mejor hora para tus redes
+                Mejor hora por red
                 <HelpHint
-                  text="Sugerencias basadas en tu historial de publicaciones por red. Al hacer click, ajustamos día y hora a la próxima coincidencia."
+                  text="Top 3 horarios por red según tu historial reciente (★) o recomendaciones por defecto. Al hacer click, ajustamos día y hora a la próxima coincidencia."
                   side="top"
                 />
               </label>
-              <div className="flex flex-wrap gap-1.5">
-                {suggestions.map((s, i) => {
-                  const isHistory = s.sources.has("history");
-                  return (
-                    <button
-                      key={`${s.dow}_${s.hour}_${i}`}
-                      type="button"
-                      onClick={() => applySuggestion(s)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary transition"
-                      title={`${isHistory ? "Tu historial" : "Recomendación"}: ${s.networks.join(", ")}`}
+              <div className="space-y-1.5">
+                {perNetworkSuggestions.map(({ network: n, slots }) => (
+                  <div key={n} className="flex items-center gap-2">
+                    <span
+                      className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${NETWORK_BG[n]}`}
+                      title={NETWORK_LABELS[n]}
                     >
-                      <span className="font-mono font-semibold">
-                        {DAYS_LONG_ES[s.dow].slice(0, 3)} {pad2(s.hour)}:00
-                      </span>
-                      <span className="flex -space-x-1">
-                        {s.networks.slice(0, 3).map((n) => (
-                          <span
-                            key={n}
-                            className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ring-1 ring-background ${NETWORK_BG[n]}`}
+                      <NetworkIcon network={n} className="w-2.5 h-2.5" />
+                    </span>
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground w-16 flex-shrink-0">
+                      {NETWORK_LABELS[n]}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 flex-1">
+                      {slots.map((s, i) => {
+                        const isHistory = s.source === "history";
+                        return (
+                          <button
+                            key={`${n}_${s.dow}_${s.hour}_${i}`}
+                            type="button"
+                            onClick={() => applySuggestion(s)}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary transition"
+                            title={`${isHistory ? "Tu historial" : "Recomendación"} · score ${s.score}`}
                           >
-                            <NetworkIcon network={n} className="w-2 h-2" />
-                          </span>
-                        ))}
-                      </span>
-                      {isHistory && <span className="text-[9px] opacity-70">★</span>}
-                    </button>
-                  );
-                })}
+                            <span className="font-mono font-semibold">
+                              {DAYS_LONG_ES[s.dow].slice(0, 3)} {pad2(s.hour)}:00
+                            </span>
+                            {isHistory && <span className="text-[9px] opacity-70">★</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
