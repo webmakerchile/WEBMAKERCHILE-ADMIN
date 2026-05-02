@@ -225,9 +225,16 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
 } | null> {
   if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) return null;
   try {
-    const nowSec = Math.floor(Date.now() / 1000);
-    const sinceCurr = nowSec - days * 86400;
-    const sincePrev = nowSec - days * 2 * 86400;
+    // UTC-midnight axis so the requested window matches the day axis returned
+    // to the frontend (Task #12 / #14). `endMs` is the start of "tomorrow" in
+    // UTC so the bucket for "today" is fully included.
+    const todayUtcMs = utcMidnightMs();
+    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+    const prevStartMs = currStartMs - days * MS_PER_DAY;
+    const endMs = todayUtcMs + MS_PER_DAY;
+    const sinceCurr = Math.floor(currStartMs / 1000);
+    const sincePrev = Math.floor(prevStartMs / 1000);
+    const untilCurr = Math.floor(endMs / 1000);
     const untilPrev = sinceCurr;
 
     const buildUrl = (since: number, until: number) =>
@@ -238,7 +245,7 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
     type IgInsightResponse = { data?: IgInsightItem[]; error?: { message?: string } } | null;
 
     const [currR, prevR] = await Promise.all([
-      fetch(buildUrl(sinceCurr, nowSec))
+      fetch(buildUrl(sinceCurr, untilCurr))
         .then((r) => r.json() as Promise<IgInsightResponse>)
         .catch(() => null),
       fetch(buildUrl(sincePrev, untilPrev))
@@ -253,11 +260,6 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
     const followers = emptyMetric(days);
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
-
-    // UTC-midnight axis so day indices match Task #6's posts series.
-    const todayUtcMs = utcMidnightMs();
-    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
-    const prevStartMs = currStartMs - days * MS_PER_DAY;
 
     const consume = (data: IgInsightResponse, originMs: number, target: "series" | "prevSeries") => {
       if (!data?.data) return;
@@ -292,9 +294,16 @@ async function fetchFacebook(user: AuthedUser, days: number): Promise<{
   const fbPageId = user.facebookPageId;
   const fbToken = user.facebookPageAccessToken;
   try {
-    const nowSec = Math.floor(Date.now() / 1000);
-    const sinceCurr = nowSec - days * 86400;
-    const sincePrev = nowSec - days * 2 * 86400;
+    // UTC-midnight axis so the requested window matches the day axis returned
+    // to the frontend (Task #12 / #14). `endMs` is the start of "tomorrow" in
+    // UTC so the bucket for "today" is fully included.
+    const todayUtcMs = utcMidnightMs();
+    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+    const prevStartMs = currStartMs - days * MS_PER_DAY;
+    const endMs = todayUtcMs + MS_PER_DAY;
+    const sinceCurr = Math.floor(currStartMs / 1000);
+    const sincePrev = Math.floor(prevStartMs / 1000);
+    const untilCurr = Math.floor(endMs / 1000);
     const untilPrev = sinceCurr;
 
     const buildUrl = (since: number, until: number) =>
@@ -305,7 +314,7 @@ async function fetchFacebook(user: AuthedUser, days: number): Promise<{
     type FbInsightResponse = { data?: FbInsightItem[]; error?: { message?: string } } | null;
 
     const [currR, prevR] = await Promise.all([
-      fetch(buildUrl(sinceCurr, nowSec))
+      fetch(buildUrl(sinceCurr, untilCurr))
         .then((r) => r.json() as Promise<FbInsightResponse>)
         .catch(() => null),
       fetch(buildUrl(sincePrev, untilPrev))
@@ -320,11 +329,6 @@ async function fetchFacebook(user: AuthedUser, days: number): Promise<{
     const followers = emptyMetric(days);
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
-
-    // UTC-midnight axis so day indices match Task #6's posts series.
-    const todayUtcMs = utcMidnightMs();
-    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
-    const prevStartMs = currStartMs - days * MS_PER_DAY;
 
     const consume = (data: FbInsightResponse, originMs: number, target: "series" | "prevSeries") => {
       if (!data?.data) return;
@@ -371,9 +375,13 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
   if (!token || !user.linkedinOrgUrn) return null;
   try {
     const orgUrn = encodeURIComponent(user.linkedinOrgUrn);
-    const end = Date.now();
-    const startCurr = end - days * MS_PER_DAY;
-    const startPrev = end - days * 2 * MS_PER_DAY;
+    // UTC-midnight axis so the requested window matches the day axis returned
+    // to the frontend (Task #12 / #14). `endMs` is the start of "tomorrow" in
+    // UTC so the bucket for "today" is fully included.
+    const todayUtcMs = utcMidnightMs();
+    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+    const prevStartMs = currStartMs - days * MS_PER_DAY;
+    const endMs = todayUtcMs + MS_PER_DAY;
     const headers = {
       Authorization: `Bearer ${token}`,
       "LinkedIn-Version": "202509",
@@ -392,10 +400,10 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
     type LiResponse = { elements?: LiElement[] } | null;
 
     const [currR, prevR] = await Promise.all([
-      fetch(buildUrl(startCurr, end), { headers })
+      fetch(buildUrl(currStartMs, endMs), { headers })
         .then((r) => (r.ok ? (r.json() as Promise<LiResponse>) : null))
         .catch(() => null),
-      fetch(buildUrl(startPrev, startCurr), { headers })
+      fetch(buildUrl(prevStartMs, currStartMs), { headers })
         .then((r) => (r.ok ? (r.json() as Promise<LiResponse>) : null))
         .catch(() => null),
     ]);
@@ -404,10 +412,6 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
     const followers = emptyMetric(days);
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
-    // UTC-midnight axis so day indices match Task #6's posts series.
-    const todayUtcMs = utcMidnightMs();
-    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
-    const prevStartMs = currStartMs - days * MS_PER_DAY;
 
     const consume = (data: LiResponse, originMs: number, target: "series" | "prevSeries") => {
       for (const el of data?.elements || []) {
