@@ -344,9 +344,16 @@ async function publishToX(video: any, user: any): Promise<{ success: boolean; er
   return result;
 }
 
+const SERVER_FB_PAGE_ID = (process.env.FACEBOOK_PAGE_ID || "").trim();
+const SERVER_FB_PAGE_TOKEN = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
+
 async function publishToFacebookStep(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (video.facebookPostId) return { success: true };
-  if (!user.facebookPageId || !user.facebookPageAccessToken) {
+
+  // Accept either server-side permanent tokens or user OAuth tokens
+  const hasServerTokens = !!(SERVER_FB_PAGE_ID && SERVER_FB_PAGE_TOKEN);
+  const hasUserTokens = !!(user.facebookPageId && user.facebookPageAccessToken);
+  if (!hasServerTokens && !hasUserTokens) {
     const error = "Facebook not connected";
     await db.update(videos).set({ facebookStatus: "error", facebookError: error, updatedAt: new Date() }).where(eq(videos.id, video.id));
     return { success: false, error };
@@ -533,8 +540,7 @@ async function processScheduledVideos() {
         results.youtube = { success: true };
         results.tiktok = { success: true };
         results.instagram = { success: true };
-        results.facebook = { success: true };
-        console.log(`[Scheduler] YT/TT/IG/FB skipped (no video file in Drive)`);
+        console.log(`[Scheduler] YT/TT/IG skipped (no video file in Drive)`);
       } else {
         if (video.youtubeTitle || video.youtubeDescription) {
           results.youtube = await uploadToYouTube(video, freshUser);
@@ -587,12 +593,7 @@ async function processScheduledVideos() {
       const freshUser6 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (freshUser6) {
         if (video.facebookDescription || video.description) {
-          if (video.videoFileDriveId) {
-            results.facebook = await publishToFacebookStep(video, freshUser6);
-          } else {
-            results.facebook = { success: true };
-            console.log(`[Scheduler] Facebook skipped (no video file in Drive)`);
-          }
+          results.facebook = await publishToFacebookStep(video, freshUser6);
         } else {
           results.facebook = { success: true };
           console.log(`[Scheduler] Facebook skipped (no description)`);

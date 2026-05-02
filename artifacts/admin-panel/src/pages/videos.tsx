@@ -61,6 +61,7 @@ type VideoData = {
   youtubeDescription?: string | null;
   linkedinDescription?: string | null;
   xDescription?: string | null;
+  facebookDescription?: string | null;
   tiktokPublishId?: string | null;
   tiktokStatus?: string | null;
   instagramMediaId?: string | null;
@@ -73,6 +74,9 @@ type VideoData = {
   xPostId?: string | null;
   xStatus?: string | null;
   xError?: string | null;
+  facebookPostId?: string | null;
+  facebookStatus?: string | null;
+  facebookError?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -388,6 +392,7 @@ function VideoWizard({
     youtubeDescription: video?.youtubeDescription || "",
     linkedinDescription: video?.linkedinDescription || "",
     xDescription: video?.xDescription || "",
+    facebookDescription: video?.facebookDescription || "",
   });
 
   useEffect(() => {
@@ -406,6 +411,7 @@ function VideoWizard({
         youtubeDescription: video.youtubeDescription || "",
         linkedinDescription: video.linkedinDescription || "",
         xDescription: video.xDescription || "",
+        facebookDescription: video.facebookDescription || "",
       });
     }
   }, [video]);
@@ -514,7 +520,7 @@ function VideoWizard({
           </h1>
           {video && (
             <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-1">
-              Completa todos los pasos para programar en las 5 plataformas
+              Completa todos los pasos para programar en las 6 plataformas
             </p>
           )}
         </div>
@@ -637,6 +643,7 @@ function VideoWizard({
                 handleSavePlatforms({
                   linkedinDescription: formData.linkedinDescription,
                   xDescription: formData.xDescription,
+                  facebookDescription: formData.facebookDescription,
                 })
               }
               onPrev={goPrev}
@@ -661,6 +668,7 @@ function VideoWizard({
                 } else {
                   scheduledDate = new Date();
                 }
+                const facebookPatch = formData.facebookDescription ? { facebookStatus: "pending" } : {};
                 onUpdate({
                   status: "scheduled",
                   tiktokStatus: "pending",
@@ -668,10 +676,11 @@ function VideoWizard({
                   youtubeStatus: "pending",
                   linkedinStatus: "pending",
                   xStatus: "pending",
+                  ...facebookPatch,
                   scheduledAt: scheduledDate.toISOString(),
                 });
                 toast({
-                  title: "¡Programado en las 5 plataformas!",
+                  title: "¡Programado en las 6 plataformas!",
                   description: hour
                     ? `Se subirá automáticamente a las ${hour} hrs`
                     : "Se subirá automáticamente ahora",
@@ -1500,13 +1509,14 @@ function StepLinkedInX({
       const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/generate-descriptions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms: ["linkedin", "x"] }),
+        body: JSON.stringify({ platforms: ["linkedin", "x", "facebook"] }),
       });
       if (!res.ok) throw new Error("Error generando descripciones");
       const data = await res.json();
       const next = { ...formData };
       if (typeof data?.descriptions?.linkedin === "string") next.linkedinDescription = data.descriptions.linkedin;
       if (typeof data?.descriptions?.x === "string") next.xDescription = data.descriptions.x.slice(0, 280);
+      if (typeof data?.descriptions?.facebook === "string") next.facebookDescription = data.descriptions.facebook.slice(0, 500);
       setFormData(next);
     } catch (err) {
       console.error(err);
@@ -1521,10 +1531,10 @@ function StepLinkedInX({
           <div>
             <CardTitle className="text-xl flex items-center gap-2">
               <span className="text-2xl">💼</span>
-              LinkedIn y X (Twitter)
+              LinkedIn, X y Facebook
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Texto para publicaciones de LinkedIn (máx. 3000) y X (máx. 280). El scheduler publica el video y la descripción automáticamente.
+              Textos para LinkedIn (máx. 3000), X (máx. 280) y Facebook (máx. 500). Facebook es opcional.
             </p>
           </div>
           <button
@@ -1588,6 +1598,31 @@ function StepLinkedInX({
               Máximo 280 caracteres · {xLen}/280
             </p>
           </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-semibold flex items-center gap-2">
+              <span className="w-6 h-6 rounded bg-[#1877F2] flex items-center justify-center">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+              </span>
+              Facebook
+              <span className="text-[10px] text-muted-foreground font-normal">(opcional)</span>
+            </label>
+            {formData.facebookDescription && (
+              <button onClick={() => copyText(formData.facebookDescription)} className="text-xs text-primary hover:text-primary/80">
+                <Copy className="w-3 h-3 inline mr-1" />Copiar
+              </button>
+            )}
+          </div>
+          <textarea
+            value={formData.facebookDescription}
+            onChange={(e) => setFormData({ ...formData, facebookDescription: e.target.value.slice(0, 500) })}
+            className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[100px]"
+            placeholder={"¿Qué aprendes hoy? Comparte con tu comunidad 👇\n\n#WebDev #Chile"}
+            maxLength={500}
+          />
+          <p className="text-[10px] text-muted-foreground">Máximo 500 caracteres · {(formData.facebookDescription || "").length}/500</p>
         </div>
 
         <div className="pt-4 flex justify-between">
@@ -1917,6 +1952,18 @@ function StepReview({
       content: video.xDescription || "",
       ready: !!video.xDescription,
     },
+    {
+      name: "Facebook",
+      icon: (
+        <span className="w-8 h-8 rounded-lg bg-[#1877F2] flex items-center justify-center">
+          <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+        </span>
+      ),
+      status: video.facebookStatus,
+      content: video.facebookDescription || "",
+      ready: !!video.facebookDescription,
+      optional: true,
+    },
   ];
 
   return (
@@ -1928,7 +1975,7 @@ function StepReview({
             Revisar y Programar
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Revisa todo antes de programar en las 5 plataformas
+            Revisa todo antes de programar en las 6 plataformas
           </p>
         </CardHeader>
         <CardContent className="space-y-6">

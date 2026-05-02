@@ -307,6 +307,35 @@ async function publishFacebookVideo(
  * Caption falls back through facebookDescription → description → title to
  * mirror how the other social integrations resolve copy.
  */
+/**
+ * Publishes a plain text post to a Facebook Page feed:
+ *   POST /{page-id}/feed with `message` and `access_token`.
+ */
+async function publishFacebookTextPost(
+  pageId: string,
+  pageAccessToken: string,
+  message: string,
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  try {
+    const body = new URLSearchParams({ message, access_token: pageAccessToken });
+    const res = await fetch(`${FB_GRAPH_BASE}/${pageId}/feed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+    });
+    const data: any = await res.json();
+    if (!res.ok || data.error) {
+      const msg = data.error?.message || `HTTP ${res.status}`;
+      console.error("[Facebook] text post failed:", res.status, data);
+      return { success: false, error: msg };
+    }
+    return { success: true, postId: data.id };
+  } catch (err: any) {
+    console.error("[Facebook] text post error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function publishToFacebook(
   user: any,
   video: any,
@@ -318,13 +347,16 @@ export async function publishToFacebook(
   if (!pageId || !pageToken) {
     return { success: false, error: "Facebook no conectado" };
   }
-  if (!video.videoFileDriveId) {
-    return { success: false, error: "El video no tiene archivo en Drive" };
-  }
 
   const caption = video.facebookDescription || video.description || video.title;
   if (!caption || !caption.trim()) {
     return { success: false, error: "Sin texto para publicar en Facebook" };
+  }
+
+  // If no video file in Drive, publish as plain text post
+  if (!video.videoFileDriveId) {
+    console.log("[Facebook] No video file — publishing text post");
+    return publishFacebookTextPost(pageId, pageToken, caption);
   }
 
   try {

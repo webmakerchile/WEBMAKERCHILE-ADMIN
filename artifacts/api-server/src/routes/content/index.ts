@@ -371,6 +371,7 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
     youtube: "YouTube (máx 5000): primer párrafo descriptivo con keywords SEO, luego beneficios, sin hashtags.",
     linkedin: "LinkedIn (~150-300 caracteres): tono profesional, sin emojis excesivos, 2-3 hashtags al final.",
     x: "X/Twitter (HASTA 280 caracteres ESTRICTOS, incluyendo hashtags): un solo tweet conciso, 1-2 hashtags.",
+    facebook: "Facebook (máx 500 caracteres): tono cercano y conversacional, 1-3 hashtags, invita a interactuar (comentar/compartir).",
   };
 
   const wanted = targets.filter((t) => guides[t]);
