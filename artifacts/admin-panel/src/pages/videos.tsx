@@ -314,6 +314,30 @@ export default function VideosPage() {
     }
   }, []);
 
+  // Open a specific video when arriving with `?select=<id>` (cross-page deep
+  // link from the command palette). Runs after `videos` loads so the lookup
+  // can resolve; clears the param once consumed so refreshing doesn't reopen.
+  useEffect(() => {
+    if (videos.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("select");
+    if (!raw) return;
+    const id = Number(raw);
+    if (!Number.isFinite(id)) return;
+    const target = videos.find((v) => v.id === id);
+    params.delete("select");
+    const search = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+    if (!target) return;
+    setIsCreating(false);
+    setSelectedVideo(target);
+    if (!target.coverImageBase64) setWizardStep("cover");
+    else if (!target.tiktokDescription || !target.instagramDescription) setWizardStep("tiktok-instagram");
+    else if (!target.youtubeTitle || !target.youtubeDescription) setWizardStep("youtube");
+    else if (!target.linkedinDescription || !target.xDescription) setWizardStep("linkedin-x");
+    else setWizardStep("review");
+  }, [videos]);
+
   // React to global events from the command palette / shortcuts. Using events
   // (instead of URL params) makes the actions reliable when the user is already
   // on /videos — wouter does not re-trigger pathname effects for query-only
