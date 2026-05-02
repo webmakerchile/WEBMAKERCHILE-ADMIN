@@ -27,7 +27,9 @@ function getGoogleOAuth2Client(user: any) {
 }
 
 function getFacebookRedirectUri(): string {
-  return process.env.FACEBOOK_REDIRECT_URI || "https://admin.webmakerlatam.com/api/facebook/callback";
+  if (process.env.FACEBOOK_REDIRECT_URI) return process.env.FACEBOOK_REDIRECT_URI;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/facebook/callback`;
+  return "https://admin.webmakerlatam.com/api/facebook/callback";
 }
 
 function isImageMime(mime?: string | null): boolean {
