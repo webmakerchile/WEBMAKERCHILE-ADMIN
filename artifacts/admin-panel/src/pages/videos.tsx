@@ -63,6 +63,8 @@ import {
   BookmarkPlus,
   Filter as FilterIcon,
   CircleSlash2,
+  ShieldCheck,
+  AtSign,
 } from "lucide-react";
 import {
   Dialog,
@@ -120,11 +122,43 @@ type VideoData = {
   facebookError?: string | null;
   campaignId?: number | null;
   templateId?: number | null;
+  workflowStatus?: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-type WizardStep = "info" | "cover" | "tiktok-instagram" | "youtube" | "linkedin-x" | "review";
+type TeamMember = {
+  id: number;
+  name: string;
+  email: string;
+  teamRole: string;
+};
+
+type VideoComment = {
+  id: number;
+  videoId: number;
+  authorId: number;
+  authorName: string | null;
+  authorEmail: string | null;
+  body: string;
+  createdAt: string;
+};
+
+type VideoReview = {
+  id: number;
+  videoId: number;
+  requesterId: number;
+  requesterName: string | null;
+  reviewerId: number;
+  reviewerName: string | null;
+  reviewerEmail: string | null;
+  status: string;
+  decisionNote: string | null;
+  createdAt: string;
+  decidedAt: string | null;
+};
+
+type WizardStep = "info" | "cover" | "tiktok-instagram" | "youtube" | "linkedin-x" | "review" | "comments";
 
 const STEPS: { key: WizardStep; label: string; shortLabel: string }[] = [
   { key: "info", label: "Información Básica", shortLabel: "Info" },
@@ -133,6 +167,7 @@ const STEPS: { key: WizardStep; label: string; shortLabel: string }[] = [
   { key: "youtube", label: "YouTube", shortLabel: "YouTube" },
   { key: "linkedin-x", label: "LinkedIn y X", shortLabel: "LinkedIn/X" },
   { key: "review", label: "Revisar y Programar", shortLabel: "Programar" },
+  { key: "comments", label: "Comentarios y Aprobación", shortLabel: "Comentarios" },
 ];
 
 function isStepComplete(video: VideoData | null, step: WizardStep): boolean {
@@ -150,6 +185,9 @@ function isStepComplete(video: VideoData | null, step: WizardStep): boolean {
       return !!video.linkedinDescription && !!video.xDescription;
     case "review":
       return video.status === "scheduled" || video.status === "published";
+    case "comments":
+      // Comments tab is informational and doesn't gate completeness.
+      return true;
     default:
       return false;
   }
@@ -246,6 +284,7 @@ export default function VideosPage() {
   const [bulkMonth, setBulkMonth] = useState("");
   const [bulkScheduleAt, setBulkScheduleAt] = useState("");
   const [generatingDescriptions, setGeneratingDescriptions] = useState(false);
+  const [pendingReviewsActive, setPendingReviewsActive] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -256,6 +295,20 @@ export default function VideosPage() {
       return res.json();
     },
   });
+
+  const { data: pendingReviews = [] } = useQuery<{ id: number; videoId: number; videoTitle: string | null }[]>({
+    queryKey: ["reviews", "pending"],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/reviews/pending`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+    staleTime: 60 * 1000,
+  });
+  const pendingReviewVideoIds = useMemo(
+    () => new Set(pendingReviews.map((r) => r.videoId)),
+    [pendingReviews],
+  );
 
   const { data: savedViews = [] } = useQuery<SavedView[]>({
     queryKey: ["saved-views"],
@@ -279,6 +332,7 @@ export default function VideosPage() {
       if (statusFilter !== "all" && v.status !== statusFilter) return false;
       if (networkFilter !== "all" && !videoMatchesNetwork(v, networkFilter)) return false;
       if (monthFilter !== "all" && v.month !== monthFilter) return false;
+      if (pendingReviewsActive && !pendingReviewVideoIds.has(v.id)) return false;
       if (campaignFilter !== "all") {
         if (campaignFilter === "none" && v.campaignId != null) return false;
         if (campaignFilter !== "none" && String(v.campaignId ?? "") !== campaignFilter) return false;
@@ -305,7 +359,7 @@ export default function VideosPage() {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [videos, q, statusFilter, networkFilter, monthFilter, campaignFilter, templateFilter]);
+  }, [videos, q, statusFilter, networkFilter, monthFilter, campaignFilter, templateFilter, pendingReviewsActive, pendingReviewVideoIds]);
 
   const filtersActive =
     q.trim().length > 0 ||
@@ -902,6 +956,23 @@ export default function VideosPage() {
                   Vistas guardadas
                 </span>
               </div>
+              <button
+                type="button"
+                onClick={() => setPendingReviewsActive((v) => !v)}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border text-xs transition-base ${
+                  pendingReviewsActive
+                    ? "bg-amber-500/15 border-amber-500/40 text-amber-200"
+                    : "bg-card/40 border-foreground/10 hover:bg-foreground/[0.04]"
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1 text-left">Mis revisiones pendientes</span>
+                {pendingReviews.length > 0 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-100">
+                    {pendingReviews.length}
+                  </span>
+                )}
+              </button>
               <div className="rounded-xl border border-foreground/10 bg-card/40 divide-y divide-foreground/5 overflow-hidden">
                 {savedViews.length === 0 && (
                   <p className="text-[11px] text-muted-foreground/70 px-3 py-3 leading-snug">
@@ -1884,6 +1955,14 @@ function VideoWizard({
         </div>
       </div>
 
+      {video && (
+        <ApprovalBar
+          video={video}
+          onJumpToComments={() => onStepChange("comments")}
+          onJumpToReview={() => onStepChange("review")}
+        />
+      )}
+
       {isAutoGenerating && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" />
@@ -2010,10 +2089,14 @@ function VideoWizard({
             </StepWithPreview>
           )}
 
+          {currentStep === "comments" && video && (
+            <CommentsAndApproval video={video} onUpdated={() => queryClient.invalidateQueries({ queryKey: ["videos"] })} />
+          )}
+
           {currentStep === "review" && video && (
             <StepReview
               video={{ ...video, ...formData }}
-              onSchedule={(includeFacebook) => {
+              onSchedule={async (includeFacebook) => {
                 let scheduledDate: Date;
                 const hour = formData.scheduleHour;
                 if (hour && /^\d{1,2}:\d{2}$/.test(hour)) {
@@ -2026,16 +2109,28 @@ function VideoWizard({
                 } else {
                   scheduledDate = new Date();
                 }
+                // Per-platform pending statuses go through PATCH (not gated).
                 onUpdate({
-                  status: "scheduled",
                   tiktokStatus: "pending",
                   instagramStatus: "pending",
                   youtubeStatus: "pending",
                   linkedinStatus: "pending",
                   xStatus: "pending",
                   facebookStatus: includeFacebook ? "pending" : "skipped",
-                  scheduledAt: scheduledDate.toISOString(),
                 });
+                // Scheduling itself goes through the guarded /schedule
+                // endpoint so the approval workflow is enforced server-side.
+                const sr = await apiFetch(`${API_BASE}/content/videos/${video!.id}/schedule`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ scheduledAt: scheduledDate.toISOString(), driveFolderId: video!.driveFolderId ?? null }),
+                });
+                if (!sr.ok) {
+                  const msg = await sr.text();
+                  toast({ title: "No se pudo programar", description: msg, variant: "destructive" });
+                  return;
+                }
+                queryClient.invalidateQueries({ queryKey: ["videos"] });
                 const platforms = includeFacebook ? "6 plataformas" : "5 plataformas";
                 toast({
                   title: `¡Programado en las ${platforms}!`,
@@ -4009,6 +4104,443 @@ function StepReview({
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+const WORKFLOW_LABEL: Record<string, { label: string; cls: string }> = {
+  borrador: { label: "Borrador", cls: "bg-foreground/10 text-foreground/70 border-foreground/15" },
+  en_revision: { label: "En revisión", cls: "bg-amber-500/15 text-amber-300 border-amber-500/25" },
+  aprobado: { label: "Aprobado", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" },
+  programado: { label: "Programado", cls: "bg-orange-500/15 text-orange-300 border-orange-500/25" },
+  publicado: { label: "Publicado", cls: "bg-sky-500/15 text-sky-300 border-sky-500/25" },
+};
+
+function useTeamMembers() {
+  return useQuery<TeamMember[]>({
+    queryKey: ["team", "members"],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/team/members`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+function useCurrentUser() {
+  return useQuery<{ id: number; email: string; name: string | null; teamRole: string } | null>({
+    queryKey: ["auth", "me"],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/auth/me`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j.user ?? j;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: VideoData; onJumpToComments: () => void; onJumpToReview?: () => void }) {
+  const { data: me } = useCurrentUser();
+  const { data: members = [] } = useTeamMembers();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [reviewerId, setReviewerId] = useState<string>("");
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const { data: reviews = [] } = useQuery<VideoReview[]>({
+    queryKey: ["video-reviews", video.id],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/reviews`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const pending = reviews.find((r) => r.status === "pending");
+  const isReviewer = me?.teamRole === "reviewer";
+  const isAssignedReviewer = pending && me && pending.reviewerId === me.id;
+  const status = (video.workflowStatus || "borrador") as keyof typeof WORKFLOW_LABEL;
+  const wf = WORKFLOW_LABEL[status] || WORKFLOW_LABEL.borrador;
+  const reviewers = members.filter((m) => m.teamRole === "reviewer");
+
+  const requestReview = async () => {
+    if (!reviewerId) {
+      toast({ title: "Selecciona un revisor", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewerId: Number(reviewerId), note }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      toast({ title: "Revisión solicitada" });
+      setOpen(false);
+      setNote("");
+      queryClient.invalidateQueries({ queryKey: ["video-reviews", video.id] });
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: ["reviews", "pending"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const decide = async (decision: "approved" | "changes_requested", thenSchedule = false) => {
+    setSubmitting(true);
+    try {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/reviews/decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, note }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      let toastTitle = decision === "approved" ? "Video aprobado" : "Cambios solicitados";
+      if (thenSchedule && decision === "approved") {
+        if (video.scheduledAt) {
+          const sr = await apiFetch(`${API_BASE}/content/videos/${video.id}/schedule`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scheduledAt: video.scheduledAt, driveFolderId: video.driveFolderId ?? null }),
+          });
+          if (!sr.ok) {
+            toast({ title: "Aprobado, pero no se pudo programar", description: await sr.text(), variant: "destructive" });
+          } else {
+            toastTitle = "Aprobado y programado";
+          }
+        } else if (onJumpToReview) {
+          toastTitle = "Aprobado · elige fecha para programar";
+          onJumpToReview();
+        }
+      }
+      toast({ title: toastTitle });
+      setNote("");
+      queryClient.invalidateQueries({ queryKey: ["video-reviews", video.id] });
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: ["reviews", "pending"] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl border border-foreground/10 bg-card/40">
+        <span className={`text-[11px] uppercase tracking-wider px-2 py-1 rounded-md border ${wf.cls}`}>
+          {wf.label}
+        </span>
+        {pending && (
+          <span className="text-xs text-muted-foreground">
+            Revisión asignada a <strong className="text-foreground/80">{pending.reviewerName || pending.reviewerEmail}</strong>
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={onJumpToComments} className="h-8 text-xs">
+            <MessageSquare className="w-3.5 h-3.5 mr-1" /> Comentarios
+          </Button>
+          {!pending && status !== "aprobado" && status !== "publicado" && (
+            <Button size="sm" variant="outline" onClick={() => setOpen(true)} className="h-8 text-xs">
+              <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Pedir revisión
+            </Button>
+          )}
+          {pending && (isReviewer || isAssignedReviewer) && (
+            <>
+              <Button size="sm" variant="outline" onClick={() => decide("changes_requested")} disabled={submitting} className="h-8 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/10">
+                Solicitar cambios
+              </Button>
+              <Button size="sm" onClick={() => decide("approved")} disabled={submitting} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500">
+                <Check className="w-3.5 h-3.5 mr-1" /> Aprobar
+              </Button>
+              {onJumpToReview && (
+                <Button size="sm" onClick={() => decide("approved", true)} disabled={submitting} className="h-8 text-xs bg-emerald-700 hover:bg-emerald-600">
+                  <Send className="w-3.5 h-3.5 mr-1" /> Aprobar y programar
+                </Button>
+              )}
+            </>
+          )}
+          {!pending && isReviewer && status !== "aprobado" && status !== "publicado" && (
+            <>
+              <Button size="sm" onClick={() => decide("approved")} disabled={submitting} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500">
+                <Check className="w-3.5 h-3.5 mr-1" /> Aprobar directamente
+              </Button>
+              {onJumpToReview && (
+                <Button size="sm" onClick={() => decide("approved", true)} disabled={submitting} className="h-8 text-xs bg-emerald-700 hover:bg-emerald-600">
+                  <Send className="w-3.5 h-3.5 mr-1" /> Aprobar y programar
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pedir revisión</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-muted-foreground">Revisor</label>
+              <select
+                value={reviewerId}
+                onChange={(e) => setReviewerId(e.target.value)}
+                className="w-full mt-1 px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm"
+              >
+                <option value="">Selecciona un revisor…</option>
+                {reviewers.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name || r.email}</option>
+                ))}
+              </select>
+              {reviewers.length === 0 && (
+                <p className="text-[11px] text-amber-400 mt-1">No hay revisores asignados. Ve a /equipo para asignar uno.</p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Nota (opcional)</label>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={3}
+                className="w-full mt-1 px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm"
+                placeholder="¿Qué quieres que revise?"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button onClick={requestReview} disabled={submitting || !reviewerId}>
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Send className="w-4 h-4 mr-1" />}
+                Enviar solicitud
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated: () => void }) {
+  const { data: me } = useCurrentUser();
+  const { data: members = [] } = useTeamMembers();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [body, setBody] = useState("");
+  const [showSuggest, setShowSuggest] = useState(false);
+  const [suggestQuery, setSuggestQuery] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const { data: comments = [], isLoading } = useQuery<VideoComment[]>({
+    queryKey: ["video-comments", video.id],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/comments`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const { data: reviews = [] } = useQuery<VideoReview[]>({
+    queryKey: ["video-reviews", video.id],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/reviews`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
+  const submit = async () => {
+    const txt = body.trim();
+    if (!txt) return;
+    try {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: txt }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setBody("");
+      queryClient.invalidateQueries({ queryKey: ["video-comments", video.id] });
+      onUpdated();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const remove = async (id: number) => {
+    try {
+      const r = await apiFetch(`${API_BASE}/comments/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(await r.text());
+      queryClient.invalidateQueries({ queryKey: ["video-comments", video.id] });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const onBodyChange = (val: string) => {
+    setBody(val);
+    const cursor = textareaRef.current?.selectionStart ?? val.length;
+    const upToCursor = val.slice(0, cursor);
+    const m = upToCursor.match(/@([\w.+-]*)$/);
+    if (m) {
+      setSuggestQuery(m[1].toLowerCase());
+      setShowSuggest(true);
+    } else {
+      setShowSuggest(false);
+    }
+  };
+
+  const insertMention = (email: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const cursor = ta.selectionStart;
+    const before = body.slice(0, cursor).replace(/@([\w.+-]*)$/, `@${email} `);
+    const after = body.slice(cursor);
+    const next = before + after;
+    setBody(next);
+    setShowSuggest(false);
+    requestAnimationFrame(() => {
+      ta.focus();
+      const pos = before.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  };
+
+  const suggestions = useMemo(() => {
+    return members
+      .filter((m) => m.email.toLowerCase().includes(suggestQuery) || (m.name || "").toLowerCase().includes(suggestQuery))
+      .slice(0, 6);
+  }, [members, suggestQuery]);
+
+  const renderBody = (text: string) => {
+    // Lightweight markdown: **bold**, *italic*, `code`, [text](url), and @email mentions.
+    const tokenRe = /(@[\w.+-]+@[\w.-]+\.[\w]+)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)|(\[[^\]]+\]\([^)]+\))/g;
+    const out: ReactNode[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    let key = 0;
+    while ((m = tokenRe.exec(text)) !== null) {
+      if (m.index > last) out.push(<span key={key++}>{text.slice(last, m.index)}</span>);
+      const tok = m[0];
+      if (m[1]) out.push(<span key={key++} className="text-primary font-medium">{tok}</span>);
+      else if (m[2]) out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>);
+      else if (m[3]) out.push(<em key={key++}>{tok.slice(1, -1)}</em>);
+      else if (m[4]) out.push(<code key={key++} className="px-1 py-0.5 rounded bg-foreground/10 text-[0.85em]">{tok.slice(1, -1)}</code>);
+      else if (m[5]) {
+        const lm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (lm) out.push(<a key={key++} href={lm[2]} target="_blank" rel="noreferrer" className="text-primary underline">{lm[1]}</a>);
+      }
+      last = m.index + tok.length;
+    }
+    if (last < text.length) out.push(<span key={key++}>{text.slice(last)}</span>);
+    return out;
+  };
+
+  return (
+    <div className="grid lg:grid-cols-[1fr_20rem] gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="w-4 h-4" /> Comentarios del equipo
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Cargando…</div>
+          ) : comments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Aún no hay comentarios. Sé el primero en abrir la conversación.</p>
+          ) : (
+            <ul className="space-y-3">
+              {comments.map((c) => (
+                <li key={c.id} className="rounded-xl border border-foreground/10 bg-card/40 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span><strong className="text-foreground/80">{c.authorName || c.authorEmail || "Usuario"}</strong> · {new Date(c.createdAt).toLocaleString("es-ES")}</span>
+                    {me && c.authorId === me.id && (
+                      <button onClick={() => remove(c.id)} className="text-muted-foreground/60 hover:text-destructive" aria-label="Eliminar comentario">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-sm mt-1 whitespace-pre-wrap break-words">{renderBody(c.body)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              value={body}
+              onChange={(e) => onBodyChange(e.target.value)}
+              rows={3}
+              placeholder="Escribe un comentario… usa @email para mencionar a alguien"
+              className="w-full px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm resize-y"
+            />
+            {showSuggest && suggestions.length > 0 && (
+              <div className="absolute z-30 bottom-full mb-1 left-0 right-0 max-w-sm rounded-lg border border-foreground/10 bg-popover shadow-xl overflow-hidden">
+                {suggestions.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => insertMention(m.email)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-foreground/[0.05] flex items-center gap-2"
+                  >
+                    <AtSign className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="font-medium">{m.name || m.email}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{m.email}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-2">
+              <Button size="sm" onClick={submit} disabled={!body.trim()}>
+                <Send className="w-3.5 h-3.5 mr-1" /> Comentar
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldCheck className="w-4 h-4" /> Historial de aprobación
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {reviews.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin solicitudes de revisión todavía.</p>
+          ) : (
+            <ul className="space-y-2">
+              {reviews.map((r) => (
+                <li key={r.id} className="rounded-lg border border-foreground/10 bg-card/40 px-3 py-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-foreground/80">{r.reviewerName || r.reviewerEmail}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider ${
+                      r.status === "approved" ? "bg-emerald-500/15 text-emerald-300" :
+                      r.status === "changes_requested" ? "bg-amber-500/15 text-amber-300" :
+                      "bg-foreground/10 text-foreground/70"
+                    }`}>
+                      {r.status === "approved" ? "Aprobado" : r.status === "changes_requested" ? "Cambios" : "Pendiente"}
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground mt-0.5">
+                    Solicitada por {r.requesterName || "—"} · {new Date(r.createdAt).toLocaleString("es-ES")}
+                  </div>
+                  {r.decisionNote && <p className="mt-1 italic text-foreground/80">"{r.decisionNote}"</p>}
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -42,6 +42,7 @@ const navItems = [
   { href: "/descripciones", icon: MessageSquareText, label: "Descripciones", tour: "nav-descripciones" },
   { href: "/drive", icon: FolderTree, label: "Drive", tour: "nav-drive" },
   { href: "/estudio", icon: Clapperboard, label: "Estudio", tour: "nav-estudio" },
+  { href: "/equipo", icon: Users2, label: "Equipo", tour: "nav-equipo" },
   { href: "/ayuda", icon: HelpCircle, label: "Ayuda", tour: "nav-help" },
 ];
 

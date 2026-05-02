@@ -19,6 +19,8 @@ export const videos = pgTable("videos", {
   driveFileId: text("drive_file_id"),
   driveFolderId: text("drive_folder_id"),
   status: text("status").notNull().default("draft"),
+  /** Collaboration workflow: borrador | en_revision | aprobado | programado | publicado */
+  workflowStatus: text("workflow_status").notNull().default("borrador"),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   month: text("month"),

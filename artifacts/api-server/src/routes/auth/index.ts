@@ -177,6 +177,7 @@ router.get("/auth/me", (req: Request, res: Response) => {
       name: user.name,
       picture: user.picture,
       role: user.role,
+      teamRole: user.teamRole || "editor",
       hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
     });
   } else {

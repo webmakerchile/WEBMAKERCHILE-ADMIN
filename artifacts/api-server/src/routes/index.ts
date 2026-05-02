@@ -19,6 +19,7 @@ import savedViewsRouter from "./saved-views";
 import socialRouter from "./social";
 import libraryRouter from "./library";
 import notificationsRouter from "./notifications";
+import collaborationRouter from "./collaboration";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(savedViewsRouter);
 router.use(socialRouter);
 router.use(libraryRouter);
 router.use(notificationsRouter);
+router.use(collaborationRouter);
 
 export default router;

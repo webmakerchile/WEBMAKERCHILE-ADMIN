@@ -291,9 +291,26 @@ router.post("/content/videos/bulk-schedule", async (req, res) => {
     res.status(400).json({ error: "Fecha inválida" });
     return;
   }
+  // Enforce approval workflow: only videos that are aprobado/programado/publicado
+  // can be (re)scheduled. Reviewers can bypass this guard.
+  const meRow = (req.user as any)?.id
+    ? (await db.select({ teamRole: users.teamRole }).from(users).where(eq(users.id, (req.user as any).id)).limit(1))[0]
+    : null;
+  const isReviewer = meRow?.teamRole === "reviewer";
+  if (!isReviewer) {
+    const rows = await db
+      .select({ id: videos.id, workflowStatus: videos.workflowStatus })
+      .from(videos)
+      .where(inArray(videos.id, ids));
+    const blocked = rows.filter((r) => !["aprobado", "programado", "publicado"].includes(r.workflowStatus || "borrador"));
+    if (blocked.length) {
+      res.status(403).json({ error: "Algunos videos requieren aprobación antes de programarse", blockedIds: blocked.map((b) => b.id) });
+      return;
+    }
+  }
   const updated = await db
     .update(videos)
-    .set({ scheduledAt, status: "scheduled", updatedAt: new Date() })
+    .set({ scheduledAt, status: "scheduled", workflowStatus: "programado", updatedAt: new Date() })
     .where(inArray(videos.id, ids))
     .returning({ id: videos.id });
   res.json({ scheduled: updated.length, ids: updated.map((u) => u.id) });
@@ -452,11 +469,31 @@ router.patch("/content/videos/:id", async (req, res) => {
   const id = Number(req.params.id);
   const body = req.body;
 
+  // Guard: scheduling/publish state can only be set via the dedicated
+  // /schedule endpoint or by reviewers, so the approval workflow is the
+  // single source of truth for transitions to scheduled/published.
+  const wantsScheduleField =
+    body.status === "scheduled" ||
+    body.status === "published" ||
+    body.scheduledAt !== undefined ||
+    body.workflowStatus !== undefined;
+  if (wantsScheduleField) {
+    const meId = (req.user as { id?: number } | undefined)?.id;
+    const meRow = meId
+      ? (await db.select({ teamRole: users.teamRole }).from(users).where(eq(users.id, meId)).limit(1))[0]
+      : null;
+    if (meRow?.teamRole !== "reviewer") {
+      res.status(403).json({ error: "Usa el flujo de aprobación: programa desde el endpoint /schedule tras aprobar el video" });
+      return;
+    }
+  }
+
   const updateData: Record<string, any> = { updatedAt: new Date() };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
   if (body.coverPrompt !== undefined) updateData.coverPrompt = body.coverPrompt;
   if (body.status !== undefined) updateData.status = body.status;
+  if (body.workflowStatus !== undefined) updateData.workflowStatus = body.workflowStatus;
   if (body.month !== undefined) updateData.month = body.month;
   if (body.week !== undefined) updateData.week = body.week;
   if (body.day !== undefined) updateData.day = body.day;
@@ -820,12 +857,26 @@ router.post("/content/videos/:id/schedule", async (req, res) => {
   const id = Number(req.params.id);
   const body = ScheduleVideoBody.parse(req.body);
 
+  // Enforce approval workflow on single-video schedule too.
+  const meRow = (req.user as any)?.id
+    ? (await db.select({ teamRole: users.teamRole }).from(users).where(eq(users.id, (req.user as any).id)).limit(1))[0]
+    : null;
+  const isReviewer = meRow?.teamRole === "reviewer";
+  if (!isReviewer) {
+    const [current] = await db.select({ workflowStatus: videos.workflowStatus }).from(videos).where(eq(videos.id, id)).limit(1);
+    if (current && !["aprobado", "programado", "publicado"].includes(current.workflowStatus || "borrador")) {
+      res.status(403).json({ error: "Este video requiere aprobación antes de programarse" });
+      return;
+    }
+  }
+
   const [updated] = await db
     .update(videos)
     .set({
       scheduledAt: new Date(body.scheduledAt),
       driveFolderId: body.driveFolderId,
       status: "scheduled",
+      workflowStatus: "programado",
       updatedAt: new Date(),
     })
     .where(eq(videos.id, id))

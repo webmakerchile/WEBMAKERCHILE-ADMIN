@@ -28,6 +28,7 @@ const AyudaPage = lazy(() => import("./pages/ayuda"));
 const BibliotecaPage = lazy(() => import("./pages/biblioteca"));
 const CampanaPage = lazy(() => import("./pages/campana"));
 const InsightsPage = lazy(() => import("./pages/insights"));
+const EquipoPage = lazy(() => import("./pages/equipo"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -80,6 +81,7 @@ type AuthUser = {
   name: string | null;
   picture: string | null;
   role: string;
+  teamRole?: string;
 };
 
 const AuthContext = createContext<AuthUser | null>(null);
@@ -175,6 +177,9 @@ function Router() {
       </Route>
       <Route path="/campanas/:id">
         <RouteShell name="campana"><CampanaPage /></RouteShell>
+      </Route>
+      <Route path="/equipo">
+        <RouteShell name="equipo"><EquipoPage /></RouteShell>
       </Route>
       <Route path="/ayuda">
         <RouteShell name="ayuda"><AyudaPage /></RouteShell>

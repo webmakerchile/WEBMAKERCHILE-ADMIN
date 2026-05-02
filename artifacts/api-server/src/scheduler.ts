@@ -690,6 +690,7 @@ async function processScheduledVideos() {
 
       await db.update(videos).set({
         status: nextStatus,
+        workflowStatus: nextStatus === "published" ? "publicado" : undefined,
         publishedAt: nextStatus === "published" || nextStatus === "partial" ? new Date() : undefined,
         updatedAt: new Date(),
       }).where(eq(videos.id, video.id));
