@@ -14,6 +14,7 @@ import communityRouter from "./community";
 import ideasRouter from "./ideas";
 import analyticsRouter from "./analytics";
 import inspirationsRouter from "./inspirations";
+import onboardingRouter from "./onboarding";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(communityRouter);
 router.use(ideasRouter);
 router.use(analyticsRouter);
 router.use(inspirationsRouter);
+router.use(onboardingRouter);
 
 export default router;

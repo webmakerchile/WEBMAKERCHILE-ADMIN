@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
@@ -335,14 +336,18 @@ export default function VideosPage() {
           </div>
         ) : videos.length === 0 ? (
           <Card className="bg-card/30 border-foreground/10">
-            <CardContent className="p-12 text-center">
-              <Video className="w-12 h-12 text-primary/30 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Sin videos registrados</h3>
-              <p className="text-muted-foreground text-sm mb-4">Crea tu primer video y complétalo paso a paso</p>
-              <Button onClick={() => { setIsCreating(true); setWizardStep("info"); }}>
-                <Plus className="w-4 h-4 mr-2" />
-                Crear primer video
-              </Button>
+            <CardContent className="p-2">
+              <EmptyState
+                icon={Video}
+                title="Sin videos registrados"
+                description="Crea tu primer video. Te guiaremos paso a paso: información, portada, descripciones por red y revisión final."
+                action={{
+                  label: "Crear primer video",
+                  onClick: () => { setIsCreating(true); setWizardStep("info"); },
+                }}
+                secondaryAction={{ label: "Ver ayuda", href: "/ayuda" }}
+                size="lg"
+              />
             </CardContent>
           </Card>
         ) : (

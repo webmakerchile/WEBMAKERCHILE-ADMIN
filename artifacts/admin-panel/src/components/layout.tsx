@@ -13,25 +13,28 @@ import {
   Sparkles,
   MessageSquareText,
   Users2,
+  HelpCircle,
   LogOut,
   Menu,
   X,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { OnboardingTour } from "@/components/onboarding-tour";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "Inicio" },
-  { href: "/schedule", icon: CalendarClock, label: "Publicaciones" },
-  { href: "/cuentas", icon: Users2, label: "Cuentas Sociales" },
-  { href: "/videos", icon: Video, label: "Gestor de Videos" },
-  { href: "/cover", icon: ImageIcon, label: "Portadas" },
-  { href: "/historias", icon: Sparkles, label: "Historias" },
-  { href: "/descripciones", icon: MessageSquareText, label: "Descripciones" },
-  { href: "/drive", icon: FolderTree, label: "Drive" },
-  { href: "/estudio", icon: Clapperboard, label: "Estudio" },
+  { href: "/", icon: LayoutDashboard, label: "Inicio", tour: "nav-inicio" },
+  { href: "/schedule", icon: CalendarClock, label: "Publicaciones", tour: "nav-schedule" },
+  { href: "/cuentas", icon: Users2, label: "Cuentas Sociales", tour: "nav-cuentas" },
+  { href: "/videos", icon: Video, label: "Gestor de Videos", tour: "nav-videos" },
+  { href: "/cover", icon: ImageIcon, label: "Portadas", tour: "nav-cover" },
+  { href: "/historias", icon: Sparkles, label: "Historias", tour: "nav-historias" },
+  { href: "/descripciones", icon: MessageSquareText, label: "Descripciones", tour: "nav-descripciones" },
+  { href: "/drive", icon: FolderTree, label: "Drive", tour: "nav-drive" },
+  { href: "/estudio", icon: Clapperboard, label: "Estudio", tour: "nav-estudio" },
+  { href: "/ayuda", icon: HelpCircle, label: "Ayuda", tour: "nav-help" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -66,6 +69,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-[100dvh] bg-background text-foreground overflow-hidden">
+      <OnboardingTour />
       <aside className="hidden lg:flex w-64 flex-shrink-0 border-r border-foreground/10 bg-card/60 backdrop-blur-xl flex-col relative z-20">
         <div className="h-16 flex items-center px-6 border-b border-foreground/10">
           <img src="/icon-192.png" alt="Logo" className="w-7 h-7 rounded-lg mr-3" />
@@ -82,6 +86,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                data-tour={item.tour}
                 className={cn(
                   "flex items-center px-3 py-3 rounded-xl transition-base group relative",
                   isActive
@@ -183,6 +188,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       <Link
                         key={item.href}
                         href={item.href}
+                        data-tour={`mobile-${item.tour}`}
                         className={cn(
                           "flex items-center px-4 py-3.5 rounded-xl transition-base",
                           isActive

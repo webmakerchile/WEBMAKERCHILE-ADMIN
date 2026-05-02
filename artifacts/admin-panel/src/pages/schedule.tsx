@@ -18,6 +18,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { EmptyState } from "@/components/empty-state";
 import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
 import {
   Dialog,
@@ -791,10 +792,13 @@ export default function SchedulePage() {
             </div>
             <div className="p-4 space-y-3">
               {selectedVideos.length === 0 ? (
-                <div className="text-center py-8">
-                  <AlertCircle className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Sin publicaciones este día.</p>
-                </div>
+                <EmptyState
+                  icon={AlertCircle}
+                  title="Sin publicaciones este día"
+                  description="Programa un video desde tu lista para que aparezca en este horario."
+                  action={{ label: "Crear publicación", href: "/videos" }}
+                  size="sm"
+                />
               ) : (
                 selectedVideos.map((v: VideoSummary) => {
                   const nets = videoNetworks(v);

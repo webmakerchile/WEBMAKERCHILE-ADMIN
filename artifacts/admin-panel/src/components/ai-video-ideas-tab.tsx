@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/empty-state";
 import {
   Check,
   Trash2,
@@ -547,14 +548,16 @@ export default function AiVideoIdeasTab() {
           <Loader2 className="h-7 w-7 animate-spin text-orange-500" />
         </div>
       ) : groupedByDate.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-muted/10 border border-border/30 flex items-center justify-center mb-3">
-            <Sparkles className="w-6 h-6 text-muted-foreground/20" />
-          </div>
-          <p className="text-sm text-muted-foreground/40">
-            {filterCategory !== "all" ? "No hay ideas en esta categoria" : "Selecciona una categoria y genera tus primeras ideas"}
-          </p>
-        </div>
+        <EmptyState
+          icon={Sparkles}
+          title={filterCategory !== "all" ? "Sin ideas en esta categoría" : "Aún no tienes ideas guardadas"}
+          description={
+            filterCategory !== "all"
+              ? "Cambia el filtro o genera nuevas ideas para esta categoría."
+              : "Selecciona una categoría arriba y deja que la IA proponga títulos y guiones para tus próximos videos."
+          }
+          size="md"
+        />
       ) : (
         <div className="space-y-5">
           {groupedByDate.map(([date, ideas]) => (

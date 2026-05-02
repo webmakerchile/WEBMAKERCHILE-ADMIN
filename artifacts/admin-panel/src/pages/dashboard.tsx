@@ -28,6 +28,9 @@ import {
 } from "lucide-react";
 import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
 import { useToast } from "@/hooks/use-toast";
+import { EmptyState } from "@/components/empty-state";
+import { OnboardingChecklist } from "@/components/onboarding-checklist";
+import { WhatsNewBanner } from "@/components/whats-new-banner";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -1008,16 +1011,13 @@ function UpcomingPosts() {
       </div>
 
       {upcoming.length === 0 ? (
-        <div className="py-8 text-center">
-          <Clock className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-          <p className="text-xs text-muted-foreground">Sin publicaciones programadas.</p>
-          <Link
-            to="/schedule"
-            className="inline-flex items-center gap-1 mt-3 text-xs text-primary hover:underline"
-          >
-            <Plus className="w-3 h-3" /> Programar
-          </Link>
-        </div>
+        <EmptyState
+          icon={Clock}
+          title="Sin publicaciones programadas"
+          description="Cuando programes un video, aparecerá aquí en orden cronológico."
+          action={{ label: "Programar publicación", href: "/schedule" }}
+          size="sm"
+        />
       ) : (
         <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
           {upcoming.map((v) => {
@@ -1271,10 +1271,13 @@ function RecentActivity() {
             ))}
           </div>
         ) : activity.length === 0 ? (
-          <div className="py-10 text-center">
-            <History className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-            <p className="text-xs text-muted-foreground">Sin publicaciones publicadas aún.</p>
-          </div>
+          <EmptyState
+            icon={History}
+            title="Sin publicaciones publicadas"
+            description="Apenas publiques tu primer video, verás aquí su historial y estado en cada red."
+            action={{ label: "Crear publicación", href: "/videos" }}
+            size="sm"
+          />
         ) : (
           <>
             <div className="divide-y divide-foreground/10">
@@ -1365,7 +1368,9 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-6">
+        <WhatsNewBanner />
         <ErrorBanner />
+        <OnboardingChecklist />
 
         <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>

@@ -12,6 +12,7 @@ import StudioPage from "./pages/studio";
 import HistoriasPage from "./pages/historias";
 import DescripcionesPage from "./pages/descripciones";
 import CuentasPage from "./pages/cuentas";
+import AyudaPage from "./pages/ayuda";
 import LoginPage from "./pages/login";
 import TermsPage from "./pages/terms";
 import PrivacyPage from "./pages/privacy";
@@ -118,6 +119,7 @@ function Router() {
       <Route path="/historias" component={HistoriasPage} />
       <Route path="/descripciones" component={DescripcionesPage} />
       <Route path="/cuentas" component={CuentasPage} />
+      <Route path="/ayuda" component={AyudaPage} />
       <Route component={NotFound} />
     </Switch>
   );
