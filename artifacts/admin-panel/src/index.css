@@ -181,8 +181,11 @@
     @apply font-bold tracking-tight text-foreground;
   }
 
-  /* Anillo de foco visible y consistente para teclado */
-  :focus-visible {
+  /* Anillo de foco visible y consistente para teclado.
+     Se excluyen inputs de texto / textareas / contenteditable / el input
+     de cmdk porque ya gestionan su propio estilo de foco; el ring con
+     offset sobre ellos generaba un halo naranja desalineado. */
+  :focus-visible:not(input):not(textarea):not([contenteditable="true"]):not([cmdk-input]) {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 
