@@ -648,29 +648,32 @@ router.get("/content/videos/:id/stats", async (req, res) => {
           stats.x = { error: "no_token" };
           return;
         }
+        // non_public_metrics (includes impression_count) is available when
+        // using an OAuth 2.0 user-context access token for the tweet owner's posts.
+        // getValidXToken returns exactly that token (not an app-level bearer).
         const tweetRes = await fetch(
-          `https://api.twitter.com/2/tweets/${video.xPostId}?tweet.fields=public_metrics`,
+          `https://api.twitter.com/2/tweets/${video.xPostId}?tweet.fields=public_metrics,non_public_metrics`,
           { headers: { Authorization: `Bearer ${token}` } },
         ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as {
-          data?: { public_metrics?: { like_count?: number; retweet_count?: number; reply_count?: number; bookmark_count?: number; quote_count?: number } };
+          data?: {
+            public_metrics?: { like_count?: number; retweet_count?: number; reply_count?: number; bookmark_count?: number; quote_count?: number };
+            non_public_metrics?: { impression_count?: number };
+          };
         } | null;
 
         if (!tweetRes?.data) {
           stats.x = { error: "not_found" };
           return;
         }
-        const m = tweetRes.data.public_metrics ?? {};
-        // impression_count is in non_public_metrics which requires OAuth 1.0a
-        // user-context auth. With our OAuth 2.0 Bearer token it is not available.
-        // We flag impressionsUnavailable so the UI can show an explicit note.
+        const pm = tweetRes.data.public_metrics ?? {};
+        const npm = tweetRes.data.non_public_metrics ?? {};
         stats.x = {
-          impressions: null,
-          impressionsUnavailable: true,
-          likes: Number(m.like_count ?? 0),
-          retweets: Number(m.retweet_count ?? 0),
-          replies: Number(m.reply_count ?? 0),
-          quotes: Number(m.quote_count ?? 0),
-          bookmarks: Number(m.bookmark_count ?? 0),
+          impressions: Number(npm.impression_count ?? 0),
+          likes: Number(pm.like_count ?? 0),
+          retweets: Number(pm.retweet_count ?? 0),
+          replies: Number(pm.reply_count ?? 0),
+          quotes: Number(pm.quote_count ?? 0),
+          bookmarks: Number(pm.bookmark_count ?? 0),
         };
       } catch (err: any) {
         stats.x = { error: err.message };

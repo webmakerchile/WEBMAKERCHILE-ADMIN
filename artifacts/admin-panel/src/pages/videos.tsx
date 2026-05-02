@@ -383,7 +383,7 @@ export default function VideosPage() {
 type YouTubeMetrics = { views: number; likes: number; comments: number; averageViewDuration: number; url: string };
 type InstagramMetrics = { likes: number; comments: number; plays: number; reach: number; totalInteractions: number };
 type LinkedInMetrics = { impressions: number; clicks: number; reactions: number; comments: number; shares: number };
-type XMetrics = { likes: number; retweets: number; replies: number; quotes: number; bookmarks: number; impressions: null; impressionsUnavailable: true };
+type XMetrics = { impressions: number; likes: number; retweets: number; replies: number; quotes: number; bookmarks: number };
 type StatError = { error: string };
 type TikTokUnavailable = { available: false; reason: string };
 
@@ -528,13 +528,12 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 error={isStatError(xd) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
                 rows={xdOk ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: "No disponible" },
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum(xdOk.impressions) },
                   { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(xdOk.likes) },
                   { icon: <Repeat2 className="w-3.5 h-3.5" />, label: "Retweets", value: fmtNum(xdOk.retweets) },
                   { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Respuestas", value: fmtNum(xdOk.replies) },
                   { icon: <Share2 className="w-3.5 h-3.5" />, label: "Citas", value: fmtNum(xdOk.quotes) },
                 ] : []}
-                impressionNote={xdOk?.impressionsUnavailable ? "Impresiones no disponibles con la autenticación actual (requiere OAuth 1.0a)" : undefined}
               />
             )}
 
