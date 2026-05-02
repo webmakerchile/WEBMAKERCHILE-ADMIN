@@ -626,7 +626,7 @@ export default function DescripcionesPage() {
                           <Settings className="w-3.5 h-3.5" />
                         </button>
                         {menuOpen === slideShown.numero_slide && (
-                          <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-foreground/20 rounded-xl shadow-2xl py-1 min-w-[220px] z-30">
+                          <div className="absolute top-full left-0 mt-1 bg-popover text-popover-foreground border border-foreground/15 rounded-xl shadow-2xl py-1 min-w-[220px] z-30">
                             <button
                               type="button"
                               onClick={() => handleReintentarSlide(slideShown, "imagen")}
@@ -688,7 +688,7 @@ export default function DescripcionesPage() {
 
                   {/* Loading overlay sobre la slide en regeneración */}
                   {!!reintentando[slideShown.numero_slide] && (
-                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-3 z-30">
+                    <div className="absolute inset-0 bg-background/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center gap-3 z-30">
                       <Loader2 className="w-10 h-10 text-primary animate-spin" />
                       <p className="text-foreground font-semibold text-sm">Regenerando slide {slideShown.numero_slide}...</p>
                       <p className="text-muted-foreground text-xs">~10-30s</p>
@@ -843,7 +843,7 @@ export default function DescripcionesPage() {
         {/* Modal de ajuste personalizado */}
         {modalAjuste && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setModalAjuste(null)}>
-            <div className="bg-slate-900 border border-foreground/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-card text-card-foreground border border-foreground/10 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-display font-bold">Ajuste personalizado — Slide {modalAjuste.slide.numero_slide}</h3>
                 <button onClick={() => setModalAjuste(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>

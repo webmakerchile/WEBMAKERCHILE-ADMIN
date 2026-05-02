@@ -407,7 +407,7 @@ export default function AiVideoIdeasTab() {
             value={customContext}
             onChange={(e) => setCustomContext(e.target.value)}
             placeholder="Opcional: describe el enfoque que quieres... Ej: Videos sobre chatbots con IA para restaurantes"
-            className="w-full bg-black/30 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/30 resize-none focus:outline-none focus:ring-1 focus:ring-orange-500/40 transition-colors min-h-[48px]"
+            className="w-full bg-foreground/[0.04] border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-base min-h-[48px]"
             rows={2}
             data-testid="textarea-custom-context"
           />
@@ -676,7 +676,7 @@ export default function AiVideoIdeasTab() {
                             )}
 
                             {idea.coverImageUrl && (
-                              <div className="rounded-lg overflow-hidden border border-border/50 bg-black/20">
+                              <div className="rounded-lg overflow-hidden border border-border/50 bg-foreground/[0.04]">
                                 <div className="flex items-center justify-between px-3 py-1.5 bg-muted/20 border-b border-border/50">
                                   <span className="text-[10px] font-semibold text-orange-400/80 flex items-center gap-1.5">
                                     <ImageIcon className="w-3 h-3" /> Portada

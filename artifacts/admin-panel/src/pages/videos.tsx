@@ -365,7 +365,7 @@ export default function VideosPage() {
                 >
                   <CardContent className="p-4 sm:p-5">
                     <div className="flex items-start gap-3 sm:gap-4">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-black/20 border border-foreground/10 flex-shrink-0 flex items-center justify-center">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-foreground/[0.05] border border-foreground/10 flex-shrink-0 flex items-center justify-center">
                         {video.coverImageBase64 ? (
                           <img
                             src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
@@ -1620,7 +1620,7 @@ function StepCover({
           </div>
         ) : (
           <div className="text-center py-8">
-            <div className="w-32 h-56 mx-auto rounded-2xl border-2 border-dashed border-foreground/10 flex items-center justify-center mb-6 bg-black/10">
+            <div className="w-32 h-56 mx-auto rounded-2xl border-2 border-dashed border-foreground/15 flex items-center justify-center mb-6 bg-foreground/[0.04]">
               <ImageIcon className="w-12 h-12 text-muted-foreground/20" />
             </div>
             <p className="text-muted-foreground mb-4">
@@ -2503,12 +2503,12 @@ function StepReview({
                   </p>
                   <div className="mt-2 space-y-1">
                     {video.linkedinError && (
-                      <div className="text-xs px-2 py-1.5 rounded bg-black/20 text-rose-200 border border-rose-500/20">
+                      <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
                         <span className="font-semibold">LinkedIn:</span> {video.linkedinError}
                       </div>
                     )}
                     {video.xError && (
-                      <div className="text-xs px-2 py-1.5 rounded bg-black/20 text-rose-200 border border-rose-500/20">
+                      <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
                         <span className="font-semibold">X:</span> {video.xError}
                       </div>
                     )}
@@ -2648,7 +2648,7 @@ function StepReview({
           )}
 
           {video.tiktokPublishId ? (
-            <div className="bg-black/20 border border-foreground/10 rounded-xl p-4 flex items-center gap-3">
+            <div className="bg-foreground/[0.04] border border-foreground/10 rounded-xl p-4 flex items-center gap-3">
               <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
                 <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
               </span>

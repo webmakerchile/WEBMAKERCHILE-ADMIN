@@ -1043,7 +1043,7 @@ function UpcomingPosts() {
             const captionLine = upcomingCaptionLine(v);
             return (
               <div key={v.id} className="rounded-lg bg-foreground/5 border border-foreground/10 p-2.5 hover:bg-foreground/10 transition flex gap-2.5">
-                <div className="w-12 h-12 shrink-0 rounded-md overflow-hidden bg-black/40 ring-1 ring-foreground/10 flex items-center justify-center">
+                <div className="w-12 h-12 shrink-0 rounded-md overflow-hidden bg-foreground/[0.05] ring-1 ring-foreground/10 flex items-center justify-center">
                   {cover ? (
                     <img src={cover} alt="" className="w-full h-full object-cover" loading="lazy" />
                   ) : (

@@ -738,7 +738,7 @@ export default function SchedulePage() {
                             title={`${v.title} — arrastra para mover`}
                           >
                             {cover ? (
-                              <div className="aspect-video rounded-md overflow-hidden bg-black/40 mb-1.5">
+                              <div className="aspect-video rounded-md overflow-hidden bg-foreground/[0.05] mb-1.5">
                                 <img src={cover} alt="" className="w-full h-full object-cover" loading="lazy" />
                               </div>
                             ) : null}
