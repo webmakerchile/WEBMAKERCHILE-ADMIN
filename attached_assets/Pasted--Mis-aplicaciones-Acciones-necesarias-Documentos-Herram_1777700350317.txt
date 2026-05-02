@@ -1,0 +1,72 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+No cumple los requisitos para enviarse a revisión
+Faltan datos en los siguientes campos de tu solicitud:
+Icono de la aplicación (1024 x 1024)
+URL de la Política de privacidad
+Eliminación de datos de usuario
+Categoría
+Identificador de la aplicación
+1560364252477028
+Clave secreta de la aplicación
+Clave secreta de la aplicación
+fada9e69cac3dd4e2756354a09c95246
+​
+No compartas esto con nadie por tu seguridad
+Nombre para mostrar
+Nombre para mostrar
+Automatización Redes Sociales
+Espacio de nombres
+Espacio de nombres
+Dominios de la aplicación
+admin.webmakerlatam.com
+Correo electrónico de contacto
+​
+Correo electrónico de contacto
+webmakerchile@gmail.com
+URL de la Política de privacidad
+URL de la Política de privacidad
+https://admin.webmakerlatam.com/privacy
+URL de las Condiciones del servicio
+URL de las Condiciones del servicio
+https://admin.webmakerlatam.com/terms
+Eliminación de datos de usuario
+URL de las instrucciones para la eliminación de datos
+​
+Eliminación de datos de usuario
+https://admin.webmakerlatam.com/privacy
+​
+name_placeholder should represent a valid URL
+Icono de la aplicación (1024 x 1024)
+Categoría
+Empresa y páginas
+​
+Información de contacto del delegado de protección de datos
+El Reglamento General de Protección de Datos (RGPD) exige que determinadas empresas con actividad comercial en la Unión Europea designen un delegado de protección de datos para que las personas puedan ponerse en contacto con él para obtener información sobre el tratamiento de sus datos.
+Las personas podrán consultar los datos de contacto del delegado, así como otra información relativa a tu aplicación o sitio web en Facebook. Más información.
+Nombre
+∙
+Opcional
+Nombre∙Opcional
+Correo electrónico
+Correo electrónico
+Dirección
+Dirección postal
+Dirección postal
+Apartamento/oficina/otro∙Opcional
+Ciudad/distrito
+Estado/provincia/región
+Código postal
+Country
+United States
+​
+Se ha producido un error. Vuelve a intentarlo.
+Guardar cambiosDescartar
