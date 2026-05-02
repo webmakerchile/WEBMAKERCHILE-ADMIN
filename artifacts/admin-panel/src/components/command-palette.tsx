@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useTheme } from "@/hooks/use-theme";
 import {
   CommandDialog,
   CommandInput,
@@ -25,6 +26,10 @@ import {
   Search,
   Keyboard,
   Loader2,
+  Plug,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -81,10 +86,10 @@ type Page = {
 };
 
 const PAGES: Page[] = [
-  { href: "/", label: "Inicio", icon: LayoutDashboard, shortcut: ["g", "h"] },
+  { href: "/", label: "Inicio", icon: LayoutDashboard, shortcut: ["g", "i"] },
   { href: "/videos", label: "Gestor de Videos", icon: Video, shortcut: ["g", "v"] },
-  { href: "/schedule", label: "Publicaciones", icon: CalendarClock, shortcut: ["g", "s"] },
-  { href: "/cuentas", label: "Cuentas Sociales", icon: Users2, shortcut: ["g", "c"] },
+  { href: "/schedule", label: "Calendario / Publicaciones", icon: CalendarClock, shortcut: ["g", "c"] },
+  { href: "/cuentas", label: "Cuentas Sociales", icon: Users2, shortcut: ["g", "u"] },
   { href: "/cover", label: "Portadas", icon: ImageIcon, shortcut: ["g", "p"] },
   { href: "/historias", label: "Historias", icon: Sparkles },
   { href: "/descripciones", label: "Descripciones", icon: MessageSquareText, shortcut: ["g", "d"] },
@@ -96,12 +101,14 @@ const PAGES: Page[] = [
 type ActionContext = {
   setLocation: (to: string) => void;
   currentPath: string;
+  cycleTheme: () => void;
+  themeMode: "light" | "dark" | "system";
 };
 
 type Action = {
   id: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  label: (ctx: ActionContext) => string;
+  icon: (ctx: ActionContext) => React.ComponentType<{ className?: string }>;
   shortcut?: string[];
   run: (ctx: ActionContext) => void;
 };
@@ -109,23 +116,42 @@ type Action = {
 const ACTIONS: Action[] = [
   {
     id: "new-video",
-    label: "Crear nuevo video",
-    icon: Plus,
+    label: () => "Crear nuevo video",
+    icon: () => Plus,
     shortcut: ["n"],
     run: ({ setLocation, currentPath }) =>
       navigateAndTriggerVideo(setLocation, currentPath, "new"),
   },
   {
     id: "schedule",
-    label: "Ir a programar publicaciones",
-    icon: CalendarClock,
+    label: () => "Ir a programar publicaciones",
+    icon: () => CalendarClock,
     shortcut: ["s"],
     run: ({ setLocation }) => setLocation("/schedule"),
   },
   {
+    id: "connect-network",
+    label: () => "Conectar red social",
+    icon: () => Plug,
+    run: ({ setLocation }) => setLocation("/cuentas"),
+  },
+  {
+    id: "cycle-theme",
+    label: ({ themeMode }) =>
+      themeMode === "dark"
+        ? "Cambiar tema → Sistema"
+        : themeMode === "system"
+          ? "Cambiar tema → Claro"
+          : "Cambiar tema → Oscuro",
+    icon: ({ themeMode }) =>
+      themeMode === "dark" ? Moon : themeMode === "light" ? Sun : Monitor,
+    shortcut: ["t"],
+    run: ({ cycleTheme }) => cycleTheme(),
+  },
+  {
     id: "shortcuts",
-    label: "Ver atajos de teclado",
-    icon: Keyboard,
+    label: () => "Ver atajos de teclado",
+    icon: () => Keyboard,
     shortcut: ["?"],
     run: () => {
       window.dispatchEvent(new CustomEvent("open-shortcuts"));
@@ -152,6 +178,8 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [currentPath, setLocation] = useLocation();
+  const { mode: themeMode, cycle: cycleTheme } = useTheme();
+  const actionCtx: ActionContext = { setLocation, currentPath, cycleTheme, themeMode };
 
   useEffect(() => {
     if (!open) {
@@ -208,18 +236,21 @@ export function CommandPalette({
         </CommandEmpty>
 
         <CommandGroup heading="Acciones">
-          {ACTIONS.map((action) => (
+          {ACTIONS.map((action) => {
+            const Icon = action.icon(actionCtx);
+            const label = action.label(actionCtx);
+            return (
             <CommandItem
               key={action.id}
-              value={`acción ${action.label}`}
+              value={`acción ${label}`}
               onSelect={() => {
                 close();
-                action.run({ setLocation, currentPath });
+                action.run(actionCtx);
               }}
               className="cursor-pointer"
             >
-              <action.icon className="text-muted-foreground" />
-              <span>{action.label}</span>
+              <Icon className="text-muted-foreground" />
+              <span>{label}</span>
               {action.shortcut && (
                 <KbdGroup className="ml-auto">
                   {action.shortcut.map((k) => (
@@ -228,7 +259,8 @@ export function CommandPalette({
                 </KbdGroup>
               )}
             </CommandItem>
-          ))}
+            );
+          })}
         </CommandGroup>
 
         <CommandGroup heading="Páginas">

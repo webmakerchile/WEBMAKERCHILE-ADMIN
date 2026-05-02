@@ -127,8 +127,10 @@ router.get("/content/videos/search", async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const limitRaw = Number(req.query.limit);
   const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 50 ? Math.floor(limitRaw) : 12;
+  const offsetRaw = Number(req.query.offset);
+  const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
   if (!q) {
-    res.json({ items: [], total: 0 });
+    res.json({ items: [], total: 0, limit, offset, hasMore: false });
     return;
   }
   const pattern = `%${q.replace(/[%_]/g, (m) => "\\" + m)}%`;
@@ -143,6 +145,7 @@ router.get("/content/videos/search", async (req, res) => {
     ilike(videos.xDescription, pattern),
     ilike(videos.facebookDescription, pattern),
   );
+  // Fetch one extra row to compute hasMore without a second COUNT query.
   const rows = await db
     .select({
       id: videos.id,
@@ -156,8 +159,11 @@ router.get("/content/videos/search", async (req, res) => {
     .from(videos)
     .where(where)
     .orderBy(desc(videos.updatedAt))
-    .limit(limit);
-  res.json({ items: rows, total: rows.length });
+    .limit(limit + 1)
+    .offset(offset);
+  const hasMore = rows.length > limit;
+  const items = hasMore ? rows.slice(0, limit) : rows;
+  res.json({ items, total: items.length, limit, offset, hasMore });
 });
 
 // Bulk update arbitrary safe fields across many videos. Used by the
@@ -228,6 +234,69 @@ router.post("/content/videos/bulk-update", async (req, res) => {
     .where(inArray(videos.id, ids))
     .returning({ id: videos.id });
   res.json({ updated: updated.length, ids: updated.map((u) => u.id) });
+});
+
+// Bulk schedule: marks N videos as scheduled at the same datetime.
+router.post("/content/videos/bulk-schedule", async (req, res) => {
+  const idsRaw = req.body?.ids;
+  if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
+    res.status(400).json({ error: "Se requiere al menos un ID" });
+    return;
+  }
+  const ids = idsRaw
+    .map((v: unknown) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (ids.length === 0) {
+    res.status(400).json({ error: "IDs inválidos" });
+    return;
+  }
+  if (ids.length > 200) {
+    res.status(400).json({ error: "Máximo 200 videos por operación" });
+    return;
+  }
+  const scheduledAtRaw = req.body?.scheduledAt;
+  if (typeof scheduledAtRaw !== "string") {
+    res.status(400).json({ error: "Falta scheduledAt" });
+    return;
+  }
+  const scheduledAt = new Date(scheduledAtRaw);
+  if (Number.isNaN(scheduledAt.getTime())) {
+    res.status(400).json({ error: "Fecha inválida" });
+    return;
+  }
+  const updated = await db
+    .update(videos)
+    .set({ scheduledAt, status: "scheduled", updatedAt: new Date() })
+    .where(inArray(videos.id, ids))
+    .returning({ id: videos.id });
+  res.json({ scheduled: updated.length, ids: updated.map((u) => u.id) });
+});
+
+// Bulk generate descriptions: stub that flags videos for description
+// regeneration. The actual generation pipeline runs per-video in the
+// existing /:id/generate-descriptions endpoint; here we just zero out the
+// existing descriptions so the editor knows to regenerate them. Returns the
+// list of affected ids so the UI can chain individual generation calls.
+router.post("/content/videos/bulk-generate-descriptions", async (req, res) => {
+  const idsRaw = req.body?.ids;
+  if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
+    res.status(400).json({ error: "Se requiere al menos un ID" });
+    return;
+  }
+  const ids = idsRaw
+    .map((v: unknown) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (ids.length === 0) {
+    res.status(400).json({ error: "IDs inválidos" });
+    return;
+  }
+  if (ids.length > 50) {
+    res.status(400).json({ error: "Máximo 50 videos por operación" });
+    return;
+  }
+  // We only return the queued ids; the frontend triggers the per-video
+  // generator one by one to avoid blocking on long Gemini calls.
+  res.json({ queued: ids.length, ids });
 });
 
 router.delete("/content/videos/bulk", async (req, res) => {

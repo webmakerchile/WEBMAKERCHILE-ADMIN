@@ -183,6 +183,38 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "error", label: "Con error" },
 ];
 
+const NETWORK_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "Todas las redes" },
+  { value: "youtube", label: "YouTube" },
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "x", label: "X / Twitter" },
+  { value: "facebook", label: "Facebook" },
+];
+
+// A video "belongs to" a network if it has a description prepared OR has been
+// posted to it (postId/mediaId/videoId). This matches how the editor signals
+// network-readiness across the app.
+function videoMatchesNetwork(v: VideoData, net: string): boolean {
+  switch (net) {
+    case "youtube":
+      return !!(v.youtubeTitle || v.youtubeDescription || v.youtubeVideoId);
+    case "instagram":
+      return !!(v.instagramDescription || v.instagramMediaId);
+    case "tiktok":
+      return !!(v.tiktokDescription || v.tiktokPublishId);
+    case "linkedin":
+      return !!(v.linkedinDescription || v.linkedinPostId);
+    case "x":
+      return !!(v.xDescription || v.xPostId);
+    case "facebook":
+      return !!(v.facebookDescription || v.facebookPostId);
+    default:
+      return true;
+  }
+}
+
 export default function VideosPage() {
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -191,8 +223,13 @@ export default function VideosPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [networkFilter, setNetworkFilter] = useState<string>("all");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
   const [savingView, setSavingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
+  const [bulkMonth, setBulkMonth] = useState("");
+  const [bulkScheduleAt, setBulkScheduleAt] = useState("");
+  const [generatingDescriptions, setGeneratingDescriptions] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -213,10 +250,18 @@ export default function VideosPage() {
     },
   });
 
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    videos.forEach((v) => { if (v.month) set.add(v.month); });
+    return Array.from(set).sort();
+  }, [videos]);
+
   const filteredVideos = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return videos.filter((v) => {
       if (statusFilter !== "all" && v.status !== statusFilter) return false;
+      if (networkFilter !== "all" && !videoMatchesNetwork(v, networkFilter)) return false;
+      if (monthFilter !== "all" && v.month !== monthFilter) return false;
       if (!needle) return true;
       const haystack = [
         v.title,
@@ -235,9 +280,13 @@ export default function VideosPage() {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [videos, q, statusFilter]);
+  }, [videos, q, statusFilter, networkFilter, monthFilter]);
 
-  const filtersActive = q.trim().length > 0 || statusFilter !== "all";
+  const filtersActive =
+    q.trim().length > 0 ||
+    statusFilter !== "all" ||
+    networkFilter !== "all" ||
+    monthFilter !== "all";
 
   // Drop selections that no longer match the current filtered set so the
   // action bar always reflects what the user actually sees.
@@ -408,6 +457,8 @@ export default function VideosPage() {
   const applySavedView = (view: SavedView) => {
     setQ(view.filters.q || "");
     setStatusFilter(view.filters.status || "all");
+    setNetworkFilter(view.filters.network || "all");
+    setMonthFilter(view.filters.month || "all");
     setSelectedIds(new Set());
   };
 
@@ -422,6 +473,8 @@ export default function VideosPage() {
       filters: {
         q: q.trim() || undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
+        network: networkFilter !== "all" ? networkFilter : undefined,
+        month: monthFilter !== "all" ? monthFilter : undefined,
       },
     });
   };
@@ -429,6 +482,84 @@ export default function VideosPage() {
   const clearFilters = () => {
     setQ("");
     setStatusFilter("all");
+    setNetworkFilter("all");
+    setMonthFilter("all");
+  };
+
+  // Bulk: assign month label to N videos using the existing bulk-update endpoint.
+  const handleBulkAssignMonth = () => {
+    const month = bulkMonth.trim();
+    if (!month) {
+      toast({ title: "Ingresa un mes (ej. Mes 1)", variant: "destructive" });
+      return;
+    }
+    bulkUpdateMutation.mutate(
+      { ids: Array.from(selectedIds), patch: { month } },
+      { onSuccess: () => setBulkMonth("") },
+    );
+  };
+
+  // Bulk: schedule N videos at the same datetime via /content/videos/bulk-schedule.
+  const handleBulkSchedule = async () => {
+    if (!bulkScheduleAt) {
+      toast({ title: "Selecciona fecha y hora", variant: "destructive" });
+      return;
+    }
+    const scheduledAt = new Date(bulkScheduleAt).toISOString();
+    try {
+      const res = await apiFetch(`${API_BASE}/content/videos/bulk-schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds), scheduledAt }),
+      });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as { scheduled: number };
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      setBulkScheduleAt("");
+      toast({ title: `${data.scheduled} videos programados` });
+    } catch {
+      toast({ title: "No se pudieron programar los videos", variant: "destructive" });
+    }
+  };
+
+  // Bulk: kick off description generation per-video. The server endpoint
+  // returns the queued ids; we then call the existing per-video generator
+  // sequentially so Gemini calls don't block each other or the UI.
+  const handleBulkGenerateDescriptions = async () => {
+    setGeneratingDescriptions(true);
+    const ids = Array.from(selectedIds);
+    try {
+      const res = await apiFetch(`${API_BASE}/content/videos/bulk-generate-descriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error();
+      let ok = 0;
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          const r = await apiFetch(`${API_BASE}/content/videos/${id}/generate-descriptions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          if (r.ok) ok += 1;
+          else failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      toast({
+        title: `Descripciones generadas: ${ok}${failed ? ` · Fallaron: ${failed}` : ""}`,
+        variant: failed && !ok ? "destructive" : "default",
+      });
+    } catch {
+      toast({ title: "No se pudieron generar las descripciones", variant: "destructive" });
+    } finally {
+      setGeneratingDescriptions(false);
+    }
   };
 
   const autoGenerateMutation = useMutation({
@@ -604,94 +735,58 @@ export default function VideosPage() {
           </Button>
         </header>
 
-        {!noVideosAtAll && (
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <div className="relative flex-1 min-w-0">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
-                <Input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por título, descripción o red..."
-                  className="pl-9 bg-card/40 border-foreground/10"
-                />
-                {q && (
-                  <button
-                    type="button"
-                    onClick={() => setQ("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground rounded transition-base"
-                    aria-label="Limpiar búsqueda"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+        <div className="grid lg:grid-cols-[14rem_1fr] gap-4 lg:gap-6">
+          {!noVideosAtAll && (
+            <aside className="space-y-2">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+                  <Bookmark className="w-3 h-3" />
+                  Vistas guardadas
+                </span>
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="sm:w-56 bg-card/40 border-foreground/10">
-                  <FilterIcon className="w-4 h-4 mr-2 text-muted-foreground/60" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {filtersActive && (
-                <Button
-                  variant="ghost"
-                  onClick={clearFilters}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <CircleSlash2 className="w-4 h-4 mr-1" />
-                  Limpiar
-                </Button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-                <Bookmark className="w-3 h-3" />
-                Vistas guardadas:
-              </span>
-              {savedViews.length === 0 && (
-                <span className="text-xs text-muted-foreground/60">Aún no tienes vistas. Filtra y guarda una.</span>
-              )}
-              {savedViews.map((view) => (
-                <div
-                  key={view.id}
-                  className="group inline-flex items-center gap-1 px-2 py-1 rounded-full bg-foreground/[0.04] border border-foreground/10 text-xs hover:bg-foreground/[0.08] transition-base"
-                >
-                  <button
-                    type="button"
-                    onClick={() => applySavedView(view)}
-                    className="text-foreground"
+              <div className="rounded-xl border border-foreground/10 bg-card/40 divide-y divide-foreground/5 overflow-hidden">
+                {savedViews.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground/70 px-3 py-3 leading-snug">
+                    Aún no tienes vistas. Aplica filtros y guarda una para acceder rápido.
+                  </p>
+                )}
+                {savedViews.map((view) => (
+                  <div
+                    key={view.id}
+                    className="group flex items-center gap-2 px-2.5 py-2 hover:bg-foreground/[0.04] transition-base"
                   >
-                    {view.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteSavedViewMutation.mutate(view.id)}
-                    className="text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label={`Eliminar vista ${view.name}`}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => applySavedView(view)}
+                      className="flex-1 text-left text-xs text-foreground truncate min-w-0"
+                      title={view.name}
+                    >
+                      {view.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteSavedViewMutation.mutate(view.id)}
+                      className="text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                      aria-label={`Eliminar vista ${view.name}`}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
               {filtersActive && !savingView && (
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => setSavingView(true)}
-                  className="h-7 text-xs"
+                  className="w-full h-8 text-xs"
                 >
                   <BookmarkPlus className="w-3 h-3 mr-1" />
                   Guardar vista actual
                 </Button>
               )}
               {savingView && (
-                <div className="inline-flex items-center gap-1">
+                <div className="space-y-1.5">
                   <Input
                     value={newViewName}
                     onChange={(e) => setNewViewName(e.target.value)}
@@ -700,32 +795,100 @@ export default function VideosPage() {
                       if (e.key === "Escape") { setSavingView(false); setNewViewName(""); }
                     }}
                     placeholder="Nombre de la vista"
-                    className="h-7 text-xs w-44"
+                    className="h-8 text-xs"
                     autoFocus
                   />
-                  <Button
-                    size="sm"
-                    onClick={handleSaveCurrentView}
-                    disabled={createSavedViewMutation.isPending}
-                    className="h-7 text-xs"
-                  >
-                    {createSavedViewMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => { setSavingView(false); setNewViewName(""); }}
-                    className="h-7 text-xs"
-                  >
-                    Cancelar
-                  </Button>
+                  <div className="flex gap-1.5">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveCurrentView}
+                      disabled={createSavedViewMutation.isPending}
+                      className="h-7 text-xs flex-1"
+                    >
+                      {createSavedViewMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => { setSavingView(false); setNewViewName(""); }}
+                      className="h-7 text-xs"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
               )}
-            </div>
-          </div>
-        )}
+            </aside>
+          )}
 
-        {isLoading ? (
+          <div className="min-w-0 space-y-4">
+            {!noVideosAtAll && (
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-center flex-wrap">
+                <div className="relative flex-1 min-w-[12rem]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+                  <Input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Buscar por título, descripción o red..."
+                    className="pl-9 bg-card/40 border-foreground/10"
+                  />
+                  {q && (
+                    <button
+                      type="button"
+                      onClick={() => setQ("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground rounded transition-base"
+                      aria-label="Limpiar búsqueda"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="sm:w-44 bg-card/40 border-foreground/10">
+                    <FilterIcon className="w-4 h-4 mr-2 text-muted-foreground/60" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={networkFilter} onValueChange={setNetworkFilter}>
+                  <SelectTrigger className="sm:w-44 bg-card/40 border-foreground/10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {NETWORK_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={monthFilter} onValueChange={setMonthFilter}>
+                  <SelectTrigger className="sm:w-40 bg-card/40 border-foreground/10">
+                    <SelectValue placeholder="Todos los meses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los meses</SelectItem>
+                    {availableMonths.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {filtersActive && (
+                  <Button
+                    variant="ghost"
+                    onClick={clearFilters}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <CircleSlash2 className="w-4 h-4 mr-1" />
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {isLoading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
           </div>
@@ -873,6 +1036,8 @@ export default function VideosPage() {
             </div>
           </>
         )}
+          </div>
+        </div>
       </div>
 
       <AnimatePresence>
@@ -884,14 +1049,23 @@ export default function VideosPage() {
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
             className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl"
           >
-            <div className="bg-card/95 backdrop-blur-xl border border-foreground/15 shadow-2xl rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex items-center gap-2 flex-1 min-w-0">
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/15 text-primary text-xs font-semibold">
+            <div className="bg-card/95 backdrop-blur-xl border border-foreground/15 shadow-2xl rounded-2xl px-4 py-3 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/15 text-primary text-xs font-semibold flex-shrink-0">
                   {selectionCount}
                 </span>
-                <span className="text-sm font-medium truncate">
+                <span className="text-sm font-medium truncate flex-1 min-w-0">
                   {selectionCount === 1 ? "1 video seleccionado" : `${selectionCount} videos seleccionados`}
                 </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  Cancelar
+                </Button>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <Select
@@ -902,7 +1076,7 @@ export default function VideosPage() {
                     });
                   }}
                 >
-                  <SelectTrigger className="h-8 text-xs w-44">
+                  <SelectTrigger className="h-8 text-xs w-40">
                     <SelectValue placeholder="Cambiar estado..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -911,6 +1085,57 @@ export default function VideosPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <div className="inline-flex items-center gap-1">
+                  <Input
+                    value={bulkMonth}
+                    onChange={(e) => setBulkMonth(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleBulkAssignMonth(); }}
+                    placeholder="Asignar mes"
+                    className="h-8 text-xs w-32"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={handleBulkAssignMonth}
+                    disabled={bulkUpdateMutation.isPending || !bulkMonth.trim()}
+                    aria-label="Asignar mes a la selección"
+                  >
+                    <Folder className="w-3 h-3" />
+                  </Button>
+                </div>
+                <div className="inline-flex items-center gap-1">
+                  <Input
+                    type="datetime-local"
+                    value={bulkScheduleAt}
+                    onChange={(e) => setBulkScheduleAt(e.target.value)}
+                    className="h-8 text-xs w-44"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={handleBulkSchedule}
+                    disabled={!bulkScheduleAt}
+                    aria-label="Programar selección en lote"
+                  >
+                    <CalendarClock className="w-3 h-3" />
+                  </Button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={handleBulkGenerateDescriptions}
+                  disabled={generatingDescriptions}
+                >
+                  {generatingDescriptions ? (
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3 mr-1" />
+                  )}
+                  Generar descripciones
+                </Button>
                 <Button
                   variant="destructive"
                   size="sm"
@@ -930,15 +1155,6 @@ export default function VideosPage() {
                       Eliminar
                     </>
                   )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setSelectedIds(new Set())}
-                >
-                  <X className="w-3 h-3 mr-1" />
-                  Cancelar
                 </Button>
               </div>
             </div>

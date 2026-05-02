@@ -18,15 +18,16 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
     rows: [
       { keys: ["n"], label: "Crear nuevo video" },
       { keys: ["s"], label: "Ir a programar publicaciones" },
+      { keys: ["t"], label: "Cambiar tema (claro / oscuro / sistema)" },
     ],
   },
   {
     title: "Navegación (g + tecla)",
     rows: [
-      { keys: ["g", "h"], label: "Inicio" },
+      { keys: ["g", "i"], label: "Inicio" },
       { keys: ["g", "v"], label: "Gestor de Videos" },
-      { keys: ["g", "s"], label: "Publicaciones" },
-      { keys: ["g", "c"], label: "Cuentas Sociales" },
+      { keys: ["g", "c"], label: "Calendario / Publicaciones" },
+      { keys: ["g", "u"], label: "Cuentas Sociales" },
       { keys: ["g", "p"], label: "Portadas" },
       { keys: ["g", "d"], label: "Descripciones" },
       { keys: ["g", "e"], label: "Estudio" },
