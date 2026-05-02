@@ -80,6 +80,58 @@ function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, { ...init, credentials: "include" });
 }
 
+const MAX_VIDEO_SIZE_MB = 256;
+const ACCEPTED_VIDEO_MIME_PREFIX = "video/";
+
+type UploadProgress = { loaded: number; total: number; pct: number; bps: number };
+type UploadHandle = {
+  promise: Promise<{ ok: boolean; status: number; data: any }>;
+  abort: () => void;
+};
+
+// XHR-based upload to expose real progress events. `fetch` no soporta
+// `upload.onprogress`; XHR sí. Mantiene credentials:"include" para auth.
+function uploadVideoWithProgress(
+  url: string,
+  file: File,
+  onProgress: (p: UploadProgress) => void,
+): UploadHandle {
+  const xhr = new XMLHttpRequest();
+  const fd = new FormData();
+  fd.append("video", file);
+  const startedAt = Date.now();
+  const promise = new Promise<{ ok: boolean; status: number; data: any }>((resolve, reject) => {
+    xhr.open("POST", url);
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable) return;
+      const elapsed = Math.max(1, (Date.now() - startedAt) / 1000);
+      onProgress({
+        loaded: ev.loaded,
+        total: ev.total,
+        pct: Math.min(100, Math.round((ev.loaded / ev.total) * 100)),
+        bps: ev.loaded / elapsed,
+      });
+    };
+    xhr.onload = () => {
+      let data: any = null;
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { /* noop */ }
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+    };
+    xhr.onerror = () => reject(new Error("Error de red durante la subida"));
+    xhr.onabort = () => reject(new Error("Subida cancelada"));
+    xhr.send(fd);
+  });
+  return { promise, abort: () => xhr.abort() };
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 type VideoData = {
   id: number;
   title: string;
@@ -1789,31 +1841,60 @@ function VideoWizard({
   }, [video]);
 
   useEffect(() => {
-    if (video && pendingVideoFile && !isCreating) {
-      const linkPending = async () => {
-        try {
-          if (pendingVideoFile.type === "drive") {
-            await apiFetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ driveFileId: pendingVideoFile.driveFileId, fileName: pendingVideoFile.fileName }),
-            });
-          } else if (pendingVideoFile.type === "upload") {
-            const fd = new FormData();
-            fd.append("video", pendingVideoFile.file);
-            await apiFetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
-              method: "POST",
-              body: fd,
-            });
+    if (!(video && pendingVideoFile && !isCreating)) return;
+    let cancelled = false;
+    let pendingHandle: UploadHandle | null = null;
+    const linkPending = async () => {
+      try {
+        if (pendingVideoFile.type === "drive") {
+          const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/link-drive-video`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ driveFileId: pendingVideoFile.driveFileId, fileName: pendingVideoFile.fileName }),
+          });
+          if (cancelled) return;
+          if (!r.ok) {
+            const detail = await r.json().catch(() => ({} as { error?: string }));
+            throw new Error(detail?.error || `Error vinculando video (HTTP ${r.status})`);
           }
-          queryClient.invalidateQueries({ queryKey: ["videos"] });
-        } catch (err) {
-          console.error("Error linking pending video file:", err);
+          toast({ title: "Video vinculado", description: pendingVideoFile.fileName });
+        } else if (pendingVideoFile.type === "upload") {
+          // Progreso real durante la subida diferida (post-creación) usando XHR.
+          const t = toast({ title: "Subiendo video...", description: `${pendingVideoFile.fileName} · 0%` });
+          pendingHandle = uploadVideoWithProgress(
+            `${API_BASE}/content/videos/${video.id}/upload-video`,
+            pendingVideoFile.file,
+            (p) => {
+              if (cancelled) return;
+              t.update({ id: t.id, title: "Subiendo video...", description: `${pendingVideoFile.fileName} · ${p.pct}%` });
+            },
+          );
+          const r = await pendingHandle.promise;
+          if (cancelled) return;
+          if (!r.ok) {
+            throw new Error(r.data?.error || `Error subiendo video (HTTP ${r.status})`);
+          }
+          t.update({ id: t.id, title: "Video subido", description: pendingVideoFile.fileName });
         }
-        setPendingVideoFile(null);
-      };
-      linkPending();
-    }
+        if (cancelled) return;
+        queryClient.invalidateQueries({ queryKey: ["videos"] });
+      } catch (err: any) {
+        if (cancelled || err?.message === "Subida cancelada") return;
+        console.error("Error linking pending video file:", err);
+        toast({
+          title: "No se pudo adjuntar el video",
+          description: err?.message || "Reintenta desde el paso de Información.",
+          variant: "destructive",
+        });
+      } finally {
+        if (!cancelled) setPendingVideoFile(null);
+      }
+    };
+    linkPending();
+    return () => {
+      cancelled = true;
+      if (pendingHandle) pendingHandle.abort();
+    };
   }, [video?.id, isCreating]);
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
@@ -2337,11 +2418,43 @@ function StepInfo({
   pendingVideoFile?: { type: "drive"; driveFileId: string; fileName: string } | { type: "upload"; file: File; fileName: string } | null;
   setPendingVideoFile?: (f: any) => void;
 }) {
+  const { toast } = useToast();
   const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [linking, setLinking] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [resultMsg, setResultMsg] = useState<{ success?: boolean; error?: string; fileName?: string } | null>(null);
   const videoFileRef = useRef<HTMLInputElement>(null);
+  const uploadHandleRef = useRef<UploadHandle | null>(null);
+
+  const validateVideoFile = (file: File): string | null => {
+    if (!file.type.startsWith(ACCEPTED_VIDEO_MIME_PREFIX)) {
+      return `El archivo no es un video válido (${file.type || "tipo desconocido"}).`;
+    }
+    const sizeMB = file.size / 1024 / 1024;
+    if (sizeMB > MAX_VIDEO_SIZE_MB) {
+      return `El video pesa ${sizeMB.toFixed(1)} MB. Máximo permitido: ${MAX_VIDEO_SIZE_MB} MB.`;
+    }
+    return null;
+  };
+
+  const cancelUpload = () => {
+    if (uploadHandleRef.current) {
+      uploadHandleRef.current.abort();
+      uploadHandleRef.current = null;
+    }
+  };
+
+  // Si el componente se desmonta mientras hay una subida en curso, abortarla
+  // para no dejar un XHR colgado consumiendo red ni disparar setState tardíos.
+  useEffect(() => {
+    return () => {
+      if (uploadHandleRef.current) {
+        uploadHandleRef.current.abort();
+        uploadHandleRef.current = null;
+      }
+    };
+  }, []);
 
   const hasVideoLinked = !!(video?.videoFileDriveId) || !!resultMsg?.success;
   const hasPending = !!pendingVideoFile;
@@ -2379,6 +2492,13 @@ function StepInfo({
   };
 
   const handleFileUpload = async (file: File) => {
+    const validationError = validateVideoFile(file);
+    if (validationError) {
+      setResultMsg({ success: false, error: validationError });
+      toast({ title: "Archivo no válido", description: validationError, variant: "destructive" });
+      return;
+    }
+
     if (!video) {
       if (setPendingVideoFile) setPendingVideoFile({ type: "upload", file, fileName: file.name });
       return;
@@ -2386,24 +2506,37 @@ function StepInfo({
 
     setUploading(true);
     setResultMsg(null);
+    setUploadProgress({ loaded: 0, total: file.size, pct: 0, bps: 0 });
     try {
-      const fd = new FormData();
-      fd.append("video", file);
-      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/upload-video`, {
-        method: "POST",
-        body: fd,
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setResultMsg({ success: true, fileName: data.fileName });
+      const handle = uploadVideoWithProgress(
+        `${API_BASE}/content/videos/${video.id}/upload-video`,
+        file,
+        (p) => setUploadProgress(p),
+      );
+      uploadHandleRef.current = handle;
+      const r = await handle.promise;
+      if (r.ok && r.data?.success) {
+        setResultMsg({ success: true, fileName: r.data.fileName });
         if (onVideoUploaded) onVideoUploaded();
       } else {
-        setResultMsg({ success: false, error: data.error || "Error al subir" });
+        const msg = r.data?.error || `Error al subir (HTTP ${r.status})`;
+        setResultMsg({ success: false, error: msg });
+        toast({ title: "Error al subir el video", description: msg, variant: "destructive" });
       }
     } catch (err: any) {
-      setResultMsg({ success: false, error: err.message });
+      const msg = err?.message || "Error al subir el video";
+      // Subida cancelada por el usuario: no mostrar como error agresivo.
+      if (msg === "Subida cancelada") {
+        setResultMsg(null);
+        toast({ title: "Subida cancelada" });
+      } else {
+        setResultMsg({ success: false, error: msg });
+        toast({ title: "Error al subir el video", description: msg, variant: "destructive" });
+      }
     } finally {
+      uploadHandleRef.current = null;
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -2627,13 +2760,47 @@ function StepInfo({
             </div>
           ) : (
             <div className="space-y-3">
-              {linking || uploading ? (
+              {linking ? (
                 <div className="border-2 border-dashed border-primary/50 bg-primary/5 rounded-xl p-8 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">
-                      {linking ? "Vinculando desde Drive..." : "Subiendo archivo..."}
-                    </p>
+                    <p className="text-sm text-muted-foreground">Vinculando desde Drive...</p>
+                  </div>
+                </div>
+              ) : uploading ? (
+                <div className="border-2 border-dashed border-primary/50 bg-primary/5 rounded-xl p-6 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
+                      <p className="text-sm font-medium text-foreground truncate">
+                        Subiendo a Google Drive...
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={cancelUpload}
+                      className="text-xs text-muted-foreground hover:text-red-400 shrink-0"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="h-2 w-full rounded-full bg-foreground/10 overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-150 ease-out"
+                        style={{ width: `${uploadProgress?.pct ?? 0}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>{uploadProgress?.pct ?? 0}%</span>
+                      <span>
+                        {uploadProgress
+                          ? `${formatBytes(uploadProgress.loaded)} / ${formatBytes(uploadProgress.total)}`
+                          : "Preparando..."}
+                        {uploadProgress && uploadProgress.bps > 0 && ` · ${formatBytes(uploadProgress.bps)}/s`}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -2653,13 +2820,19 @@ function StepInfo({
 
                   <div
                     onClick={() => videoFileRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleFileUpload(file);
+                    }}
                     className="border-2 border-dashed border-foreground/10 hover:border-orange-500/50 hover:bg-foreground/5 rounded-xl p-6 text-center cursor-pointer transition-all"
                   >
                     <div className="flex flex-col items-center gap-2">
                       <Upload className="w-8 h-8 text-orange-400" />
-                      <p className="text-sm font-medium text-foreground">Subir Archivo</p>
+                      <p className="text-sm font-medium text-foreground">Subir o arrastrar archivo</p>
                       <p className="text-xs text-muted-foreground/60">
-                        MP4, MOV · Máx 256MB
+                        MP4, MOV · Máx {MAX_VIDEO_SIZE_MB} MB
                       </p>
                     </div>
                   </div>
