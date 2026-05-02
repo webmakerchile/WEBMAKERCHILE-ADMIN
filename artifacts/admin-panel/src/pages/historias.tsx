@@ -532,6 +532,15 @@ export default function HistoriasPage() {
           </div>
         )}
 
+        {!loading && !detectando && !resultado && !error && !recomendacion && (
+          <EmptyState
+            icon={Sparkles}
+            title="Aún no has generado ninguna historia"
+            description="Escribe un concepto y elige formato (única, serie o auto). La IA generará tus historias 9:16 en pocos segundos."
+            size="md"
+          />
+        )}
+
         {/* RESULTADO */}
         {resultado && frameActual && (
           <motion.div
