@@ -130,7 +130,9 @@ router.get("/content/videos/search", async (req, res) => {
   const offsetRaw = Number(req.query.offset);
   const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
   if (!q) {
-    res.json({ items: [], total: 0, limit, offset, hasMore: false });
+    // `count` is the number of items in this page; consumers should use
+    // `hasMore` (and `offset + limit`) to drive pagination, not a total.
+    res.json({ items: [], count: 0, limit, offset, hasMore: false });
     return;
   }
   const pattern = `%${q.replace(/[%_]/g, (m) => "\\" + m)}%`;
@@ -163,7 +165,7 @@ router.get("/content/videos/search", async (req, res) => {
     .offset(offset);
   const hasMore = rows.length > limit;
   const items = hasMore ? rows.slice(0, limit) : rows;
-  res.json({ items, total: items.length, limit, offset, hasMore });
+  res.json({ items, count: items.length, limit, offset, hasMore });
 });
 
 // Bulk update arbitrary safe fields across many videos. Used by the
