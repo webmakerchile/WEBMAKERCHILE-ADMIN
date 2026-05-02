@@ -14,6 +14,10 @@ const FB_GRAPH_BASE = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}`;
 const FB_VIDEO_BASE = `https://graph-video.facebook.com/${FACEBOOK_GRAPH_VERSION}`;
 const FB_AUTH_BASE = `https://www.facebook.com/${FACEBOOK_GRAPH_VERSION}/dialog/oauth`;
 
+// Server-side System User tokens (permanent, no OAuth needed)
+const SERVER_FB_PAGE_ID = (process.env.FACEBOOK_PAGE_ID || "").trim();
+const SERVER_FB_PAGE_TOKEN = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
+
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
@@ -172,17 +176,39 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/facebook/status", async (req: Request, res: Response) => {
-  const user = req.user as any;
-  if (!user.facebookUserAccessToken) {
-    res.json({ connected: false, message: "Facebook no conectado. Usa el botón para conectar tu página." });
+router.get("/facebook/status", async (_req: Request, res: Response) => {
+  // Prefer server-side System User tokens
+  if (SERVER_FB_PAGE_ID && SERVER_FB_PAGE_TOKEN) {
+    try {
+      const r = await fetch(
+        `${FB_GRAPH_BASE}/${SERVER_FB_PAGE_ID}?fields=id,name,picture&access_token=${SERVER_FB_PAGE_TOKEN}`
+      );
+      const data: any = await r.json();
+      if (!data.error) {
+        res.json({
+          connected: true,
+          pageName: data.name || "WebMaker Latam",
+          pagePicture: data.picture?.data?.url || null,
+          serverManaged: true,
+        });
+        return;
+      }
+      console.error("[Facebook] Server token status error:", data.error?.message);
+    } catch (err: any) {
+      console.error("[Facebook] Server token status fetch failed:", err.message);
+    }
+  }
+  // Fallback: user OAuth tokens
+  const user = (_req as any).user as any;
+  if (user?.facebookUserAccessToken) {
+    res.json({
+      connected: true,
+      pageName: user.facebookPageName || "Cuenta conectada (sin página)",
+      pagePicture: user.facebookPagePicture || null,
+    });
     return;
   }
-  res.json({
-    connected: true,
-    pageName: user.facebookPageName || "Cuenta conectada (sin página)",
-    pagePicture: user.facebookPagePicture || null,
-  });
+  res.json({ connected: false, message: "Facebook no conectado." });
 });
 
 router.post("/facebook/disconnect", async (req: Request, res: Response) => {
@@ -285,7 +311,11 @@ export async function publishToFacebook(
   user: any,
   video: any,
 ): Promise<{ success: boolean; postId?: string; error?: string }> {
-  if (!user.facebookPageId || !user.facebookPageAccessToken) {
+  // Prefer server-side System User tokens; fall back to user OAuth tokens
+  const pageId = SERVER_FB_PAGE_ID || user.facebookPageId;
+  const pageToken = SERVER_FB_PAGE_TOKEN || user.facebookPageAccessToken;
+
+  if (!pageId || !pageToken) {
     return { success: false, error: "Facebook no conectado" };
   }
   if (!video.videoFileDriveId) {
@@ -320,9 +350,9 @@ export async function publishToFacebook(
       (!isVideoMime(mimeType) && guessIsImageFromName(video.videoFileName));
 
     if (treatAsImage) {
-      return publishFacebookPhoto(user.facebookPageId, user.facebookPageAccessToken, caption, buffer, mimeType || "image/jpeg");
+      return publishFacebookPhoto(pageId, pageToken, caption, buffer, mimeType || "image/jpeg");
     }
-    return publishFacebookVideo(user.facebookPageId, user.facebookPageAccessToken, caption, buffer, mimeType || "video/mp4");
+    return publishFacebookVideo(pageId, pageToken, caption, buffer, mimeType || "video/mp4");
   } catch (err: any) {
     console.error("[Facebook] publish helper error:", err.message);
     return { success: false, error: err.message };

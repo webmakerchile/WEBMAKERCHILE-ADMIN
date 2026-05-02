@@ -33,8 +33,10 @@ type NetworkConfig = {
 const NETWORKS: NetworkConfig[] = [
   {
     network: "facebook",
-    endpoints: { status: "/facebook/status", authUrl: "/facebook/auth", disconnect: "/facebook/disconnect" },
-    description: "Publica en tu Página de Facebook",
+    endpoints: { status: "/facebook/status", authUrl: "", disconnect: null },
+    description: "Página de Facebook conectada a nivel servidor",
+    serverManaged: true,
+    serverManagedNote: "Facebook usa credenciales de System User permanentes configuradas en el servidor.",
   },
   {
     network: "instagram",
