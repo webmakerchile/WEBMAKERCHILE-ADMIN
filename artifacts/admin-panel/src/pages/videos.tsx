@@ -1670,6 +1670,9 @@ function VideoWizard({
       toast({ title: "Completa el título del video", variant: "destructive" });
       return;
     }
+    // Forward per-network description fields too — when the user applies a
+    // template in this step they live in `formData` only; without including
+    // them here the rehydrate-from-server effect would wipe the prefill.
     const infoData = {
       title: formData.title,
       description: formData.description,
@@ -1680,6 +1683,13 @@ function VideoWizard({
       scheduleHour: formData.scheduleHour || undefined,
       templateId: formData.templateId,
       campaignId: formData.campaignId,
+      tiktokDescription: formData.tiktokDescription || undefined,
+      instagramDescription: formData.instagramDescription || undefined,
+      youtubeTitle: formData.youtubeTitle || undefined,
+      youtubeDescription: formData.youtubeDescription || undefined,
+      linkedinDescription: formData.linkedinDescription || undefined,
+      xDescription: formData.xDescription || undefined,
+      facebookDescription: formData.facebookDescription || undefined,
     };
     if (isCreating) {
       onCreate(infoData);

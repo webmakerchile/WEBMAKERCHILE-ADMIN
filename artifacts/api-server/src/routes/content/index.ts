@@ -353,20 +353,24 @@ router.delete("/content/videos/bulk", async (req, res) => {
 router.post("/content/videos", async (req, res) => {
   const body = CreateVideoBody.parse(req.body);
   const userId = (req.user as { id?: number } | undefined)?.id ?? null;
-  const campaignIdRaw = (req.body as { campaignId?: unknown })?.campaignId;
-  const templateIdRaw = (req.body as { templateId?: unknown })?.templateId;
-  const campaignResolved = await resolveOwnedLibraryId(campaignIdRaw, campaigns, userId);
+  const raw = (req.body ?? {}) as Record<string, unknown>;
+  const campaignResolved = await resolveOwnedLibraryId(raw.campaignId, campaigns, userId);
   if (campaignResolved === "forbidden") {
     res.status(403).json({ error: "Campaña no encontrada o no autorizada" });
     return;
   }
-  const templateResolved = await resolveOwnedLibraryId(templateIdRaw, templates, userId);
+  const templateResolved = await resolveOwnedLibraryId(raw.templateId, templates, userId);
   if (templateResolved === "forbidden") {
     res.status(403).json({ error: "Plantilla no encontrada o no autorizada" });
     return;
   }
-  const campaignId = campaignResolved;
-  const templateId = templateResolved;
+  // Per-network description fields can arrive via the create payload when
+  // the user applies a template in the wizard's Información step. Keep them
+  // optional so the legacy "create then patch" flow keeps working.
+  const optionalText = (key: string): string | null => {
+    const v = raw[key];
+    return typeof v === "string" && v.length > 0 ? v : null;
+  };
   const [row] = await db
     .insert(videos)
     .values({
@@ -378,8 +382,15 @@ router.post("/content/videos", async (req, res) => {
       day: body.day || null,
       videoNumber: body.videoNumber || null,
       status: "draft",
-      campaignId,
-      templateId,
+      campaignId: campaignResolved,
+      templateId: templateResolved,
+      tiktokDescription: optionalText("tiktokDescription"),
+      instagramDescription: optionalText("instagramDescription"),
+      youtubeTitle: optionalText("youtubeTitle"),
+      youtubeDescription: optionalText("youtubeDescription"),
+      linkedinDescription: optionalText("linkedinDescription"),
+      xDescription: optionalText("xDescription"),
+      facebookDescription: optionalText("facebookDescription"),
     })
     .returning();
   res.status(201).json(row);
