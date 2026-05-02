@@ -328,7 +328,7 @@ export default function VideosPage() {
                             <p className="text-xs sm:text-sm text-muted-foreground truncate">{video.description}</p>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            {!!(video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId || video.tiktokPublishId || video.facebookPostId) && (
+                            {!!(video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId || video.tiktokPublishId) && (
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -383,7 +383,7 @@ export default function VideosPage() {
 type YouTubeMetrics = { views: number; likes: number; comments: number; averageViewDuration: number; url: string };
 type InstagramMetrics = { likes: number; comments: number; plays: number; reach: number; totalInteractions: number };
 type LinkedInMetrics = { impressions: number; clicks: number; reactions: number; comments: number; shares: number };
-type XMetrics = { likes: number; retweets: number; replies: number; quotes: number; bookmarks: number };
+type XMetrics = { likes: number; retweets: number; replies: number; quotes: number; bookmarks: number; impressions: null; impressionsUnavailable: true };
 type StatError = { error: string };
 type TikTokUnavailable = { available: false; reason: string };
 
@@ -416,7 +416,7 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
 
   const hasPublishedNetworks = video && (
     video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId ||
-    video.xPostId || video.tiktokPublishId || video.facebookPostId
+    video.xPostId || video.tiktokPublishId
   );
 
   const fmtNum = (n: number) =>
@@ -528,11 +528,13 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 error={isStatError(xd) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
                 rows={xdOk ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: "No disponible" },
                   { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(xdOk.likes) },
                   { icon: <Repeat2 className="w-3.5 h-3.5" />, label: "Retweets", value: fmtNum(xdOk.retweets) },
                   { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Respuestas", value: fmtNum(xdOk.replies) },
                   { icon: <Share2 className="w-3.5 h-3.5" />, label: "Citas", value: fmtNum(xdOk.quotes) },
                 ] : []}
+                impressionNote={xdOk?.impressionsUnavailable ? "Impresiones no disponibles con la autenticación actual (requiere OAuth 1.0a)" : undefined}
               />
             )}
 
@@ -562,6 +564,7 @@ function NetworkStatCard({
   unavailable,
   rows,
   link,
+  impressionNote,
 }: {
   label: string;
   bgClass: string;
@@ -570,6 +573,7 @@ function NetworkStatCard({
   unavailable?: boolean;
   rows: { icon: ReactNode; label: string; value: string }[];
   link?: string;
+  impressionNote?: string;
 }) {
   return (
     <div className="rounded-xl border border-white/5 bg-white/[0.03] overflow-hidden">
@@ -603,15 +607,20 @@ function NetworkStatCard({
             {error}
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-            {rows.map((row) => (
-              <div key={row.label} className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">{row.icon}</span>
-                <span className="text-[10px] text-muted-foreground">{row.label}</span>
-                <span className="ml-auto text-xs font-semibold text-foreground">{row.value}</span>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+              {rows.map((row) => (
+                <div key={row.label} className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{row.icon}</span>
+                  <span className="text-[10px] text-muted-foreground">{row.label}</span>
+                  <span className={`ml-auto text-xs font-semibold ${row.value === "No disponible" ? "text-muted-foreground/50" : "text-foreground"}`}>{row.value}</span>
+                </div>
+              ))}
+            </div>
+            {impressionNote && (
+              <p className="text-[10px] text-muted-foreground/50 mt-2 leading-tight">{impressionNote}</p>
+            )}
+          </>
         )}
       </div>
     </div>

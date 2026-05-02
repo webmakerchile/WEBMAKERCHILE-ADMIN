@@ -660,9 +660,12 @@ router.get("/content/videos/:id/stats", async (req, res) => {
           return;
         }
         const m = tweetRes.data.public_metrics ?? {};
-        // impression_count is not available in public_metrics without elevated access.
-        // We expose the metrics that are reliably present for all API tiers.
+        // impression_count is in non_public_metrics which requires OAuth 1.0a
+        // user-context auth. With our OAuth 2.0 Bearer token it is not available.
+        // We flag impressionsUnavailable so the UI can show an explicit note.
         stats.x = {
+          impressions: null,
+          impressionsUnavailable: true,
           likes: Number(m.like_count ?? 0),
           retweets: Number(m.retweet_count ?? 0),
           replies: Number(m.reply_count ?? 0),
