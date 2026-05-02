@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { Layout } from "@/components/layout";
+import { PreviewPanel, type PreviewContent } from "@/components/network-previews";
+import type { Network } from "@/components/social-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
@@ -1722,58 +1724,88 @@ function VideoWizard({
           )}
 
           {currentStep === "tiktok-instagram" && video && (
-            <StepTikTokInstagram
-              formData={formData}
-              setFormData={setFormData}
+            <StepWithPreview
+              networks={["tiktok", "instagram"]}
+              content={{
+                tiktok: { text: formData.tiktokDescription || "" },
+                instagram: { text: formData.instagramDescription || "" },
+              }}
               video={video}
-              onSave={() =>
-                handleSavePlatforms({
-                  tiktokDescription: formData.tiktokDescription,
-                  instagramDescription: formData.instagramDescription,
-                })
-              }
-              onPrev={goPrev}
-              isPending={isUpdating}
-              isAutoGenerating={isAutoGenerating}
-              copyText={copyText}
-            />
+            >
+              <StepTikTokInstagram
+                formData={formData}
+                setFormData={setFormData}
+                video={video}
+                onSave={() =>
+                  handleSavePlatforms({
+                    tiktokDescription: formData.tiktokDescription,
+                    instagramDescription: formData.instagramDescription,
+                  })
+                }
+                onPrev={goPrev}
+                isPending={isUpdating}
+                isAutoGenerating={isAutoGenerating}
+                copyText={copyText}
+              />
+            </StepWithPreview>
           )}
 
           {currentStep === "youtube" && video && (
-            <StepYouTube
-              formData={formData}
-              setFormData={setFormData}
+            <StepWithPreview
+              networks={["youtube"]}
+              content={{
+                youtube: {
+                  text: formData.youtubeDescription || "",
+                  title: formData.youtubeTitle || "",
+                },
+              }}
               video={video}
-              onSave={() =>
-                handleSavePlatforms({
-                  youtubeTitle: formData.youtubeTitle,
-                  youtubeDescription: formData.youtubeDescription,
-                })
-              }
-              onPrev={goPrev}
-              isPending={isUpdating}
-              isAutoGenerating={isAutoGenerating}
-              copyText={copyText}
-            />
+            >
+              <StepYouTube
+                formData={formData}
+                setFormData={setFormData}
+                video={video}
+                onSave={() =>
+                  handleSavePlatforms({
+                    youtubeTitle: formData.youtubeTitle,
+                    youtubeDescription: formData.youtubeDescription,
+                  })
+                }
+                onPrev={goPrev}
+                isPending={isUpdating}
+                isAutoGenerating={isAutoGenerating}
+                copyText={copyText}
+              />
+            </StepWithPreview>
           )}
 
           {currentStep === "linkedin-x" && video && (
-            <StepLinkedInX
-              formData={formData}
-              setFormData={setFormData}
+            <StepWithPreview
+              networks={["linkedin", "x", "facebook"]}
+              content={{
+                linkedin: { text: formData.linkedinDescription || "" },
+                x: { text: formData.xDescription || "" },
+                facebook: { text: formData.facebookDescription || "" },
+              }}
               video={video}
-              onSave={() =>
-                handleSavePlatforms({
-                  linkedinDescription: formData.linkedinDescription,
-                  xDescription: formData.xDescription,
-                  facebookDescription: formData.facebookDescription,
-                })
-              }
-              onPrev={goPrev}
-              isPending={isUpdating}
-              isAutoGenerating={isAutoGenerating}
-              copyText={copyText}
-            />
+            >
+              <StepLinkedInX
+                formData={formData}
+                setFormData={setFormData}
+                video={video}
+                onSave={() =>
+                  handleSavePlatforms({
+                    linkedinDescription: formData.linkedinDescription,
+                    xDescription: formData.xDescription,
+                    facebookDescription: formData.facebookDescription,
+                  })
+                }
+                onPrev={goPrev}
+                isPending={isUpdating}
+                isAutoGenerating={isAutoGenerating}
+                copyText={copyText}
+              />
+            </StepWithPreview>
           )}
 
           {currentStep === "review" && video && (
@@ -2429,6 +2461,39 @@ function AutoGeneratingPlaceholder({ label }: { label: string }) {
     <div className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 min-h-[180px] flex flex-col items-center justify-center gap-2 text-primary/60">
       <Loader2 className="w-5 h-5 animate-spin" />
       <span className="text-xs">Generando {label} con IA...</span>
+    </div>
+  );
+}
+
+/**
+ * Wraps a wizard step with a live preview panel on the right column.
+ * Stacks vertically below the form on screens < lg.
+ */
+function StepWithPreview({
+  networks,
+  content,
+  video,
+  children,
+}: {
+  networks: Network[];
+  content: Partial<Record<Network, PreviewContent>>;
+  video: VideoData;
+  children: ReactNode;
+}) {
+  const previewVideo = useMemo(
+    () => ({
+      id: video.id,
+      title: video.title,
+      videoFileDriveId: video.videoFileDriveId ?? null,
+    }),
+    [video.id, video.title, video.videoFileDriveId],
+  );
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      <div className="lg:col-span-7 min-w-0">{children}</div>
+      <aside className="lg:col-span-5 min-w-0">
+        <PreviewPanel networks={networks} content={content} video={previewVideo} />
+      </aside>
     </div>
   );
 }
