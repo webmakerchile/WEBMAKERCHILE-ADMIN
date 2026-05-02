@@ -83,7 +83,7 @@ export default function TermsPage() {
           </section>
         </div>
 
-        <div className="mt-16 pt-8 border-t border-white/10 text-center text-xs text-muted-foreground">
+        <div className="mt-16 pt-8 border-t border-foreground/15 text-center text-xs text-muted-foreground">
           © 2026 WebMakerChile. Todos los derechos reservados.
         </div>
       </div>

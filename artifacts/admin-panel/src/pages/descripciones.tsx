@@ -327,7 +327,7 @@ export default function DescripcionesPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleGenerar}
-          className="glass-card rounded-2xl p-6 space-y-6 border border-white/5"
+          className="glass-card rounded-2xl p-6 space-y-6 border border-foreground/10"
         >
           <div>
             <label className="block text-sm font-semibold text-foreground mb-2">Tema del día</label>
@@ -337,7 +337,7 @@ export default function DescripcionesPage() {
                 value={tema}
                 onChange={(e) => setTema(e.target.value)}
                 placeholder="Ej: Cómo usar async/await en JavaScript"
-                className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                className="flex-1 px-4 py-3 bg-foreground/5 border border-foreground/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
               />
               <button
                 type="button"
@@ -366,7 +366,7 @@ export default function DescripcionesPage() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                     tipoContenido === tipo.value
                       ? "bg-primary text-primary-foreground"
-                      : "bg-white/5 text-foreground/70 hover:bg-white/10 border border-white/10"
+                      : "bg-foreground/5 text-foreground/70 hover:bg-foreground/10 border border-foreground/10"
                   }`}
                 >
                   {tipo.emoji} {tipo.label}
@@ -382,7 +382,7 @@ export default function DescripcionesPage() {
                 type="button"
                 onClick={() => setTipoPublicacion("unica")}
                 className={`p-4 rounded-xl border-2 text-left transition ${
-                  tipoPublicacion === "unica" ? "border-primary bg-primary/10" : "border-white/10 bg-white/5 hover:border-white/20"
+                  tipoPublicacion === "unica" ? "border-primary bg-primary/10" : "border-foreground/10 bg-foreground/5 hover:border-foreground/20"
                 }`}
               >
                 <div className="text-2xl mb-1">📄</div>
@@ -393,7 +393,7 @@ export default function DescripcionesPage() {
                 type="button"
                 onClick={() => setTipoPublicacion("carrusel")}
                 className={`p-4 rounded-xl border-2 text-left transition ${
-                  tipoPublicacion === "carrusel" ? "border-primary bg-primary/10" : "border-white/10 bg-white/5 hover:border-white/20"
+                  tipoPublicacion === "carrusel" ? "border-primary bg-primary/10" : "border-foreground/10 bg-foreground/5 hover:border-foreground/20"
                 }`}
               >
                 <div className="text-2xl mb-1">🎠</div>
@@ -405,7 +405,7 @@ export default function DescripcionesPage() {
 
           {tipoPublicacion === "carrusel" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
                 <div>
                   <div className="text-sm font-semibold text-foreground">🤖 Cantidad automática (recomendado)</div>
                   <div className="text-xs text-muted-foreground">
@@ -415,7 +415,7 @@ export default function DescripcionesPage() {
                 <button
                   type="button"
                   onClick={() => setCantidadAuto(!cantidadAuto)}
-                  className={`relative w-14 h-8 rounded-full transition flex-shrink-0 ${cantidadAuto ? "bg-primary" : "bg-white/20"}`}
+                  className={`relative w-14 h-8 rounded-full transition flex-shrink-0 ${cantidadAuto ? "bg-primary" : "bg-foreground/20"}`}
                 >
                   <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${cantidadAuto ? "left-7" : "left-1"}`} />
                 </button>
@@ -433,7 +433,7 @@ export default function DescripcionesPage() {
                         className={`px-5 py-2 rounded-lg text-sm font-bold transition ${
                           cantidadSlides === n
                             ? "bg-primary text-primary-foreground"
-                            : "bg-white/5 text-foreground/70 hover:bg-white/10 border border-white/10"
+                            : "bg-foreground/5 text-foreground/70 hover:bg-foreground/10 border border-foreground/10"
                         }`}
                       >
                         {n}
@@ -460,7 +460,7 @@ export default function DescripcionesPage() {
                   type="button"
                   onClick={() => toggleRed(red.value)}
                   className={`p-3 rounded-xl border-2 transition text-center ${
-                    redes.includes(red.value) ? "border-primary bg-primary/10" : "border-white/10 bg-white/5 hover:border-white/20"
+                    redes.includes(red.value) ? "border-primary bg-primary/10" : "border-foreground/10 bg-foreground/5 hover:border-foreground/20"
                   }`}
                 >
                   <div className="text-2xl mb-1">{red.emoji}</div>
@@ -470,7 +470,7 @@ export default function DescripcionesPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between bg-white/5 rounded-xl p-4 border border-white/10">
+          <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
             <div>
               <div className="text-sm font-semibold text-foreground">Texto en imagen</div>
               <div className="text-xs text-muted-foreground">
@@ -480,7 +480,7 @@ export default function DescripcionesPage() {
             <button
               type="button"
               onClick={() => setTextoEnImagen(!textoEnImagen)}
-              className={`relative w-14 h-8 rounded-full transition ${textoEnImagen ? "bg-primary" : "bg-white/20"}`}
+              className={`relative w-14 h-8 rounded-full transition ${textoEnImagen ? "bg-primary" : "bg-foreground/20"}`}
             >
               <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${textoEnImagen ? "left-7" : "left-1"}`} />
             </button>
@@ -515,7 +515,7 @@ export default function DescripcionesPage() {
               {Array.from({ length: skeletonCount }).map((_, i) => (
                 <div
                   key={i}
-                  className="rounded-xl bg-white/5 border border-white/10 animate-pulse flex items-center justify-center text-muted-foreground/40"
+                  className="rounded-xl bg-foreground/5 border border-foreground/10 animate-pulse flex items-center justify-center text-muted-foreground/40"
                   style={{ aspectRatio: tipoPublicacion === "carrusel" ? "4/5" : "1/1" }}
                 >
                   <ImageIcon className="w-8 h-8" />
@@ -528,7 +528,7 @@ export default function DescripcionesPage() {
         {resultado && (
           <div className="space-y-6">
             {/* CARRUSEL / IMAGEN */}
-            <div className="glass-card rounded-2xl p-6 border border-white/5">
+            <div className="glass-card rounded-2xl p-6 border border-foreground/10">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h2 className="text-lg font-display font-bold">
                   {resultado.tipo_publicacion === "carrusel" ? `Carrusel (${slidesRender.length} slides)` : "Imagen"}
@@ -621,34 +621,34 @@ export default function DescripcionesPage() {
                           onClick={() => setMenuOpen(menuOpen === slideShown.numero_slide ? null : slideShown.numero_slide)}
                           disabled={!!reintentando[slideShown.numero_slide]}
                           title="Más opciones de reintento"
-                          className="bg-black/70 backdrop-blur hover:bg-white/20 text-white p-1.5 rounded-lg transition disabled:opacity-50"
+                          className="bg-black/70 backdrop-blur hover:bg-foreground/20 text-white p-1.5 rounded-lg transition disabled:opacity-50"
                         >
                           <Settings className="w-3.5 h-3.5" />
                         </button>
                         {menuOpen === slideShown.numero_slide && (
-                          <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-white/20 rounded-xl shadow-2xl py-1 min-w-[220px] z-30">
+                          <div className="absolute top-full left-0 mt-1 bg-slate-900 border border-foreground/20 rounded-xl shadow-2xl py-1 min-w-[220px] z-30">
                             <button
                               type="button"
                               onClick={() => handleReintentarSlide(slideShown, "imagen")}
-                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-foreground/10 flex items-center gap-2"
                             >
                               <ImageIcon className="w-4 h-4 text-amber-400" />Reintentar solo imagen
                             </button>
                             <button
                               type="button"
                               onClick={() => handleReintentarSlide(slideShown, "texto")}
-                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-foreground/10 flex items-center gap-2"
                             >
                               <Pencil className="w-4 h-4 text-blue-400" />Reintentar solo texto
                             </button>
                             <button
                               type="button"
                               onClick={() => handleReintentarSlide(slideShown, "ambos")}
-                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-foreground/10 flex items-center gap-2"
                             >
                               <Repeat className="w-4 h-4 text-emerald-400" />Reintentar todo
                             </button>
-                            <div className="border-t border-white/10 my-1" />
+                            <div className="border-t border-foreground/10 my-1" />
                             <button
                               type="button"
                               onClick={() => handleReintentarSlide(slideShown, "auto-diagnose")}
@@ -658,25 +658,25 @@ export default function DescripcionesPage() {
                             >
                               <Wand2 className="w-4 h-4" />Auto-diagnosticar y reintentar (IA)
                             </button>
-                            <div className="border-t border-white/10 my-1" />
+                            <div className="border-t border-foreground/10 my-1" />
                             <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Ajustes rápidos</div>
                             {RETRY_PRESETS.map((preset) => (
                               <button
                                 key={preset.id}
                                 type="button"
                                 onClick={() => handleReintentarSlide(slideShown, "personalizado", preset.prompt)}
-                                className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-white/10 flex items-center gap-2"
+                                className="w-full text-left px-3 py-1.5 text-xs text-foreground hover:bg-foreground/10 flex items-center gap-2"
                                 title={preset.prompt.slice(0, 140) + "…"}
                               >
                                 <span>{preset.emoji}</span>
                                 <span>{preset.label}</span>
                               </button>
                             ))}
-                            <div className="border-t border-white/10 my-1" />
+                            <div className="border-t border-foreground/10 my-1" />
                             <button
                               type="button"
                               onClick={() => abrirModalAjuste(slideShown, "imagen")}
-                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-white/10 flex items-center gap-2"
+                              className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-foreground/10 flex items-center gap-2"
                             >
                               <Wand2 className="w-4 h-4 text-primary" />Escribir ajuste propio…
                             </button>
@@ -741,13 +741,13 @@ export default function DescripcionesPage() {
                     {slideShown.imagen && (
                       <button
                         onClick={() => descargarSlide(slideShown)}
-                        className="bg-white/5 hover:bg-white/10 border border-white/10 text-foreground text-xs font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
+                        className="bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 text-foreground text-xs font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
                       >
                         <Download className="w-3.5 h-3.5" />Descargar PNG
                       </button>
                     )}
                   </div>
-                  <div className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-1">
+                  <div className="bg-foreground/5 rounded-xl p-3 border border-foreground/10 space-y-1">
                     <div className="text-foreground font-bold text-sm">{slideShown.titulo}</div>
                     <div className="text-foreground/70 text-sm">{slideShown.subtitulo}</div>
                   </div>
@@ -763,7 +763,7 @@ export default function DescripcionesPage() {
                       type="button"
                       onClick={() => setSlideActual(i)}
                       className={`relative rounded-lg overflow-hidden border-2 transition ${
-                        i === slideActual ? "border-primary" : "border-white/10 hover:border-white/30"
+                        i === slideActual ? "border-primary" : "border-foreground/10 hover:border-foreground/25"
                       }`}
                       style={{ width: 64, aspectRatio: "4/5" }}
                     >
@@ -807,7 +807,7 @@ export default function DescripcionesPage() {
                     key={red.value}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="glass-card rounded-xl p-5 border border-white/5"
+                    className="glass-card rounded-xl p-5 border border-foreground/10"
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
@@ -816,7 +816,7 @@ export default function DescripcionesPage() {
                       </div>
                       <button
                         onClick={() => copiar(textoCompleto, red.value)}
-                        className="bg-white/5 hover:bg-white/10 border border-white/10 text-foreground text-xs font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
+                        className="bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 text-foreground text-xs font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1.5"
                       >
                         {copiado === red.value ? <><Check className="w-3.5 h-3.5 text-emerald-400" />Copiado</> : <><Copy className="w-3.5 h-3.5" />Copiar</>}
                       </button>
@@ -843,7 +843,7 @@ export default function DescripcionesPage() {
         {/* Modal de ajuste personalizado */}
         {modalAjuste && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setModalAjuste(null)}>
-            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-slate-900 border border-foreground/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-display font-bold">Ajuste personalizado — Slide {modalAjuste.slide.numero_slide}</h3>
                 <button onClick={() => setModalAjuste(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -861,7 +861,7 @@ export default function DescripcionesPage() {
                 value={ajusteTexto}
                 onChange={(e) => setAjusteTexto(e.target.value)}
                 placeholder="Describe el ajuste específico..."
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[100px]"
+                className="w-full px-4 py-3 bg-foreground/5 border border-foreground/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[100px]"
                 maxLength={400}
                 autoFocus
               />
@@ -878,7 +878,7 @@ export default function DescripcionesPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setModalAjuste(null)}
-                    className="bg-white/5 hover:bg-white/10 text-foreground font-semibold px-4 py-2 rounded-lg text-sm"
+                    className="bg-foreground/5 hover:bg-foreground/10 text-foreground font-semibold px-4 py-2 rounded-lg text-sm"
                   >Cancelar</button>
                   <button
                     onClick={confirmarAjusteCustom}

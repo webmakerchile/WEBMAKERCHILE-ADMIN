@@ -334,7 +334,7 @@ export default function VideosPage() {
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
           </div>
         ) : videos.length === 0 ? (
-          <Card className="bg-card/30 border-white/5">
+          <Card className="bg-card/30 border-foreground/10">
             <CardContent className="p-12 text-center">
               <Video className="w-12 h-12 text-primary/30 mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">Sin videos registrados</h3>
@@ -353,7 +353,7 @@ export default function VideosPage() {
               return (
                 <Card
                   key={video.id}
-                  className="bg-card/50 border-white/5 hover:border-primary/20 cursor-pointer transition-all duration-200"
+                  className="bg-card/50 border-foreground/10 hover:border-primary/20 cursor-pointer transition-all duration-200"
                   onClick={() => {
                     setSelectedVideo(video);
                     if (!video.coverImageBase64) setWizardStep("cover");
@@ -365,7 +365,7 @@ export default function VideosPage() {
                 >
                   <CardContent className="p-4 sm:p-5">
                     <div className="flex items-start gap-3 sm:gap-4">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-black/20 border border-white/5 flex-shrink-0 flex items-center justify-center">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-black/20 border border-foreground/10 flex-shrink-0 flex items-center justify-center">
                         {video.coverImageBase64 ? (
                           <img
                             src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
@@ -409,7 +409,7 @@ export default function VideosPage() {
                               Sin descripciones
                             </Badge>
                           )}
-                          <div className="w-16 sm:w-24 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                          <div className="w-16 sm:w-24 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full transition-all"
                               style={{ width: `${progress}%` }}
@@ -502,7 +502,7 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
 
   return (
     <Dialog open={!!video} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-w-lg bg-card border-white/10 overflow-y-auto max-h-[90vh]">
+      <DialogContent className="max-w-lg bg-card border-foreground/10 overflow-y-auto max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <BarChart2 className="w-4 h-4 text-primary" />
@@ -583,7 +583,7 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
             {video?.xPostId && (
               <NetworkStatCard
                 label="X"
-                bgClass="bg-black border border-white/10"
+                bgClass="bg-black border border-foreground/10"
                 loading={isLoading}
                 error={isStatError(xd) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
@@ -601,7 +601,7 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
             {video?.tiktokPublishId && (
               <NetworkStatCard
                 label="TikTok"
-                bgClass="bg-black border border-white/10"
+                bgClass="bg-black border border-foreground/10"
                 loading={false}
                 unavailable={true}
                 rows={[]}
@@ -635,7 +635,7 @@ function NetworkStatCard({
   impressionNote?: string;
 }) {
   return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.03] overflow-hidden">
+    <div className="rounded-xl border border-foreground/10 bg-foreground/[0.03] overflow-hidden">
       <div className={`px-4 py-2.5 flex items-center justify-between ${bgClass}`}>
         <span className="text-white text-xs font-semibold tracking-wide">{label}</span>
         {link && (
@@ -650,9 +650,9 @@ function NetworkStatCard({
           <div className="grid grid-cols-2 gap-x-6 gap-y-2">
             {[1, 2, 3, 4].map((i) => (
               <div key={i} className="flex items-center gap-1.5 animate-pulse">
-                <div className="w-3.5 h-3.5 rounded bg-white/10 flex-shrink-0" />
-                <div className="h-2.5 bg-white/10 rounded flex-1" />
-                <div className="h-2.5 w-8 bg-white/10 rounded ml-auto" />
+                <div className="w-3.5 h-3.5 rounded bg-foreground/10 flex-shrink-0" />
+                <div className="h-2.5 bg-foreground/10 rounded flex-1" />
+                <div className="h-2.5 w-8 bg-foreground/10 rounded ml-auto" />
               </div>
             ))}
           </div>
@@ -883,7 +883,7 @@ function VideoWizard({
         )}
       </div>
 
-      <div className="flex items-center gap-1 bg-card/30 rounded-2xl p-1.5 sm:p-2 border border-white/5 overflow-x-auto">
+      <div className="flex items-center gap-1 bg-card/30 rounded-2xl p-1.5 sm:p-2 border border-foreground/10 overflow-x-auto">
         {STEPS.map((step, i) => {
           const isActive = step.key === currentStep;
           const isComplete = isStepComplete(video, step.key);
@@ -899,14 +899,14 @@ function VideoWizard({
                   ? "bg-primary text-white shadow-lg shadow-primary/20"
                   : isComplete
                   ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
-                  : "text-muted-foreground hover:bg-white/5"
+                  : "text-muted-foreground hover:bg-foreground/5"
               } ${!isClickable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
             >
               {isComplete && !isActive ? (
                 <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               ) : (
                 <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold shrink-0 ${
-                  isActive ? "bg-white/20" : "bg-white/5"
+                  isActive ? "bg-foreground/20" : "bg-foreground/5"
                 }`}>
                   {i + 1}
                 </span>
@@ -1121,22 +1121,22 @@ function DriveVideoPicker({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-card border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl sm:mx-4">
-        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+      <div className="bg-card border border-foreground/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl sm:mx-4">
+        <div className="p-4 border-b border-foreground/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <HardDrive className="w-5 h-5 text-primary" />
             <h3 className="font-semibold text-lg">Seleccionar Video desde Drive</h3>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-foreground/10 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-3 bg-white/5 border-b border-white/5 flex items-center gap-3">
+        <div className="p-3 bg-foreground/5 border-b border-foreground/10 flex items-center gap-3">
           <button
             onClick={navigateBack}
             disabled={folderHistory.length <= 1}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 transition-colors"
+            className="p-1.5 rounded-lg bg-foreground/5 hover:bg-foreground/10 disabled:opacity-30 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -1187,7 +1187,7 @@ function DriveVideoPicker({
                 <button
                   key={folder.id}
                   onClick={() => navigateToFolder(folder.id, folder.name)}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors text-left group"
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-foreground/5 transition-colors text-left group"
                 >
                   <Folder className="w-5 h-5 text-primary flex-shrink-0" />
                   <span className="text-sm font-medium truncate flex-1">{folder.name}</span>
@@ -1320,7 +1320,7 @@ function StepInfo({
   };
 
   return (
-    <Card className="bg-card/50 border-white/5">
+    <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <Video className="w-5 h-5 text-primary" />
@@ -1505,7 +1505,7 @@ function StepInfo({
                 <div className="grid grid-cols-2 gap-3">
                   <div
                     onClick={() => setShowDrivePicker(true)}
-                    className="border-2 border-dashed border-white/10 hover:border-primary/50 hover:bg-white/5 rounded-xl p-6 text-center cursor-pointer transition-all"
+                    className="border-2 border-dashed border-foreground/10 hover:border-primary/50 hover:bg-foreground/5 rounded-xl p-6 text-center cursor-pointer transition-all"
                   >
                     <div className="flex flex-col items-center gap-2">
                       <HardDrive className="w-8 h-8 text-primary" />
@@ -1518,7 +1518,7 @@ function StepInfo({
 
                   <div
                     onClick={() => videoFileRef.current?.click()}
-                    className="border-2 border-dashed border-white/10 hover:border-orange-500/50 hover:bg-white/5 rounded-xl p-6 text-center cursor-pointer transition-all"
+                    className="border-2 border-dashed border-foreground/10 hover:border-orange-500/50 hover:bg-foreground/5 rounded-xl p-6 text-center cursor-pointer transition-all"
                   >
                     <div className="flex flex-col items-center gap-2">
                       <Upload className="w-8 h-8 text-orange-400" />
@@ -1587,7 +1587,7 @@ function StepCover({
   onPrev: () => void;
 }) {
   return (
-    <Card className="bg-card/50 border-white/5">
+    <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <ImageIcon className="w-5 h-5 text-primary" />
@@ -1600,7 +1600,7 @@ function StepCover({
       <CardContent className="space-y-6">
         {video.coverImageBase64 ? (
           <div className="flex flex-col items-center gap-4">
-            <div className="w-48 rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+            <div className="w-48 rounded-2xl overflow-hidden border border-foreground/10 shadow-2xl">
               <img
                 src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
                 className="w-full aspect-[9/16] object-cover"
@@ -1613,14 +1613,14 @@ function StepCover({
                 Portada generada
               </Badge>
             </div>
-            <Button variant="outline" onClick={onGenerate} disabled={isGenerating} className="border-white/10">
+            <Button variant="outline" onClick={onGenerate} disabled={isGenerating} className="border-foreground/10">
               {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
               Regenerar portada
             </Button>
           </div>
         ) : (
           <div className="text-center py-8">
-            <div className="w-32 h-56 mx-auto rounded-2xl border-2 border-dashed border-white/10 flex items-center justify-center mb-6 bg-black/10">
+            <div className="w-32 h-56 mx-auto rounded-2xl border-2 border-dashed border-foreground/10 flex items-center justify-center mb-6 bg-black/10">
               <ImageIcon className="w-12 h-12 text-muted-foreground/20" />
             </div>
             <p className="text-muted-foreground mb-4">
@@ -1647,7 +1647,7 @@ function StepCover({
         )}
 
         <div className="pt-4 flex justify-between">
-          <Button variant="outline" onClick={onPrev} className="border-white/10">
+          <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Anterior
           </Button>
@@ -1693,7 +1693,7 @@ function StepTikTokInstagram({
   const showInstagramPlaceholder = isAutoGenerating && !formData.instagramDescription;
 
   return (
-    <Card className="bg-card/50 border-white/5">
+    <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <span className="text-2xl">📱</span>
@@ -1765,7 +1765,7 @@ function StepTikTokInstagram({
         </div>
 
         <div className="pt-4 flex justify-between">
-          <Button variant="outline" onClick={onPrev} className="border-white/10">
+          <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Anterior
           </Button>
@@ -1806,7 +1806,7 @@ function StepYouTube({
   const showYoutubeDescPlaceholder = isAutoGenerating && !formData.youtubeDescription;
 
   return (
-    <Card className="bg-card/50 border-white/5">
+    <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <span className="w-7 h-7 rounded bg-red-600 flex items-center justify-center">
@@ -1872,7 +1872,7 @@ function StepYouTube({
         </div>
 
         <div className="pt-4 flex justify-between">
-          <Button variant="outline" onClick={onPrev} className="border-white/10">
+          <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Anterior
           </Button>
@@ -1936,7 +1936,7 @@ function StepLinkedInX({
     }
   };
   return (
-    <Card className="bg-card/50 border-white/5">
+    <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
@@ -2049,7 +2049,7 @@ function StepLinkedInX({
         </div>
 
         <div className="pt-4 flex justify-between">
-          <Button variant="outline" onClick={onPrev} className="border-white/10">
+          <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Anterior
           </Button>
@@ -2392,7 +2392,7 @@ function StepReview({
 
   return (
     <div className="space-y-6">
-      <Card className="bg-card/50 border-white/5">
+      <Card className="bg-card/50 border-foreground/10">
         <CardHeader>
           <CardTitle className="text-xl flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-primary" />
@@ -2408,7 +2408,7 @@ function StepReview({
               <div className="w-20 sm:w-28 flex-shrink-0 mx-auto sm:mx-0">
                 <img
                   src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
-                  className="w-full aspect-[9/16] object-cover rounded-xl border border-white/10"
+                  className="w-full aspect-[9/16] object-cover rounded-xl border border-foreground/10"
                   alt="Portada"
                 />
               </div>
@@ -2418,7 +2418,7 @@ function StepReview({
               <p className="text-xs sm:text-sm text-muted-foreground mt-1">{video.description}</p>
               {video.month && (
                 <div className="flex items-center gap-2 mt-3">
-                  <Badge variant="outline" className="border-white/10 text-[10px] sm:text-xs">
+                  <Badge variant="outline" className="border-foreground/10 text-[10px] sm:text-xs">
                     <Folder className="w-3 h-3 mr-1" />
                     {video.month}/{video.week}/{video.day}/#{video.videoNumber}{video.scheduleHour ? ` · ${video.scheduleHour}` : ""}
                   </Badge>
@@ -2525,7 +2525,7 @@ function StepReview({
                 <div className="flex-1">
                   <p className="text-sm font-medium text-emerald-400">Programado en las plataformas configuradas</p>
                   {video.scheduleHour && (
-                    <div className="flex items-center gap-2 mt-2 bg-white/5 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2 mt-2 bg-foreground/5 rounded-lg px-3 py-2">
                       <Clock className="w-4 h-4 text-primary" />
                       <span className="text-sm font-medium">Hora programada: <span className="text-primary">{video.scheduleHour}</span></span>
                       <span className="text-xs text-muted-foreground ml-2">
@@ -2557,7 +2557,7 @@ function StepReview({
               </a>
             </div>
           ) : isScheduled && video.youtubeTitle && (
-            <div className="bg-white/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+            <div className="bg-foreground/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
@@ -2648,7 +2648,7 @@ function StepReview({
           )}
 
           {video.tiktokPublishId ? (
-            <div className="bg-black/20 border border-white/10 rounded-xl p-4 flex items-center gap-3">
+            <div className="bg-black/20 border border-foreground/10 rounded-xl p-4 flex items-center gap-3">
               <span className="w-8 h-8 rounded-lg bg-black flex items-center justify-center flex-shrink-0">
                 <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
               </span>
@@ -2661,7 +2661,7 @@ function StepReview({
               </span>
             </div>
           ) : isScheduled && video.tiktokDescription && (
-            <div className="bg-white/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+            <div className="bg-foreground/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
@@ -2686,7 +2686,7 @@ function StepReview({
                     <Button
                       onClick={() => handleTikTokUpload()}
                       disabled={ttUploading}
-                      className="bg-black hover:bg-zinc-800 text-white border border-white/10 w-full sm:w-auto"
+                      className="bg-black hover:bg-zinc-800 text-white border border-foreground/10 w-full sm:w-auto"
                       size="sm"
                     >
                       {ttUploading ? (
@@ -2700,7 +2700,7 @@ function StepReview({
                     <Button
                       onClick={() => setShowTtDrivePicker(true)}
                       disabled={ttUploading}
-                      className="bg-black hover:bg-zinc-800 text-white border border-white/10 w-full sm:w-auto"
+                      className="bg-black hover:bg-zinc-800 text-white border border-foreground/10 w-full sm:w-auto"
                       size="sm"
                     >
                       {ttUploading ? (
@@ -2759,7 +2759,7 @@ function StepReview({
               </span>
             </div>
           ) : isScheduled && video.instagramDescription && (
-            <div className="bg-white/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
+            <div className="bg-foreground/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
                 <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
@@ -2844,7 +2844,7 @@ function StepReview({
           )}
 
           <div className="pt-4 flex justify-between">
-            <Button variant="outline" onClick={onPrev} className="border-white/10">
+            <Button variant="outline" onClick={onPrev} className="border-foreground/10">
               <ArrowLeft className="w-4 h-4 mr-2" />
               Anterior
             </Button>

@@ -136,7 +136,7 @@ function statusColor(status?: string): string {
   if (status === "published") return "ring-emerald-500/40";
   if (status === "uploaded") return "ring-blue-500/40";
   if (status === "error") return "ring-rose-500/40";
-  return "ring-white/5";
+  return "ring-foreground/10";
 }
 
 function aggregateStatus(v: VideoSummary): "published" | "uploaded" | "error" | "scheduled" {
@@ -429,7 +429,7 @@ export default function SchedulePage() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {/* View toggle */}
-            <div className="flex items-center gap-0.5 glass-card rounded-xl border border-white/5 p-1">
+            <div className="flex items-center gap-0.5 glass-card rounded-xl border border-foreground/10 p-1">
               <button
                 onClick={() => switchView("week")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
@@ -451,13 +451,13 @@ export default function SchedulePage() {
             </div>
 
             {/* Navigation */}
-            <div className="flex items-center gap-1 glass-card rounded-xl border border-white/5 p-1">
+            <div className="flex items-center gap-1 glass-card rounded-xl border border-foreground/10 p-1">
               <button
                 onClick={() => {
                   if (view === "month") setMonthStart(addMonths(monthStart, -1));
                   else { setWeekStart(addDays(weekStart, -7)); setSelectedDay(null); }
                 }}
-                className="p-2 rounded-lg hover:bg-white/5 transition"
+                className="p-2 rounded-lg hover:bg-foreground/5 transition"
                 aria-label="Anterior"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -467,7 +467,7 @@ export default function SchedulePage() {
                   if (view === "month") setMonthStart(startOfMonth(new Date()));
                   else { setWeekStart(startOfWeek(new Date())); setSelectedDay(null); }
                 }}
-                className="px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-white/5 transition"
+                className="px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-foreground/5 transition"
               >
                 Hoy
               </button>
@@ -476,7 +476,7 @@ export default function SchedulePage() {
                   if (view === "month") setMonthStart(addMonths(monthStart, 1));
                   else { setWeekStart(addDays(weekStart, 7)); setSelectedDay(null); }
                 }}
-                className="p-2 rounded-lg hover:bg-white/5 transition"
+                className="p-2 rounded-lg hover:bg-foreground/5 transition"
                 aria-label="Siguiente"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -484,7 +484,7 @@ export default function SchedulePage() {
             </div>
 
             {view === "week" && (
-              <label className="flex items-center gap-2 glass-card rounded-xl border border-white/5 px-3 py-2 cursor-pointer hover:border-primary/40 transition">
+              <label className="flex items-center gap-2 glass-card rounded-xl border border-foreground/10 px-3 py-2 cursor-pointer hover:border-primary/40 transition">
                 <CalendarIcon className="w-4 h-4 text-primary" />
                 <input
                   type="date"
@@ -511,7 +511,7 @@ export default function SchedulePage() {
           </div>
         </header>
 
-        <div className="glass-card rounded-2xl border border-white/5 p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="glass-card rounded-2xl border border-foreground/10 p-3 flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
             <input
@@ -524,7 +524,7 @@ export default function SchedulePage() {
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
-            className="bg-background/60 border border-white/10 rounded-lg px-2 py-1.5 text-xs"
+            className="bg-background/60 border border-foreground/10 rounded-lg px-2 py-1.5 text-xs"
             aria-label="Filtrar por tipo"
           >
             {TYPE_FILTER_OPTIONS.map((o) => (
@@ -536,7 +536,7 @@ export default function SchedulePage() {
           <select
             value={memberFilter}
             onChange={(e) => setMemberFilter(e.target.value)}
-            className="bg-background/60 border border-white/10 rounded-lg px-2 py-1.5 text-xs"
+            className="bg-background/60 border border-foreground/10 rounded-lg px-2 py-1.5 text-xs"
             aria-label="Filtrar por miembro"
           >
             <option value="all">Todos los miembros</option>
@@ -547,7 +547,7 @@ export default function SchedulePage() {
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition ${
               showFilters || statusFilter !== "all" || networkFilter !== "all"
                 ? "bg-primary/20 text-primary"
-                : "border border-white/10 text-muted-foreground hover:text-foreground"
+                : "border border-foreground/10 text-muted-foreground hover:text-foreground"
             }`}
           >
             <Filter className="w-3.5 h-3.5" />
@@ -563,7 +563,7 @@ export default function SchedulePage() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                className="bg-background/60 border border-white/10 rounded-lg px-2 py-1.5 text-xs"
+                className="bg-background/60 border border-foreground/10 rounded-lg px-2 py-1.5 text-xs"
               >
                 {STATUS_FILTER_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -574,7 +574,7 @@ export default function SchedulePage() {
               <select
                 value={networkFilter}
                 onChange={(e) => setNetworkFilter(e.target.value as NetworkFilter)}
-                className="bg-background/60 border border-white/10 rounded-lg px-2 py-1.5 text-xs"
+                className="bg-background/60 border border-foreground/10 rounded-lg px-2 py-1.5 text-xs"
               >
                 {NETWORK_FILTER_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
@@ -626,8 +626,8 @@ export default function SchedulePage() {
           />
         ) : (<>
 
-        <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
-            <div className="grid grid-cols-7 border-b border-white/5">
+        <div className="glass-card rounded-3xl border border-foreground/10 overflow-hidden">
+            <div className="grid grid-cols-7 border-b border-foreground/10">
               {days.map((d, i) => {
                 const isToday = d.toDateString() === today;
                 const isSelected = selectedDay === i;
@@ -636,8 +636,8 @@ export default function SchedulePage() {
                   <button
                     key={i}
                     onClick={() => setSelectedDay(isSelected ? null : i)}
-                    className={`flex flex-col items-center justify-center py-3 px-2 border-r border-white/5 last:border-r-0 transition ${
-                      isSelected ? "bg-primary/10" : "hover:bg-white/5"
+                    className={`flex flex-col items-center justify-center py-3 px-2 border-r border-foreground/10 last:border-r-0 transition ${
+                      isSelected ? "bg-primary/10" : "hover:bg-foreground/5"
                     }`}
                   >
                     <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{DAYS_ES[i]}</span>
@@ -663,7 +663,7 @@ export default function SchedulePage() {
                 return (
                   <div
                     key={i}
-                    className={`group relative min-h-[300px] border-r border-white/5 last:border-r-0 p-2 space-y-2 transition ${
+                    className={`group relative min-h-[300px] border-r border-foreground/10 last:border-r-0 p-2 space-y-2 transition ${
                       isToday ? "bg-primary/[0.03]" : ""
                     } ${isDragOver ? "bg-primary/15 ring-1 ring-primary/40" : ""}`}
                     onDragOver={(e) => {
@@ -705,7 +705,7 @@ export default function SchedulePage() {
                       <button
                         type="button"
                         onClick={() => setQuickCreateDate(d)}
-                        className="w-full h-full min-h-[260px] flex flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground/40 hover:text-primary hover:bg-white/5 rounded-lg transition"
+                        className="w-full h-full min-h-[260px] flex flex-col items-center justify-center gap-1 text-[10px] text-muted-foreground/40 hover:text-primary hover:bg-foreground/5 rounded-lg transition"
                       >
                         <Plus className="w-4 h-4" />
                         <span>Agregar</span>
@@ -731,9 +731,9 @@ export default function SchedulePage() {
                               draggingIdRef.current = null;
                               setDragOverKey(null);
                             }}
-                            className={`rounded-lg bg-white/5 border border-white/5 p-2 text-xs ring-1 overflow-hidden ${statusColor(
+                            className={`rounded-lg bg-foreground/5 border border-foreground/10 p-2 text-xs ring-1 overflow-hidden ${statusColor(
                               agg,
-                            )} hover:bg-white/10 cursor-grab active:cursor-grabbing transition`}
+                            )} hover:bg-foreground/10 cursor-grab active:cursor-grabbing transition`}
                             onClick={() => setSelectedDay(i)}
                             title={`${v.title} — arrastra para mover`}
                           >
@@ -754,7 +754,7 @@ export default function SchedulePage() {
                                   </span>
                                 ))}
                                 {nets.length > 4 && (
-                                  <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px] ring-1 ring-background">
+                                  <span className="w-4 h-4 rounded-full bg-foreground/10 flex items-center justify-center text-[8px] ring-1 ring-background">
                                     +{nets.length - 4}
                                   </span>
                                 )}
@@ -778,9 +778,9 @@ export default function SchedulePage() {
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass-card rounded-3xl border border-white/5 overflow-hidden"
+            className="glass-card rounded-3xl border border-foreground/10 overflow-hidden"
           >
-            <div className="p-4 border-b border-white/5 flex items-center">
+            <div className="p-4 border-b border-foreground/10 flex items-center">
               <CalendarClock className="w-5 h-5 text-primary mr-2" />
               <h2 className="text-lg font-bold">
                 {selectedDate.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })}
@@ -803,13 +803,13 @@ export default function SchedulePage() {
                   return (
                     <div
                       key={v.id}
-                      className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 p-3 bg-white/5 rounded-2xl border border-white/5"
+                      className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 p-3 bg-foreground/5 rounded-2xl border border-foreground/10"
                     >
                       {cover && (
                         <img
                           src={cover}
                           alt=""
-                          className="w-full sm:w-32 sm:h-20 h-32 object-cover rounded-lg border border-white/5 flex-shrink-0"
+                          className="w-full sm:w-32 sm:h-20 h-32 object-cover rounded-lg border border-foreground/10 flex-shrink-0"
                           loading="lazy"
                         />
                       )}
@@ -838,7 +838,7 @@ export default function SchedulePage() {
                                     ? "bg-blue-500/15 text-blue-300 border-blue-500/30"
                                     : n.status === "error"
                                     ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
-                                    : "bg-white/10 text-muted-foreground border-white/10"
+                                    : "bg-foreground/10 text-muted-foreground border-foreground/10"
                                 }`}
                               >
                                 <span className={`w-3 h-3 rounded-full flex items-center justify-center ${NETWORK_BG[n.network]}`}>
@@ -899,9 +899,9 @@ function MonthView({
   const MAX_CHIPS = 4;
 
   return (
-    <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
+    <div className="glass-card rounded-3xl border border-foreground/10 overflow-hidden">
       {/* Day-of-week headers */}
-      <div className="grid grid-cols-7 border-b border-white/5 bg-white/[0.02]">
+      <div className="grid grid-cols-7 border-b border-foreground/10 bg-foreground/[0.02]">
         {DOW_LABELS.map((label) => (
           <div key={label} className="py-2 text-center text-[11px] font-medium text-muted-foreground">
             {label}
@@ -922,7 +922,7 @@ function MonthView({
             <button
               key={idx}
               onClick={() => onDayClick(date)}
-              className={`min-h-[80px] p-1.5 text-left border-b border-r border-white/[0.04] transition hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-primary/40 ${
+              className={`min-h-[80px] p-1.5 text-left border-b border-r border-foreground/10 transition hover:bg-foreground/5 focus:outline-none focus:ring-1 focus:ring-primary/40 ${
                 !inMonth ? "opacity-30" : ""
               } ${isToday ? "bg-primary/5" : ""}`}
             >
@@ -959,13 +959,13 @@ function MonthView({
                     ) : (
                       <span
                         key={v.id}
-                        className="w-3.5 h-3.5 rounded-full bg-white/20 ring-1 ring-background"
+                        className="w-3.5 h-3.5 rounded-full bg-foreground/20 ring-1 ring-background"
                         title={v.title || "Sin red"}
                       />
                     );
                   })}
                   {overflow > 0 && (
-                    <span className="w-3.5 h-3.5 rounded-full bg-white/10 text-[7px] flex items-center justify-center ring-1 ring-background">
+                    <span className="w-3.5 h-3.5 rounded-full bg-foreground/10 text-[7px] flex items-center justify-center ring-1 ring-background">
                       +{overflow}
                     </span>
                   )}
@@ -1043,7 +1043,7 @@ function QuickPostModal({
         if (!next) onClose();
       }}
     >
-      <DialogContent className="max-w-lg bg-background border-white/10">
+      <DialogContent className="max-w-lg bg-background border-foreground/10">
         <DialogHeader>
           <DialogTitle>Nueva publicación rápida</DialogTitle>
           <DialogDescription>
@@ -1072,7 +1072,7 @@ function QuickPostModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Ej: Promo de viernes"
-              className="w-full bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60"
+              className="w-full bg-background/60 border border-foreground/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60"
               maxLength={120}
             />
           </div>
@@ -1084,7 +1084,7 @@ function QuickPostModal({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Texto base que se usará en cada red…"
               rows={3}
-              className="w-full bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60 resize-y"
+              className="w-full bg-background/60 border border-foreground/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60 resize-y"
               maxLength={2200}
             />
           </div>
@@ -1095,7 +1095,7 @@ function QuickPostModal({
               type="time"
               value={hour}
               onChange={(e) => setHour(e.target.value || "09:00")}
-              className="w-full bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60"
+              className="w-full bg-background/60 border border-foreground/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-primary/60"
             />
           </div>
 
@@ -1112,7 +1112,7 @@ function QuickPostModal({
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs border transition ${
                       active
                         ? "bg-primary/20 border-primary/50 text-primary"
-                        : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                        : "bg-foreground/5 border-foreground/10 text-muted-foreground hover:text-foreground"
                     }`}
                     aria-pressed={active}
                   >
@@ -1134,7 +1134,7 @@ function QuickPostModal({
               type="button"
               onClick={onClose}
               disabled={isPending}
-              className="px-4 py-2 rounded-lg text-sm border border-white/10 hover:bg-white/5 transition disabled:opacity-50"
+              className="px-4 py-2 rounded-lg text-sm border border-foreground/10 hover:bg-foreground/5 transition disabled:opacity-50"
             >
               Cancelar
             </button>

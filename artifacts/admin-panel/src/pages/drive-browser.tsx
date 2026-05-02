@@ -45,13 +45,13 @@ export default function DriveBrowserPage() {
           </div>
         </header>
 
-        <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
+        <div className="glass-card rounded-3xl border border-foreground/10 overflow-hidden">
           {/* Breadcrumbs & Navigation */}
-          <div className="p-4 bg-white/5 border-b border-white/5 flex items-center gap-4">
+          <div className="p-4 bg-foreground/5 border-b border-foreground/10 flex items-center gap-4">
             <button 
               onClick={navigateBack}
               disabled={folderHistory.length <= 1}
-              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-white/5 transition-colors"
+              className="p-2 rounded-lg bg-foreground/5 hover:bg-foreground/10 disabled:opacity-30 disabled:hover:bg-foreground/5 transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-foreground" />
             </button>
@@ -85,7 +85,7 @@ export default function DriveBrowserPage() {
                     animate={{ opacity: 1, scale: 1 }}
                     key={folder.id}
                     onClick={() => navigateToFolder(folder.id, folder.name)}
-                    className="flex items-center p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-primary/30 transition-all text-left group"
+                    className="flex items-center p-4 rounded-2xl bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 hover:border-primary/30 transition-all text-left group"
                   >
                     <div className="p-3 bg-primary/20 rounded-xl mr-4 group-hover:scale-110 transition-transform">
                       <Folder className="w-6 h-6 text-primary" fill="currentColor" />
@@ -102,7 +102,7 @@ export default function DriveBrowserPage() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     key={file.id}
-                    className="flex flex-col p-4 rounded-2xl bg-white/5 border border-white/5 group relative overflow-hidden"
+                    className="flex flex-col p-4 rounded-2xl bg-foreground/5 border border-foreground/10 group relative overflow-hidden"
                   >
                     <div className="flex items-start mb-3">
                       <div className="p-3 bg-blue-500/20 rounded-xl mr-4">
@@ -123,7 +123,7 @@ export default function DriveBrowserPage() {
                         href={file.webViewLink} 
                         target="_blank" 
                         rel="noreferrer"
-                        className="mt-auto flex items-center justify-center w-full py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-medium text-muted-foreground hover:text-white transition-colors"
+                        className="mt-auto flex items-center justify-center w-full py-2 bg-foreground/5 hover:bg-foreground/10 rounded-xl text-xs font-medium text-muted-foreground hover:text-white transition-colors"
                       >
                         Abrir en Drive <ExternalLink className="w-3 h-3 ml-2" />
                       </a>

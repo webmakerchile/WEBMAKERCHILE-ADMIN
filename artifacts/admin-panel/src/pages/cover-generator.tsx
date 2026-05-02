@@ -113,13 +113,13 @@ export default function CoverGeneratorPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-5 space-y-6">
-            <div className="glass-card p-6 rounded-3xl space-y-5 border border-white/5">
+            <div className="glass-card p-6 rounded-3xl space-y-5 border border-foreground/10">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Título Principal</label>
                 <input 
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                  className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   placeholder="Texto destacado en la miniatura..."
                 />
               </div>
@@ -129,7 +129,7 @@ export default function CoverGeneratorPage() {
                 <textarea 
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[100px]"
+                  className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[100px]"
                   placeholder="Describe la emoción, los elementos, colores..."
                 />
               </div>
@@ -139,14 +139,14 @@ export default function CoverGeneratorPage() {
                 <input 
                   value={style}
                   onChange={(e) => setStyle(e.target.value)}
-                  className="w-full bg-background/50 border border-white/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
+                  className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
                 />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Imagen de Referencia</label>
                 {previewUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-white/10">
+                  <div className="relative rounded-xl overflow-hidden border border-foreground/10">
                     <img src={previewUrl} alt="Referencia" className="w-full h-32 object-cover" />
                     <button
                       type="button"
@@ -167,7 +167,7 @@ export default function CoverGeneratorPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-white/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-foreground/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group">
                       <Upload className="w-8 h-8 text-muted-foreground group-hover:text-primary mb-2 transition-colors" />
                       <span className="text-sm text-muted-foreground font-medium">Subir foto o captura</span>
                       <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
@@ -199,7 +199,7 @@ export default function CoverGeneratorPage() {
           </div>
 
           <div className="lg:col-span-7">
-            <div className="glass-card rounded-3xl h-full min-h-[500px] border border-white/5 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+            <div className="glass-card rounded-3xl h-full min-h-[500px] border border-foreground/10 flex flex-col items-center justify-center p-8 relative overflow-hidden">
               {!generateCover.data && !generateCover.isPending && (
                 <div className="absolute inset-0 z-0 opacity-20 pointer-events-none flex items-center justify-center">
                   <img src={`${import.meta.env.BASE_URL}images/auth-bg.png`} alt="Background" className="w-full h-full object-cover" />
@@ -236,7 +236,7 @@ export default function CoverGeneratorPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   className="w-full relative z-10 space-y-4"
                 >
-                  <div className="rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                  <div className="rounded-2xl overflow-hidden shadow-2xl border border-foreground/10">
                     <img 
                       src={`data:${generateCover.data.mimeType};base64,${generateCover.data.b64_json}`} 
                       alt="Generated Cover" 
@@ -263,7 +263,7 @@ export default function CoverGeneratorPage() {
                     <button
                       onClick={() => { setModalAjuste(true); setAjusteTexto(""); }}
                       disabled={generateCover.isPending}
-                      className="flex items-center justify-center px-4 py-3 bg-white/10 hover:bg-white/20 disabled:bg-white/5 text-foreground rounded-xl font-bold transition-all"
+                      className="flex items-center justify-center px-4 py-3 bg-foreground/10 hover:bg-foreground/20 disabled:bg-foreground/5 text-foreground rounded-xl font-bold transition-all"
                     >
                       <Settings className="w-5 h-5 mr-2" />
                       Ajustar
@@ -281,7 +281,7 @@ export default function CoverGeneratorPage() {
                           onClick={() => handleGenerate(preset.prompt)}
                           disabled={generateCover.isPending}
                           title={preset.prompt.slice(0, 140) + "…"}
-                          className="bg-white/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-white/10 transition flex items-center gap-1"
+                          className="bg-foreground/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-foreground/10 transition flex items-center gap-1"
                         >
                           <span>{preset.emoji}</span>{preset.label}
                         </button>

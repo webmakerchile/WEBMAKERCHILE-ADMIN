@@ -395,7 +395,7 @@ export default function AiVideoIdeasTab() {
 
   return (
     <div className="space-y-4">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a0a0a] to-[#111] border border-white/[0.06] p-4">
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a0a0a] to-[#111] border border-foreground/10 p-4">
         <div className="absolute -top-20 -right-20 w-56 h-56 bg-orange-500/[0.03] rounded-full blur-3xl" />
         <div className="relative space-y-3">
           <div className="flex items-center gap-2 mb-1">
@@ -407,7 +407,7 @@ export default function AiVideoIdeasTab() {
             value={customContext}
             onChange={(e) => setCustomContext(e.target.value)}
             placeholder="Opcional: describe el enfoque que quieres... Ej: Videos sobre chatbots con IA para restaurantes"
-            className="w-full bg-black/30 border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/30 resize-none focus:outline-none focus:ring-1 focus:ring-orange-500/40 transition-colors min-h-[48px]"
+            className="w-full bg-black/30 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/30 resize-none focus:outline-none focus:ring-1 focus:ring-orange-500/40 transition-colors min-h-[48px]"
             rows={2}
             data-testid="textarea-custom-context"
           />
@@ -438,8 +438,8 @@ export default function AiVideoIdeasTab() {
                       onClick={() => { setSelectedCategory(cat.key); setShowCategoryPicker(false); }}
                       className={`flex flex-col items-start p-2.5 rounded-xl border transition-all text-left ${
                         isSelected
-                          ? `${cat.bgColor} ${cat.borderColor} ring-1 ring-white/10`
-                          : "border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.04]"
+                          ? `${cat.bgColor} ${cat.borderColor} ring-1 ring-foreground/10`
+                          : "border-foreground/10 bg-foreground/[0.02] hover:bg-foreground/[0.04]"
                       } ${cat.isPack ? "col-span-2 flex-row items-center" : ""}`}
                       data-testid={`button-category-${cat.key}`}
                     >
@@ -532,7 +532,7 @@ export default function AiVideoIdeasTab() {
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="px-3 py-1 rounded-lg bg-white/5 text-xs text-muted-foreground hover:bg-white/10 transition-colors"
+                className="px-3 py-1 rounded-lg bg-foreground/5 text-xs text-muted-foreground hover:bg-foreground/10 transition-colors"
                 data-testid="button-cancel-bulk-delete"
               >
                 Cancelar
@@ -764,7 +764,7 @@ export default function AiVideoIdeasTab() {
             />
             <button
               onClick={() => setPreviewCoverUrl(null)}
-              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white/10 backdrop-blur text-white flex items-center justify-center hover:bg-white/20 transition-colors"
+              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-foreground/10 backdrop-blur text-white flex items-center justify-center hover:bg-foreground/20 transition-colors"
               data-testid="button-close-cover-preview"
             >
               x

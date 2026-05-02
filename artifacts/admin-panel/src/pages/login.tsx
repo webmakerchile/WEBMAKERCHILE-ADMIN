@@ -51,7 +51,7 @@ export default function LoginPage() {
         transition={{ duration: 0.6 }}
         className="relative z-10 w-full max-w-md mx-4"
       >
-        <div className="bg-card/50 backdrop-blur-xl border border-white/10 rounded-3xl p-10 shadow-2xl">
+        <div className="bg-card/50 backdrop-blur-xl border border-foreground/15 rounded-3xl p-10 shadow-2xl">
           <div className="flex flex-col items-center mb-8">
             <motion.img
               src="/icon-192.png"
@@ -91,14 +91,14 @@ export default function LoginPage() {
             </button>
           ) : (
             <form onSubmit={handleTestLogin} className="mt-4 space-y-3">
-              <div className="border-t border-white/10 pt-4">
+              <div className="border-t border-foreground/15 pt-4">
                 <p className="text-xs text-muted-foreground/60 text-center mb-3">Cuenta de prueba</p>
                 <input
                   type="text"
                   placeholder="Usuario"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-background/60 border border-white/10 text-foreground text-sm placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                  className="w-full px-4 py-3 rounded-xl bg-background/60 border border-foreground/15 text-foreground text-sm placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   autoComplete="username"
                 />
                 <input
@@ -106,7 +106,7 @@ export default function LoginPage() {
                   placeholder="Contraseña"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full mt-2 px-4 py-3 rounded-xl bg-background/60 border border-white/10 text-foreground text-sm placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                  className="w-full mt-2 px-4 py-3 rounded-xl bg-background/60 border border-foreground/15 text-foreground text-sm placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   autoComplete="current-password"
                 />
                 {testError && (

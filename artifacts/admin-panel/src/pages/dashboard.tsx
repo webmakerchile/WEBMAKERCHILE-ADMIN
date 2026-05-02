@@ -125,7 +125,7 @@ function MiniBars({
           <div key={p.date || i} className="flex-1 flex items-end gap-[1px] h-full">
             {prev && (
               <div
-                className="w-1/2 rounded-sm bg-white/10"
+                className="w-1/2 rounded-sm bg-foreground/10"
                 style={{ height: `${ph}%` }}
                 title={`${prev.date}: ${prev.value}`}
               />
@@ -313,7 +313,7 @@ function AnalyticsRow() {
           <div
             role="radiogroup"
             aria-label="Rango de días"
-            className="inline-flex items-center rounded-full border border-white/10 bg-white/5 p-0.5"
+            className="inline-flex items-center rounded-full border border-foreground/10 bg-foreground/5 p-0.5"
           >
             {ANALYTICS_DAYS_OPTIONS.map((opt) => {
               const active = opt === days;
@@ -350,7 +350,7 @@ function AnalyticsRow() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="glass-card rounded-2xl border border-white/5 p-4"
+            className="glass-card rounded-2xl border border-foreground/10 p-4"
           >
             <div className="flex items-center justify-between mb-2">
               <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${c.bg}`}>
@@ -360,7 +360,7 @@ function AnalyticsRow() {
             </div>
             <div className="text-2xl font-bold font-display">
               {isLoading ? (
-                <span className="inline-block w-12 h-6 bg-white/5 rounded animate-pulse" />
+                <span className="inline-block w-12 h-6 bg-foreground/5 rounded animate-pulse" />
               ) : (
                 fmtNumber(c.value)
               )}
@@ -372,7 +372,7 @@ function AnalyticsRow() {
             {(c.series && c.series.length > 0 && c.series.some((p) => p.value !== 0)) ? (
               <MiniBars series={c.series} prevSeries={c.prevSeries} accent={c.bar} />
             ) : (
-              <div className="h-8 mt-2 rounded bg-white/[0.02]" title="Sin datos en el rango" />
+              <div className="h-8 mt-2 rounded bg-foreground/[0.02]" title="Sin datos en el rango" />
             )}
           </motion.div>
         ))}
@@ -385,8 +385,8 @@ function AnalyticsRow() {
               key={n.network}
               className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs ${
                 n.connected
-                  ? "border-white/10 bg-white/5 text-foreground"
-                  : "border-white/5 bg-white/[0.02] text-muted-foreground/50"
+                  ? "border-foreground/10 bg-foreground/5 text-foreground"
+                  : "border-foreground/10 bg-foreground/[0.02] text-muted-foreground/50"
               }`}
             >
               <span className={`w-4 h-4 rounded-full flex items-center justify-center ${NETWORK_BG[n.network as Network]}`}>
@@ -522,7 +522,7 @@ function IdeasKanban() {
             key={col.key}
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => onDrop(col.key)}
-            className="glass-card rounded-2xl border border-white/5 p-3 min-h-[260px] flex flex-col"
+            className="glass-card rounded-2xl border border-foreground/10 p-3 min-h-[260px] flex flex-col"
           >
             <div className={`flex items-center justify-between pb-2 mb-2 border-b ${col.accent}`}>
               <h3 className={`text-xs uppercase tracking-wide font-bold ${col.accent.split(" ")[0]}`}>{col.label}</h3>
@@ -531,7 +531,7 @@ function IdeasKanban() {
 
             <div className="space-y-2 flex-1">
               {isLoading ? (
-                <div className="h-16 rounded-lg bg-white/5 animate-pulse" />
+                <div className="h-16 rounded-lg bg-foreground/5 animate-pulse" />
               ) : (
                 <AnimatePresence>
                   {grouped[col.key].map((idea) => (
@@ -544,7 +544,7 @@ function IdeasKanban() {
                       draggable
                       onDragStart={() => setDragId(idea.id)}
                       onDragEnd={() => setDragId(null)}
-                      className={`group rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 p-2.5 cursor-grab active:cursor-grabbing transition ${
+                      className={`group rounded-lg bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 p-2.5 cursor-grab active:cursor-grabbing transition ${
                         dragId === idea.id ? "opacity-40" : ""
                       }`}
                     >
@@ -606,7 +606,7 @@ function IdeasKanban() {
               ) : (
                 <button
                   onClick={() => setAdding(col.key)}
-                  className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-dashed border-white/10 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition"
+                  className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-dashed border-foreground/10 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Nueva idea
@@ -645,7 +645,7 @@ function CompetitorPosts({ competitorId }: { competitorId: number }) {
     return (
       <div className="space-y-1.5 mt-2 pl-9">
         {[0, 1].map((i) => (
-          <div key={i} className="h-9 rounded bg-white/5 animate-pulse" />
+          <div key={i} className="h-9 rounded bg-foreground/5 animate-pulse" />
         ))}
       </div>
     );
@@ -679,20 +679,20 @@ function CompetitorPosts({ competitorId }: { competitorId: number }) {
           href={it.link}
           target="_blank"
           rel="noreferrer noopener"
-          className="flex items-start gap-2 rounded-md p-1.5 hover:bg-white/5 transition group"
+          className="flex items-start gap-2 rounded-md p-1.5 hover:bg-foreground/5 transition group"
         >
           {it.thumbnail ? (
             <img
               src={it.thumbnail}
               alt=""
               loading="lazy"
-              className="w-12 h-12 rounded-md object-cover flex-shrink-0 bg-white/5"
+              className="w-12 h-12 rounded-md object-cover flex-shrink-0 bg-foreground/5"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
               }}
             />
           ) : (
-            <span className="w-12 h-12 rounded-md bg-white/5 flex-shrink-0" />
+            <span className="w-12 h-12 rounded-md bg-foreground/5 flex-shrink-0" />
           )}
           <div className="min-w-0 flex-1">
             <p className="text-[12px] font-medium leading-snug line-clamp-2 group-hover:text-primary">
@@ -767,7 +767,7 @@ function InspirationsBlock() {
           <Newspaper className="w-4 h-4 text-primary" />
           Inspiración
         </h2>
-        <div className="flex items-center gap-1 glass-card rounded-lg border border-white/5 p-0.5 text-xs">
+        <div className="flex items-center gap-1 glass-card rounded-lg border border-foreground/10 p-0.5 text-xs">
           <button
             onClick={() => setTab("news")}
             className={`px-3 py-1 rounded-md transition ${
@@ -787,13 +787,13 @@ function InspirationsBlock() {
         </div>
       </div>
 
-      <div className="glass-card rounded-2xl border border-white/5 p-4">
+      <div className="glass-card rounded-2xl border border-foreground/10 p-4">
         {tab === "news" ? (
           <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
             {newsLoading ? (
               <div className="space-y-2">
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="h-14 rounded-lg bg-white/5 animate-pulse" />
+                  <div key={i} className="h-14 rounded-lg bg-foreground/5 animate-pulse" />
                 ))}
               </div>
             ) : news.length === 0 ? (
@@ -805,7 +805,7 @@ function InspirationsBlock() {
                   href={n.link}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="flex items-start gap-2 p-2.5 rounded-lg hover:bg-white/5 transition group"
+                  className="flex items-start gap-2 p-2.5 rounded-lg hover:bg-foreground/5 transition group"
                 >
                   <span className="w-7 h-7 rounded-md bg-primary/10 text-primary flex-shrink-0 flex items-center justify-center mt-0.5">
                     <Newspaper className="w-3.5 h-3.5" />
@@ -836,7 +836,7 @@ function InspirationsBlock() {
               return (
                 <div
                   key={c.id}
-                  className="group rounded-lg bg-white/5 border border-white/5"
+                  className="group rounded-lg bg-foreground/5 border border-foreground/10"
                 >
                   <div
                     role="button"
@@ -850,7 +850,7 @@ function InspirationsBlock() {
                     }}
                     className="w-full flex items-center gap-2 p-2.5 text-left cursor-pointer"
                   >
-                    <span className={`w-7 h-7 rounded-md flex-shrink-0 flex items-center justify-center ${NETWORK_BG[c.platform as Network] || "bg-white/10"}`}>
+                    <span className={`w-7 h-7 rounded-md flex-shrink-0 flex items-center justify-center ${NETWORK_BG[c.platform as Network] || "bg-foreground/10"}`}>
                       <NetworkIcon network={c.platform as Network} className="w-3.5 h-3.5" />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -889,7 +889,7 @@ function InspirationsBlock() {
                 <select
                   value={newComp.platform}
                   onChange={(e) => setNewComp({ ...newComp, platform: e.target.value })}
-                  className="w-full bg-background/60 border border-white/10 rounded-md px-2 py-1.5 text-sm"
+                  className="w-full bg-background/60 border border-foreground/10 rounded-md px-2 py-1.5 text-sm"
                 >
                   <option value="youtube">YouTube</option>
                   <option value="instagram">Instagram</option>
@@ -902,13 +902,13 @@ function InspirationsBlock() {
                   value={newComp.handle}
                   onChange={(e) => setNewComp({ ...newComp, handle: e.target.value.replace(/^@/, "") })}
                   placeholder="usuario o canal"
-                  className="w-full bg-background/60 border border-white/10 rounded-md px-2 py-1.5 text-sm"
+                  className="w-full bg-background/60 border border-foreground/10 rounded-md px-2 py-1.5 text-sm"
                 />
                 <input
                   value={newComp.displayName}
                   onChange={(e) => setNewComp({ ...newComp, displayName: e.target.value })}
                   placeholder="Nombre (opcional)"
-                  className="w-full bg-background/60 border border-white/10 rounded-md px-2 py-1.5 text-sm"
+                  className="w-full bg-background/60 border border-foreground/10 rounded-md px-2 py-1.5 text-sm"
                 />
                 <div className="flex items-center gap-2">
                   <button
@@ -929,7 +929,7 @@ function InspirationsBlock() {
             ) : (
               <button
                 onClick={() => setShowAdd(true)}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-white/10 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition"
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-foreground/10 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 Añadir competidor
@@ -996,7 +996,7 @@ function UpcomingPosts() {
   }, [videos]);
 
   return (
-    <aside className="glass-card rounded-2xl border border-white/5 p-4 sticky top-4">
+    <aside className="glass-card rounded-2xl border border-foreground/10 p-4 sticky top-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-base font-display font-bold flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-primary" />
@@ -1042,8 +1042,8 @@ function UpcomingPosts() {
             const cover = upcomingCoverSrc(v);
             const captionLine = upcomingCaptionLine(v);
             return (
-              <div key={v.id} className="rounded-lg bg-white/5 border border-white/5 p-2.5 hover:bg-white/10 transition flex gap-2.5">
-                <div className="w-12 h-12 shrink-0 rounded-md overflow-hidden bg-black/40 ring-1 ring-white/5 flex items-center justify-center">
+              <div key={v.id} className="rounded-lg bg-foreground/5 border border-foreground/10 p-2.5 hover:bg-foreground/10 transition flex gap-2.5">
+                <div className="w-12 h-12 shrink-0 rounded-md overflow-hidden bg-black/40 ring-1 ring-foreground/10 flex items-center justify-center">
                   {cover ? (
                     <img src={cover} alt="" className="w-full h-full object-cover" loading="lazy" />
                   ) : (
@@ -1263,11 +1263,11 @@ function RecentActivity() {
         <span className="text-[11px] text-muted-foreground">{activity.length} publicaciones</span>
       </div>
 
-      <div className="glass-card rounded-2xl border border-white/5 overflow-hidden">
+      <div className="glass-card rounded-2xl border border-foreground/10 overflow-hidden">
         {isLoading ? (
           <div className="space-y-px">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-14 bg-white/5 animate-pulse" />
+              <div key={i} className="h-14 bg-foreground/5 animate-pulse" />
             ))}
           </div>
         ) : activity.length === 0 ? (
@@ -1277,7 +1277,7 @@ function RecentActivity() {
           </div>
         ) : (
           <>
-            <div className="divide-y divide-white/5">
+            <div className="divide-y divide-foreground/10">
               {displayItems.map((v) => {
                 const date = v.publishedAt || v.updatedAt;
                 const dateStr = date
@@ -1287,7 +1287,7 @@ function RecentActivity() {
                   (p) => v[p.statusKey] && v[p.statusKey] !== "pending" && v[p.statusKey] !== "skipped",
                 );
                 return (
-                  <div key={v.id} className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition">
+                  <div key={v.id} className="flex items-center gap-3 px-4 py-3 hover:bg-foreground/[0.02] transition">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{v.title}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">{dateStr}</p>
@@ -1308,7 +1308,7 @@ function RecentActivity() {
                                   ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
                                   : isOk
                                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                                  : "bg-white/5 border-white/10 text-muted-foreground"
+                                  : "bg-foreground/5 border-foreground/10 text-muted-foreground"
                               }`}
                               onMouseEnter={() => error && setTooltipId(ttKey)}
                               onMouseLeave={() => setTooltipId(null)}
@@ -1322,7 +1322,7 @@ function RecentActivity() {
                                 <CheckCircle2 className="w-2.5 h-2.5" />
                               ) : null}
                               {tooltipId === ttKey && error && (
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-50 w-48 rounded-lg bg-background border border-white/10 px-2 py-1.5 text-[10px] text-muted-foreground shadow-lg pointer-events-none">
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-50 w-48 rounded-lg bg-background border border-foreground/10 px-2 py-1.5 text-[10px] text-muted-foreground shadow-lg pointer-events-none">
                                   {error}
                                 </div>
                               )}

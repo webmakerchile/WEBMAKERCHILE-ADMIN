@@ -6,7 +6,7 @@ export default function NotFound() {
   return (
     <Layout>
       <div className="h-full flex flex-col items-center justify-center">
-        <div className="glass-card p-12 rounded-3xl text-center border border-white/5">
+        <div className="glass-card p-12 rounded-3xl text-center border border-foreground/10">
           <FileQuestion className="w-24 h-24 text-primary/50 mx-auto mb-6" />
           <h1 className="text-4xl font-display font-bold mb-4">404 - No Encontrado</h1>
           <p className="text-muted-foreground mb-8 text-lg">La página que buscas no existe o ha sido movida.</p>

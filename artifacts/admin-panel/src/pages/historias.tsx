@@ -328,7 +328,7 @@ export default function HistoriasPage() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleGenerar}
-          className="glass-card rounded-2xl p-6 space-y-6 border border-white/5"
+          className="glass-card rounded-2xl p-6 space-y-6 border border-foreground/10"
         >
           <div>
             <label className="block text-sm font-semibold text-foreground mb-3">Tipo de historia</label>
@@ -341,7 +341,7 @@ export default function HistoriasPage() {
                   className={`p-4 rounded-xl border-2 text-left transition-all ${
                     tipoHistoria === tipo.value
                       ? "border-primary bg-primary/10"
-                      : "border-white/10 bg-white/5 hover:border-white/20"
+                      : "border-foreground/10 bg-foreground/5 hover:border-foreground/20"
                   }`}
                 >
                   <div className="text-2xl mb-1">{tipo.emoji}</div>
@@ -360,7 +360,7 @@ export default function HistoriasPage() {
                 value={concepto}
                 onChange={(e) => setConcepto(e.target.value)}
                 placeholder="Ej: 3 razones para tener un chatbot, automatiza tu negocio con IA..."
-                className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
+                className="flex-1 px-4 py-3 bg-foreground/5 border border-foreground/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
                 maxLength={120}
               />
               <button
@@ -392,7 +392,7 @@ export default function HistoriasPage() {
                     type="button"
                     onClick={() => setFormato(f.value)}
                     className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      isActive ? "border-primary bg-primary/10" : "border-white/10 bg-white/5 hover:border-white/20"
+                      isActive ? "border-primary bg-primary/10" : "border-foreground/10 bg-foreground/5 hover:border-foreground/20"
                     }`}
                   >
                     <Icon className="w-6 h-6 mb-2 text-primary" />
@@ -415,7 +415,7 @@ export default function HistoriasPage() {
                       className={`flex-1 py-2 rounded-lg text-sm font-bold transition ${
                         cantidadFrames === n
                           ? "bg-primary text-primary-foreground"
-                          : "bg-white/5 hover:bg-white/10 text-foreground border border-white/10"
+                          : "bg-foreground/5 hover:bg-foreground/10 text-foreground border border-foreground/10"
                       }`}
                     >
                       {n}
@@ -432,7 +432,7 @@ export default function HistoriasPage() {
             )}
           </div>
 
-          <div className="flex items-center justify-between bg-white/5 rounded-xl p-4 border border-white/10">
+          <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
             <div>
               <div className="text-sm font-semibold text-foreground">Texto en imagen</div>
               <div className="text-xs text-muted-foreground">
@@ -442,7 +442,7 @@ export default function HistoriasPage() {
             <button
               type="button"
               onClick={() => setTextoEnImagen(!textoEnImagen)}
-              className={`relative w-14 h-8 rounded-full transition ${textoEnImagen ? "bg-primary" : "bg-white/20"}`}
+              className={`relative w-14 h-8 rounded-full transition ${textoEnImagen ? "bg-primary" : "bg-foreground/20"}`}
             >
               <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${textoEnImagen ? "left-7" : "left-1"}`} />
             </button>
@@ -475,7 +475,7 @@ export default function HistoriasPage() {
         {/* Modal de recomendación auto */}
         {recomendacion && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setRecomendacion(null)}>
-            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-slate-900 border border-foreground/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center gap-3">
                 <Bot className="w-7 h-7 text-primary" />
                 <h3 className="text-lg font-display font-bold">Recomendación de la IA</h3>
@@ -490,7 +490,7 @@ export default function HistoriasPage() {
                 {recomendacion.formato_recomendado === "serie" && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {recomendacion.estructura.map((rol, i) => (
-                      <span key={i} className="bg-white/5 border border-white/10 text-xs px-2 py-1 rounded-md">
+                      <span key={i} className="bg-foreground/5 border border-foreground/10 text-xs px-2 py-1 rounded-md">
                         {ROL_LABELS[rol]?.emoji} {ROL_LABELS[rol]?.label}
                       </span>
                     ))}
@@ -515,7 +515,7 @@ export default function HistoriasPage() {
                     }
                     setRecomendacion(null);
                   }}
-                  className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-foreground font-semibold px-4 py-2 rounded-lg flex items-center justify-center gap-2"
+                  className="flex-1 bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 text-foreground font-semibold px-4 py-2 rounded-lg flex items-center justify-center gap-2"
                 >
                   <Pencil className="w-4 h-4" />Cambiar formato
                 </button>
@@ -533,7 +533,7 @@ export default function HistoriasPage() {
           >
             {/* Tira de thumbnails — solo si es serie */}
             {esSerie && (
-              <div className="glass-card rounded-2xl p-4 border border-white/5">
+              <div className="glass-card rounded-2xl p-4 border border-foreground/10">
                 <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                   <div className="text-sm font-semibold text-foreground flex items-center gap-2">
                     <Film className="w-4 h-4 text-primary" />
@@ -557,7 +557,7 @@ export default function HistoriasPage() {
                         key={i}
                         onClick={() => setFrameActivo(i)}
                         className={`flex-shrink-0 relative rounded-lg overflow-hidden border-2 transition-all ${
-                          activo ? "border-primary scale-105" : "border-white/10 hover:border-white/30"
+                          activo ? "border-primary scale-105" : "border-foreground/10 hover:border-foreground/25"
                         }`}
                         style={{ width: 80 }}
                       >
@@ -588,7 +588,7 @@ export default function HistoriasPage() {
 
             {/* Vista del frame activo */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="glass-card rounded-2xl p-6 border border-white/5">
+              <div className="glass-card rounded-2xl p-6 border border-foreground/10">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <h2 className="text-lg font-display font-bold flex items-center gap-2">
                     {esSerie ? (
@@ -690,7 +690,7 @@ export default function HistoriasPage() {
                         onClick={() => handleReintentar(frameActivo, "personalizado", preset.prompt)}
                         disabled={!!reintentando[frameActivo]}
                         title={preset.prompt.slice(0, 140) + "…"}
-                        className="bg-white/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-white/10 transition flex items-center gap-1"
+                        className="bg-foreground/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-foreground/10 transition flex items-center gap-1"
                       >
                         <span>{preset.emoji}</span>{preset.label}
                       </button>
@@ -710,7 +710,7 @@ export default function HistoriasPage() {
                 )}
               </div>
 
-              <div className="glass-card rounded-2xl p-6 border border-white/5 space-y-4">
+              <div className="glass-card rounded-2xl p-6 border border-foreground/10 space-y-4">
                 <h2 className="text-lg font-display font-bold">Texto del frame</h2>
 
                 {[
@@ -719,12 +719,12 @@ export default function HistoriasPage() {
                   { id: "cta", label: "CTA", value: frameActual.texto.cta, accent: "text-primary font-semibold" },
                   { id: "hash", label: "Hashtags", value: frameActual.texto.hashtags, accent: "text-amber-400 text-sm" },
                 ].map((b) => (
-                  <div key={b.id} className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <div key={b.id} className="bg-foreground/5 rounded-xl p-3 border border-foreground/10">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs uppercase tracking-wide text-muted-foreground font-semibold">{b.label}</span>
                       <button
                         onClick={() => copiar(b.value, `${b.id}_${frameActivo}`)}
-                        className="bg-white/5 hover:bg-white/10 text-foreground text-xs font-semibold px-2 py-1 rounded-md transition flex items-center gap-1"
+                        className="bg-foreground/5 hover:bg-foreground/10 text-foreground text-xs font-semibold px-2 py-1 rounded-md transition flex items-center gap-1"
                       >
                         {copiado === `${b.id}_${frameActivo}` ? <><Check className="w-3 h-3 text-emerald-400" />Copiado</> : <><Copy className="w-3 h-3" />Copiar</>}
                       </button>
@@ -738,7 +738,7 @@ export default function HistoriasPage() {
                     const all = `${frameActual.texto.copy_principal}\n\n${frameActual.texto.sub_copy}\n\n${frameActual.texto.cta}\n\n${frameActual.texto.hashtags}`;
                     copiar(all, `todo_${frameActivo}`);
                   }}
-                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-foreground text-sm font-semibold py-2 rounded-lg transition flex items-center justify-center gap-2"
+                  className="w-full bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 text-foreground text-sm font-semibold py-2 rounded-lg transition flex items-center justify-center gap-2"
                 >
                   {copiado === `todo_${frameActivo}` ? <><Check className="w-4 h-4 text-emerald-400" />Todo copiado</> : <><Copy className="w-4 h-4" />Copiar TODO el texto</>}
                 </button>
@@ -764,7 +764,7 @@ export default function HistoriasPage() {
         {/* Modal de ajuste personalizado */}
         {modalAjuste && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setModalAjuste(null)}>
-            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-slate-900 border border-foreground/10 rounded-2xl p-6 max-w-lg w-full space-y-4" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-display font-bold">Ajuste personalizado</h3>
                 <button onClick={() => setModalAjuste(null)} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -781,7 +781,7 @@ export default function HistoriasPage() {
                 value={ajusteTexto}
                 onChange={(e) => setAjusteTexto(e.target.value)}
                 placeholder="Describe el ajuste específico..."
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[100px]"
+                className="w-full px-4 py-3 bg-foreground/5 border border-foreground/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[100px]"
                 maxLength={400}
                 autoFocus
               />
@@ -796,7 +796,7 @@ export default function HistoriasPage() {
                   Aplicar también al texto
                 </label>
                 <div className="flex gap-2">
-                  <button onClick={() => setModalAjuste(null)} className="bg-white/5 hover:bg-white/10 text-foreground font-semibold px-4 py-2 rounded-lg text-sm">Cancelar</button>
+                  <button onClick={() => setModalAjuste(null)} className="bg-foreground/5 hover:bg-foreground/10 text-foreground font-semibold px-4 py-2 rounded-lg text-sm">Cancelar</button>
                   <button
                     onClick={confirmarAjusteCustom}
                     disabled={!ajusteTexto.trim()}

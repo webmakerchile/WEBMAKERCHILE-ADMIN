@@ -5,32 +5,47 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* =========================================================================
+ * DESIGN TOKENS
+ * Single source of truth for color, radius, typography.
+ * Tema claro = `:root`, tema oscuro = `.dark` (aplicado a <html>).
+ * ========================================================================= */
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
-  
+
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
   --color-card-border: hsl(var(--border));
-  
+
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
-  
+
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
-  
+
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
-  
+
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
-  
+
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
-  
+
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
-  
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -45,8 +60,62 @@
   --radius-2xl: calc(var(--radius) + 8px);
 }
 
+/* ----------------------- TEMA CLARO (default) ----------------------- */
 :root {
-  /* Defaulting to Dark Mode as requested */
+  color-scheme: light;
+
+  --background: 0 0% 100%;
+  --foreground: 240 10% 8%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 8%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 8%;
+
+  /* Naranja vibrante, ligeramente más oscuro para contraste AA en claro */
+  --primary: 24 95% 50%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 10% 12%;
+
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 42%;
+
+  --accent: 24 95% 50%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 75% 50%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 142 65% 38%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 45%;
+  --warning-foreground: 0 0% 100%;
+
+  --info: 217 90% 50%;
+  --info-foreground: 0 0% 100%;
+
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 24 95% 50%;
+
+  /* Overlay tint usado por hover/active sutiles. En claro tinta con negro. */
+  --elevation: 0 0% 0%;
+
+  /* Glow / accent halo del fondo decorativo */
+  --bg-halo-1: 24 95% 60%;
+  --bg-halo-2: 30 95% 55%;
+
+  --radius: 0.75rem;
+}
+
+/* ----------------------- TEMA OSCURO ----------------------- */
+.dark {
+  color-scheme: dark;
+
   --background: 240 10% 4%;
   --foreground: 0 0% 98%;
 
@@ -56,7 +125,6 @@
   --popover: 240 10% 6%;
   --popover-foreground: 0 0% 98%;
 
-  /* Vibrant Orange Primary */
   --primary: 24 95% 53%;
   --primary-foreground: 0 0% 100%;
 
@@ -72,28 +140,53 @@
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
 
+  --success: 142 70% 45%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 55%;
+  --warning-foreground: 240 10% 4%;
+
+  --info: 217 90% 60%;
+  --info-foreground: 0 0% 100%;
+
   --border: 240 5% 15%;
   --input: 240 5% 15%;
   --ring: 24 95% 53%;
 
-  --radius: 0.75rem;
+  /* En oscuro tinta con blanco para iluminar al hover/active */
+  --elevation: 0 0% 100%;
+
+  --bg-halo-1: 24 95% 53%;
+  --bg-halo-2: 24 100% 40%;
 }
 
+/* ----------------------- BASE LAYER ----------------------- */
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
-  
+
+  html, body {
+    @apply bg-background text-foreground;
+  }
+
   body {
-    @apply bg-background text-foreground font-sans antialiased selection:bg-primary/30 selection:text-primary-foreground;
+    @apply font-sans antialiased selection:bg-primary/30 selection:text-primary-foreground;
+    /* Suaviza la transición al alternar tema sin parpadear los iconos */
+    transition: background-color 200ms ease-out, color 200ms ease-out;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply font-bold tracking-tight text-foreground;
   }
-  
-  /* Scrollbar Styling */
+
+  /* Anillo de foco visible y consistente para teclado */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -102,24 +195,38 @@
     @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-muted rounded-full;
+    background-color: hsl(var(--foreground) / 0.15);
+    @apply rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground;
+    background-color: hsl(var(--foreground) / 0.3);
   }
 }
 
+/* ----------------------- UTILIDADES TEMA-AWARE ----------------------- */
 @layer utilities {
+  /* Paneles "glass" que funcionan en claro y oscuro */
   .glass-panel {
-    @apply bg-background/60 backdrop-blur-xl border border-white/5 shadow-2xl;
-  }
-  
-  .glass-card {
-    @apply bg-card/80 backdrop-blur-md border border-white/5 shadow-xl shadow-black/40;
+    background-color: hsl(var(--background) / 0.7);
+    @apply backdrop-blur-xl border shadow-2xl;
+    border-color: hsl(var(--foreground) / 0.08);
   }
 
+  .glass-card {
+    background-color: hsl(var(--card) / 0.85);
+    @apply backdrop-blur-md border shadow-xl;
+    border-color: hsl(var(--foreground) / 0.08);
+    box-shadow: 0 10px 30px -10px hsl(var(--foreground) / 0.15);
+  }
+
+  /* Gradiente para títulos: hereda el foreground del tema */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-white to-white/60;
+    @apply bg-clip-text text-transparent bg-gradient-to-br;
+    background-image: linear-gradient(
+      to bottom right,
+      hsl(var(--foreground)),
+      hsl(var(--foreground) / 0.6)
+    );
   }
 
   .text-gradient-primary {
@@ -128,5 +235,20 @@
 
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Transición base estándar (200 ms ease-out) */
+  .transition-base {
+    transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Halos decorativos del fondo del layout */
+  .bg-halo-1 {
+    background-color: hsl(var(--bg-halo-1) / 0.10);
+  }
+  .bg-halo-2 {
+    background-color: hsl(var(--bg-halo-2) / 0.08);
   }
 }

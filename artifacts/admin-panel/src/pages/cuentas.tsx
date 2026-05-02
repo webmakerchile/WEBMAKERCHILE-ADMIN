@@ -283,7 +283,7 @@ export default function CuentasPage() {
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.04 }}
-                className="glass-card rounded-2xl p-5 border border-white/5"
+                className="glass-card rounded-2xl p-5 border border-foreground/10"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <span className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${NETWORK_BG[network]}`}>
@@ -296,14 +296,14 @@ export default function CuentasPage() {
                 </div>
 
                 {info.loading ? (
-                  <div className="h-20 rounded-xl bg-white/5 animate-pulse flex items-center justify-center">
+                  <div className="h-20 rounded-xl bg-foreground/5 animate-pulse flex items-center justify-center">
                     <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                   </div>
                 ) : info.connected ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
                       {info.picture ? (
-                        <img src={info.picture} alt="" className="w-11 h-11 rounded-full flex-shrink-0 object-cover border border-white/10" />
+                        <img src={info.picture} alt="" className="w-11 h-11 rounded-full flex-shrink-0 object-cover border border-foreground/10" />
                       ) : (
                         <div className="w-11 h-11 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
                           <CheckCircle2 className="w-5 h-5 text-emerald-400" />
@@ -340,7 +340,7 @@ export default function CuentasPage() {
                         </button>
 
                         {linkedinOrgOpen && (
-                          <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2 mb-2">
+                          <div className="rounded-xl border border-foreground/10 bg-foreground/5 p-3 space-y-2 mb-2">
                             {linkedinOrgLoading ? (
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -354,7 +354,7 @@ export default function CuentasPage() {
                                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition border ${
                                     !linkedinRawStatus?.user?.orgUrn
                                       ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                      : "border-white/10 hover:bg-white/5 text-muted-foreground"
+                                      : "border-foreground/10 hover:bg-foreground/5 text-muted-foreground"
                                   }`}
                                 >
                                   <User className="w-4 h-4 flex-shrink-0" />
@@ -370,7 +370,7 @@ export default function CuentasPage() {
                                       className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition border ${
                                         linkedinRawStatus?.user?.orgUrn === org.urn
                                           ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                          : "border-white/10 hover:bg-white/5 text-muted-foreground"
+                                          : "border-foreground/10 hover:bg-foreground/5 text-muted-foreground"
                                       }`}
                                     >
                                       <Building2 className="w-4 h-4 flex-shrink-0" />
@@ -391,7 +391,7 @@ export default function CuentasPage() {
                                         onChange={(e) => { setLinkedinSearch(e.target.value); setLinkedinSearchResult(null); }}
                                         onKeyDown={(e) => e.key === "Enter" && searchLinkedInOrg()}
                                         placeholder="webmakerchile o linkedin.com/company/..."
-                                        className="flex-1 text-xs bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-foreground placeholder-muted-foreground/50 focus:outline-none focus:border-blue-500/50"
+                                        className="flex-1 text-xs bg-foreground/5 border border-foreground/10 rounded-lg px-3 py-2 text-foreground placeholder-muted-foreground/50 focus:outline-none focus:border-blue-500/50"
                                       />
                                       <button
                                         onClick={searchLinkedInOrg}
@@ -437,7 +437,7 @@ export default function CuentasPage() {
                     ) : (
                       <button
                         onClick={() => fetchOne(network, endpoints.status)}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/10 text-muted-foreground hover:bg-white/5 text-sm transition"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-foreground/10 text-muted-foreground hover:bg-foreground/5 text-sm transition"
                       >
                         <Loader2 className="w-4 h-4" />
                         Refrescar estado
