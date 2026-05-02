@@ -24,22 +24,22 @@ const STEPS: TourStep[] = [
     body: "Sigue estos pasos para tener todo listo: conecta Drive, vincula al menos una red, crea un video y prográmalo.",
   },
   {
-    selector: "[data-tour='nav-cuentas']",
+    selector: "[data-tour='nav-cuentas'], [data-tour='mobile-nav-cuentas']",
     title: "Cuentas Sociales",
     body: "Aquí conectas TikTok, Instagram, YouTube, LinkedIn, X y Facebook. Es el primer paso.",
   },
   {
-    selector: "[data-tour='nav-videos']",
+    selector: "[data-tour='nav-videos'], [data-tour='mobile-nav-videos']",
     title: "Gestor de Videos",
     body: "Crea cada video paso a paso: título, portada, descripciones por red social y publicación.",
   },
   {
-    selector: "[data-tour='nav-schedule']",
+    selector: "[data-tour='nav-schedule'], [data-tour='mobile-nav-schedule']",
     title: "Publicaciones",
     body: "Programa cada video en el calendario y elige en qué redes se publicará.",
   },
   {
-    selector: "[data-tour='nav-help']",
+    selector: "[data-tour='nav-help'], [data-tour='mobile-nav-help']",
     title: "Ayuda siempre a mano",
     body: "¿Dudas? Encuentra respuestas en la sección de Ayuda. ¡A publicar!",
   },
@@ -72,6 +72,19 @@ type Rect = { top: number; left: number; width: number; height: number };
  * (passively, without forcing scroll) so the highlight follows the element.
  * `scrollIntoView` is intentionally NOT called here to avoid fighting the user.
  */
+function pickVisibleTarget(selector: string): Element | null {
+  const all = Array.from(document.querySelectorAll(selector));
+  if (all.length === 0) return null;
+  // Prefer the first element whose bounding rect is non-zero AND
+  // has actual layout (covers responsive variants where one variant
+  // is display:none on the current breakpoint).
+  for (const el of all) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return el;
+  }
+  return all[0];
+}
+
 function useTargetRect(selector: string | undefined, deps: any[]): Rect | null {
   const [rect, setRect] = useState<Rect | null>(null);
 
@@ -81,7 +94,7 @@ function useTargetRect(selector: string | undefined, deps: any[]): Rect | null {
       return;
     }
     function update() {
-      const el = document.querySelector(selector!);
+      const el = pickVisibleTarget(selector!);
       if (!el) {
         setRect(null);
         return;
@@ -138,7 +151,7 @@ export function OnboardingTour() {
   // Scroll to target ONLY when step changes, not on every reflow.
   useEffect(() => {
     if (!open || !step?.selector) return;
-    const el = document.querySelector(step.selector);
+    const el = pickVisibleTarget(step.selector);
     if (!el) return;
     try {
       el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });

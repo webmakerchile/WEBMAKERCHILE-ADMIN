@@ -203,7 +203,7 @@ function videoType(v: VideoSummary): "video" | "single_network" | "multi_network
 }
 
 export default function SchedulePage() {
-  const { data: videos } = useListVideos();
+  const { data: videos, isLoading: videosLoading } = useListVideos();
   const checkSchedule = useCheckScheduledVideos();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -619,6 +619,26 @@ export default function SchedulePage() {
               Procesados: {checkSchedule.data.processed} · Errores: {checkSchedule.data.errors}
             </p>
           </motion.div>
+        )}
+
+        {!videosLoading && filteredVideos.length === 0 && (
+          <EmptyState
+            icon={CalendarIcon}
+            title={
+              search.trim() || statusFilter !== "all" || networkFilter !== "all" || typeFilter !== "all"
+                ? "Sin resultados con los filtros actuales"
+                : view === "month"
+                ? "No hay publicaciones este mes"
+                : "No hay publicaciones esta semana"
+            }
+            description={
+              search.trim() || statusFilter !== "all" || networkFilter !== "all" || typeFilter !== "all"
+                ? "Ajusta los filtros o cambia de semana/mes para ver más publicaciones."
+                : "Programa tu primera publicación para verla aparecer en este calendario."
+            }
+            action={{ label: "Crear publicación", href: "/videos" }}
+            size="md"
+          />
         )}
 
         {view === "month" ? (
