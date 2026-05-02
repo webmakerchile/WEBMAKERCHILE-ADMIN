@@ -553,19 +553,25 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
           impression_count?: number;
         };
       };
-      type XTweetsResponse = { data?: XTweet[]; errors?: unknown } | null;
+      type XTweetsResponse = {
+        data?: XTweet[];
+        meta?: { next_token?: string };
+        errors?: unknown;
+      } | null;
 
-      const fetchTweets = async (startMs: number, endMsArg: number): Promise<XTweetsResponse> => {
-        // NOTE: max_results=100 is the per-page maximum on the Free/Basic
-        // tiers. We don't paginate yet — accounts that publish >100 tweets
-        // in a single window will undercount reach/interactions. Acceptable
-        // for current usage; pagination tracked as a future improvement.
+      // Fetch one page. max_results=100 is the per-page max on Free/Basic.
+      const fetchTweetsPage = async (
+        startMs: number,
+        endMsArg: number,
+        nextToken?: string,
+      ): Promise<XTweetsResponse> => {
         const params = new URLSearchParams({
           max_results: "100",
           "tweet.fields": "created_at,public_metrics",
           start_time: new Date(startMs).toISOString(),
           end_time: new Date(endMsArg).toISOString(),
         });
+        if (nextToken) params.set("pagination_token", nextToken);
         try {
           const r = await fetch(
             `https://api.twitter.com/2/users/${encodeURIComponent(userId)}/tweets?${params.toString()}`,
@@ -582,8 +588,24 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
         }
       };
 
-      const consume = (data: XTweetsResponse, originMs: number, target: "series" | "prevSeries") => {
-        for (const t of data?.data || []) {
+      // Walk pagination via next_token, capped at MAX_PAGES so a runaway
+      // prolific account can't burn rate-limit budget. Returns merged tweets.
+      const MAX_PAGES = 5;
+      const fetchAllTweets = async (startMs: number, endMsArg: number): Promise<XTweet[]> => {
+        const out: XTweet[] = [];
+        let token: string | undefined = undefined;
+        for (let page = 0; page < MAX_PAGES; page++) {
+          const resp: XTweetsResponse = await fetchTweetsPage(startMs, endMsArg, token);
+          if (!resp) break;
+          if (resp.data?.length) out.push(...resp.data);
+          token = resp.meta?.next_token;
+          if (!token) break;
+        }
+        return out;
+      };
+
+      const consume = (tweets: XTweet[], originMs: number, target: "series" | "prevSeries") => {
+        for (const t of tweets) {
           if (!t.created_at) continue;
           const tMs = new Date(t.created_at).getTime();
           const idx = Math.floor((tMs - originMs) / MS_PER_DAY);
@@ -599,8 +621,8 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
       };
 
       const [currT, prevT] = await Promise.all([
-        fetchTweets(currStartMs, endMs),
-        fetchTweets(prevStartMs, currStartMs),
+        fetchAllTweets(currStartMs, endMs),
+        fetchAllTweets(prevStartMs, currStartMs),
       ]);
       consume(currT, currStartMs, "series");
       consume(prevT, prevStartMs, "prevSeries");
