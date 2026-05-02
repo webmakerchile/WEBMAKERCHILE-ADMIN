@@ -556,6 +556,10 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
       type XTweetsResponse = { data?: XTweet[]; errors?: unknown } | null;
 
       const fetchTweets = async (startMs: number, endMsArg: number): Promise<XTweetsResponse> => {
+        // NOTE: max_results=100 is the per-page maximum on the Free/Basic
+        // tiers. We don't paginate yet — accounts that publish >100 tweets
+        // in a single window will undercount reach/interactions. Acceptable
+        // for current usage; pagination tracked as a future improvement.
         const params = new URLSearchParams({
           max_results: "100",
           "tweet.fields": "created_at,public_metrics",
@@ -790,9 +794,19 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   const postsCount = posts.total;
 
   const currTotal = followers.total + reach.total + interactions.total;
-  const prevReachTotal = reach.prevSeries.reduce((a, b) => a + b, 0);
-  const prevInterTotal = interactions.prevSeries.reduce((a, b) => a + b, 0);
-  const prevFollowersTotal = followers.prevSeries.reduce((a, b) => a + b, 0);
+  // For each aggregate block, snapshot sources contributed a constant plateau
+  // to prevSeries (baseline added to every bucket via addMetric). Subtract
+  // baseline*(days-1) so the baseline is effectively counted once, matching
+  // how `finalizeMetric` computes deltas for cumulative blocks. Without this
+  // correction growthRate.delta would be heavily negative whenever an account
+  // has snapshot-only networks (X / TikTok) connected.
+  const adjPrevSum = (m: MetricBlock) => {
+    const baseline = m.snapshotBaseline || 0;
+    return m.prevSeries.reduce((a, b) => a + b, 0) - baseline * Math.max(0, days - 1);
+  };
+  const prevFollowersTotal = adjPrevSum(followers);
+  const prevReachTotal = adjPrevSum(reach);
+  const prevInterTotal = adjPrevSum(interactions);
   const prevTotal = prevFollowersTotal + prevReachTotal + prevInterTotal;
   const growthRate = {
     value: currTotal,
