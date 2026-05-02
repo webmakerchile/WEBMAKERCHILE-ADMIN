@@ -693,7 +693,7 @@ async function fetchTikTok(user: AuthedUser, days: number): Promise<{
 }
 
 router.get("/analytics/summary", async (req: Request, res: Response) => {
-  const days = Math.max(1, Math.min(30, Number(req.query.days) || 7));
+  const days = Math.max(1, Math.min(90, Number(req.query.days) || 7));
   const user = getUser(req);
 
   const followers = emptyMetric(days);
@@ -1017,6 +1017,312 @@ router.get("/analytics/best-times", async (_req: Request, res: Response) => {
   );
 
   res.json({ networks: out });
+});
+
+/* ============================================================
+ * Analytics v2 — timeseries (per-network), top videos, AI insights
+ * ============================================================ */
+
+type TsPoint = { date: string; value: number };
+
+router.get("/analytics/timeseries", async (req: Request, res: Response) => {
+  const days = Math.max(1, Math.min(90, Number(req.query.days) || 30));
+  const user = getUser(req);
+
+  const todayUtcMs = utcMidnightMs();
+  const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+  const fmtDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const dates: string[] = [];
+  for (let i = 0; i < days; i++) dates.push(fmtDay(currStartMs + i * MS_PER_DAY));
+
+  type NetResult = { followers: MetricBlock; reach: MetricBlock; interactions: MetricBlock } | null;
+  const networkFns: { name: Net; fn: () => Promise<NetResult> }[] = [
+    { name: "youtube", fn: () => fetchYouTube(user, days) },
+    { name: "instagram", fn: () => fetchInstagram(user, days) },
+    { name: "facebook", fn: () => fetchFacebook(user, days) },
+    { name: "linkedin", fn: () => fetchLinkedIn(user, days) },
+    { name: "x", fn: () => fetchX(user, days) },
+    { name: "tiktok", fn: () => fetchTikTok(user, days) },
+  ];
+
+  const results = await Promise.all(networkFns.map(async (n) => {
+    try {
+      const r = await n.fn();
+      if (!r) {
+        return { network: n.name, connected: false, reach: [] as TsPoint[], interactions: [] as TsPoint[], followers: [] as TsPoint[], totals: { reach: 0, interactions: 0, followers: 0 } };
+      }
+      const toPts = (arr: number[]) => arr.map((v, i) => ({ date: dates[i] || "", value: Number(v || 0) }));
+      return {
+        network: n.name,
+        connected: true,
+        reach: toPts(r.reach.series),
+        interactions: toPts(r.interactions.series),
+        followers: toPts(r.followers.series),
+        totals: { reach: r.reach.total, interactions: r.interactions.total, followers: r.followers.total },
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[Analytics][timeseries][${n.name}]`, msg);
+      return { network: n.name, connected: false, reach: [] as TsPoint[], interactions: [] as TsPoint[], followers: [] as TsPoint[], totals: { reach: 0, interactions: 0, followers: 0 }, error: msg };
+    }
+  }));
+
+  res.json({ days, dates, networks: results });
+});
+
+type TopMetric = { views: number; likes: number; comments: number; shares: number };
+function emptyTopMetric(): TopMetric { return { views: 0, likes: 0, comments: 0, shares: 0 }; }
+
+router.get("/analytics/top", async (req: Request, res: Response) => {
+  const days = Math.max(1, Math.min(90, Number(req.query.days) || 30));
+  const networkFilter = String(req.query.network || "all").toLowerCase();
+  const user = getUser(req);
+
+  const todayUtcMs = utcMidnightMs();
+  const startMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+  const startDate = new Date(startMs);
+
+  const rows = await db.select().from(videos)
+    .where(and(eq(videos.status, "published"), gte(videos.publishedAt, startDate)))
+    .orderBy(desc(videos.publishedAt))
+    .limit(200);
+
+  // YouTube batch (videos.list, up to 50 ids per call)
+  const ytStats = new Map<string, TopMetric>();
+  const ytIds = rows.map((r) => r.youtubeVideoId).filter(Boolean) as string[];
+  if (ytIds.length && user.googleAccessToken) {
+    try {
+      const auth = getOAuth2Client(user);
+      const ytApi = google.youtube({ version: "v3", auth });
+      for (let i = 0; i < ytIds.length; i += 50) {
+        const ids = ytIds.slice(i, i + 50);
+        const r = await ytApi.videos.list({ part: ["statistics"], id: ids });
+        for (const item of r.data.items || []) {
+          const s = item.statistics || {};
+          ytStats.set(item.id || "", {
+            views: Number(s.viewCount || 0),
+            likes: Number(s.likeCount || 0),
+            comments: Number(s.commentCount || 0),
+            shares: 0,
+          });
+        }
+      }
+    } catch (err) {
+      console.error("[Analytics][top][youtube]", err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // X batch (tweets?ids=, up to 100)
+  const xStats = new Map<string, TopMetric>();
+  const xIds = rows.map((r) => r.xPostId).filter(Boolean) as string[];
+  if (xIds.length) {
+    const token = await getValidXToken(user);
+    if (token) {
+      try {
+        for (let i = 0; i < xIds.length; i += 100) {
+          const ids = xIds.slice(i, i + 100);
+          const r = await fetch(`https://api.twitter.com/2/tweets?ids=${ids.join(",")}&tweet.fields=public_metrics`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!r.ok) continue;
+          const data = (await r.json()) as { data?: { id: string; public_metrics?: Record<string, number> }[] };
+          for (const t of data.data || []) {
+            const m = t.public_metrics || {};
+            xStats.set(t.id, {
+              views: Number(m.impression_count || 0),
+              likes: Number(m.like_count || 0),
+              comments: Number(m.reply_count || 0),
+              shares: Number(m.retweet_count || 0) + Number(m.quote_count || 0),
+            });
+          }
+        }
+      } catch (err) {
+        console.error("[Analytics][top][x]", err instanceof Error ? err.message : String(err));
+      }
+    }
+  }
+
+  // IG per-media (limited to keep request bounded)
+  const igStats = new Map<string, TopMetric>();
+  if (INSTAGRAM_ACCESS_TOKEN) {
+    const igIds = (rows.map((r) => r.instagramMediaId).filter(Boolean) as string[]).slice(0, 50);
+    await Promise.all(igIds.map(async (id) => {
+      try {
+        const r = await fetch(`${IG_API_BASE}/${id}?fields=like_count,comments_count,insights.metric(reach,plays,shares)&access_token=${encodeURIComponent(INSTAGRAM_ACCESS_TOKEN)}`);
+        if (!r.ok) return;
+        const d = (await r.json()) as { like_count?: number; comments_count?: number; insights?: { data?: { name: string; values?: { value?: number }[] }[] } };
+        const insights: Record<string, number> = {};
+        for (const it of d.insights?.data || []) insights[it.name] = Number(it.values?.[0]?.value || 0);
+        igStats.set(id, {
+          views: insights.plays || insights.reach || 0,
+          likes: Number(d.like_count || 0),
+          comments: Number(d.comments_count || 0),
+          shares: insights.shares || 0,
+        });
+      } catch { /* ignore */ }
+    }));
+  }
+
+  // Facebook per-post (basic engagement counts)
+  const fbStats = new Map<string, TopMetric>();
+  const fbToken = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim() || user.facebookPageAccessToken || "";
+  if (fbToken) {
+    const fbIds = (rows.map((r) => r.facebookPostId).filter(Boolean) as string[]).slice(0, 50);
+    await Promise.all(fbIds.map(async (id) => {
+      try {
+        const r = await fetch(`${FB_GRAPH_BASE}/${id}?fields=likes.summary(true),comments.summary(true),shares&access_token=${encodeURIComponent(fbToken)}`);
+        if (!r.ok) return;
+        const d = (await r.json()) as { likes?: { summary?: { total_count?: number } }; comments?: { summary?: { total_count?: number } }; shares?: { count?: number } };
+        fbStats.set(id, {
+          views: 0,
+          likes: Number(d.likes?.summary?.total_count || 0),
+          comments: Number(d.comments?.summary?.total_count || 0),
+          shares: Number(d.shares?.count || 0),
+        });
+      } catch { /* ignore */ }
+    }));
+  }
+
+  type ItemOut = {
+    videoId: number;
+    title: string;
+    coverImageBase64: string | null;
+    coverMimeType: string | null;
+    publishedAt: string | null;
+    perNetwork: Record<string, TopMetric>;
+    totals: TopMetric;
+    engagement: number;
+  };
+
+  const items: ItemOut[] = [];
+  for (const v of rows) {
+    const perNetwork: Record<string, TopMetric> = {};
+    if (v.youtubeVideoId && ytStats.has(v.youtubeVideoId)) perNetwork.youtube = ytStats.get(v.youtubeVideoId)!;
+    if (v.instagramMediaId && igStats.has(v.instagramMediaId)) perNetwork.instagram = igStats.get(v.instagramMediaId)!;
+    if (v.facebookPostId && fbStats.has(v.facebookPostId)) perNetwork.facebook = fbStats.get(v.facebookPostId)!;
+    if (v.xPostId && xStats.has(v.xPostId)) perNetwork.x = xStats.get(v.xPostId)!;
+    if (Object.keys(perNetwork).length === 0) continue;
+
+    const agg = emptyTopMetric();
+    const keys = networkFilter === "all" ? Object.keys(perNetwork) : [networkFilter];
+    for (const k of keys) {
+      const n = perNetwork[k];
+      if (!n) continue;
+      agg.views += n.views;
+      agg.likes += n.likes;
+      agg.comments += n.comments;
+      agg.shares += n.shares;
+    }
+    const engagement = agg.views * 1 + agg.likes * 3 + agg.comments * 5 + agg.shares * 7;
+    if (networkFilter !== "all" && !perNetwork[networkFilter]) continue;
+    items.push({
+      videoId: v.id,
+      title: v.title,
+      coverImageBase64: v.coverImageBase64,
+      coverMimeType: v.coverMimeType,
+      publishedAt: v.publishedAt ? v.publishedAt.toISOString() : null,
+      perNetwork,
+      totals: agg,
+      engagement,
+    });
+  }
+
+  items.sort((a, b) => b.engagement - a.engagement);
+  res.json({ days, network: networkFilter, items: items.slice(0, 10) });
+});
+
+router.get("/analytics/insights", async (req: Request, res: Response) => {
+  const days = Math.max(1, Math.min(90, Number(req.query.days) || 30));
+
+  const todayUtcMs = utcMidnightMs();
+  const startMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+  const prevStartMs = startMs - days * MS_PER_DAY;
+  const startDate = new Date(startMs);
+  const prevStartDate = new Date(prevStartMs);
+
+  const NETS: Net[] = ["youtube", "instagram", "tiktok", "linkedin", "x", "facebook"];
+  const postsByNet: Record<string, { current: number; previous: number }> = {};
+  await Promise.all(NETS.map(async (n) => {
+    try {
+      const [curRow] = await db.select({ c: sql<number>`count(*)::int` }).from(videos)
+        .where(and(eq(STATUS_COL[n], "published"), gte(videos.publishedAt, startDate)));
+      const [prevRow] = await db.select({ c: sql<number>`count(*)::int` }).from(videos)
+        .where(and(eq(STATUS_COL[n], "published"), gte(videos.publishedAt, prevStartDate), lt(videos.publishedAt, startDate)));
+      postsByNet[n] = { current: Number(curRow?.c || 0), previous: Number(prevRow?.c || 0) };
+    } catch {
+      postsByNet[n] = { current: 0, previous: 0 };
+    }
+  }));
+
+  type DowHourRow = { dow: number; hour: number; count: number };
+  let distribution: DowHourRow[] = [];
+  try {
+    const rows = await db.select({
+      dow: sql<number>`(extract(dow from coalesce(${videos.publishedAt}, ${videos.scheduledAt}))::int + 6) % 7`,
+      hour: sql<number>`extract(hour from coalesce(${videos.publishedAt}, ${videos.scheduledAt}))::int`,
+      count: sql<number>`count(*)::int`,
+    }).from(videos)
+      .where(and(eq(videos.status, "published"), gte(videos.publishedAt, startDate)))
+      .groupBy(sql`1`, sql`2`);
+    distribution = rows.map((r) => ({ dow: Number(r.dow), hour: Number(r.hour), count: Number(r.count) }));
+  } catch (err) {
+    console.warn("[Analytics][insights] distribution failed:", err instanceof Error ? err.message : String(err));
+  }
+
+  const dataSnapshot = { days, postsByNetwork: postsByNet, distribution };
+
+  if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+    res.json({
+      insights: [{ type: "info", title: "IA no configurada", body: "Configura la integración de OpenAI para activar las recomendaciones automáticas." }],
+      data: dataSnapshot,
+    });
+    return;
+  }
+
+  try {
+    const { default: OpenAI } = await import("openai");
+    const openai = new OpenAI({
+      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+
+    const prompt = `Eres analista de redes sociales para una agencia. Te paso datos agregados de los últimos ${days} días en JSON. Devuelve EXACTAMENTE 4 recomendaciones accionables en español, basadas SOLO en estos datos. Cada recomendación debe ser específica, breve (1-2 líneas) y con datos concretos del JSON (números, nombres de redes, días/horas). Devuelve SOLO un objeto JSON con la clave "insights" cuyo valor sea un array. Cada item: { "type": "win" | "warning" | "info", "title": string, "body": string }.
+
+Reglas:
+- "win" = oportunidad clara o algo funcionando bien.
+- "warning" = riesgo o caída a corregir.
+- "info" = dato relevante neutral.
+- Días: 0=Lunes, 6=Domingo.
+
+Datos:
+${JSON.stringify(dataSnapshot)}`;
+
+    const r = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 800,
+    });
+    const text = r.choices[0]?.message?.content || "{}";
+    let parsed: { insights?: unknown } = {};
+    try { parsed = JSON.parse(text); } catch { /* keep empty */ }
+    const arr = Array.isArray(parsed.insights) ? parsed.insights : [];
+    const insights = arr.filter((x: unknown): x is { type: string; title: string; body: string } => {
+      return !!x && typeof x === "object" && "title" in x && "body" in x;
+    }).map((x) => ({
+      type: ["win", "warning", "info"].includes(x.type) ? x.type : "info",
+      title: String(x.title).slice(0, 200),
+      body: String(x.body).slice(0, 500),
+    }));
+    res.json({ insights, data: dataSnapshot });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[Analytics][insights]", msg);
+    res.json({
+      insights: [{ type: "warning", title: "No se pudieron generar insights", body: msg }],
+      data: dataSnapshot,
+    });
+  }
 });
 
 export default router;

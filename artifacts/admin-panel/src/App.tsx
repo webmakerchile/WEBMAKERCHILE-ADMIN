@@ -27,6 +27,7 @@ const CuentasPage = lazy(() => import("./pages/cuentas"));
 const AyudaPage = lazy(() => import("./pages/ayuda"));
 const BibliotecaPage = lazy(() => import("./pages/biblioteca"));
 const CampanaPage = lazy(() => import("./pages/campana"));
+const InsightsPage = lazy(() => import("./pages/insights"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -168,6 +169,9 @@ function Router() {
       </Route>
       <Route path="/biblioteca">
         <RouteShell name="biblioteca"><BibliotecaPage /></RouteShell>
+      </Route>
+      <Route path="/insights">
+        <RouteShell name="insights"><InsightsPage /></RouteShell>
       </Route>
       <Route path="/campanas/:id">
         <RouteShell name="campana"><CampanaPage /></RouteShell>
