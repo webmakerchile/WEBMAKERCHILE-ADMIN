@@ -479,21 +479,19 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
 
-    // X public_metrics has no per-day follower history. Spread the snapshot
-    // across all days so the sparkline shows a stable line instead of a
-    // misleading flat-zero with a single spike at the last bucket. The
-    // delta vs. previous period stays at 0%, which is honest given we have
-    // no historical signal for followers.
-    for (let i = 0; i < days; i++) {
-      followers.series[i] = fc;
-      followers.prevSeries[i] = fc;
-    }
+    // X public_metrics has no per-day follower history. Keep the snapshot in
+    // a single bucket on both periods so finalizeMetric yields a 0% delta
+    // (we have no historical signal — never claim growth we can't measure).
+    // Spreading as a plateau would inflate prevSeries.sum and break delta.
     followers.total = fc;
+    followers.series[days - 1] = fc;
+    followers.prevSeries[days - 1] = fc;
 
     // Real per-day reach/interactions: aggregate the user's own recent tweets
     // by UTC day. start_time/end_time match the UTC-midnight axis used
     // everywhere else (Tasks #12 / #14). If this call fails (rate limit,
-    // missing tier, etc.) we keep the followers plateau and return.
+    // missing tier, etc.) we keep the followers snapshot and return zeros
+    // for reach/interactions.
     if (userId) {
       const todayUtcMs = utcMidnightMs();
       const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
@@ -594,20 +592,18 @@ async function fetchTikTok(user: AuthedUser, days: number): Promise<{
     const fc = Number(u?.follower_count || 0);
     const likes = Number(u?.likes_count || 0);
 
-    // TikTok user/info only returns lifetime snapshots and our current OAuth
-    // scope ("user.info.basic,video.upload") doesn't include "video.list", so
-    // we can't fetch per-video stats to build a real per-day series. Spread
-    // the snapshot across all days so the sparkline shows a stable line
-    // instead of zeros with a single spike at the last bucket. Delta vs.
-    // previous period stays at 0%, which is honest given we have no signal.
-    for (let i = 0; i < days; i++) {
-      followers.series[i] = fc;
-      followers.prevSeries[i] = fc;
-      interactions.series[i] = likes;
-      interactions.prevSeries[i] = likes;
-    }
+    // TikTok /v2/user/info/ only returns lifetime snapshots and our current
+    // OAuth scope ("user.info.basic,video.upload") does not include
+    // "video.list", so we can't aggregate per-video stats to build a real
+    // per-day series (see follow-up #15 to expand the scope). Keep the
+    // snapshot in a single bucket on both periods so finalizeMetric yields
+    // a 0% delta — never claim growth we can't measure.
     followers.total = fc;
+    followers.series[days - 1] = fc;
+    followers.prevSeries[days - 1] = fc;
     interactions.total = likes;
+    interactions.series[days - 1] = likes;
+    interactions.prevSeries[days - 1] = likes;
 
     finalizeMetric(followers); finalizeMetric(reach); finalizeMetric(interactions);
     return { followers, reach, interactions };
