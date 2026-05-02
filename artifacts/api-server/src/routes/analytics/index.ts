@@ -1294,9 +1294,14 @@ router.get("/analytics/insights", async (req: Request, res: Response) => {
 
   try {
     const { default: OpenAI } = await import("openai");
+    // Preferir la API key propia del usuario para que el costo se cargue
+    // a su cuenta de OpenAI, no a la de Replit.
+    const useOwnKey = !!process.env.OPENAI_API_KEY;
     const openai = new OpenAI({
-      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      apiKey: useOwnKey
+        ? process.env.OPENAI_API_KEY
+        : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: useOwnKey ? undefined : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
     });
 
     const prompt = `Eres analista de redes sociales para una agencia. Te paso datos agregados de los últimos ${days} días en JSON. Devuelve EXACTAMENTE 4 recomendaciones accionables en español, basadas SOLO en estos datos. Cada recomendación debe ser específica, breve (1-2 líneas) y con datos concretos del JSON (números, nombres de redes, días/horas). Devuelve SOLO un objeto JSON con la clave "insights" cuyo valor sea un array. Cada item: { "type": "win" | "warning" | "info", "title": string, "body": string }.

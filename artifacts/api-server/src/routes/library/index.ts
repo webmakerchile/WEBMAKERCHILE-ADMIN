@@ -659,12 +659,17 @@ ${guideLines}`;
 
   try {
     const { default: OpenAI } = await import("openai");
+    // Preferir la API key propia del usuario (OPENAI_API_KEY) para que el
+    // costo se cargue a SU cuenta de OpenAI. Si no está, caemos en la
+    // integración de Replit como respaldo.
+    const useOwnKey = !!process.env.OPENAI_API_KEY;
     const openai = new OpenAI({
-      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      apiKey: useOwnKey
+        ? process.env.OPENAI_API_KEY
+        : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: useOwnKey ? undefined : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
     });
-    // Modelo: usamos el más reciente que esté disponible en la integración.
-    // `OPENAI_TEMPLATE_MODEL` permite override sin redeploy.
+    // Modelo configurable sin redeploy via OPENAI_TEMPLATE_MODEL.
     const model = process.env.OPENAI_TEMPLATE_MODEL || "gpt-4o-mini";
     const r = await openai.chat.completions.create({
       model,
