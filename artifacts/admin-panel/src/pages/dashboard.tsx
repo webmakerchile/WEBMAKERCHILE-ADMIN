@@ -201,25 +201,26 @@ function AnalyticsRow() {
     staleTime: 60_000,
   });
 
-  const followers = data?.followers || { total: 0, delta: 0, series: [], prevSeries: [] };
-  const reach = data?.reach || { total: 0, delta: 0, series: [], prevSeries: [] };
-  const interactions = data?.interactions || { total: 0, delta: 0, series: [], prevSeries: [] };
-  const growthRate = data?.growthRate || { value: 0, prev: 0, delta: 0, series: [], prevSeries: [] };
+  const empty: MetricSummary = { total: 0, delta: 0, series: [], prevSeries: [] };
+  const followers = data?.followers || empty;
+  const reach = data?.reach || empty;
+  const interactions = data?.interactions || empty;
+  const posts = data?.posts || empty;
 
-  const cards = [
+  const cards: {
+    label: string;
+    sublabel?: string;
+    value: number;
+    delta: number;
+    series: SeriesPoint[];
+    prevSeries: SeriesPoint[];
+    icon: typeof Users;
+    color: string;
+    bg: string;
+    bar: string;
+  }[] = [
     {
-      label: "Seguidores",
-      value: followers.total,
-      delta: followers.delta,
-      series: followers.series,
-      prevSeries: followers.prevSeries,
-      icon: Users,
-      color: "text-emerald-300",
-      bg: "bg-emerald-500/10",
-      bar: "bg-emerald-400/70",
-    },
-    {
-      label: "Alcance",
+      label: "Vistas",
       value: reach.total,
       delta: reach.delta,
       series: reach.series,
@@ -241,12 +242,22 @@ function AnalyticsRow() {
       bar: "bg-rose-400/70",
     },
     {
-      label: "Tasa de crecimiento",
-      sublabel: "vs 7 días previos",
-      value: growthRate.value,
-      delta: growthRate.delta,
-      series: growthRate.series,
-      prevSeries: growthRate.prevSeries,
+      label: "Seguidores",
+      value: followers.total,
+      delta: followers.delta,
+      series: followers.series,
+      prevSeries: followers.prevSeries,
+      icon: Users,
+      color: "text-emerald-300",
+      bg: "bg-emerald-500/10",
+      bar: "bg-emerald-400/70",
+    },
+    {
+      label: "Publicaciones",
+      value: posts.total,
+      delta: posts.delta,
+      series: posts.series,
+      prevSeries: posts.prevSeries,
       icon: TrendingUp,
       color: "text-amber-300",
       bg: "bg-amber-500/10",

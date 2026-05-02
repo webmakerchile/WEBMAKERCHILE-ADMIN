@@ -579,16 +579,21 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   finalizeMetric(interactions);
 
   // Posts published, daily series for current and previous window.
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const currStartMs = today.getTime() - (days - 1) * 86400000;
+  // Use UTC end-to-end so day buckets line up regardless of server/DB tz.
+  const now = new Date();
+  const todayUtcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const currStartMs = todayUtcMs - (days - 1) * 86400000;
   const prevStartMs = currStartMs - days * 86400000;
   const currStartDate = new Date(currStartMs);
   const prevStartDate = new Date(prevStartMs);
-  const windowEndDate = new Date(today.getTime() + 86400000);
+  const windowEndDate = new Date(todayUtcMs + 86400000);
 
   const posts = emptyMetric(days);
   try {
     type PostRow = { day: string; count: number };
+    // Truncate at UTC day so the returned date string corresponds to the
+    // same boundary we use to compute `idx` below.
+    const dayExpr = sql<string>`to_char(${videos.publishedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
     const fillFromRows = (rows: PostRow[], originMs: number, target: "series" | "prevSeries") => {
       for (const row of rows) {
         const t = new Date(row.day + "T00:00:00Z").getTime();
@@ -598,29 +603,23 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
       }
     };
     const currRows = (await db
-      .select({
-        day: sql<string>`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`,
-        count: sql<number>`count(*)::int`,
-      })
+      .select({ day: dayExpr, count: sql<number>`count(*)::int` })
       .from(videos)
       .where(and(
         eq(videos.status, "published"),
         gte(videos.publishedAt, currStartDate),
         lt(videos.publishedAt, windowEndDate),
       ))
-      .groupBy(sql`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`)) as PostRow[];
+      .groupBy(dayExpr)) as PostRow[];
     const prevRows = (await db
-      .select({
-        day: sql<string>`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`,
-        count: sql<number>`count(*)::int`,
-      })
+      .select({ day: dayExpr, count: sql<number>`count(*)::int` })
       .from(videos)
       .where(and(
         eq(videos.status, "published"),
         gte(videos.publishedAt, prevStartDate),
         lt(videos.publishedAt, currStartDate),
       ))
-      .groupBy(sql`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`)) as PostRow[];
+      .groupBy(dayExpr)) as PostRow[];
     fillFromRows(currRows, currStartMs, "series");
     fillFromRows(prevRows, prevStartMs, "prevSeries");
     posts.total = posts.series.reduce((a, b) => a + b, 0);
