@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Layout } from "@/components/layout";
-import { CheckCircle2, Loader2, Link2, Unlink, Info } from "lucide-react";
+import { CheckCircle2, Loader2, Link2, Unlink, Info, Building2, User, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 
@@ -84,6 +84,10 @@ type StatusPayload = {
     username?: string;
     picture?: string;
     orgUrn?: string;
+    orgName?: string;
+    orgLogo?: string;
+    personalName?: string;
+    personalPicture?: string;
   };
   account?: {
     name?: string;
@@ -153,6 +157,8 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
   return base;
 }
 
+type LinkedInOrg = { urn: string; name: string; vanity?: string };
+
 export default function CuentasPage() {
   const [accounts, setAccounts] = useState<Record<Network, AccountInfo>>(() => {
     const init: Record<string, AccountInfo> = {};
@@ -165,6 +171,7 @@ export default function CuentasPage() {
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, { credentials: "include" });
       const data = (await res.json()) as StatusPayload;
+      if (network === "linkedin") setLinkedinRawStatus(data);
       setAccounts((prev) => ({ ...prev, [network]: normalizeStatus(network, data) }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error de conexión";
@@ -188,6 +195,36 @@ export default function CuentasPage() {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
+
+  const [linkedinOrgs, setLinkedinOrgs] = useState<LinkedInOrg[] | null>(null);
+  const [linkedinOrgLoading, setLinkedinOrgLoading] = useState(false);
+  const [linkedinOrgOpen, setLinkedinOrgOpen] = useState(false);
+  const [linkedinRawStatus, setLinkedinRawStatus] = useState<StatusPayload | null>(null);
+
+  const fetchLinkedInOrgs = async () => {
+    setLinkedinOrgLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/linkedin/organizations`, { credentials: "include" });
+      const data = await res.json();
+      setLinkedinOrgs(data.organizations || []);
+    } catch {
+      setLinkedinOrgs([]);
+    } finally {
+      setLinkedinOrgLoading(false);
+    }
+  };
+
+  const selectLinkedInOrg = async (urn: string | null) => {
+    await fetch(`${API_BASE}/linkedin/select-org`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orgUrn: urn }),
+    });
+    setLinkedinOrgOpen(false);
+    setLinkedinOrgs(null);
+    fetchOne("linkedin", "/linkedin/status");
+  };
 
   const handleDisconnect = async (network: Network, endpoint: string | null, statusEndpoint: string) => {
     if (!endpoint) return;
@@ -268,6 +305,73 @@ export default function CuentasPage() {
                         {info.meta && <p className="text-xs text-muted-foreground truncate">{info.meta}</p>}
                       </div>
                     </div>
+
+                    {network === "linkedin" && (
+                      <div>
+                        <button
+                          onClick={() => {
+                            setLinkedinOrgOpen((o) => !o);
+                            if (!linkedinOrgs) fetchLinkedInOrgs();
+                          }}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10 text-sm transition mb-2"
+                        >
+                          <Building2 className="w-4 h-4" />
+                          Cambiar identidad de publicación
+                          <ChevronDown className={`w-3 h-3 ml-auto transition-transform ${linkedinOrgOpen ? "rotate-180" : ""}`} />
+                        </button>
+
+                        {linkedinOrgOpen && (
+                          <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2 mb-2">
+                            {linkedinOrgLoading ? (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Buscando páginas...
+                              </div>
+                            ) : (
+                              <>
+                                <p className="text-[11px] text-muted-foreground mb-2">Elige cómo publicar en LinkedIn:</p>
+                                <button
+                                  onClick={() => selectLinkedInOrg(null)}
+                                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition border ${
+                                    !linkedinRawStatus?.user?.orgUrn
+                                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                      : "border-white/10 hover:bg-white/5 text-muted-foreground"
+                                  }`}
+                                >
+                                  <User className="w-4 h-4 flex-shrink-0" />
+                                  <span className="truncate">{linkedinRawStatus?.user?.personalName || "Perfil personal"}</span>
+                                  {!linkedinRawStatus?.user?.orgUrn && <CheckCircle2 className="w-3 h-3 ml-auto text-emerald-400" />}
+                                </button>
+
+                                {linkedinOrgs && linkedinOrgs.length > 0 ? (
+                                  linkedinOrgs.map((org) => (
+                                    <button
+                                      key={org.urn}
+                                      onClick={() => selectLinkedInOrg(org.urn)}
+                                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition border ${
+                                        linkedinRawStatus?.user?.orgUrn === org.urn
+                                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                          : "border-white/10 hover:bg-white/5 text-muted-foreground"
+                                      }`}
+                                    >
+                                      <Building2 className="w-4 h-4 flex-shrink-0" />
+                                      <span className="truncate">{org.name}</span>
+                                      {linkedinRawStatus?.user?.orgUrn === org.urn && <CheckCircle2 className="w-3 h-3 ml-auto text-emerald-400" />}
+                                    </button>
+                                  ))
+                                ) : (
+                                  linkedinOrgs !== null && (
+                                    <p className="text-[11px] text-amber-400/80 px-1 leading-relaxed">
+                                      No se encontraron páginas de empresa. Desconecta y vuelve a conectar LinkedIn para que el sistema detecte páginas automáticamente.
+                                    </p>
+                                  )
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {endpoints.disconnect ? (
                       <button
