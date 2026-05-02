@@ -516,17 +516,17 @@ router.get("/content/videos/:id/stats", async (req, res) => {
     return;
   }
 
-  const adminUsers = await db.select().from(users).limit(1);
-  const adminUser = adminUsers[0];
-
   const stats: Record<string, any> = {};
-
   const tasks: Promise<void>[] = [];
 
   // ── YouTube ──────────────────────────────────────────────────────────────
   if (video.youtubeVideoId) {
     tasks.push((async () => {
       try {
+        if (!user.googleAccessToken) {
+          stats.youtube = { error: "no_token" };
+          return;
+        }
         const auth = getGoogleAuth(user);
         const youtube = google.youtube({ version: "v3", auth });
         const youtubeAnalytics = google.youtubeAnalytics({ version: "v2", auth });
@@ -552,6 +552,8 @@ router.get("/content/videos/:id/stats", async (req, res) => {
             averageViewDuration: Number(ytAnalytics?.data?.rows?.[0]?.[0] || 0),
             url: `https://youtube.com/watch?v=${video.youtubeVideoId}`,
           };
+        } else {
+          stats.youtube = { error: "not_found" };
         }
       } catch (err: any) {
         stats.youtube = { error: err.message };
@@ -560,8 +562,12 @@ router.get("/content/videos/:id/stats", async (req, res) => {
   }
 
   // ── Instagram ─────────────────────────────────────────────────────────────
-  if (video.instagramMediaId && INSTAGRAM_ACCESS_TOKEN_STATS) {
+  if (video.instagramMediaId) {
     tasks.push((async () => {
+      if (!INSTAGRAM_ACCESS_TOKEN_STATS) {
+        stats.instagram = { error: "no_token" };
+        return;
+      }
       try {
         const token = encodeURIComponent(INSTAGRAM_ACCESS_TOKEN_STATS);
         const [mediaRes, insightsRes] = await Promise.all([
@@ -570,6 +576,11 @@ router.get("/content/videos/:id/stats", async (req, res) => {
           fetch(`${IG_API_BASE_CONTENT}/${video.instagramMediaId}/insights?metric=plays,reach,total_interactions&access_token=${token}`)
             .then((r) => r.json() as Promise<any>).catch(() => null),
         ]);
+
+        if (mediaRes?.error) {
+          stats.instagram = { error: mediaRes.error.message || "api_error" };
+          return;
+        }
 
         const insights: Record<string, number> = {};
         for (const item of (insightsRes?.data || [])) {
@@ -590,32 +601,38 @@ router.get("/content/videos/:id/stats", async (req, res) => {
   }
 
   // ── LinkedIn ──────────────────────────────────────────────────────────────
-  if (video.linkedinPostId && adminUser) {
+  if (video.linkedinPostId) {
     tasks.push((async () => {
       try {
-        const token = await getValidLinkedInToken(adminUser);
-        if (token && adminUser.linkedinOrgUrn) {
-          const orgUrn = adminUser.linkedinOrgUrn;
-          const shareUrn = video.linkedinPostId!;
-          const headers = {
-            Authorization: `Bearer ${token}`,
-            "LinkedIn-Version": "202509",
-            "X-Restli-Protocol-Version": "2.0.0",
-          };
-          const statsRes = await fetch(
-            `${LINKEDIN_API_BASE_STATS}/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(orgUrn)}&shares=List(${encodeURIComponent(shareUrn)})`,
-            { headers },
-          ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
-
-          const el = statsRes?.elements?.[0]?.totalShareStatistics || {};
-          stats.linkedin = {
-            impressions: Number(el.impressionCount || 0),
-            clicks: Number(el.clickCount || 0),
-            reactions: Number(el.likeCount || 0),
-            comments: Number(el.commentCount || 0),
-            shares: Number(el.shareCount || 0),
-          };
+        const token = await getValidLinkedInToken(user);
+        if (!token) {
+          stats.linkedin = { error: "no_token" };
+          return;
         }
+        const orgUrn = user.linkedinOrgUrn;
+        if (!orgUrn) {
+          stats.linkedin = { error: "no_org" };
+          return;
+        }
+        const shareUrn = video.linkedinPostId!;
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          "LinkedIn-Version": "202509",
+          "X-Restli-Protocol-Version": "2.0.0",
+        };
+        const statsRes = await fetch(
+          `${LINKEDIN_API_BASE_STATS}/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(orgUrn)}&shares=List(${encodeURIComponent(shareUrn)})`,
+          { headers },
+        ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
+
+        const el = statsRes?.elements?.[0]?.totalShareStatistics || {};
+        stats.linkedin = {
+          impressions: Number(el.impressionCount || 0),
+          clicks: Number(el.clickCount || 0),
+          reactions: Number(el.likeCount || 0),
+          comments: Number(el.commentCount || 0),
+          shares: Number(el.shareCount || 0),
+        };
       } catch (err: any) {
         stats.linkedin = { error: err.message };
       }
@@ -623,29 +640,44 @@ router.get("/content/videos/:id/stats", async (req, res) => {
   }
 
   // ── X (Twitter) ───────────────────────────────────────────────────────────
-  if (video.xPostId && adminUser) {
+  if (video.xPostId) {
     tasks.push((async () => {
       try {
-        const token = await getValidXToken(adminUser);
-        if (token) {
-          const tweetRes = await fetch(
-            `https://api.twitter.com/2/tweets/${video.xPostId}?tweet.fields=public_metrics`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
-
-          const m = tweetRes?.data?.public_metrics || {};
-          stats.x = {
-            impressions: Number(m.impression_count || 0),
-            likes: Number(m.like_count || 0),
-            retweets: Number(m.retweet_count || 0),
-            replies: Number(m.reply_count || 0),
-            bookmarks: Number(m.bookmark_count || 0),
-          };
+        const token = await getValidXToken(user);
+        if (!token) {
+          stats.x = { error: "no_token" };
+          return;
         }
+        const tweetRes = await fetch(
+          `https://api.twitter.com/2/tweets/${video.xPostId}?tweet.fields=public_metrics`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
+
+        if (!tweetRes?.data) {
+          stats.x = { error: "not_found" };
+          return;
+        }
+        const m = tweetRes.data.public_metrics || {};
+        stats.x = {
+          impressions: Number(m.impression_count || 0),
+          likes: Number(m.like_count || 0),
+          retweets: Number(m.retweet_count || 0),
+          replies: Number(m.reply_count || 0),
+          bookmarks: Number(m.bookmark_count || 0),
+        };
       } catch (err: any) {
         stats.x = { error: err.message };
       }
     })());
+  }
+
+  // ── TikTok ───────────────────────────────────────────────────────────────
+  // The app stores a publish_id (not video_id) and the current OAuth scope
+  // (user.info.basic, video.upload) does not include video.list or
+  // video.list.search, so per-video metrics are unavailable. Return a
+  // structured unavailable response so the frontend can render a clear message.
+  if (video.tiktokPublishId) {
+    stats.tiktok = { available: false, reason: "scope_limited" };
   }
 
   await Promise.all(tasks);
