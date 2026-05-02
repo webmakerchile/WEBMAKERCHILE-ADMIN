@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -947,7 +948,7 @@ export default function VideosPage() {
           </Button>
         </header>
 
-        <div className="grid lg:grid-cols-[14rem_1fr] gap-4 lg:gap-6">
+        <div className={cn("grid gap-4 lg:gap-6", !noVideosAtAll && "lg:grid-cols-[14rem_1fr]")}>
           {!noVideosAtAll && (
             <aside className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
