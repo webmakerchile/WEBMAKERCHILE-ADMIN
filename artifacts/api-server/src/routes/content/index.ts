@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { videos } from "@workspace/db/schema";
+import { users, videos } from "@workspace/db/schema";
 import { eq, desc, lte, and } from "drizzle-orm";
+import { getValidLinkedInToken } from "../linkedin";
+import { getValidXToken } from "../x";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import { google } from "googleapis";
@@ -498,6 +500,156 @@ router.post("/content/schedule/check", async (_req, res) => {
       status: "waiting_for_scheduler",
     })),
   });
+});
+
+const IG_API_BASE_CONTENT = "https://graph.instagram.com/v21.0";
+const INSTAGRAM_ACCESS_TOKEN_STATS = process.env.INSTAGRAM_ACCESS_TOKEN || "";
+const LINKEDIN_API_BASE_STATS = "https://api.linkedin.com";
+
+router.get("/content/videos/:id/stats", async (req, res) => {
+  const id = Number(req.params.id);
+  const user = req.user as any;
+
+  const [video] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
+  if (!video) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+
+  const adminUsers = await db.select().from(users).limit(1);
+  const adminUser = adminUsers[0];
+
+  const stats: Record<string, any> = {};
+
+  const tasks: Promise<void>[] = [];
+
+  // ── YouTube ──────────────────────────────────────────────────────────────
+  if (video.youtubeVideoId) {
+    tasks.push((async () => {
+      try {
+        const auth = getGoogleAuth(user);
+        const youtube = google.youtube({ version: "v3", auth });
+        const youtubeAnalytics = google.youtubeAnalytics({ version: "v2", auth });
+
+        const today = new Date().toISOString().slice(0, 10);
+        const [ytRes, ytAnalytics] = await Promise.all([
+          youtube.videos.list({ part: ["statistics", "contentDetails"], id: [video.youtubeVideoId!] }).catch(() => null),
+          youtubeAnalytics.reports.query({
+            ids: "channel==MINE",
+            startDate: "2020-01-01",
+            endDate: today,
+            metrics: "averageViewDuration",
+            filters: `video==${video.youtubeVideoId}`,
+          }).catch(() => null),
+        ]);
+
+        const ytVideo = ytRes?.data?.items?.[0];
+        if (ytVideo) {
+          stats.youtube = {
+            views: Number(ytVideo.statistics?.viewCount || 0),
+            likes: Number(ytVideo.statistics?.likeCount || 0),
+            comments: Number(ytVideo.statistics?.commentCount || 0),
+            averageViewDuration: Number(ytAnalytics?.data?.rows?.[0]?.[0] || 0),
+            url: `https://youtube.com/watch?v=${video.youtubeVideoId}`,
+          };
+        }
+      } catch (err: any) {
+        stats.youtube = { error: err.message };
+      }
+    })());
+  }
+
+  // ── Instagram ─────────────────────────────────────────────────────────────
+  if (video.instagramMediaId && INSTAGRAM_ACCESS_TOKEN_STATS) {
+    tasks.push((async () => {
+      try {
+        const token = encodeURIComponent(INSTAGRAM_ACCESS_TOKEN_STATS);
+        const [mediaRes, insightsRes] = await Promise.all([
+          fetch(`${IG_API_BASE_CONTENT}/${video.instagramMediaId}?fields=like_count,comments_count&access_token=${token}`)
+            .then((r) => r.json() as Promise<any>).catch(() => null),
+          fetch(`${IG_API_BASE_CONTENT}/${video.instagramMediaId}/insights?metric=plays,reach,total_interactions&access_token=${token}`)
+            .then((r) => r.json() as Promise<any>).catch(() => null),
+        ]);
+
+        const insights: Record<string, number> = {};
+        for (const item of (insightsRes?.data || [])) {
+          insights[item.name] = Number(item.values?.[0]?.value ?? item.value ?? 0);
+        }
+
+        stats.instagram = {
+          likes: Number(mediaRes?.like_count || 0),
+          comments: Number(mediaRes?.comments_count || 0),
+          plays: insights.plays || 0,
+          reach: insights.reach || 0,
+          totalInteractions: insights.total_interactions || 0,
+        };
+      } catch (err: any) {
+        stats.instagram = { error: err.message };
+      }
+    })());
+  }
+
+  // ── LinkedIn ──────────────────────────────────────────────────────────────
+  if (video.linkedinPostId && adminUser) {
+    tasks.push((async () => {
+      try {
+        const token = await getValidLinkedInToken(adminUser);
+        if (token && adminUser.linkedinOrgUrn) {
+          const orgUrn = adminUser.linkedinOrgUrn;
+          const shareUrn = video.linkedinPostId!;
+          const headers = {
+            Authorization: `Bearer ${token}`,
+            "LinkedIn-Version": "202509",
+            "X-Restli-Protocol-Version": "2.0.0",
+          };
+          const statsRes = await fetch(
+            `${LINKEDIN_API_BASE_STATS}/rest/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(orgUrn)}&shares=List(${encodeURIComponent(shareUrn)})`,
+            { headers },
+          ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
+
+          const el = statsRes?.elements?.[0]?.totalShareStatistics || {};
+          stats.linkedin = {
+            impressions: Number(el.impressionCount || 0),
+            clicks: Number(el.clickCount || 0),
+            reactions: Number(el.likeCount || 0),
+            comments: Number(el.commentCount || 0),
+            shares: Number(el.shareCount || 0),
+          };
+        }
+      } catch (err: any) {
+        stats.linkedin = { error: err.message };
+      }
+    })());
+  }
+
+  // ── X (Twitter) ───────────────────────────────────────────────────────────
+  if (video.xPostId && adminUser) {
+    tasks.push((async () => {
+      try {
+        const token = await getValidXToken(adminUser);
+        if (token) {
+          const tweetRes = await fetch(
+            `https://api.twitter.com/2/tweets/${video.xPostId}?tweet.fields=public_metrics`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
+
+          const m = tweetRes?.data?.public_metrics || {};
+          stats.x = {
+            impressions: Number(m.impression_count || 0),
+            likes: Number(m.like_count || 0),
+            retweets: Number(m.retweet_count || 0),
+            replies: Number(m.reply_count || 0),
+            bookmarks: Number(m.bookmark_count || 0),
+          };
+        }
+      } catch (err: any) {
+        stats.x = { error: err.message };
+      }
+    })());
+  }
+
+  await Promise.all(tasks);
+  res.json({ videoId: id, stats });
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,7 +28,20 @@ import {
   FileVideo,
   FolderOpen,
   CheckCircle2,
+  BarChart2,
+  Eye,
+  ThumbsUp,
+  MessageSquare,
+  Share2,
+  Repeat2,
+  MousePointerClick,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -138,6 +151,7 @@ export default function VideosPage() {
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("info");
+  const [statsVideo, setStatsVideo] = useState<VideoData | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -313,7 +327,23 @@ export default function VideosPage() {
                             <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{video.title}</h3>
                             <p className="text-xs sm:text-sm text-muted-foreground truncate">{video.description}</p>
                           </div>
-                          <ChevronRight className="w-5 h-5 text-muted-foreground/30 flex-shrink-0 hidden sm:block" />
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {video.status === "published" && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-7 h-7 text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setStatsVideo(video);
+                                }}
+                                title="Ver estadísticas"
+                              >
+                                <BarChart2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <ChevronRight className="w-5 h-5 text-muted-foreground/30 hidden sm:block" />
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 mt-2 flex-wrap">
                           <Badge variant="outline" className={statusBadge.className + " text-[10px] sm:text-xs"}>
@@ -341,7 +371,207 @@ export default function VideosPage() {
           </div>
         )}
       </div>
+
+      <VideoStatsModal
+        video={statsVideo}
+        onClose={() => setStatsVideo(null)}
+      />
     </Layout>
+  );
+}
+
+function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose: () => void }) {
+  const { data, isLoading, error } = useQuery<{
+    videoId: number;
+    stats: {
+      youtube?: { views: number; likes: number; comments: number; averageViewDuration: number; url: string; error?: string };
+      instagram?: { likes: number; comments: number; plays: number; reach: number; totalInteractions: number; error?: string };
+      linkedin?: { impressions: number; clicks: number; reactions: number; comments: number; shares: number; error?: string };
+      x?: { impressions: number; likes: number; retweets: number; replies: number; bookmarks: number; error?: string };
+    };
+  }>({
+    queryKey: ["video-stats", video?.id],
+    queryFn: async () => {
+      const res = await apiFetch(`${API_BASE}/content/videos/${video!.id}/stats`);
+      if (!res.ok) throw new Error("Error al cargar estadísticas");
+      return res.json();
+    },
+    enabled: !!video,
+    staleTime: 60_000,
+  });
+
+  const hasPublishedNetworks = video && (
+    video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId
+  );
+
+  const fmtNum = (n: number) =>
+    n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` :
+    n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);
+
+  const fmtTime = (secs: number) => {
+    if (!secs) return "—";
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}m ${s}s`;
+  };
+
+  return (
+    <Dialog open={!!video} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg bg-card border-white/10">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <BarChart2 className="w-4 h-4 text-primary" />
+            Estadísticas — {video?.title}
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading && (
+          <div className="flex justify-center py-10">
+            <Loader2 className="w-7 h-7 animate-spin text-primary" />
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-center gap-2 text-rose-400 text-sm py-4">
+            <AlertCircle className="w-4 h-4" />
+            Error al cargar estadísticas
+          </div>
+        )}
+
+        {!isLoading && !error && !hasPublishedNetworks && (
+          <p className="text-muted-foreground text-sm py-4 text-center">
+            Este video aún no tiene publicaciones en redes sociales.
+          </p>
+        )}
+
+        {!isLoading && data && (
+          <div className="space-y-4 mt-1">
+
+            {/* YouTube */}
+            {video?.youtubeVideoId && (
+              <NetworkStatCard
+                network="youtube"
+                label="YouTube"
+                bgClass="bg-red-600"
+                error={data.stats.youtube?.error}
+                rows={data.stats.youtube ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Vistas", value: fmtNum(data.stats.youtube.views) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(data.stats.youtube.likes) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(data.stats.youtube.comments) },
+                  { icon: <Clock className="w-3.5 h-3.5" />, label: "Duración promedio", value: fmtTime(data.stats.youtube.averageViewDuration) },
+                ] : []}
+                link={data.stats.youtube?.url}
+              />
+            )}
+
+            {/* Instagram */}
+            {video?.instagramMediaId && (
+              <NetworkStatCard
+                network="instagram"
+                label="Instagram"
+                bgClass="bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400"
+                error={data.stats.instagram?.error}
+                rows={data.stats.instagram ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Reproducciones", value: fmtNum(data.stats.instagram.plays) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(data.stats.instagram.likes) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(data.stats.instagram.comments) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Alcance", value: fmtNum(data.stats.instagram.reach) },
+                ] : []}
+              />
+            )}
+
+            {/* LinkedIn */}
+            {video?.linkedinPostId && (
+              <NetworkStatCard
+                network="linkedin"
+                label="LinkedIn"
+                bgClass="bg-[#0A66C2]"
+                error={data.stats.linkedin?.error}
+                rows={data.stats.linkedin ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum(data.stats.linkedin.impressions) },
+                  { icon: <MousePointerClick className="w-3.5 h-3.5" />, label: "Clics", value: fmtNum(data.stats.linkedin.clicks) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Reacciones", value: fmtNum(data.stats.linkedin.reactions) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(data.stats.linkedin.comments) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Compartidos", value: fmtNum(data.stats.linkedin.shares) },
+                ] : []}
+              />
+            )}
+
+            {/* X */}
+            {video?.xPostId && (
+              <NetworkStatCard
+                network="x"
+                label="X"
+                bgClass="bg-black border border-white/10"
+                error={data.stats.x?.error}
+                rows={data.stats.x ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum(data.stats.x.impressions) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(data.stats.x.likes) },
+                  { icon: <Repeat2 className="w-3.5 h-3.5" />, label: "Retweets", value: fmtNum(data.stats.x.retweets) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Respuestas", value: fmtNum(data.stats.x.replies) },
+                ] : []}
+              />
+            )}
+
+            {/* TikTok — no per-video stats with current scopes */}
+            {video?.tiktokPublishId && !video?.youtubeVideoId && !video?.instagramMediaId && !video?.linkedinPostId && !video?.xPostId && (
+              <p className="text-xs text-muted-foreground text-center py-2">
+                Las estadísticas por video de TikTok no están disponibles con los permisos actuales.
+              </p>
+            )}
+
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NetworkStatCard({
+  network,
+  label,
+  bgClass,
+  error,
+  rows,
+  link,
+}: {
+  network: string;
+  label: string;
+  bgClass: string;
+  error?: string;
+  rows: { icon: ReactNode; label: string; value: string }[];
+  link?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-white/5 bg-white/[0.03] overflow-hidden">
+      <div className={`px-4 py-2.5 flex items-center justify-between ${bgClass}`}>
+        <span className="text-white text-xs font-semibold tracking-wide">{label}</span>
+        {link && (
+          <a href={link} target="_blank" rel="noopener noreferrer"
+            className="text-white/70 text-[10px] hover:text-white underline underline-offset-2">
+            Ver en plataforma
+          </a>
+        )}
+      </div>
+      <div className="px-4 py-3">
+        {error ? (
+          <p className="text-xs text-rose-400 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" />
+            No se pudieron cargar las métricas
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+            {rows.map((row) => (
+              <div key={row.label} className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">{row.icon}</span>
+                <span className="text-[10px] text-muted-foreground">{row.label}</span>
+                <span className="ml-auto text-xs font-semibold text-foreground">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
