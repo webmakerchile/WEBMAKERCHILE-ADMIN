@@ -25,6 +25,23 @@ type MetricBlock = {
   delta: number;
   series: Series;
   prevSeries: Series;
+  /**
+   * "cumulative" (default): each bucket is an additive event count for that
+   *   day (e.g. impressions, likes). delta = (total - sum(prevSeries))/sum(prevSeries).
+   * "snapshot": value is a point-in-time count (e.g. lifetime followers) with
+   *   no per-day history. We plateau the snapshot across all buckets in both
+   *   periods so visualisations show a stable line. delta is computed from
+   *   the final bucket of each window (apples-to-apples) so the plateau
+   *   doesn't break the math.
+   */
+  kind?: "cumulative" | "snapshot";
+  /**
+   * Aggregate-only: sum of totals contributed by snapshot sources via
+   * `addMetric`. Used by `finalizeMetric` to subtract the constant plateau
+   * contribution (baseline * (days - 1)) before computing delta — so the
+   * baseline is effectively counted once, like a real previous-period total.
+   */
+  snapshotBaseline?: number;
 };
 
 type AuthedUser = {
@@ -47,8 +64,15 @@ function getUser(req: Request): AuthedUser {
   return req.user as AuthedUser;
 }
 
-function emptyMetric(days: number): MetricBlock {
-  return { total: 0, delta: 0, series: new Array(days).fill(0), prevSeries: new Array(days).fill(0) };
+function emptyMetric(days: number, kind: "cumulative" | "snapshot" = "cumulative"): MetricBlock {
+  return {
+    total: 0,
+    delta: 0,
+    series: new Array(days).fill(0),
+    prevSeries: new Array(days).fill(0),
+    kind,
+    snapshotBaseline: 0,
+  };
 }
 
 /** Milliseconds in one day. Kept as a named constant so future adapters
@@ -70,6 +94,9 @@ function addMetric(target: MetricBlock, source: MetricBlock) {
     target.series[i] = (target.series[i] || 0) + (source.series[i] || 0);
     target.prevSeries[i] = (target.prevSeries[i] || 0) + (source.prevSeries[i] || 0);
   }
+  if (source.kind === "snapshot") {
+    target.snapshotBaseline = (target.snapshotBaseline || 0) + source.total;
+  }
 }
 
 function computeDelta(curr: number, prev: number): number {
@@ -78,7 +105,23 @@ function computeDelta(curr: number, prev: number): number {
 }
 
 function finalizeMetric(m: MetricBlock) {
-  const prevTotal = m.prevSeries.reduce((a, b) => a + b, 0);
+  if (m.kind === "snapshot") {
+    // Snapshot metric: plateau in both windows. Compare last bucket of each
+    // window (apples-to-apples) so the plateau doesn't fake growth or decline.
+    const last = m.series.length - 1;
+    const curr = m.series[last] || 0;
+    const prev = m.prevSeries[last] || 0;
+    m.delta = computeDelta(curr, prev);
+    return;
+  }
+  // Cumulative metric. If snapshot sources contributed plateau via addMetric,
+  // their constant baseline shows up in every bucket of prevSeries — i.e.
+  // baseline*days extra. Subtract baseline*(days-1) so the baseline is
+  // effectively counted once (like a real previous-period total) and the
+  // delta stays meaningful for the cumulative portion.
+  const days = m.prevSeries.length;
+  const baseline = m.snapshotBaseline || 0;
+  const prevTotal = m.prevSeries.reduce((a, b) => a + b, 0) - baseline * Math.max(0, days - 1);
   m.delta = computeDelta(m.total, prevTotal);
 }
 
@@ -475,17 +518,19 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
     const fc = Number(meData.data?.public_metrics?.followers_count || 0);
     const userId = meData.data?.id;
 
-    const followers = emptyMetric(days);
+    const followers = emptyMetric(days, "snapshot");
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
 
-    // X public_metrics has no per-day follower history. Keep the snapshot in
-    // a single bucket on both periods so finalizeMetric yields a 0% delta
-    // (we have no historical signal — never claim growth we can't measure).
-    // Spreading as a plateau would inflate prevSeries.sum and break delta.
+    // X public_metrics has no per-day follower history. Mark the metric as
+    // "snapshot" and plateau the value across all buckets in both windows so
+    // visualisations show a stable line (not zeros + a single spike). The
+    // snapshot-aware finalizeMetric / addMetric keep delta math honest.
     followers.total = fc;
-    followers.series[days - 1] = fc;
-    followers.prevSeries[days - 1] = fc;
+    for (let i = 0; i < days; i++) {
+      followers.series[i] = fc;
+      followers.prevSeries[i] = fc;
+    }
 
     // Real per-day reach/interactions: aggregate the user's own recent tweets
     // by UTC day. start_time/end_time match the UTC-midnight axis used
@@ -586,24 +631,27 @@ async function fetchTikTok(user: AuthedUser, days: number): Promise<{
       return null;
     }
     const u = data.data?.user;
-    const followers = emptyMetric(days);
+    const followers = emptyMetric(days, "snapshot");
     const reach = emptyMetric(days);
-    const interactions = emptyMetric(days);
+    const interactions = emptyMetric(days, "snapshot");
     const fc = Number(u?.follower_count || 0);
     const likes = Number(u?.likes_count || 0);
 
     // TikTok /v2/user/info/ only returns lifetime snapshots and our current
     // OAuth scope ("user.info.basic,video.upload") does not include
     // "video.list", so we can't aggregate per-video stats to build a real
-    // per-day series (see follow-up #15 to expand the scope). Keep the
-    // snapshot in a single bucket on both periods so finalizeMetric yields
-    // a 0% delta — never claim growth we can't measure.
+    // per-day series (see follow-up #15 to expand the scope). Mark these
+    // metrics as "snapshot" and plateau the value across all buckets so the
+    // sparkline shows a stable line. The snapshot-aware finalize/add helpers
+    // keep delta math honest both per-network and at the aggregate level.
     followers.total = fc;
-    followers.series[days - 1] = fc;
-    followers.prevSeries[days - 1] = fc;
     interactions.total = likes;
-    interactions.series[days - 1] = likes;
-    interactions.prevSeries[days - 1] = likes;
+    for (let i = 0; i < days; i++) {
+      followers.series[i] = fc;
+      followers.prevSeries[i] = fc;
+      interactions.series[i] = likes;
+      interactions.prevSeries[i] = likes;
+    }
 
     finalizeMetric(followers); finalizeMetric(reach); finalizeMetric(interactions);
     return { followers, reach, interactions };
