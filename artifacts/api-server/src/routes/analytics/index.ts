@@ -51,6 +51,19 @@ function emptyMetric(days: number): MetricBlock {
   return { total: 0, delta: 0, series: new Array(days).fill(0), prevSeries: new Array(days).fill(0) };
 }
 
+/** Milliseconds in one day. Kept as a named constant so future adapters
+ *  can't drift on the magic number. */
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Returns the UTC-midnight epoch (ms) for the given date (defaults to "now").
+ * All per-network adapters must build their day axis from this so buckets align
+ * regardless of the server's local timezone (see Task #6 + Task #12).
+ */
+function utcMidnightMs(d: Date = new Date()): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
 function addMetric(target: MetricBlock, source: MetricBlock) {
   target.total += source.total;
   for (let i = 0; i < target.series.length; i++) {
@@ -139,10 +152,13 @@ async function fetchYouTube(user: AuthedUser, days: number): Promise<{
     const auth = getOAuth2Client(user);
     const youtubeAnalytics = google.youtubeAnalytics({ version: "v2", auth });
 
-    const today = new Date();
-    const start = new Date(today); start.setDate(today.getDate() - days + 1);
-    const prevStart = new Date(today); prevStart.setDate(today.getDate() - days * 2 + 1);
-    const prevEnd = new Date(today); prevEnd.setDate(today.getDate() - days);
+    // Anchor the day axis on UTC midnight so buckets line up across networks
+    // regardless of the server's local timezone (Task #12).
+    const todayUtcMs = utcMidnightMs();
+    const today = new Date(todayUtcMs);
+    const start = new Date(todayUtcMs - (days - 1) * MS_PER_DAY);
+    const prevStart = new Date(todayUtcMs - (days * 2 - 1) * MS_PER_DAY);
+    const prevEnd = new Date(todayUtcMs - days * MS_PER_DAY);
 
     const fmt = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -176,7 +192,7 @@ async function fetchYouTube(user: AuthedUser, days: number): Promise<{
       if (!rows) return;
       for (const row of rows) {
         const dateStr = row[0];
-        const idx = Math.floor((new Date(dateStr).getTime() - origin.getTime()) / 86400000);
+        const idx = Math.floor((new Date(dateStr).getTime() - origin.getTime()) / MS_PER_DAY);
         if (idx < 0 || idx >= days) continue;
         target.reach[idx] = (target.reach[idx] || 0) + Number(row[1] || 0);
         target.inter[idx] = (target.inter[idx] || 0) + Number(row[2] || 0) + Number(row[3] || 0);
@@ -238,9 +254,10 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
 
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const currStartMs = today.getTime() - (days - 1) * 86400000;
-    const prevStartMs = currStartMs - days * 86400000;
+    // UTC-midnight axis so day indices match Task #6's posts series.
+    const todayUtcMs = utcMidnightMs();
+    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+    const prevStartMs = currStartMs - days * MS_PER_DAY;
 
     const consume = (data: IgInsightResponse, originMs: number, target: "series" | "prevSeries") => {
       if (!data?.data) return;
@@ -249,7 +266,7 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
         if (!block) continue;
         for (const v of item.values || []) {
           const t = new Date(v.end_time).getTime();
-          const idx = Math.floor((t - originMs) / 86400000);
+          const idx = Math.floor((t - originMs) / MS_PER_DAY);
           if (idx < 0 || idx >= days) continue;
           block[target][idx] = (block[target][idx] || 0) + Number(v.value || 0);
         }
@@ -304,9 +321,10 @@ async function fetchFacebook(user: AuthedUser, days: number): Promise<{
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
 
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const currStartMs = today.getTime() - (days - 1) * 86400000;
-    const prevStartMs = currStartMs - days * 86400000;
+    // UTC-midnight axis so day indices match Task #6's posts series.
+    const todayUtcMs = utcMidnightMs();
+    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+    const prevStartMs = currStartMs - days * MS_PER_DAY;
 
     const consume = (data: FbInsightResponse, originMs: number, target: "series" | "prevSeries") => {
       if (!data?.data) return;
@@ -317,7 +335,7 @@ async function fetchFacebook(user: AuthedUser, days: number): Promise<{
         if (block) {
           for (const v of item.values || []) {
             const t = new Date(v.end_time).getTime();
-            const idx = Math.floor((t - originMs) / 86400000);
+            const idx = Math.floor((t - originMs) / MS_PER_DAY);
             if (idx < 0 || idx >= days) continue;
             block[target][idx] = (block[target][idx] || 0) + Number(v.value || 0);
           }
@@ -325,7 +343,7 @@ async function fetchFacebook(user: AuthedUser, days: number): Promise<{
           const sign = item.name === "page_fan_adds" ? 1 : -1;
           for (const v of item.values || []) {
             const t = new Date(v.end_time).getTime();
-            const idx = Math.floor((t - originMs) / 86400000);
+            const idx = Math.floor((t - originMs) / MS_PER_DAY);
             if (idx < 0 || idx >= days) continue;
             followers[target][idx] = (followers[target][idx] || 0) + sign * Number(v.value || 0);
           }
@@ -354,8 +372,8 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
   try {
     const orgUrn = encodeURIComponent(user.linkedinOrgUrn);
     const end = Date.now();
-    const startCurr = end - days * 86400000;
-    const startPrev = end - days * 2 * 86400000;
+    const startCurr = end - days * MS_PER_DAY;
+    const startPrev = end - days * 2 * MS_PER_DAY;
     const headers = {
       Authorization: `Bearer ${token}`,
       "LinkedIn-Version": "202509",
@@ -386,15 +404,16 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
     const followers = emptyMetric(days);
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const currStartMs = today.getTime() - (days - 1) * 86400000;
-    const prevStartMs = currStartMs - days * 86400000;
+    // UTC-midnight axis so day indices match Task #6's posts series.
+    const todayUtcMs = utcMidnightMs();
+    const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+    const prevStartMs = currStartMs - days * MS_PER_DAY;
 
     const consume = (data: LiResponse, originMs: number, target: "series" | "prevSeries") => {
       for (const el of data?.elements || []) {
         const t = el.timeRange?.start;
         if (!t) continue;
-        const idx = Math.floor((t - originMs) / 86400000);
+        const idx = Math.floor((t - originMs) / MS_PER_DAY);
         if (idx < 0 || idx >= days) continue;
         const stats = el.totalShareStatistics || {};
         reach[target][idx] = (reach[target][idx] || 0) + Number(stats.impressionCount || 0);
@@ -580,13 +599,12 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
 
   // Posts published, daily series for current and previous window.
   // Use UTC end-to-end so day buckets line up regardless of server/DB tz.
-  const now = new Date();
-  const todayUtcMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const currStartMs = todayUtcMs - (days - 1) * 86400000;
-  const prevStartMs = currStartMs - days * 86400000;
+  const todayUtcMs = utcMidnightMs();
+  const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+  const prevStartMs = currStartMs - days * MS_PER_DAY;
   const currStartDate = new Date(currStartMs);
   const prevStartDate = new Date(prevStartMs);
-  const windowEndDate = new Date(todayUtcMs + 86400000);
+  const windowEndDate = new Date(todayUtcMs + MS_PER_DAY);
 
   const posts = emptyMetric(days);
   try {
@@ -597,7 +615,7 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
     const fillFromRows = (rows: PostRow[], originMs: number, target: "series" | "prevSeries") => {
       for (const row of rows) {
         const t = new Date(row.day + "T00:00:00Z").getTime();
-        const idx = Math.floor((t - originMs) / 86400000);
+        const idx = Math.floor((t - originMs) / MS_PER_DAY);
         if (idx < 0 || idx >= days) continue;
         posts[target][idx] = (posts[target][idx] || 0) + Number(row.count || 0);
       }
@@ -656,8 +674,8 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   const currDates: string[] = [];
   const prevDates: string[] = [];
   for (let i = 0; i < days; i++) {
-    currDates.push(fmtDay(currStartMs + i * 86400000));
-    prevDates.push(fmtDay(prevStartMs + i * 86400000));
+    currDates.push(fmtDay(currStartMs + i * MS_PER_DAY));
+    prevDates.push(fmtDay(prevStartMs + i * MS_PER_DAY));
   }
   const toPoints = (values: number[], dates: string[]) =>
     values.map((value, i) => ({ date: dates[i] || "", value: Number(value || 0) }));
