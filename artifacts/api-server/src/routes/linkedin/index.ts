@@ -264,22 +264,103 @@ router.get("/linkedin/organizations", async (req: Request, res: Response) => {
     return;
   }
   try {
+    // Try REST endpoint first (requires r_organization_social)
     const r = await fetch(
-      `${LINKEDIN_API_BASE}/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organizationalTarget~(id,localizedName,vanityName,logoV2(original~:playableStreams))))`,
-      { headers: { Authorization: `Bearer ${token}`, "X-Restli-Protocol-Version": "2.0.0" } },
+      `${LINKEDIN_API_BASE}/rest/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "LinkedIn-Version": LINKEDIN_REST_VERSION,
+          "X-Restli-Protocol-Version": "2.0.0",
+        },
+      },
     );
-    if (!r.ok) {
-      const text = await r.text();
-      console.warn("[LinkedIn] organizations fetch failed:", r.status, text);
-      res.json({ organizations: [], note: "Sin permisos de organización (requiere scope rw_organization_admin)" });
+    if (r.ok) {
+      const data: any = await r.json();
+      const orgs = (data.elements || []).map((el: any) => ({
+        urn: el.organizationalTarget,
+        name: el.organizationalTarget,
+        vanity: "",
+      }));
+      // Fetch org names individually
+      const enriched = await Promise.all(
+        orgs.map(async (org: any) => {
+          try {
+            const id = org.urn?.replace("urn:li:organization:", "");
+            const or = await fetch(`${LINKEDIN_API_BASE}/rest/organizations/${id}?fields=id,localizedName,vanityName`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "LinkedIn-Version": LINKEDIN_REST_VERSION,
+                "X-Restli-Protocol-Version": "2.0.0",
+              },
+            });
+            if (or.ok) {
+              const od: any = await or.json();
+              return { urn: org.urn, name: od.localizedName || org.urn, vanity: od.vanityName };
+            }
+          } catch {}
+          return org;
+        })
+      );
+      res.json({ organizations: enriched });
       return;
     }
-    const data: any = await r.json();
-    const orgs = (data.elements || []).map((el: any) => {
-      const target = el["organizationalTarget~"] || {};
-      return { urn: el.organizationalTarget, name: target.localizedName, vanity: target.vanityName };
-    });
-    res.json({ organizations: orgs });
+
+    // Fallback: try v2 legacy endpoint
+    const r2 = await fetch(
+      `${LINKEDIN_API_BASE}/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organizationalTarget~(id,localizedName,vanityName)))`,
+      { headers: { Authorization: `Bearer ${token}`, "X-Restli-Protocol-Version": "2.0.0" } },
+    );
+    if (r2.ok) {
+      const data: any = await r2.json();
+      const orgs = (data.elements || []).map((el: any) => {
+        const target = el["organizationalTarget~"] || {};
+        return { urn: el.organizationalTarget, name: target.localizedName || el.organizationalTarget, vanity: target.vanityName };
+      });
+      res.json({ organizations: orgs });
+      return;
+    }
+
+    res.json({ organizations: [], note: "Sin permisos de organización" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/linkedin/find-org", async (req: Request, res: Response) => {
+  const user = req.user as any;
+  const token = await getValidLinkedInToken(user);
+  if (!token) {
+    res.status(401).json({ error: "LinkedIn no conectado" });
+    return;
+  }
+  const vanityName = (req.query.vanityName as string || "").trim().toLowerCase()
+    .replace(/^https?:\/\/(www\.)?linkedin\.com\/company\//i, "")
+    .replace(/\/$/, "");
+  if (!vanityName) {
+    res.status(400).json({ error: "Falta vanityName" });
+    return;
+  }
+  try {
+    // Try REST API
+    const r = await fetch(
+      `${LINKEDIN_API_BASE}/v2/organizations?q=vanityName&vanityName=${encodeURIComponent(vanityName)}&projection=(id,localizedName,vanityName)`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Restli-Protocol-Version": "2.0.0",
+        },
+      },
+    );
+    if (r.ok) {
+      const data: any = await r.json();
+      const el = (data.elements || [])[0];
+      if (el?.id) {
+        res.json({ found: true, urn: `urn:li:organization:${el.id}`, name: el.localizedName || vanityName, vanity: el.vanityName });
+        return;
+      }
+    }
+    res.json({ found: false });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
