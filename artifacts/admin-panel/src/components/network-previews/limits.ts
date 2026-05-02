@@ -26,7 +26,7 @@ export const YOUTUBE_TITLE_TRUNCATE = 70;
 /** Matches a single emoji code point (Extended_Pictographic). */
 export const EMOJI_RE = /\p{Extended_Pictographic}/gu;
 /** Matches an emoji ZWJ sequence (e.g. family/profession compound emojis). */
-export const EMOJI_ZWJ_RE = /\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})+/gu;
+export const EMOJI_ZWJ_RE = /\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})+/u;
 
 export function countHashtags(text: string): number {
   if (!text) return 0;
