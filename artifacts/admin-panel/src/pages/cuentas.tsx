@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/empty-state";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
+type ConnectionState = "connected" | "expiring" | "expired" | "revoked" | "disconnected" | "unknown";
+
 type AccountInfo = {
   loading: boolean;
   connected: boolean;
@@ -16,6 +18,31 @@ type AccountInfo = {
   handle?: string;
   picture?: string;
   meta?: string;
+  state?: ConnectionState;
+  expiresAt?: string | null;
+  daysUntilExpiry?: number | null;
+};
+
+type HealthPayload = {
+  connections: Array<{
+    network: Network;
+    connected: boolean;
+    state: ConnectionState;
+    expiresAt: string | null;
+    daysUntilExpiry: number | null;
+    message: string;
+    reconnectUrl: string | null;
+    serverManaged: boolean;
+  }>;
+};
+
+const STATE_BADGE: Record<ConnectionState, { label: string; cls: string } | null> = {
+  connected: { label: "Activo", cls: "text-emerald-400 bg-emerald-500/10" },
+  expiring: { label: "Por expirar", cls: "text-amber-300 bg-amber-500/15" },
+  expired: { label: "Expirada", cls: "text-rose-300 bg-rose-500/15" },
+  revoked: { label: "Revocada", cls: "text-rose-300 bg-rose-500/15" },
+  disconnected: null,
+  unknown: { label: "Sin datos", cls: "text-muted-foreground bg-foreground/5" },
 };
 
 type Endpoints = {
@@ -174,19 +201,56 @@ export default function CuentasPage() {
       const res = await fetch(`${API_BASE}${endpoint}`, { credentials: "include" });
       const data = (await res.json()) as StatusPayload;
       if (network === "linkedin") setLinkedinRawStatus(data);
-      setAccounts((prev) => ({ ...prev, [network]: normalizeStatus(network, data) }));
+      const normalized = normalizeStatus(network, data);
+      // Merge over the previous record so health-only fields (state,
+      // expiresAt, daysUntilExpiry) populated by fetchHealth survive a
+      // subsequent fetchOne response.
+      setAccounts((prev) => ({
+        ...prev,
+        [network]: {
+          ...prev[network],
+          ...normalized,
+        },
+      }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error de conexión";
       console.error(`[cuentas] ${network} status fetch failed:`, message);
       setAccounts((prev) => ({
         ...prev,
-        [network]: { loading: false, connected: false, message },
+        [network]: { ...prev[network], loading: false, connected: false, message },
       }));
+    }
+  };
+
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/connections/health`, { credentials: "include" });
+      if (!res.ok) return;
+      const data = (await res.json()) as HealthPayload;
+      setAccounts((prev) => {
+        const next = { ...prev };
+        for (const c of data.connections || []) {
+          const existing = next[c.network] || { loading: false, connected: false };
+          next[c.network] = {
+            ...existing,
+            state: c.state,
+            expiresAt: c.expiresAt,
+            daysUntilExpiry: c.daysUntilExpiry,
+            // Use health message when the per-network status didn't already
+            // populate a friendlier one.
+            message: existing.message || c.message,
+          };
+        }
+        return next;
+      });
+    } catch (err) {
+      console.warn("[cuentas] health fetch failed:", err);
     }
   };
 
   useEffect(() => {
     NETWORKS.forEach((n) => fetchOne(n.network, n.endpoints.status));
+    fetchHealth();
     const params = new URLSearchParams(window.location.search);
     if (
       params.get("facebook") === "connected" ||
@@ -331,8 +395,19 @@ export default function CuentasPage() {
                     <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                   </div>
                 ) : info.connected ? (
+                  (() => {
+                    const state: ConnectionState = info.state || "connected";
+                    const isWarn = state === "expiring";
+                    const isFail = state === "expired" || state === "revoked";
+                    const cardCls = isFail
+                      ? "border-rose-500/30 bg-rose-500/5"
+                      : isWarn
+                      ? "border-amber-500/30 bg-amber-500/5"
+                      : "border-emerald-500/20 bg-emerald-500/5";
+                    const badge = STATE_BADGE[state];
+                    return (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                    <div className={`flex items-center gap-3 p-3 rounded-xl border ${cardCls}`}>
                       {info.picture ? (
                         <img src={info.picture} alt="" className="w-11 h-11 rounded-full flex-shrink-0 object-cover border border-foreground/10" />
                       ) : (
@@ -341,18 +416,30 @@ export default function CuentasPage() {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <h3 className="font-semibold text-sm text-foreground truncate">
                             {info.displayName || info.handle || NETWORK_LABELS[network]}
                           </h3>
-                          <span className="text-[10px] uppercase tracking-wide font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                            Activo
-                          </span>
+                          {badge && (
+                            <span className={`text-[10px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded ${badge.cls}`}>
+                              {badge.label}
+                            </span>
+                          )}
                         </div>
                         {info.handle && info.displayName && info.handle !== info.displayName && (
                           <p className="text-xs text-muted-foreground truncate">{info.handle}</p>
                         )}
                         {info.meta && <p className="text-xs text-muted-foreground truncate">{info.meta}</p>}
+                        {state === "expiring" && info.daysUntilExpiry != null && (
+                          <p className="text-[11px] text-amber-300/90 mt-1">
+                            La sesión caduca en {info.daysUntilExpiry} día{info.daysUntilExpiry === 1 ? "" : "s"}. Reconecta pronto para evitar fallas.
+                          </p>
+                        )}
+                        {(state === "expired" || state === "revoked") && (
+                          <p className="text-[11px] text-rose-300/90 mt-1">
+                            La sesión ya no es válida. Reconecta tu cuenta para volver a publicar.
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -457,6 +544,16 @@ export default function CuentasPage() {
                       </div>
                     )}
 
+                    {(state === "expired" || state === "revoked" || state === "expiring") && authHref && (
+                      <a
+                        href={authHref}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-sm transition"
+                      >
+                        <Link2 className="w-4 h-4" />
+                        Reconectar ahora
+                      </a>
+                    )}
+
                     {endpoints.disconnect ? (
                       <button
                         onClick={() => handleDisconnect(network, endpoints.disconnect, endpoints.status)}
@@ -467,7 +564,7 @@ export default function CuentasPage() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => fetchOne(network, endpoints.status)}
+                        onClick={() => { fetchOne(network, endpoints.status); fetchHealth(); }}
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-foreground/10 text-muted-foreground hover:bg-foreground/5 text-sm transition"
                       >
                         <Loader2 className="w-4 h-4" />
@@ -475,6 +572,8 @@ export default function CuentasPage() {
                       </button>
                     )}
                   </div>
+                  );
+                  })()
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5">

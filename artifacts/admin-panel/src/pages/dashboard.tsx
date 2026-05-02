@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { WhatsNewBanner } from "@/components/whats-new-banner";
+import { ConnectionHealthBanner } from "@/components/connection-health-banner";
 import { HelpHint } from "@/components/help-hint";
 import { AnalyticsSkeleton, KanbanSkeleton } from "@/components/skeletons";
 
@@ -1397,6 +1398,7 @@ export default function Dashboard() {
     <Layout>
       <div className="space-y-6">
         <WhatsNewBanner />
+        <ConnectionHealthBanner />
         <ErrorBanner />
         <OnboardingChecklist />
 

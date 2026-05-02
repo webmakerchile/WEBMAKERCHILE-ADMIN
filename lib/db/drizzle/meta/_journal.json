@@ -57,6 +57,20 @@
       "when": 1746403200000,
       "tag": "0007_collaboration",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1746489600000,
+      "tag": "0008_publish_retries",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1746576000000,
+      "tag": "0009_per_platform_retry_at",
+      "breakpoints": true
     }
   ]
 }

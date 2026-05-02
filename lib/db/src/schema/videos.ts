@@ -53,6 +53,22 @@ export const videos = pgTable("videos", {
   facebookPostId: text("facebook_post_id"),
   facebookStatus: text("facebook_status").default("pending"),
   facebookError: text("facebook_error"),
+  /** Per-platform retry counters (post-initial). When >= MAX_RETRIES we mark error definitively. */
+  youtubeRetries: integer("youtube_retries").notNull().default(0),
+  tiktokRetries: integer("tiktok_retries").notNull().default(0),
+  instagramRetries: integer("instagram_retries").notNull().default(0),
+  linkedinRetries: integer("linkedin_retries").notNull().default(0),
+  xRetries: integer("x_retries").notNull().default(0),
+  facebookRetries: integer("facebook_retries").notNull().default(0),
+  /** Earliest time at which the scheduler should re-pick the video for a retry. Null when no retry is pending. */
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  /** Per-platform earliest next-attempt time. Set when a transient failure is recorded; cleared on success. */
+  youtubeNextRetryAt: timestamp("youtube_next_retry_at", { withTimezone: true }),
+  tiktokNextRetryAt: timestamp("tiktok_next_retry_at", { withTimezone: true }),
+  instagramNextRetryAt: timestamp("instagram_next_retry_at", { withTimezone: true }),
+  linkedinNextRetryAt: timestamp("linkedin_next_retry_at", { withTimezone: true }),
+  xNextRetryAt: timestamp("x_next_retry_at", { withTimezone: true }),
+  facebookNextRetryAt: timestamp("facebook_next_retry_at", { withTimezone: true }),
   /** Optional grouping into a campaign (Lanzamiento Q2, Promo viernes, etc.). */
   campaignId: integer("campaign_id"),
   /** Optional template the video was created from. */
