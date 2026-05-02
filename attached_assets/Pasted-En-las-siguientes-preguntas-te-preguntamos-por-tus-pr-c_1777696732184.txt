@@ -1,0 +1,53 @@
+En las siguientes preguntas te preguntamos por tus prácticas de tratamiento de datos. Te recomendamos consultar a los especialistas en derecho, políticas y tratamiento de datos de tu organización para que te asesoren sobre cómo responder estas preguntas. Obtén información acerca de nuestras normas sobre el tratamiento de datos.
+Es necesario responder a estas preguntas sobre gestión de datos en el caso de las aplicaciones publicadas con un caso de uso o que tienen acceso avanzado a permisos o funciones.
+¿Tienes encargados del tratamiento de los datos o proveedores de servicios (incluidas tus propias empresas) que tendrán acceso a los Datos de la plataforma que recibes de Meta?
+Los encargados del tratamiento de los datos o los proveedores de servicios son entidades externas que tratan en tu nombre Datos de la plataforma a los que se te ha dado acceso para proporcionarte un servicio. Indica los nombre de los encargados del tratamiento que tendrán acceso a los Datos de la plataforma a los que tienes acceso mediante los permisos y funciones solicitados.
+
+"Datos de la plataforma" se refiere a cualquier dato que recibas de Meta (por ejemplo, identificador de usuario de Meta, dirección de correo electrónico, foto de perfil, identificador de acceso de usuario a la API de Meta y clave secreta de la aplicación).
+¿Tienes encargados del tratamiento de los datos o proveedores de servicios (incluidas tus propias empresas) que tendrán acceso a los Datos de la plataforma que recibes de Meta?
+
+Sí
+
+No
+Indica todos los encargados del tratamiento de los datos o proveedores de servicios (incluidas tus propias empresas) que tendrán acceso a los Datos de la plataforma que recibes de Meta.
+Ten en cuenta que los Datos de la plataforma podrían incluir un subconjunto de datos personales o información personal relativos a personas que las identifican o permiten identificarlas.
+Replit, Inc.
+¿Quién es la persona física o jurídica responsable de todos los Datos de la plataforma que Meta comparte contigo?
+Indica el nombre de la persona jurídica responsable de los datos (es decir, determina los propósitos y los medios del tratamiento de estos) a los que Meta te ha dado acceso mediante los permisos o funciones solicitados. Puede tratarse de una persona física o jurídica, una autoridad pública, una agencia u otra entidad. En algunas regiones recibe el nombre de responsable del tratamiento de los datos.
+¿Quién es la persona física o jurídica responsable de todos los Datos de la plataforma que Meta comparte contigo?
+Replit, Inc. (proveedor de hosting y base de datos)
+Selecciona el país en el que se encuentre esta persona física o jurídica.
+Select one
+Select one
+​
+¿Has facilitado los datos personales o la información personal de usuarios a autoridades públicas en respuesta a requerimientos de seguridad nacional en los últimos 12 meses?
+No incluye las solicitudes relacionadas con órdenes de registro ni órdenes judiciales asociadas con investigaciones penales.
+
+Los datos personales o la información personal son cualquier dato que recibes de Meta relativo a una personas y que la identifica o permite identificarla.
+¿Has facilitado los datos personales o la información personal de usuarios a autoridades públicas en respuesta a requerimientos de seguridad nacional en los últimos 12 meses?
+
+No
+
+Sí, hemos compartido los datos personales o la información personal de aproximadamente 10 usuarios o menos.
+
+Sí, hemos compartido los datos personales o la información personal de entre 11 y 100 usuarios.
+
+Sí, hemos compartido los datos personales o la información personal de entre 101 y 1000 usuarios.
+
+Sí, hemos compartido los datos personales o la información personal de más de 1000 usuarios.
+
+La legislación o la política de la empresa nos prohíben responder a esta pregunta.
+¿Cuáles de las políticas o los procesos siguientes aplicas en relación con las solicitudes de las autoridades públicas en cuanto a los datos personales o la información personal de los usuarios? Selecciona todas las opciones que correspondan.
+
+Revisión obligatoria de la legalidad de estas solicitudes
+
+Disposiciones que justifican el rechazo de estas solicitudes si se consideran ilícitas
+
+Política de minimización de datos: capacidad de comunicar el menor volumen de información necesario
+
+Documentación de estas solicitudes, lo que incluye tus respuestas a ellas, el razonamiento legal y las partes implicadas
+
+Ninguna de las opciones anteriores
+
+La legislación o la política de la empresa nos prohíben responder a esta pregunta.
+¿Necesitas ayuda? Ponte en contacto con Asistencia directa
