@@ -6,3 +6,4 @@ export * from "./users";
 export * from "./community-content";
 export * from "./ideas";
 export * from "./competitors";
+export * from "./saved-views";

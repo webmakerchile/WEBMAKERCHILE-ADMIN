@@ -21,6 +21,8 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OnboardingTour } from "@/components/onboarding-tour";
+import { GlobalShortcutsProvider } from "@/components/global-shortcuts-provider";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -70,6 +72,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-[100dvh] bg-background text-foreground overflow-hidden">
       <OnboardingTour />
+      <GlobalShortcutsProvider />
       <aside className="hidden lg:flex w-64 flex-shrink-0 border-r border-foreground/10 bg-card/60 backdrop-blur-xl flex-col relative z-20">
         <div className="h-16 flex items-center px-6 border-b border-foreground/10">
           <img src="/icon-192.png" alt="Logo" className="w-7 h-7 rounded-lg mr-3" />
@@ -78,7 +81,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </h1>
         </div>
 
-        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
+        <div className="px-3 pt-4">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("open-command-palette"))}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-foreground/[0.04] hover:bg-foreground/[0.08] border border-foreground/10 text-muted-foreground hover:text-foreground transition-base text-sm"
+          >
+            <span className="flex-1 text-left">Buscar o ejecutar...</span>
+            <KbdGroup>
+              <Kbd>⌘</Kbd>
+              <Kbd>K</Kbd>
+            </KbdGroup>
+          </button>
+        </div>
+
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location === item.href;
             const Icon = item.icon;

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { videos, users } from "@workspace/db/schema";
-import { eq, desc, lte, and, or, inArray } from "drizzle-orm";
+import { eq, desc, lte, and, or, inArray, ilike, sql } from "drizzle-orm";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
 import { retryPlatformForVideo } from "../../scheduler";
@@ -119,6 +119,139 @@ router.get("/content/videos", async (_req, res) => {
     .from(videos)
     .orderBy(desc(videos.createdAt));
   res.json(rows);
+});
+
+// Lightweight search used by the command palette. Returns id/title/status/cover
+// only, with a small page size, so it stays fast as a live-as-you-type source.
+router.get("/content/videos/search", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 50 ? Math.floor(limitRaw) : 12;
+  if (!q) {
+    res.json({ items: [], total: 0 });
+    return;
+  }
+  const pattern = `%${q.replace(/[%_]/g, (m) => "\\" + m)}%`;
+  const where = or(
+    ilike(videos.title, pattern),
+    ilike(videos.description, pattern),
+    ilike(videos.tiktokDescription, pattern),
+    ilike(videos.instagramDescription, pattern),
+    ilike(videos.youtubeTitle, pattern),
+    ilike(videos.youtubeDescription, pattern),
+    ilike(videos.linkedinDescription, pattern),
+    ilike(videos.xDescription, pattern),
+    ilike(videos.facebookDescription, pattern),
+  );
+  const rows = await db
+    .select({
+      id: videos.id,
+      title: videos.title,
+      status: videos.status,
+      coverImageBase64: videos.coverImageBase64,
+      coverMimeType: videos.coverMimeType,
+      scheduledAt: videos.scheduledAt,
+      month: videos.month,
+    })
+    .from(videos)
+    .where(where)
+    .orderBy(desc(videos.updatedAt))
+    .limit(limit);
+  res.json({ items: rows, total: rows.length });
+});
+
+// Bulk update arbitrary safe fields across many videos. Used by the
+// multi-select action bar in /videos. Accepts only an explicit allow-list.
+router.post("/content/videos/bulk-update", async (req, res) => {
+  const idsRaw = req.body?.ids;
+  if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
+    res.status(400).json({ error: "Se requiere al menos un ID" });
+    return;
+  }
+  const ids = idsRaw
+    .map((v: unknown) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (ids.length === 0) {
+    res.status(400).json({ error: "IDs inválidos" });
+    return;
+  }
+  if (ids.length > 200) {
+    res.status(400).json({ error: "Máximo 200 videos por operación" });
+    return;
+  }
+  const patch = (req.body?.patch ?? {}) as Record<string, unknown>;
+  const ALLOWED_STATUSES = new Set([
+    "draft",
+    "cover_generated",
+    "scheduled",
+    "published",
+    "partial",
+    "error",
+  ]);
+  // month/week/day/etc. are short labels — restrict to a safe character set.
+  const isSafeLabel = (v: string) => /^[\w\-./# ]{1,80}$/.test(v);
+  const update: Record<string, unknown> = { updatedAt: new Date() };
+
+  if (patch.status !== undefined) {
+    if (patch.status === null) {
+      res.status(400).json({ error: "El estado no puede ser nulo" });
+      return;
+    }
+    const s = String(patch.status);
+    if (!ALLOWED_STATUSES.has(s)) {
+      res.status(400).json({ error: `Estado inválido: ${s}` });
+      return;
+    }
+    update.status = s;
+  }
+  for (const key of ["month", "week", "day"] as const) {
+    if (patch[key] === undefined) continue;
+    if (patch[key] === null) {
+      update[key] = null;
+      continue;
+    }
+    const v = String(patch[key]);
+    if (!isSafeLabel(v)) {
+      res.status(400).json({ error: `Valor inválido para ${key}` });
+      return;
+    }
+    update[key] = v;
+  }
+
+  if (Object.keys(update).length === 1) {
+    res.status(400).json({ error: "No hay campos para actualizar" });
+    return;
+  }
+  const updated = await db
+    .update(videos)
+    .set(update)
+    .where(inArray(videos.id, ids))
+    .returning({ id: videos.id });
+  res.json({ updated: updated.length, ids: updated.map((u) => u.id) });
+});
+
+router.delete("/content/videos/bulk", async (req, res) => {
+  const idsRaw = req.body?.ids;
+  if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
+    res.status(400).json({ error: "Se requiere al menos un ID" });
+    return;
+  }
+  const ids = idsRaw
+    .map((v: unknown) => Number(v))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (ids.length === 0) {
+    res.status(400).json({ error: "IDs inválidos" });
+    return;
+  }
+  if (ids.length > 200) {
+    res.status(400).json({ error: "Máximo 200 videos por operación" });
+    return;
+  }
+  const deleted = await db
+    .delete(videos)
+    .where(inArray(videos.id, ids))
+    .returning({ id: videos.id });
+  res.json({ deleted: deleted.length, ids: deleted.map((d) => d.id) });
 });
 
 router.post("/content/videos", async (req, res) => {

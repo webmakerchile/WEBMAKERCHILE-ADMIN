@@ -1,9 +1,19 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -36,6 +46,11 @@ import {
   Share2,
   Repeat2,
   MousePointerClick,
+  Search,
+  Bookmark,
+  BookmarkPlus,
+  Filter as FilterIcon,
+  CircleSlash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -148,11 +163,36 @@ function getStatusBadge(video: VideoData) {
   return { label: "Borrador", className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" };
 }
 
+type SavedView = {
+  id: number;
+  userId: number;
+  name: string;
+  filters: { q?: string; status?: string; network?: string; month?: string };
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: "all", label: "Todos los estados" },
+  { value: "draft", label: "Borrador" },
+  { value: "cover_generated", label: "Portada lista" },
+  { value: "scheduled", label: "Programado" },
+  { value: "published", label: "Publicado" },
+  { value: "partial", label: "Parcial" },
+  { value: "error", label: "Con error" },
+];
+
 export default function VideosPage() {
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("info");
   const [statsVideo, setStatsVideo] = useState<VideoData | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [savingView, setSavingView] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -163,6 +203,233 @@ export default function VideosPage() {
       return res.json();
     },
   });
+
+  const { data: savedViews = [] } = useQuery<SavedView[]>({
+    queryKey: ["saved-views"],
+    queryFn: async () => {
+      const res = await apiFetch(`${API_BASE}/saved-views`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const filteredVideos = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return videos.filter((v) => {
+      if (statusFilter !== "all" && v.status !== statusFilter) return false;
+      if (!needle) return true;
+      const haystack = [
+        v.title,
+        v.description,
+        v.tiktokDescription,
+        v.instagramDescription,
+        v.youtubeTitle,
+        v.youtubeDescription,
+        v.linkedinDescription,
+        v.xDescription,
+        v.facebookDescription,
+        v.month,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [videos, q, statusFilter]);
+
+  const filtersActive = q.trim().length > 0 || statusFilter !== "all";
+
+  // Drop selections that no longer match the current filtered set so the
+  // action bar always reflects what the user actually sees.
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visible = new Set(filteredVideos.map((v) => v.id));
+      const next = new Set<number>();
+      prev.forEach((id) => {
+        if (visible.has(id)) next.add(id);
+      });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredVideos]);
+
+  // Open wizard immediately when arriving with `?new=1` URL param (deep links).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "1" && !isCreating && !selectedVideo) {
+      setIsCreating(true);
+      setWizardStep("info");
+      params.delete("new");
+      const search = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+    }
+  }, []);
+
+  // React to global events from the command palette / shortcuts. Using events
+  // (instead of URL params) makes the actions reliable when the user is already
+  // on /videos — wouter does not re-trigger pathname effects for query-only
+  // changes, so we cannot rely on `?new=1` to drive the same-route case.
+  useEffect(() => {
+    const onNew = () => {
+      setSelectedVideo(null);
+      setIsCreating(true);
+      setWizardStep("info");
+    };
+    const onSelect = (e: Event) => {
+      const detail = (e as CustomEvent<{ id: number }>).detail;
+      if (!detail || typeof detail.id !== "number") return;
+      const target = videos.find((v) => v.id === detail.id);
+      if (!target) return;
+      setIsCreating(false);
+      setSelectedVideo(target);
+      if (!target.coverImageBase64) setWizardStep("cover");
+      else if (!target.tiktokDescription || !target.instagramDescription) setWizardStep("tiktok-instagram");
+      else if (!target.youtubeTitle || !target.youtubeDescription) setWizardStep("youtube");
+      else if (!target.linkedinDescription || !target.xDescription) setWizardStep("linkedin-x");
+      else setWizardStep("review");
+    };
+    window.addEventListener("videos:new", onNew);
+    window.addEventListener("videos:select", onSelect as EventListener);
+    return () => {
+      window.removeEventListener("videos:new", onNew);
+      window.removeEventListener("videos:select", onSelect as EventListener);
+    };
+  }, [videos]);
+
+  // Page-scoped shortcuts: `a` selects all visible, Esc clears.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (selectedVideo || isCreating) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      )) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "a") {
+        e.preventDefault();
+        setSelectedIds(new Set(filteredVideos.map((v) => v.id)));
+      } else if (e.key === "Escape" && selectedIds.size > 0) {
+        e.preventDefault();
+        setSelectedIds(new Set());
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [filteredVideos, selectedVideo, isCreating, selectedIds.size]);
+
+  const toggleId = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleSelected =
+    filteredVideos.length > 0 && filteredVideos.every((v) => selectedIds.has(v.id));
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredVideos.map((v) => v.id)));
+    }
+  };
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const res = await apiFetch(`${API_BASE}/content/videos/bulk`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Error al eliminar videos");
+      return res.json() as Promise<{ deleted: number; ids: number[] }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      setSelectedIds(new Set());
+      toast({ title: `${data.deleted} videos eliminados` });
+    },
+    onError: () => toast({ title: "No se pudieron eliminar los videos", variant: "destructive" }),
+  });
+
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async (vars: { ids: number[]; patch: Record<string, unknown> }) => {
+      const res = await apiFetch(`${API_BASE}/content/videos/bulk-update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vars),
+      });
+      if (!res.ok) throw new Error("Error al actualizar");
+      return res.json() as Promise<{ updated: number; ids: number[] }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      toast({ title: `${data.updated} videos actualizados` });
+    },
+    onError: () => toast({ title: "No se pudieron actualizar los videos", variant: "destructive" }),
+  });
+
+  const createSavedViewMutation = useMutation({
+    mutationFn: async (vars: { name: string; filters: SavedView["filters"] }) => {
+      const res = await apiFetch(`${API_BASE}/saved-views`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vars),
+      });
+      if (!res.ok) throw new Error("Error al guardar la vista");
+      return res.json() as Promise<SavedView>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["saved-views"] });
+      setSavingView(false);
+      setNewViewName("");
+      toast({ title: "Vista guardada" });
+    },
+    onError: () => toast({ title: "No se pudo guardar la vista", variant: "destructive" }),
+  });
+
+  const deleteSavedViewMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiFetch(`${API_BASE}/saved-views/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error("Error al eliminar la vista");
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["saved-views"] });
+      toast({ title: "Vista eliminada" });
+    },
+  });
+
+  const applySavedView = (view: SavedView) => {
+    setQ(view.filters.q || "");
+    setStatusFilter(view.filters.status || "all");
+    setSelectedIds(new Set());
+  };
+
+  const handleSaveCurrentView = () => {
+    const name = newViewName.trim();
+    if (!name) {
+      toast({ title: "Ingresa un nombre para la vista", variant: "destructive" });
+      return;
+    }
+    createSavedViewMutation.mutate({
+      name,
+      filters: {
+        q: q.trim() || undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+      },
+    });
+  };
+
+  const clearFilters = () => {
+    setQ("");
+    setStatusFilter("all");
+  };
 
   const autoGenerateMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -313,9 +580,13 @@ export default function VideosPage() {
     );
   }
 
+  const selectionCount = selectedIds.size;
+  const noVideosAtAll = !isLoading && videos.length === 0;
+  const noResults = !isLoading && videos.length > 0 && filteredVideos.length === 0;
+
   return (
     <Layout>
-      <div className="space-y-8">
+      <div className="space-y-6 pb-28">
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Gestor de Videos</h1>
@@ -323,18 +594,142 @@ export default function VideosPage() {
           </div>
           <Button
             onClick={() => { setIsCreating(true); setWizardStep("info"); }}
-            className="bg-gradient-to-r from-primary to-orange-400 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-primary/25"
+            className="bg-gradient-to-r from-primary to-orange-400 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-primary/25 gap-2"
           >
-            <Plus className="w-5 h-5 mr-2" />
+            <Plus className="w-5 h-5" />
             Nuevo Video
+            <KbdGroup className="ml-1 hidden sm:inline-flex">
+              <Kbd className="bg-white/20 text-white">N</Kbd>
+            </KbdGroup>
           </Button>
         </header>
+
+        {!noVideosAtAll && (
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar por título, descripción o red..."
+                  className="pl-9 bg-card/40 border-foreground/10"
+                />
+                {q && (
+                  <button
+                    type="button"
+                    onClick={() => setQ("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground rounded transition-base"
+                    aria-label="Limpiar búsqueda"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="sm:w-56 bg-card/40 border-foreground/10">
+                  <FilterIcon className="w-4 h-4 mr-2 text-muted-foreground/60" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {filtersActive && (
+                <Button
+                  variant="ghost"
+                  onClick={clearFilters}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <CircleSlash2 className="w-4 h-4 mr-1" />
+                  Limpiar
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                <Bookmark className="w-3 h-3" />
+                Vistas guardadas:
+              </span>
+              {savedViews.length === 0 && (
+                <span className="text-xs text-muted-foreground/60">Aún no tienes vistas. Filtra y guarda una.</span>
+              )}
+              {savedViews.map((view) => (
+                <div
+                  key={view.id}
+                  className="group inline-flex items-center gap-1 px-2 py-1 rounded-full bg-foreground/[0.04] border border-foreground/10 text-xs hover:bg-foreground/[0.08] transition-base"
+                >
+                  <button
+                    type="button"
+                    onClick={() => applySavedView(view)}
+                    className="text-foreground"
+                  >
+                    {view.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteSavedViewMutation.mutate(view.id)}
+                    className="text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={`Eliminar vista ${view.name}`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {filtersActive && !savingView && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSavingView(true)}
+                  className="h-7 text-xs"
+                >
+                  <BookmarkPlus className="w-3 h-3 mr-1" />
+                  Guardar vista actual
+                </Button>
+              )}
+              {savingView && (
+                <div className="inline-flex items-center gap-1">
+                  <Input
+                    value={newViewName}
+                    onChange={(e) => setNewViewName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleSaveCurrentView();
+                      if (e.key === "Escape") { setSavingView(false); setNewViewName(""); }
+                    }}
+                    placeholder="Nombre de la vista"
+                    className="h-7 text-xs w-44"
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleSaveCurrentView}
+                    disabled={createSavedViewMutation.isPending}
+                    className="h-7 text-xs"
+                  >
+                    {createSavedViewMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setSavingView(false); setNewViewName(""); }}
+                    className="h-7 text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
           </div>
-        ) : videos.length === 0 ? (
+        ) : noVideosAtAll ? (
           <Card className="bg-card/30 border-foreground/10">
             <CardContent className="p-2">
               <EmptyState
@@ -350,92 +745,206 @@ export default function VideosPage() {
               />
             </CardContent>
           </Card>
+        ) : noResults ? (
+          <Card className="bg-card/30 border-foreground/10">
+            <CardContent className="p-8 text-center">
+              <Search className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground mb-3">Ningún video coincide con tus filtros.</p>
+              <Button variant="outline" onClick={clearFilters}>
+                <CircleSlash2 className="w-4 h-4 mr-2" />
+                Limpiar filtros
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="grid gap-4">
-            {videos.map((video: VideoData) => {
-              const progress = getVideoProgress(video);
-              const statusBadge = getStatusBadge(video);
-              return (
-                <Card
-                  key={video.id}
-                  className="bg-card/50 border-foreground/10 hover:border-primary/20 cursor-pointer transition-all duration-200"
-                  onClick={() => {
-                    setSelectedVideo(video);
-                    if (!video.coverImageBase64) setWizardStep("cover");
-                    else if (!video.tiktokDescription || !video.instagramDescription) setWizardStep("tiktok-instagram");
-                    else if (!video.youtubeTitle || !video.youtubeDescription) setWizardStep("youtube");
-                    else if (!video.linkedinDescription || !video.xDescription) setWizardStep("linkedin-x");
-                    else setWizardStep("review");
-                  }}
-                >
-                  <CardContent className="p-4 sm:p-5">
-                    <div className="flex items-start gap-3 sm:gap-4">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-foreground/[0.05] border border-foreground/10 flex-shrink-0 flex items-center justify-center">
-                        {video.coverImageBase64 ? (
-                          <img
-                            src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
-                            className="w-full h-full object-cover"
-                            alt=""
+          <>
+            <div className="flex items-center justify-between gap-2 px-1">
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                <Checkbox
+                  checked={allVisibleSelected}
+                  onCheckedChange={toggleSelectAllVisible}
+                />
+                <span>
+                  {selectionCount > 0
+                    ? `${selectionCount} seleccionado${selectionCount === 1 ? "" : "s"}`
+                    : `${filteredVideos.length} video${filteredVideos.length === 1 ? "" : "s"}`}
+                </span>
+              </label>
+              {filtersActive && (
+                <span className="text-[10px] text-muted-foreground/60">
+                  Mostrando {filteredVideos.length} de {videos.length}
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-4">
+              {filteredVideos.map((video: VideoData) => {
+                const progress = getVideoProgress(video);
+                const statusBadge = getStatusBadge(video);
+                const isSelected = selectedIds.has(video.id);
+                return (
+                  <Card
+                    key={video.id}
+                    className={`bg-card/50 border-foreground/10 hover:border-primary/20 cursor-pointer transition-all duration-200 ${isSelected ? "border-primary/40 ring-1 ring-primary/30" : ""}`}
+                    onClick={() => {
+                      setSelectedVideo(video);
+                      if (!video.coverImageBase64) setWizardStep("cover");
+                      else if (!video.tiktokDescription || !video.instagramDescription) setWizardStep("tiktok-instagram");
+                      else if (!video.youtubeTitle || !video.youtubeDescription) setWizardStep("youtube");
+                      else if (!video.linkedinDescription || !video.xDescription) setWizardStep("linkedin-x");
+                      else setWizardStep("review");
+                    }}
+                  >
+                    <CardContent className="p-4 sm:p-5">
+                      <div className="flex items-start gap-3 sm:gap-4">
+                        <div
+                          className="flex-shrink-0 pt-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleId(video.id)}
+                            aria-label={isSelected ? `Deseleccionar "${video.title}"` : `Seleccionar "${video.title}"`}
                           />
-                        ) : (
-                          <Video className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/30" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{video.title}</h3>
-                            <p className="text-xs sm:text-sm text-muted-foreground truncate">{video.description}</p>
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            {!!(video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId || video.tiktokPublishId) && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="w-7 h-7 text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setStatsVideo(video);
-                                }}
-                                title="Ver estadísticas"
-                              >
-                                <BarChart2 className="w-4 h-4" />
-                              </Button>
-                            )}
-                            <ChevronRight className="w-5 h-5 text-muted-foreground/30 hidden sm:block" />
-                          </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-2 flex-wrap">
-                          <Badge variant="outline" className={statusBadge.className + " text-[10px] sm:text-xs"}>
-                            {statusBadge.label}
-                          </Badge>
-                          {!video.tiktokDescription && !video.instagramDescription && !video.youtubeTitle && !video.youtubeDescription && !video.linkedinDescription && !video.xDescription && video.status !== "published" && (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] sm:text-xs">
-                              Sin descripciones
-                            </Badge>
-                          )}
-                          <div className="w-16 sm:w-24 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full transition-all"
-                              style={{ width: `${progress}%` }}
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-foreground/[0.05] border border-foreground/10 flex-shrink-0 flex items-center justify-center">
+                          {video.coverImageBase64 ? (
+                            <img
+                              src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
+                              className="w-full h-full object-cover"
+                              alt=""
                             />
-                          </div>
-                          {video.month && (
-                            <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
-                              <Folder className="w-3 h-3" />
-                              {video.month}/{video.week}/{video.day}/#{video.videoNumber}
-                            </span>
+                          ) : (
+                            <Video className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/30" />
                           )}
                         </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{video.title}</h3>
+                              <p className="text-xs sm:text-sm text-muted-foreground truncate">{video.description}</p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {!!(video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId || video.tiktokPublishId) && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-7 h-7 text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStatsVideo(video);
+                                  }}
+                                  title="Ver estadísticas"
+                                >
+                                  <BarChart2 className="w-4 h-4" />
+                                </Button>
+                              )}
+                              <ChevronRight className="w-5 h-5 text-muted-foreground/30 hidden sm:block" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <Badge variant="outline" className={statusBadge.className + " text-[10px] sm:text-xs"}>
+                              {statusBadge.label}
+                            </Badge>
+                            {!video.tiktokDescription && !video.instagramDescription && !video.youtubeTitle && !video.youtubeDescription && !video.linkedinDescription && !video.xDescription && video.status !== "published" && (
+                              <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] sm:text-xs">
+                                Sin descripciones
+                              </Badge>
+                            )}
+                            <div className="w-16 sm:w-24 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full transition-all"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                            {video.month && (
+                              <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
+                                <Folder className="w-3 h-3" />
+                                {video.month}/{video.week}/{video.day}/#{video.videoNumber}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
+
+      <AnimatePresence>
+        {selectionCount > 0 && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl"
+          >
+            <div className="bg-card/95 backdrop-blur-xl border border-foreground/15 shadow-2xl rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/15 text-primary text-xs font-semibold">
+                  {selectionCount}
+                </span>
+                <span className="text-sm font-medium truncate">
+                  {selectionCount === 1 ? "1 video seleccionado" : `${selectionCount} videos seleccionados`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Select
+                  onValueChange={(value) => {
+                    bulkUpdateMutation.mutate({
+                      ids: Array.from(selectedIds),
+                      patch: { status: value },
+                    });
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs w-44">
+                    <SelectValue placeholder="Cambiar estado..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.filter((o) => o.value !== "all").map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={bulkDeleteMutation.isPending}
+                  onClick={() => {
+                    if (confirm(`¿Eliminar ${selectionCount} video${selectionCount === 1 ? "" : "s"}? Esta acción no se puede deshacer.`)) {
+                      bulkDeleteMutation.mutate(Array.from(selectedIds));
+                    }
+                  }}
+                >
+                  {bulkDeleteMutation.isPending ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <>
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Eliminar
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  <X className="w-3 h-3 mr-1" />
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <VideoStatsModal
         video={statsVideo}
