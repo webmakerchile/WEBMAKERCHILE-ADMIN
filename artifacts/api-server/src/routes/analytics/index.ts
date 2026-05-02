@@ -956,6 +956,10 @@ function weightOf(ts: Date, now: number): number {
   return Math.exp(-days / 30);
 }
 
+// Tenancy note: the `videos` table is single-workspace (no userId/teamId
+// column — see lib/db/src/schema/videos.ts), so all routes that read from
+// `videos` operate on the shared content set by design. If the data model
+// later grows a tenancy column, scope this query alongside the rest.
 router.get("/analytics/best-times", async (_req: Request, res: Response) => {
   const NETS: Net[] = ["youtube", "instagram", "tiktok", "linkedin", "x", "facebook"];
   const out: Record<Net, BestTimeSlot[]> = {} as Record<Net, BestTimeSlot[]>;
