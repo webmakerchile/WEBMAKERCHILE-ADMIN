@@ -51,13 +51,11 @@ const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 const DAYS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const DAYS_LONG_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
-// Conflict window: two posts on the same network within this window are
-// flagged as conflicting. Kept inline so it's easy to tweak.
-const CONFLICT_WINDOW_MIN = 30;
-const CONFLICT_WINDOW_MS = CONFLICT_WINDOW_MIN * 60 * 1000;
-// When auto-resolving, shift each conflicting post by this offset relative
-// to the previous one. Slightly larger than the window so the cluster opens
-// up cleanly.
+// Conflict window. Configurable at runtime (toolbar dropdown, localStorage).
+const CONFLICT_WINDOW_DEFAULT_MIN = 30;
+const CONFLICT_WINDOW_OPTIONS = [15, 30, 60, 120] as const;
+const CONFLICT_WINDOW_LS_KEY = "schedule.conflictWindowMin";
+// Auto-resolve shifts each conflicting post by this offset (slightly > window).
 const AUTO_RESOLVE_OFFSET_MIN = 35;
 
 function startOfWeek(date: Date): Date {
@@ -249,15 +247,13 @@ type ConflictCluster = {
   network: Network;
   videos: { id: number; title?: string; ts: number }[];
 };
-function detectConflicts(items: VideoSummary[]): ConflictCluster[] {
+function detectConflicts(items: VideoSummary[], windowMs: number): ConflictCluster[] {
   const grouped: Partial<Record<Network, { id: number; title?: string; ts: number }[]>> = {};
   for (const v of items) {
     if (!v.scheduledAt) continue;
     const ts = new Date(v.scheduledAt).getTime();
     if (!Number.isFinite(ts)) continue;
     for (const n of videoNetworks(v)) {
-      // Skip networks already published/uploaded — only "scheduled"/"pending"
-      // entries should be treated as conflicts (you can't move a live post).
       if (n.status === "published" || n.status === "uploaded") continue;
       (grouped[n.network] ||= []).push({ id: v.id, title: v.title, ts });
     }
@@ -270,7 +266,7 @@ function detectConflicts(items: VideoSummary[]): ConflictCluster[] {
     while (i < arr.length) {
       const cluster = [arr[i]];
       let j = i + 1;
-      while (j < arr.length && arr[j].ts - arr[j - 1].ts <= CONFLICT_WINDOW_MS) {
+      while (j < arr.length && arr[j].ts - arr[j - 1].ts <= windowMs) {
         cluster.push(arr[j]);
         j++;
       }
@@ -325,6 +321,22 @@ export default function SchedulePage() {
   // it in state (not localStorage) on purpose: a hidden conflict that
   // disappears after a refresh is safer than one silently buried forever.
   const [ignoredConflictKeys, setIgnoredConflictKeys] = useState<Set<string>>(new Set());
+  // Configurable conflict window. Initialised from localStorage so the user's
+  // preference survives reloads.
+  const [conflictWindowMin, setConflictWindowMin] = useState<number>(() => {
+    if (typeof window === "undefined") return CONFLICT_WINDOW_DEFAULT_MIN;
+    const raw = window.localStorage.getItem(CONFLICT_WINDOW_LS_KEY);
+    const n = raw ? Number(raw) : NaN;
+    return CONFLICT_WINDOW_OPTIONS.includes(n as (typeof CONFLICT_WINDOW_OPTIONS)[number])
+      ? n
+      : CONFLICT_WINDOW_DEFAULT_MIN;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CONFLICT_WINDOW_LS_KEY, String(conflictWindowMin));
+  }, [conflictWindowMin]);
+  // State for the month-cell detail modal (click on a day in MonthView).
+  const [monthDetailDate, setMonthDetailDate] = useState<Date | null>(null);
 
   // Best-times for the QuickPostModal. Cached for 5 minutes — these are
   // aggregate stats that don't change minute-to-minute.
@@ -543,8 +555,11 @@ export default function SchedulePage() {
   // accurate regardless of which view is active. Clusters dismissed via the
   // "Ignorar" action are filtered out for the rest of the session.
   const conflicts = useMemo(
-    () => detectConflicts(filteredVideos).filter((c) => !ignoredConflictKeys.has(c.key)),
-    [filteredVideos, ignoredConflictKeys],
+    () =>
+      detectConflicts(filteredVideos, conflictWindowMin * 60 * 1000).filter(
+        (c) => !ignoredConflictKeys.has(c.key),
+      ),
+    [filteredVideos, ignoredConflictKeys, conflictWindowMin],
   );
   const totalConflictPosts = useMemo(() => {
     const ids = new Set<number>();
@@ -845,6 +860,19 @@ export default function SchedulePage() {
                 </option>
               ))}
             </select>
+            <select
+              value={conflictWindowMin}
+              onChange={(e) => setConflictWindowMin(Number(e.target.value))}
+              className="bg-background/60 border border-foreground/10 rounded-lg px-2 py-1.5 text-xs"
+              aria-label="Ventana de conflictos"
+              title="Considera dos posts en la misma red como conflicto si están programados dentro de este intervalo."
+            >
+              {CONFLICT_WINDOW_OPTIONS.map((m) => (
+                <option key={m} value={m}>
+                  Conflicto: {m} min
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => setShowFilters(!showFilters)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition ${
@@ -862,6 +890,7 @@ export default function SchedulePage() {
             <ConflictBanner
               conflicts={conflicts}
               total={totalConflictPosts}
+              windowMin={conflictWindowMin}
               showDetail={showConflictDetail}
               onToggleDetail={() => setShowConflictDetail((v) => !v)}
               onAutoResolve={autoResolveConflicts}
@@ -945,6 +974,7 @@ export default function SchedulePage() {
               videosByDay={videosByMonthDay}
               today={today}
               monthMaxCount={monthMaxCount}
+              onDayClick={(date) => setMonthDetailDate(date)}
               onDayDoubleClick={(date) => {
                 setDayDate(date);
                 switchView("day");
@@ -993,6 +1023,24 @@ export default function SchedulePage() {
           isPending={quickCreateMutation.isPending}
           bestTimes={bestTimesQuery.data?.networks}
         />
+
+        <DayDetailModal
+          date={monthDetailDate}
+          videos={
+            monthDetailDate
+              ? (videosByMonthDay[monthDetailDate.toDateString()] || []).slice().sort(
+                  (a, b) =>
+                    new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime(),
+                )
+              : []
+          }
+          onClose={() => setMonthDetailDate(null)}
+          onOpenDay={(d) => {
+            setDayDate(d);
+            switchView("day");
+          }}
+          onAddAtDay={(d) => setQuickCreateDate(d)}
+        />
       </DndContext>
     </Layout>
   );
@@ -1016,6 +1064,7 @@ function parseDropId(id: string): Date | null {
 function ConflictBanner({
   conflicts,
   total,
+  windowMin,
   showDetail,
   onToggleDetail,
   onAutoResolve,
@@ -1025,6 +1074,7 @@ function ConflictBanner({
 }: {
   conflicts: ConflictCluster[];
   total: number;
+  windowMin: number;
   showDetail: boolean;
   onToggleDetail: () => void;
   onAutoResolve: () => void;
@@ -1045,7 +1095,7 @@ function ConflictBanner({
             {conflicts.length} conflicto{conflicts.length === 1 ? "" : "s"} detectado{conflicts.length === 1 ? "" : "s"}
           </p>
           <p className="text-xs text-amber-200/80">
-            {total} publicaciones programadas a menos de {CONFLICT_WINDOW_MIN} min en la misma red.
+            {total} publicaciones programadas a menos de {windowMin} min en la misma red.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -1407,6 +1457,7 @@ function MonthView({
   videosByDay,
   today,
   monthMaxCount,
+  onDayClick,
   onDayDoubleClick,
   onDayPlus,
 }: {
@@ -1414,6 +1465,7 @@ function MonthView({
   videosByDay: Record<string, VideoSummary[]>;
   today: string;
   monthMaxCount: number;
+  onDayClick: (date: Date) => void;
   onDayDoubleClick: (date: Date) => void;
   onDayPlus: (date: Date) => void;
 }) {
@@ -1440,6 +1492,7 @@ function MonthView({
             videos={videosByDay[date.toDateString()] || []}
             monthMaxCount={monthMaxCount}
             maxChips={MAX_CHIPS}
+            onClick={() => onDayClick(date)}
             onDoubleClick={() => onDayDoubleClick(date)}
             onPlus={() => onDayPlus(date)}
           />
@@ -1467,6 +1520,7 @@ function MonthDayCell({
   videos,
   monthMaxCount,
   maxChips,
+  onClick,
   onDoubleClick,
   onPlus,
 }: {
@@ -1476,6 +1530,7 @@ function MonthDayCell({
   videos: VideoSummary[];
   monthMaxCount: number;
   maxChips: number;
+  onClick: () => void;
   onDoubleClick: () => void;
   onPlus: () => void;
 }) {
@@ -1486,8 +1541,7 @@ function MonthDayCell({
   const visible = videos.slice(0, maxChips);
   const overflow = videos.length - maxChips;
 
-  // Heatmap tint scaled vs the busiest day this month. Only applies to days
-  // inside the current month — outside cells stay neutral.
+  // Heatmap tint scaled vs the busiest day this month. Outside cells stay neutral.
   let heatBg = "";
   if (inMonth && monthMaxCount > 0 && videos.length > 0) {
     const ratio = videos.length / monthMaxCount;
@@ -1500,13 +1554,14 @@ function MonthDayCell({
   return (
     <div
       ref={setNodeRef}
+      onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`group relative min-h-[100px] p-1.5 text-left border-b border-r border-foreground/10 transition focus:outline-none ${
+      className={`group relative min-h-[100px] p-1.5 text-left border-b border-r border-foreground/10 transition focus:outline-none cursor-pointer ${
         !inMonth ? "opacity-30" : ""
       } ${isToday ? "ring-1 ring-primary/40 ring-inset" : ""} ${heatBg} ${
         isOver ? "bg-primary/25 ring-1 ring-primary" : "hover:bg-foreground/5"
       }`}
-      title="Doble-click para abrir el día"
+      title="Click para ver el día. Doble-click para abrirlo en vista Día."
     >
       <div className="flex items-center justify-between mb-1">
         <span
@@ -1534,15 +1589,125 @@ function MonthDayCell({
         </div>
       </div>
 
-      <div className="space-y-0.5">
+      <div className="space-y-0.5" onClick={(e) => e.stopPropagation()}>
         {visible.map((v) => (
           <MonthChip key={v.id} video={v} />
         ))}
         {overflow > 0 && (
-          <p className="text-[9px] text-muted-foreground/80 pl-1">+{overflow} más</p>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
+            className="text-[9px] text-muted-foreground/80 pl-1 hover:text-primary transition"
+          >
+            +{overflow} más
+          </button>
         )}
       </div>
     </div>
+  );
+}
+
+// ---- Day detail modal (opened from MonthView click on a cell) ----
+// Lists every post scheduled for the clicked day with quick links to the
+// underlying video record, plus a button to jump to the full Day view.
+function DayDetailModal({
+  date,
+  videos,
+  onClose,
+  onOpenDay,
+  onAddAtDay,
+}: {
+  date: Date | null;
+  videos: VideoSummary[];
+  onClose: () => void;
+  onOpenDay: (date: Date) => void;
+  onAddAtDay: (date: Date) => void;
+}) {
+  const open = date != null;
+  const label = date
+    ? date.toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })
+    : "";
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-lg bg-background border-foreground/10">
+        <DialogHeader>
+          <DialogTitle className="capitalize">{label}</DialogTitle>
+          <DialogDescription>
+            {videos.length === 0
+              ? "Sin publicaciones programadas para este día."
+              : `${videos.length} publicación${videos.length === 1 ? "" : "es"} programada${videos.length === 1 ? "" : "s"}.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+          {videos.map((v) => {
+            const dt = new Date(v.scheduledAt!);
+            const time = dt.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+            const nets = videoNetworks(v);
+            const agg = aggregateStatus(v);
+            const accent =
+              agg === "published" ? "border-l-emerald-400"
+              : agg === "uploaded" ? "border-l-blue-400"
+              : agg === "error" ? "border-l-rose-400"
+              : "border-l-primary";
+            return (
+              <Link
+                key={v.id}
+                href={`/videos`}
+                className={`flex items-center gap-2 p-2 rounded-lg bg-foreground/5 border-l-2 ${accent} hover:bg-foreground/10 transition`}
+              >
+                <span className="font-mono text-xs text-primary font-semibold w-12 flex-shrink-0">{time}</span>
+                <span className="flex-1 min-w-0 text-sm truncate">{v.title || `Sin título · #${v.id}`}</span>
+                <span className="flex -space-x-1 flex-shrink-0">
+                  {nets.slice(0, 4).map((n) => (
+                    <span
+                      key={n.network}
+                      className={`w-4 h-4 rounded-full flex items-center justify-center ring-1 ring-background ${NETWORK_BG[n.network]}`}
+                    >
+                      <NetworkIcon network={n.network} className="w-2 h-2" />
+                    </span>
+                  ))}
+                </span>
+              </Link>
+            );
+          })}
+          {videos.length === 0 && (
+            <p className="text-xs text-muted-foreground py-4 text-center">
+              Aún no hay nada aquí. Programa una publicación para empezar.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm border border-foreground/10 hover:bg-foreground/5 transition"
+          >
+            Cerrar
+          </button>
+          {date && (
+            <button
+              type="button"
+              onClick={() => { onAddAtDay(date); onClose(); }}
+              className="px-4 py-2 rounded-lg text-sm border border-primary/30 text-primary hover:bg-primary/10 transition"
+            >
+              <Plus className="w-3.5 h-3.5 inline -mt-0.5 mr-1" />
+              Programar
+            </button>
+          )}
+          {date && (
+            <button
+              type="button"
+              onClick={() => { onOpenDay(date); onClose(); }}
+              className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-orange-400 transition"
+            >
+              Abrir vista Día
+            </button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

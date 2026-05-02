@@ -899,27 +899,10 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   });
 });
 
-// ---- Best times to publish per network ----
-// Returns top-3 (dayOfWeek 0-6 = Mon-Sun, hour 0-23) suggestions per network.
-//
-// Scoring model
-// -------------
-// We bucket the user's published posts per network by (dow, hour) and score
-// each bucket as a sum of "engagement weights" rather than a raw post count.
-// Today the engagement weight is a *recency decay* (exp(-days_since/30)),
-// so a post from yesterday counts as ~1.0 and one from a year ago as ~5e-6.
-// This biases the suggestion toward when the user has been *actively and
-// recently* successful — a meaningful proxy for engagement when per-post
-// metrics (views/likes/comments) are not yet stored alongside the videos
-// table. Once a sync job populates per-post engagement (see follow-up
-// task), `weightOf()` is the single function to upgrade: replace the
-// recency decay with `(views + likes + comments)` (normalised) and the
-// rest of the pipeline keeps working unchanged.
-//
-// `score` is normalised 0–100 (the top bucket = 100). `source` tells the
-// frontend whether the bucket came from the user's own history or from
-// industry-standard defaults (used as fallback when fewer than 3 buckets
-// have any signal).
+// Best times to publish per network. Returns top-3 (dow 0=Mon..6=Sun, hour 0-23)
+// per network. Score is recency-weighted (exp(-days/30)) over published posts;
+// when buckets are sparse we fall back to industry defaults. Engagement-aware
+// scoring (per-post views/likes/comments) is the next iteration — see weightOf.
 type BestTimeSlot = { dow: number; hour: number; score: number; source: "history" | "default" };
 type Net = "youtube" | "instagram" | "tiktok" | "linkedin" | "x" | "facebook";
 
@@ -957,10 +940,6 @@ const BEST_TIME_DEFAULTS: Record<Net, { dow: number; hour: number; score: number
   ],
 };
 
-// Map network → status column. Using AnyPgColumn keeps this typed end-to-end
-// instead of bypassing typing with `any` (the columns are all `text(...)`
-// so the runtime shape is identical, but keeping the column type lets
-// drizzle still validate `eq()` / etc. against the underlying type).
 const STATUS_COL: Record<Net, AnyPgColumn> = {
   youtube: videos.youtubeStatus,
   instagram: videos.instagramStatus,
@@ -970,9 +949,8 @@ const STATUS_COL: Record<Net, AnyPgColumn> = {
   facebook: videos.facebookStatus,
 };
 
-// Engagement weight for a post. Today: recency decay only. When per-post
-// engagement (views/likes/comments) is denormalised onto `videos`, fold it
-// in here — everything downstream sums the result.
+// Engagement weight for a published post. Recency decay today; replace
+// with `(views + likes + comments)` once denormalised on `videos`.
 function weightOf(ts: Date, now: number): number {
   const days = Math.max(0, (now - ts.getTime()) / (1000 * 60 * 60 * 24));
   return Math.exp(-days / 30);
