@@ -1,0 +1,29 @@
+Instrucciones para el revisor
+Indica tu sitio web para la revisión
+URL del sitio:
+https://admin.webmakerlatam.com/
+Editar URL de inicio de sesión del sitio web
+instructions-web-2
+Proporciona instrucciones sobre cómo acceder a la aplicación para poder llevar a cabo la revisión.
+Explica cómo acceder a la aplicación y proporciona instrucciones sobre cómo realizar tests.
+Empieza a escribir aquí…
+accesscode-web-1
+(opcional) Si se requiere pago o suscripción para acceder a las funciones completas de esta aplicación, proporciona códigos de acceso o credenciales de test para que podamos acceder a todas las funciones y revisarlas.
+Los códigos deben estar activos durante un año desde su envío.
+Empieza a escribir aquí…
+accesscode-web-2
+(opcional) Si es necesario realizar un pago para descargar la aplicación, proporciona entre 8 y 10 códigos de regalo para que podamos descargarla de las tiendas correspondientes sin tener que pagar.
+Los códigos deben estar activos durante un año desde su envío.
+Incluye los códigos o las credenciales de prueba necesarios para acceder a suscripciones, compras o funciones en la aplicación.
+Empieza a escribir aquí…
+geo-web-5
+(opcional) Si el acceso a esta aplicación o a cualquiera de sus funciones está limitado a usuarios de una determinada ubicación o restringido por bloqueo geográfico, explica las restricciones y proporciona una lista de ubicaciones.
+Por ejemplo, especifica los países en los que se puede acceder a la aplicación.
+Empieza a escribir aquí…
+documents-web-1
+(Opcional) Incluye documentación acreditativa.
+Por ejemplo, puedes subir grabaciones o capturas de pantalla en las que se muestre cómo acceder a la aplicación, cómo iniciar sesión y cómo se usan las API de Meta en la aplicación.
+
+Puedes subir varios archivos con un tamaño máximo de 2 GB cada uno. Aceptamos estos formatos: .xls, .xlsx, .csv, .doc, .docx, .pdf, .txt, .jpeg, .jpg, .png, .ppt, .pptx, .mov, .mp4, .zip y .zipx.
+Arrastra y suelta archivos
+o elige archivos de tu dispositivo
