@@ -93,26 +93,41 @@ function useUserName(): string {
 
 /* ------------------------- Analytics ------------------------- */
 
-function MiniBars({ series, prevSeries, accent }: { series: number[]; prevSeries?: number[]; accent: string }) {
-  const max = Math.max(1, ...series, ...(prevSeries || []));
+type SeriesPoint = { date: string; value: number };
+
+function MiniBars({
+  series,
+  prevSeries,
+  accent,
+}: {
+  series: SeriesPoint[];
+  prevSeries?: SeriesPoint[];
+  accent: string;
+}) {
+  const allValues = [
+    ...series.map((p) => p.value),
+    ...(prevSeries?.map((p) => p.value) || []),
+  ];
+  const max = Math.max(1, ...allValues);
   return (
     <div className="flex items-end gap-[3px] h-8 mt-2">
-      {series.map((v, i) => {
-        const h = Math.max(2, (v / max) * 100);
-        const ph = prevSeries ? Math.max(2, ((prevSeries[i] || 0) / max) * 100) : 0;
+      {series.map((p, i) => {
+        const prev = prevSeries?.[i];
+        const h = Math.max(2, (p.value / max) * 100);
+        const ph = prev ? Math.max(2, (prev.value / max) * 100) : 0;
         return (
-          <div key={i} className="flex-1 flex items-end gap-[1px] h-full">
-            {prevSeries && (
+          <div key={p.date || i} className="flex-1 flex items-end gap-[1px] h-full">
+            {prev && (
               <div
                 className="w-1/2 rounded-sm bg-white/10"
                 style={{ height: `${ph}%` }}
-                title={`Previo: ${prevSeries[i]}`}
+                title={`${prev.date}: ${prev.value}`}
               />
             )}
             <div
-              className={`${prevSeries ? "w-1/2" : "w-full"} rounded-sm ${accent}`}
+              className={`${prev ? "w-1/2" : "w-full"} rounded-sm ${accent}`}
               style={{ height: `${h}%` }}
-              title={`${v}`}
+              title={`${p.date}: ${p.value}`}
             />
           </div>
         );
@@ -143,15 +158,15 @@ function DeltaPill({ delta }: { delta: number }) {
 type MetricSummary = {
   total: number;
   delta: number;
-  series: number[];
-  prevSeries: number[];
+  series: SeriesPoint[];
+  prevSeries: SeriesPoint[];
 };
 type GrowthSummary = {
   value: number;
   prev: number;
   delta: number;
-  series: number[];
-  prevSeries: number[];
+  series: SeriesPoint[];
+  prevSeries: SeriesPoint[];
 };
 type NetworkMetrics = {
   followers?: number | null;
@@ -170,6 +185,7 @@ type AnalyticsSummary = {
   followers?: MetricSummary;
   reach?: MetricSummary;
   interactions?: MetricSummary;
+  posts?: MetricSummary;
   growthRate?: GrowthSummary;
   networks?: NetworkSummary[];
 };

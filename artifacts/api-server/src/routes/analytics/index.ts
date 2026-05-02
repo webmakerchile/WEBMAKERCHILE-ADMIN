@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { google } from "googleapis";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
 
@@ -578,18 +578,57 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   finalizeMetric(reach);
   finalizeMetric(interactions);
 
-  // Count posts published in the window
-  let postsCount = 0;
+  // Posts published, daily series for current and previous window.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const currStartMs = today.getTime() - (days - 1) * 86400000;
+  const prevStartMs = currStartMs - days * 86400000;
+  const currStartDate = new Date(currStartMs);
+  const prevStartDate = new Date(prevStartMs);
+  const windowEndDate = new Date(today.getTime() + 86400000);
+
+  const posts = emptyMetric(days);
   try {
-    const since = new Date(Date.now() - days * 86400000);
-    const rows = await db
-      .select({ id: videos.id })
+    type PostRow = { day: string; count: number };
+    const fillFromRows = (rows: PostRow[], originMs: number, target: "series" | "prevSeries") => {
+      for (const row of rows) {
+        const t = new Date(row.day + "T00:00:00Z").getTime();
+        const idx = Math.floor((t - originMs) / 86400000);
+        if (idx < 0 || idx >= days) continue;
+        posts[target][idx] = (posts[target][idx] || 0) + Number(row.count || 0);
+      }
+    };
+    const currRows = (await db
+      .select({
+        day: sql<string>`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`,
+      })
       .from(videos)
-      .where(and(eq(videos.status, "published"), gte(videos.publishedAt, since)));
-    postsCount = rows.length;
+      .where(and(
+        eq(videos.status, "published"),
+        gte(videos.publishedAt, currStartDate),
+        lt(videos.publishedAt, windowEndDate),
+      ))
+      .groupBy(sql`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`)) as PostRow[];
+    const prevRows = (await db
+      .select({
+        day: sql<string>`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(videos)
+      .where(and(
+        eq(videos.status, "published"),
+        gte(videos.publishedAt, prevStartDate),
+        lt(videos.publishedAt, currStartDate),
+      ))
+      .groupBy(sql`to_char(${videos.publishedAt}, 'YYYY-MM-DD')`)) as PostRow[];
+    fillFromRows(currRows, currStartMs, "series");
+    fillFromRows(prevRows, prevStartMs, "prevSeries");
+    posts.total = posts.series.reduce((a, b) => a + b, 0);
   } catch (err) {
     console.error("[Analytics][posts] error:", (err instanceof Error ? err.message : String(err)));
   }
+  finalizeMetric(posts);
+  const postsCount = posts.total;
 
   const currTotal = followers.total + reach.total + interactions.total;
   const prevReachTotal = reach.prevSeries.reduce((a, b) => a + b, 0);
@@ -612,8 +651,28 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   const ORDER = ["youtube", "instagram", "facebook", "linkedin", "x", "tiktok"];
   networkSummaries.sort((a, b) => ORDER.indexOf(a.network) - ORDER.indexOf(b.network));
 
+  // Build YYYY-MM-DD axis for the current and previous windows so the
+  // frontend can render per-day labels/tooltips in sparklines.
+  const fmtDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const currDates: string[] = [];
+  const prevDates: string[] = [];
+  for (let i = 0; i < days; i++) {
+    currDates.push(fmtDay(currStartMs + i * 86400000));
+    prevDates.push(fmtDay(prevStartMs + i * 86400000));
+  }
+  const toPoints = (values: number[], dates: string[]) =>
+    values.map((value, i) => ({ date: dates[i] || "", value: Number(value || 0) }));
+
+  const serialize = (m: MetricBlock) => ({
+    total: m.total,
+    delta: m.delta,
+    series: toPoints(m.series, currDates),
+    prevSeries: toPoints(m.prevSeries, prevDates),
+  });
+
   res.json({
     days,
+    range: { start: currDates[0], end: currDates[currDates.length - 1] },
     totals: {
       views: reach.total,
       engagements: interactions.total,
@@ -622,13 +681,21 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
       viewsDelta: reach.delta,
       engagementsDelta: interactions.delta,
       followersDelta: followers.delta,
+      postsDelta: posts.delta,
     },
     networks: networkSummaries,
     sources,
-    followers: { total: followers.total, delta: followers.delta, series: followers.series, prevSeries: followers.prevSeries },
-    reach: { total: reach.total, delta: reach.delta, series: reach.series, prevSeries: reach.prevSeries },
-    interactions: { total: interactions.total, delta: interactions.delta, series: interactions.series, prevSeries: interactions.prevSeries },
-    growthRate,
+    followers: serialize(followers),
+    reach: serialize(reach),
+    interactions: serialize(interactions),
+    posts: serialize(posts),
+    growthRate: {
+      value: growthRate.value,
+      prev: growthRate.prev,
+      delta: growthRate.delta,
+      series: toPoints(growthRate.series, currDates),
+      prevSeries: toPoints(growthRate.prevSeries, prevDates),
+    },
   });
 });
 
