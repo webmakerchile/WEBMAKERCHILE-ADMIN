@@ -517,4 +517,198 @@ Responde SOLO con un array JSON de 10 strings (sin el símbolo #). Ejemplo: ["we
   }
 });
 
+// ─── AI: autocompletar campos de plantilla ─────────────────────────────────
+//
+// Recibe el nombre, la descripción base (con variables {{titulo}}/{{enlace}})
+// y las redes activas. Devuelve un objeto con los textos por red, generados
+// con OpenAI, respetando el largo y el estilo de cada plataforma.
+//
+// Rate-limit en memoria por usuario para evitar abuso del API key:
+// - 8 llamadas por ventana de 60 s
+// - 60 llamadas por día (24 h)
+// La memoria se reinicia con el proceso; suficiente para una instancia.
+const aiFillBuckets = new Map<
+  number,
+  { minute: { count: number; resetAt: number }; day: { count: number; resetAt: number } }
+>();
+
+function checkAiFillLimit(userId: number): { ok: true } | { ok: false; retryAfter: number } {
+  const now = Date.now();
+  const minuteWindowMs = 60_000;
+  const dayWindowMs = 24 * 60 * 60_000;
+  const minuteMax = 8;
+  const dayMax = 60;
+  let b = aiFillBuckets.get(userId);
+  if (!b) {
+    b = {
+      minute: { count: 0, resetAt: now + minuteWindowMs },
+      day: { count: 0, resetAt: now + dayWindowMs },
+    };
+    aiFillBuckets.set(userId, b);
+  }
+  if (now >= b.minute.resetAt) {
+    b.minute = { count: 0, resetAt: now + minuteWindowMs };
+  }
+  if (now >= b.day.resetAt) {
+    b.day = { count: 0, resetAt: now + dayWindowMs };
+  }
+  if (b.minute.count >= minuteMax) {
+    return { ok: false, retryAfter: Math.ceil((b.minute.resetAt - now) / 1000) };
+  }
+  if (b.day.count >= dayMax) {
+    return { ok: false, retryAfter: Math.ceil((b.day.resetAt - now) / 1000) };
+  }
+  b.minute.count += 1;
+  b.day.count += 1;
+  return { ok: true };
+}
+
+router.post("/library/templates/ai-fill", async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) return unauthorized(res);
+
+  const limit = checkAiFillLimit(userId);
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfter));
+    res.status(429).json({
+      error: "Has alcanzado el límite de generaciones. Intenta de nuevo más tarde.",
+      retryAfter: limit.retryAfter,
+    });
+    return;
+  }
+
+  const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 200) : "";
+  const internalDesc =
+    typeof req.body?.description === "string" ? req.body.description.trim().slice(0, 500) : "";
+  const base = typeof req.body?.base === "string" ? req.body.base.trim().slice(0, 2000) : "";
+  const networks = sanitizeNetworks(req.body?.networks);
+
+  if (networks.length === 0) {
+    return badRequest(
+      res,
+      "Selecciona al menos una red activa para autocompletar la plantilla.",
+    );
+  }
+
+  if (!name && !base) {
+    return badRequest(
+      res,
+      "Necesito un nombre o una descripción base para autocompletar la plantilla.",
+    );
+  }
+
+  const guideByNetwork: Record<AllowedNetwork, string> = {
+    tiktok:
+      "TikTok: 1-2 líneas en tono cercano y directo. Hook fuerte al inicio. 3-5 hashtags al final. Máximo 280 caracteres.",
+    instagram:
+      "Instagram: 2-4 líneas, tono inspirador y visual. Emoji ocasional. CTA al final. 5-8 hashtags al final. Máximo 1500 caracteres.",
+    youtubeTitle:
+      "Título YouTube: máximo 70 caracteres, claro y atractivo, sin emojis al inicio. Optimizado para búsqueda.",
+    youtubeDescription:
+      "Descripción YouTube: 3-6 líneas, primer párrafo con el resumen (lo que se ve antes del 'Mostrar más'), luego un CTA. 3-5 hashtags al final. Máximo 1500 caracteres.",
+    linkedin:
+      "LinkedIn: 3-5 líneas en tono profesional, valor concreto, primera persona. Sin hashtags abusivos (máximo 3). Máximo 1300 caracteres.",
+    x:
+      "X (Twitter): UNA sola frase potente, máximo 240 caracteres. Sin hashtags innecesarios.",
+    facebook:
+      "Facebook: 2-3 líneas conversacionales, tono cálido, una sola pregunta o CTA al final. Máximo 600 caracteres.",
+  };
+
+  // Map de redes seleccionadas → claves esperadas en el JSON de salida.
+  const fieldsByNetwork: Record<AllowedNetwork, string[]> = {
+    tiktok: ["tiktokDescription"],
+    instagram: ["instagramDescription"],
+    youtube: ["youtubeTitle", "youtubeDescription"],
+    linkedin: ["linkedinDescription"],
+    x: ["xDescription"],
+    facebook: ["facebookDescription"],
+  };
+
+  const expectedKeys = networks.flatMap((n) => fieldsByNetwork[n]);
+  const guideLines = networks
+    .flatMap((n) => {
+      if (n === "youtube") {
+        return [`- youtubeTitle → ${guideByNetwork.youtubeTitle}`, `- youtubeDescription → ${guideByNetwork.youtubeDescription}`];
+      }
+      const key = `${n}Description`;
+      return [`- ${key} → ${guideByNetwork[n]}`];
+    })
+    .join("\n");
+
+  const prompt = `Eres copywriter senior de redes sociales para una agencia en español (LATAM). Te paso una plantilla reutilizable y debes generar el texto base para cada red.
+
+Reglas críticas:
+- Mantén las variables exactamente como aparecen: {{titulo}}, {{enlace}}, {{fecha}}, etc. NO las reemplaces ni las traduzcas.
+- Idioma: español neutro, salvo que la descripción base esté en otro idioma.
+- Adapta tono y largo a cada red según la guía.
+- Evita clickbait barato y promesas vacías.
+- No inventes datos que no estén en la información dada.
+
+Plantilla:
+- Nombre: ${name || "(sin nombre)"}
+- Para qué sirve: ${internalDesc || "(no especificado)"}
+- Descripción base: ${base || "(no especificada)"}
+
+Redes activas: ${networks.join(", ")}
+
+Genera SOLO un objeto JSON con estas claves exactas y nada más:
+${expectedKeys.map((k) => `  "${k}": string`).join(",\n")}
+
+Guías por red:
+${guideLines}`;
+
+  try {
+    const { default: OpenAI } = await import("openai");
+    const openai = new OpenAI({
+      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+    // Modelo: usamos el más reciente que esté disponible en la integración.
+    // `OPENAI_TEMPLATE_MODEL` permite override sin redeploy.
+    const model = process.env.OPENAI_TEMPLATE_MODEL || "gpt-4o-mini";
+    const r = await openai.chat.completions.create({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 1500,
+    });
+    const text = r.choices[0]?.message?.content || "{}";
+    let parsed: Record<string, unknown> = {};
+    try {
+      const obj = JSON.parse(text);
+      if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+        parsed = obj as Record<string, unknown>;
+      }
+    } catch {
+      // intentamos recuperar un bloque {...}
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          const obj = JSON.parse(m[0]);
+          if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+            parsed = obj as Record<string, unknown>;
+          }
+        } catch {
+          /* dejar vacío */
+        }
+      }
+    }
+    const fields: Record<string, string> = {};
+    for (const k of expectedKeys) {
+      const v = parsed[k];
+      if (typeof v === "string" && v.trim()) {
+        fields[k] = v.trim().slice(0, 2200);
+      }
+    }
+    res.json({ fields, model });
+  } catch (err) {
+    // Loguear el detalle real solo en servidor; no exponerlo al cliente.
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[library/templates/ai-fill] OpenAI error:", detail);
+    res.status(502).json({
+      error: "No se pudo generar la plantilla en este momento. Intenta de nuevo en unos segundos.",
+    });
+  }
+});
+
 export default router;

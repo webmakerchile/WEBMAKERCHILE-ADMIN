@@ -19,6 +19,7 @@ import {
   Megaphone,
   Calendar,
   Loader2,
+  Sparkles,
   X as XIcon,
 } from "lucide-react";
 import { NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
@@ -242,9 +243,63 @@ function TemplateEditor({
   const [fields, setFields] = useState<TemplateFields>(template?.fields || {});
   const [networks, setNetworks] = useState<Network[]>(template?.networks || []);
   const [saving, setSaving] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const toggleNetwork = (n: Network) => {
     setNetworks((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  };
+
+  const handleAiFill = async () => {
+    const base = (fields.description || "").trim();
+    if (!name.trim() && !base) {
+      toast({
+        title: "Falta información",
+        description: "Ingresa un nombre o una descripción base para que la IA tenga contexto.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (networks.length === 0) {
+      toast({
+        title: "Selecciona al menos una red",
+        description: "La IA llena los campos de las redes activas.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const r = await apiFetch(`${API_BASE}/library/templates/ai-fill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          description: description.trim(),
+          base,
+          networks,
+        }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = (await r.json()) as { fields?: Record<string, string> };
+      const generated = data.fields || {};
+      if (Object.keys(generated).length === 0) {
+        toast({ title: "La IA no devolvió texto", variant: "destructive" });
+        return;
+      }
+      setFields((prev) => ({ ...prev, ...generated }));
+      toast({
+        title: "Plantilla autocompletada",
+        description: "Revisa cada red y ajusta lo que quieras antes de guardar.",
+      });
+    } catch (err) {
+      toast({
+        title: "No se pudo autocompletar",
+        description: String(err).slice(0, 200),
+        variant: "destructive",
+      });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -313,15 +368,39 @@ function TemplateEditor({
           </div>
 
           <div className="space-y-3">
-            {FIELD_KEYS.map((f) => (
+            {FIELD_KEYS.map((f, idx) => (
               <div key={f.key}>
-                <label className="text-xs font-medium text-muted-foreground">{f.label}</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-medium text-muted-foreground">{f.label}</label>
+                  {idx === 0 && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAiFill}
+                      disabled={aiLoading}
+                      className="h-7 px-2 text-xs gap-1.5 border-primary/40 text-primary hover:bg-primary/10"
+                    >
+                      {aiLoading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="w-3 h-3" />
+                      )}
+                      {aiLoading ? "Generando…" : "Autocompletar redes con IA"}
+                    </Button>
+                  )}
+                </div>
                 <textarea
                   value={fields[f.key] || ""}
                   onChange={(e) => setFields({ ...fields, [f.key]: e.target.value })}
                   className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm min-h-[60px] focus:border-primary outline-none"
                   placeholder={f.key === "youtubeTitle" ? "Hasta 100 caracteres" : "Texto base con variables"}
                 />
+                {idx === 0 && (
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Escribe aquí la idea base con variables. Luego pulsa "Autocompletar redes con IA" para generar el texto adaptado a cada red.
+                  </p>
+                )}
               </div>
             ))}
           </div>
