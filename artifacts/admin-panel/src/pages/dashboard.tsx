@@ -190,11 +190,42 @@ type AnalyticsSummary = {
   networks?: NetworkSummary[];
 };
 
+const ANALYTICS_DAYS_OPTIONS = [7, 14, 30] as const;
+type AnalyticsDays = (typeof ANALYTICS_DAYS_OPTIONS)[number];
+const ANALYTICS_DAYS_STORAGE_KEY = "dashboard.analyticsDays";
+
+function isAnalyticsDays(value: unknown): value is AnalyticsDays {
+  return (
+    typeof value === "number" &&
+    (ANALYTICS_DAYS_OPTIONS as readonly number[]).includes(value)
+  );
+}
+
 function AnalyticsRow() {
+  const [days, setDays] = useState<AnalyticsDays>(() => {
+    if (typeof window === "undefined") return 7;
+    try {
+      const raw = window.localStorage.getItem(ANALYTICS_DAYS_STORAGE_KEY);
+      const parsed = raw == null ? null : Number(raw);
+      return isAnalyticsDays(parsed) ? parsed : 7;
+    } catch {
+      return 7;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(ANALYTICS_DAYS_STORAGE_KEY, String(days));
+    } catch {
+      /* ignore quota / privacy errors */
+    }
+  }, [days]);
+
   const { data, isLoading } = useQuery<AnalyticsSummary>({
-    queryKey: ["analytics-summary", 7],
+    queryKey: ["analytics-summary", days],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/analytics/summary?days=7`, { credentials: "include" });
+      const r = await fetch(`${API_BASE}/analytics/summary?days=${days}`, { credentials: "include" });
       if (!r.ok) throw new Error(`analytics/summary returned ${r.status}`);
       return (await r.json()) as AnalyticsSummary;
     },
@@ -267,11 +298,38 @@ function AnalyticsRow() {
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-display font-bold flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-primary" />
-          Últimos 7 días
-        </h2>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-display font-bold flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            Últimos {days} días
+          </h2>
+          <div
+            role="radiogroup"
+            aria-label="Rango de días"
+            className="inline-flex items-center rounded-full border border-white/10 bg-white/5 p-0.5"
+          >
+            {ANALYTICS_DAYS_OPTIONS.map((opt) => {
+              const active = opt === days;
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setDays(opt)}
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium transition ${
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {opt}d
+                </button>
+              );
+            })}
+          </div>
+        </div>
         {data?.networks && (
           <span className="text-[11px] text-muted-foreground">
             {data.networks.filter((n) => n.connected).length}/{data.networks.length} redes conectadas
