@@ -17,6 +17,7 @@ import inspirationsRouter from "./inspirations";
 import onboardingRouter from "./onboarding";
 import savedViewsRouter from "./saved-views";
 import socialRouter from "./social";
+import libraryRouter from "./library";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(inspirationsRouter);
 router.use(onboardingRouter);
 router.use(savedViewsRouter);
 router.use(socialRouter);
+router.use(libraryRouter);
 
 export default router;

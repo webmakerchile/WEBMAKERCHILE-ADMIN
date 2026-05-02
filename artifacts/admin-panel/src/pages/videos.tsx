@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import { PreviewPanel, TruncatedTextarea, type PreviewContent } from "@/components/network-previews";
+import {
+  LibraryControls,
+  TemplateAndCampaignSelector,
+  fillTemplateVariables,
+  type Campaign as LibraryCampaign,
+} from "@/components/library-controls";
 import type { Network } from "@/components/social-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,6 +115,8 @@ type VideoData = {
   facebookPostId?: string | null;
   facebookStatus?: string | null;
   facebookError?: string | null;
+  campaignId?: number | null;
+  templateId?: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -227,6 +236,7 @@ export default function VideosPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [campaignFilter, setCampaignFilter] = useState<string>("all");
   const [savingView, setSavingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [bulkMonth, setBulkMonth] = useState("");
@@ -264,6 +274,10 @@ export default function VideosPage() {
       if (statusFilter !== "all" && v.status !== statusFilter) return false;
       if (networkFilter !== "all" && !videoMatchesNetwork(v, networkFilter)) return false;
       if (monthFilter !== "all" && v.month !== monthFilter) return false;
+      if (campaignFilter !== "all") {
+        if (campaignFilter === "none" && v.campaignId != null) return false;
+        if (campaignFilter !== "none" && String(v.campaignId ?? "") !== campaignFilter) return false;
+      }
       if (!needle) return true;
       const haystack = [
         v.title,
@@ -282,13 +296,27 @@ export default function VideosPage() {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [videos, q, statusFilter, networkFilter, monthFilter]);
+  }, [videos, q, statusFilter, networkFilter, monthFilter, campaignFilter]);
 
   const filtersActive =
     q.trim().length > 0 ||
     statusFilter !== "all" ||
     networkFilter !== "all" ||
-    monthFilter !== "all";
+    monthFilter !== "all" ||
+    campaignFilter !== "all";
+
+  const { data: campaigns = [] } = useQuery<LibraryCampaign[]>({
+    queryKey: ["library", "campaigns"],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/library/campaigns`);
+      return r.ok ? r.json() : [];
+    },
+  });
+  const campaignsById = useMemo(() => {
+    const m = new Map<number, LibraryCampaign>();
+    for (const c of campaigns) m.set(c.id, c);
+    return m;
+  }, [campaigns]);
 
   // Drop selections that no longer match the current filtered set so the
   // action bar always reflects what the user actually sees.
@@ -485,6 +513,9 @@ export default function VideosPage() {
     setStatusFilter(view.filters.status || "all");
     setNetworkFilter(view.filters.network || "all");
     setMonthFilter(view.filters.month || "all");
+    // Saved views don't persist campaign yet — reset so applying a view yields
+    // predictable results instead of leaking the previous campaign filter.
+    setCampaignFilter("all");
     setSelectedIds(new Set());
   };
 
@@ -510,6 +541,7 @@ export default function VideosPage() {
     setStatusFilter("all");
     setNetworkFilter("all");
     setMonthFilter("all");
+    setCampaignFilter("all");
   };
 
   // Bulk: assign month label to N videos using the existing bulk-update endpoint.
@@ -910,6 +942,18 @@ export default function VideosPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+                  <SelectTrigger className="sm:w-44 bg-card/40 border-foreground/10">
+                    <SelectValue placeholder="Todas las campañas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las campañas</SelectItem>
+                    <SelectItem value="none">Sin campaña</SelectItem>
+                    {campaigns.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {filtersActive && (
                   <Button
                     variant="ghost"
@@ -1061,6 +1105,22 @@ export default function VideosPage() {
                                 {video.month}/{video.week}/{video.day}/#{video.videoNumber}
                               </span>
                             )}
+                            {video.campaignId != null && campaignsById.has(video.campaignId) ? (
+                              <Link href={`/campanas/${video.campaignId}`}>
+                                <a
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-muted hover:bg-muted/70 transition-colors"
+                                  style={{ color: campaignsById.get(video.campaignId!)!.color }}
+                                  title={`Campaña: ${campaignsById.get(video.campaignId!)!.name}`}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full"
+                                    style={{ backgroundColor: campaignsById.get(video.campaignId!)!.color }}
+                                  />
+                                  {campaignsById.get(video.campaignId!)!.name}
+                                </a>
+                              </Link>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -1505,6 +1565,8 @@ function VideoWizard({
     linkedinDescription: video?.linkedinDescription || "",
     xDescription: video?.xDescription || "",
     facebookDescription: video?.facebookDescription || "",
+    templateId: (video?.templateId ?? null) as number | null,
+    campaignId: (video?.campaignId ?? null) as number | null,
   });
 
   useEffect(() => {
@@ -1524,6 +1586,8 @@ function VideoWizard({
         linkedinDescription: video.linkedinDescription || "",
         xDescription: video.xDescription || "",
         facebookDescription: video.facebookDescription || "",
+        templateId: video.templateId ?? null,
+        campaignId: video.campaignId ?? null,
       });
     }
   }, [video]);
@@ -1585,6 +1649,8 @@ function VideoWizard({
       day: formData.day || undefined,
       videoNumber: formData.videoNumber || undefined,
       scheduleHour: formData.scheduleHour || undefined,
+      templateId: formData.templateId,
+      campaignId: formData.campaignId,
     };
     if (isCreating) {
       onCreate(infoData);
@@ -2126,6 +2192,37 @@ function StepInfo({
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        <TemplateAndCampaignSelector
+          templateId={formData.templateId ?? null}
+          campaignId={formData.campaignId ?? null}
+          onTemplateChange={(id) => setFormData({ ...formData, templateId: id })}
+          onCampaignChange={(id) => setFormData({ ...formData, campaignId: id })}
+          onApplyTemplate={(template, values) => {
+            // Template field keys mirror the persisted shape from
+            // `lib/db/src/schema/library.ts#TemplateFields` so the wizard
+            // honours every per-network description the user saved.
+            const next: Record<string, any> = { ...formData, templateId: template.id };
+            const fields = template.fields || {};
+            const targets: ReadonlyArray<keyof typeof fields> = [
+              "description",
+              "tiktokDescription",
+              "instagramDescription",
+              "youtubeTitle",
+              "youtubeDescription",
+              "linkedinDescription",
+              "xDescription",
+              "facebookDescription",
+            ];
+            for (const key of targets) {
+              const raw = fields[key];
+              if (typeof raw === "string" && raw.length > 0) {
+                next[key] = fillTemplateVariables(raw, values);
+              }
+            }
+            setFormData(next);
+          }}
+        />
+
         <div className="space-y-2">
           <label className="text-sm font-medium">Título del Video</label>
           <input
@@ -2562,6 +2659,14 @@ function StepTikTokInstagram({
             {!showTikTokPlaceholder && (
               <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.tiktokDescription.length}/2200</p>
             )}
+            <LibraryControls
+              network="tiktok"
+              videoId={video?.id}
+              title={formData.title}
+              description={formData.description}
+              currentText={formData.tiktokDescription || ""}
+              onAppend={(t) => setFormData({ ...formData, tiktokDescription: t })}
+            />
           </div>
 
           <div className="space-y-3">
@@ -2593,6 +2698,14 @@ function StepTikTokInstagram({
             {!showInstagramPlaceholder && (
               <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.instagramDescription.length}/2200</p>
             )}
+            <LibraryControls
+              network="instagram"
+              videoId={video?.id}
+              title={formData.title}
+              description={formData.description}
+              currentText={formData.instagramDescription || ""}
+              onAppend={(t) => setFormData({ ...formData, instagramDescription: t })}
+            />
           </div>
         </div>
 
@@ -2704,6 +2817,14 @@ function StepYouTube({
           {!showYoutubeDescPlaceholder && (
             <p className="text-[10px] text-muted-foreground">{formData.youtubeDescription.length}/5000 caracteres</p>
           )}
+          <LibraryControls
+            network="youtube"
+            videoId={video?.id}
+            title={formData.youtubeTitle || formData.title}
+            description={formData.description}
+            currentText={formData.youtubeDescription || ""}
+            onAppend={(t) => setFormData({ ...formData, youtubeDescription: t })}
+          />
         </div>
 
         <div className="pt-4 flex justify-between">
@@ -2824,6 +2945,14 @@ function StepLinkedInX({
             {!showLinkedInPlaceholder && (
               <p className="text-[10px] text-muted-foreground">Máximo 3000 caracteres · {(formData.linkedinDescription || "").length}/3000</p>
             )}
+            <LibraryControls
+              network="linkedin"
+              videoId={video?.id}
+              title={formData.title}
+              description={formData.description}
+              currentText={formData.linkedinDescription || ""}
+              onAppend={(t) => setFormData({ ...formData, linkedinDescription: t })}
+            />
           </div>
 
           <div className="space-y-3">
@@ -2856,6 +2985,14 @@ function StepLinkedInX({
                 Máximo 280 caracteres · {xLen}/280
               </p>
             )}
+            <LibraryControls
+              network="x"
+              videoId={video?.id}
+              title={formData.title}
+              description={formData.description}
+              currentText={formData.xDescription || ""}
+              onAppend={(t) => setFormData({ ...formData, xDescription: t.slice(0, 280) })}
+            />
           </div>
         </div>
 
@@ -2884,6 +3021,14 @@ function StepLinkedInX({
             ariaLabel="Descripción para Facebook"
           />
           <p className="text-[10px] text-muted-foreground">Máximo 500 caracteres · {(formData.facebookDescription || "").length}/500</p>
+          <LibraryControls
+            network="facebook"
+            videoId={video?.id}
+            title={formData.title}
+            description={formData.description}
+            currentText={formData.facebookDescription || ""}
+            onAppend={(t) => setFormData({ ...formData, facebookDescription: t.slice(0, 500) })}
+          />
         </div>
 
         <div className="pt-4 flex justify-between">

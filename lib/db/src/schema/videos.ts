@@ -1,4 +1,9 @@
 import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+// NOTE: campaignId/templateId are intentionally NOT declared with .references()
+// because the foreign-key target tables (`campaigns`, `templates`) live in a
+// schema file imported AFTER this one — drizzle-zod's `createInsertSchema`
+// resolves references at module load time. The FK constraint is added by the
+// generated SQL migration in lib/db/drizzle.
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -46,6 +51,10 @@ export const videos = pgTable("videos", {
   facebookPostId: text("facebook_post_id"),
   facebookStatus: text("facebook_status").default("pending"),
   facebookError: text("facebook_error"),
+  /** Optional grouping into a campaign (Lanzamiento Q2, Promo viernes, etc.). */
+  campaignId: integer("campaign_id"),
+  /** Optional template the video was created from. */
+  templateId: integer("template_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

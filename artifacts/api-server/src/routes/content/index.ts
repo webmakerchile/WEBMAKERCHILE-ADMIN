@@ -327,6 +327,12 @@ router.delete("/content/videos/bulk", async (req, res) => {
 
 router.post("/content/videos", async (req, res) => {
   const body = CreateVideoBody.parse(req.body);
+  const campaignIdRaw = (req.body as { campaignId?: unknown })?.campaignId;
+  const templateIdRaw = (req.body as { templateId?: unknown })?.templateId;
+  const campaignId =
+    typeof campaignIdRaw === "number" && Number.isFinite(campaignIdRaw) ? campaignIdRaw : null;
+  const templateId =
+    typeof templateIdRaw === "number" && Number.isFinite(templateIdRaw) ? templateIdRaw : null;
   const [row] = await db
     .insert(videos)
     .values({
@@ -338,6 +344,8 @@ router.post("/content/videos", async (req, res) => {
       day: body.day || null,
       videoNumber: body.videoNumber || null,
       status: "draft",
+      campaignId,
+      templateId,
     })
     .returning();
   res.status(201).json(row);
@@ -429,6 +437,22 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.facebookError !== undefined) updateData.facebookError = body.facebookError;
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
   if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+  if (body.campaignId !== undefined) {
+    updateData.campaignId =
+      body.campaignId === null
+        ? null
+        : typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
+          ? body.campaignId
+          : null;
+  }
+  if (body.templateId !== undefined) {
+    updateData.templateId =
+      body.templateId === null
+        ? null
+        : typeof body.templateId === "number" && Number.isFinite(body.templateId)
+          ? body.templateId
+          : null;
+  }
 
   const [row] = await db
     .update(videos)
