@@ -20,10 +20,10 @@ const IG_API_BASE = "https://graph.instagram.com/v21.0";
 const TEMP_DIR = path.join(process.cwd(), "tmp-ig-videos");
 
 function getPublicBaseUrl(): string {
-  if (process.env.REPLIT_DEPLOYMENT_URL) {
-    return process.env.REPLIT_DEPLOYMENT_URL;
-  }
-  return `https://admin.webmakerchile.com`;
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
+  if (process.env.REPLIT_DEPLOYMENT_URL) return process.env.REPLIT_DEPLOYMENT_URL;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  return `https://admin.webmakerlatam.com`;
 }
 
 function getOAuth2Client(user: any) {

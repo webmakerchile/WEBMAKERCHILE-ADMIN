@@ -22,7 +22,9 @@ function restHeaders(token: string): Record<string, string> {
 }
 
 function getLinkedInRedirectUri(): string {
-  return process.env.LINKEDIN_REDIRECT_URI || "https://admin.webmakerchile.com/api/linkedin/callback";
+  if (process.env.LINKEDIN_REDIRECT_URI) return process.env.LINKEDIN_REDIRECT_URI;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/linkedin/callback`;
+  return "https://admin.webmakerlatam.com/api/linkedin/callback";
 }
 
 async function refreshLinkedInToken(user: any): Promise<string | null> {

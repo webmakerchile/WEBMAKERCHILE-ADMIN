@@ -12,7 +12,9 @@ const X_AUTH_BASE = "https://twitter.com/i/oauth2";
 const X_API_BASE = "https://api.twitter.com/2";
 
 function getXRedirectUri(): string {
-  return process.env.X_REDIRECT_URI || "https://admin.webmakerchile.com/api/x/callback";
+  if (process.env.X_REDIRECT_URI) return process.env.X_REDIRECT_URI;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/x/callback`;
+  return "https://admin.webmakerlatam.com/api/x/callback";
 }
 
 function generatePkce() {

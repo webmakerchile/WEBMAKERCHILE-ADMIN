@@ -81,8 +81,10 @@ async function getValidTikTokToken(user: any): Promise<string | null> {
 }
 
 function getPublicBaseUrl(): string {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
   if (process.env.REPLIT_DEPLOYMENT_URL) return process.env.REPLIT_DEPLOYMENT_URL;
-  return "https://admin.webmakerchile.com";
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  return "https://admin.webmakerlatam.com";
 }
 
 async function uploadToYouTube(video: any, user: any): Promise<{ success: boolean; error?: string }> {

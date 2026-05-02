@@ -25,7 +25,9 @@ function getGoogleOAuth2Client(user: any) {
 }
 
 function getTikTokRedirectUri(): string {
-  return process.env.TIKTOK_REDIRECT_URI || "https://admin.webmakerchile.com/api/tiktok/callback";
+  if (process.env.TIKTOK_REDIRECT_URI) return process.env.TIKTOK_REDIRECT_URI;
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/tiktok/callback`;
+  return "https://admin.webmakerlatam.com/api/tiktok/callback";
 }
 
 async function refreshTikTokToken(user: any): Promise<string | null> {
