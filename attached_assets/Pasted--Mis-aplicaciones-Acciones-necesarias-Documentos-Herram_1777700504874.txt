@@ -1,0 +1,67 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+Identificador de la aplicación
+1560364252477028
+Clave secreta de la aplicación
+Clave secreta de la aplicación
+●●●●●●●●
+Nombre para mostrar
+Nombre para mostrar
+Automatización Redes Sociales
+Espacio de nombres
+Espacio de nombres
+Dominios de la aplicación
+admin.webmakerlatam.com
+Correo electrónico de contacto
+​
+Correo electrónico de contacto
+webmakerchile@gmail.com
+URL de la Política de privacidad
+URL de la Política de privacidad
+https://admin.webmakerlatam.com/privacy
+URL de las Condiciones del servicio
+URL de las Condiciones del servicio
+https://admin.webmakerlatam.com/terms
+Eliminación de datos de usuario
+URL de devolución de llamada para la eliminación de datos
+​
+Eliminación de datos de usuario
+https://admin.webmakerlatam.com/privacy
+Icono de la aplicación (1024 x 1024)
+Categoría
+Empresa y páginas
+​
+Información de contacto del delegado de protección de datos
+El Reglamento General de Protección de Datos (RGPD) exige que determinadas empresas con actividad comercial en la Unión Europea designen un delegado de protección de datos para que las personas puedan ponerse en contacto con él para obtener información sobre el tratamiento de sus datos.
+Las personas podrán consultar los datos de contacto del delegado, así como otra información relativa a tu aplicación o sitio web en Facebook. Más información.
+Nombre
+∙
+Opcional
+Nombre∙Opcional
+Correo electrónico
+Correo electrónico
+Dirección
+Dirección postal
+Dirección postal
+Apartamento/oficina/otro∙Opcional
+Ciudad/distrito
+Estado/provincia/región
+Código postal
+Country
+United States
+​
+Sitio web
+URL del sitio
+URL del sitio
+https://admin.webmakerlatam.com/
+Proporciona instrucciones de prueba
+Meta realiza revisiones periódicas de aplicaciones en la plataforma para verificar que el acceso de una aplicación a los permisos cumple nuestros términos y políticas. Mantén actualizada esta información del test obligatoria para evitar que se apliquen restricciones inesperadas.
+Guardar cambiosDescartar
