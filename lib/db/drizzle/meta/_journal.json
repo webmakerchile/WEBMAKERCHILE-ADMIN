@@ -43,6 +43,13 @@
       "when": 1746230400000,
       "tag": "0005_saved_views",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1746316800000,
+      "tag": "0006_library",
+      "breakpoints": true
     }
   ]
 }

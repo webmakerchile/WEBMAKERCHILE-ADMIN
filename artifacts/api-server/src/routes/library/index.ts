@@ -7,7 +7,7 @@ import {
   videos,
   type TemplateFields,
 } from "@workspace/db/schema";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
 
 const router: IRouter = Router();
@@ -429,10 +429,26 @@ router.post("/library/campaigns/attach-videos", async (req: Request, res: Respon
     }
     campaignId = parsed;
   }
+  // Defense in depth: only mutate videos that are either unattached or already
+  // belong to a campaign owned by this user. The `videos` table is currently
+  // single-tenant (no `userId`), but constraining the WHERE clause via the
+  // user-scoped `campaigns` table prevents accidental cross-tenant updates if
+  // tenancy is added later, and matches the same userId check we apply when
+  // resolving the target campaign above.
+  const ownedCampaignIds = (
+    await db
+      .select({ id: campaigns.id })
+      .from(campaigns)
+      .where(eq(campaigns.userId, userId))
+  ).map((r) => r.id);
+  const ownershipFilter =
+    ownedCampaignIds.length > 0
+      ? or(isNull(videos.campaignId), inArray(videos.campaignId, ownedCampaignIds))
+      : isNull(videos.campaignId);
   const updated = await db
     .update(videos)
     .set({ campaignId, updatedAt: new Date() })
-    .where(inArray(videos.id, ids))
+    .where(and(inArray(videos.id, ids), ownershipFilter))
     .returning({ id: videos.id });
   res.json({ updated: updated.length, ids: updated.map((u) => u.id), campaignId });
 });

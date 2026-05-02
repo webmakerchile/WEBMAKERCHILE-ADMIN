@@ -7,6 +7,7 @@ import {
   TemplateAndCampaignSelector,
   fillTemplateVariables,
   type Campaign as LibraryCampaign,
+  type Template as LibraryTemplate,
 } from "@/components/library-controls";
 import type { Network } from "@/components/social-icons";
 import { Button } from "@/components/ui/button";
@@ -237,6 +238,7 @@ export default function VideosPage() {
   const [networkFilter, setNetworkFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<string>("all");
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
+  const [templateFilter, setTemplateFilter] = useState<string>("all");
   const [savingView, setSavingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [bulkMonth, setBulkMonth] = useState("");
@@ -278,6 +280,10 @@ export default function VideosPage() {
         if (campaignFilter === "none" && v.campaignId != null) return false;
         if (campaignFilter !== "none" && String(v.campaignId ?? "") !== campaignFilter) return false;
       }
+      if (templateFilter !== "all") {
+        if (templateFilter === "none" && v.templateId != null) return false;
+        if (templateFilter !== "none" && String(v.templateId ?? "") !== templateFilter) return false;
+      }
       if (!needle) return true;
       const haystack = [
         v.title,
@@ -296,14 +302,15 @@ export default function VideosPage() {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [videos, q, statusFilter, networkFilter, monthFilter, campaignFilter]);
+  }, [videos, q, statusFilter, networkFilter, monthFilter, campaignFilter, templateFilter]);
 
   const filtersActive =
     q.trim().length > 0 ||
     statusFilter !== "all" ||
     networkFilter !== "all" ||
     monthFilter !== "all" ||
-    campaignFilter !== "all";
+    campaignFilter !== "all" ||
+    templateFilter !== "all";
 
   const { data: campaigns = [] } = useQuery<LibraryCampaign[]>({
     queryKey: ["library", "campaigns"],
@@ -317,6 +324,14 @@ export default function VideosPage() {
     for (const c of campaigns) m.set(c.id, c);
     return m;
   }, [campaigns]);
+
+  const { data: templates = [] } = useQuery<LibraryTemplate[]>({
+    queryKey: ["library", "templates"],
+    queryFn: async () => {
+      const r = await apiFetch(`${API_BASE}/library/templates`);
+      return r.ok ? r.json() : [];
+    },
+  });
 
   // Drop selections that no longer match the current filtered set so the
   // action bar always reflects what the user actually sees.
@@ -513,9 +528,10 @@ export default function VideosPage() {
     setStatusFilter(view.filters.status || "all");
     setNetworkFilter(view.filters.network || "all");
     setMonthFilter(view.filters.month || "all");
-    // Saved views don't persist campaign yet — reset so applying a view yields
-    // predictable results instead of leaking the previous campaign filter.
+    // Saved views don't persist campaign/template yet — reset so applying a
+    // view yields predictable results instead of leaking the previous filters.
     setCampaignFilter("all");
+    setTemplateFilter("all");
     setSelectedIds(new Set());
   };
 
@@ -542,6 +558,7 @@ export default function VideosPage() {
     setNetworkFilter("all");
     setMonthFilter("all");
     setCampaignFilter("all");
+    setTemplateFilter("all");
   };
 
   // Bulk: assign month label to N videos using the existing bulk-update endpoint.
@@ -951,6 +968,18 @@ export default function VideosPage() {
                     <SelectItem value="none">Sin campaña</SelectItem>
                     {campaigns.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={templateFilter} onValueChange={setTemplateFilter}>
+                  <SelectTrigger className="sm:w-44 bg-card/40 border-foreground/10">
+                    <SelectValue placeholder="Todas las plantillas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las plantillas</SelectItem>
+                    <SelectItem value="none">Sin plantilla</SelectItem>
+                    {templates.map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
