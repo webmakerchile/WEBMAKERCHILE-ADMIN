@@ -898,4 +898,112 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   });
 });
 
+// ---- Best times to publish per network ----
+// Returns top-3 (dayOfWeek 0-6 = Mon-Sun, hour 0-23) suggestions per network.
+// Strategy: query the user's own published posts per network, bucket by
+// (dow, hour) using the `publishedAt` timestamp interpreted in the server's
+// local timezone (matches how the calendar UI displays scheduled times).
+// If the user has fewer than 3 distinct buckets for a network, fall back to
+// industry-standard defaults so the UI always has something useful to show.
+// `score` is normalised 0–100 (the top bucket = 100). `source` tells the
+// frontend whether it's history-driven or a default heuristic.
+type BestTimeSlot = { dow: number; hour: number; score: number; source: "history" | "default" };
+type Net = "youtube" | "instagram" | "tiktok" | "linkedin" | "x" | "facebook";
+
+const BEST_TIME_DEFAULTS: Record<Net, { dow: number; hour: number; score: number }[]> = {
+  // dow uses 0=Mon..6=Sun to match the UI's Lun-first calendar
+  youtube: [
+    { dow: 5, hour: 18, score: 100 }, // Sat 18:00
+    { dow: 6, hour: 12, score: 92 },  // Sun 12:00
+    { dow: 4, hour: 19, score: 88 },  // Fri 19:00
+  ],
+  instagram: [
+    { dow: 1, hour: 11, score: 100 }, // Tue 11:00
+    { dow: 2, hour: 14, score: 95 },  // Wed 14:00
+    { dow: 3, hour: 11, score: 90 },  // Thu 11:00
+  ],
+  tiktok: [
+    { dow: 0, hour: 19, score: 100 }, // Mon 19:00
+    { dow: 1, hour: 18, score: 95 },  // Tue 18:00
+    { dow: 3, hour: 21, score: 90 },  // Thu 21:00
+  ],
+  linkedin: [
+    { dow: 0, hour: 10, score: 100 }, // Mon 10:00
+    { dow: 1, hour: 9, score: 96 },   // Tue 09:00
+    { dow: 2, hour: 12, score: 92 },  // Wed 12:00
+  ],
+  x: [
+    { dow: 0, hour: 9, score: 100 },  // Mon 09:00
+    { dow: 2, hour: 12, score: 94 },  // Wed 12:00
+    { dow: 3, hour: 15, score: 90 },  // Thu 15:00
+  ],
+  facebook: [
+    { dow: 1, hour: 13, score: 100 }, // Tue 13:00
+    { dow: 2, hour: 15, score: 95 },  // Wed 15:00
+    { dow: 3, hour: 12, score: 90 },  // Thu 12:00
+  ],
+};
+
+router.get("/analytics/best-times", async (_req: Request, res: Response) => {
+  const NETS: Net[] = ["youtube", "instagram", "tiktok", "linkedin", "x", "facebook"];
+  // Map network → status column for the published filter
+  const STATUS_COL: Record<Net, ReturnType<typeof eq> extends never ? never : any> = {
+    youtube: videos.youtubeStatus,
+    instagram: videos.instagramStatus,
+    tiktok: videos.tiktokStatus,
+    linkedin: videos.linkedinStatus,
+    x: videos.xStatus,
+    facebook: videos.facebookStatus,
+  };
+  const out: Record<Net, BestTimeSlot[]> = {} as Record<Net, BestTimeSlot[]>;
+
+  await Promise.all(
+    NETS.map(async (net) => {
+      try {
+        const rows = await db
+          .select({ scheduledAt: videos.scheduledAt, publishedAt: videos.publishedAt })
+          .from(videos)
+          .where(
+            and(
+              eq(STATUS_COL[net], "published"),
+              // Need at least one timestamp to bucket from. Older posts may
+              // only have publishedAt; new ones typically have both.
+              sql`(${videos.scheduledAt} is not null OR ${videos.publishedAt} is not null)`,
+            ),
+          )
+          .limit(500);
+        const buckets = new Map<string, number>();
+        for (const r of rows) {
+          // Prefer scheduledAt (planning intent) when available; fall back to
+          // publishedAt for older rows. Both are TZ-aware timestamps.
+          const ts = r.scheduledAt || r.publishedAt;
+          if (!ts) continue;
+          const d = new Date(ts);
+          // Convert JS getDay() (0=Sun..6=Sat) to UI convention (0=Mon..6=Sun)
+          const dow = (d.getDay() + 6) % 7;
+          const hour = d.getHours();
+          const key = `${dow}_${hour}`;
+          buckets.set(key, (buckets.get(key) || 0) + 1);
+        }
+        if (buckets.size >= 3) {
+          const sorted = Array.from(buckets.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+          const max = sorted[0][1] || 1;
+          out[net] = sorted.map(([k, v]) => {
+            const [dow, hour] = k.split("_").map(Number);
+            return { dow, hour, score: Math.round((v / max) * 100), source: "history" };
+          });
+        } else {
+          out[net] = BEST_TIME_DEFAULTS[net].map((s) => ({ ...s, source: "default" }));
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Analytics][best-times] ${net} failed: ${msg}`);
+        out[net] = BEST_TIME_DEFAULTS[net].map((s) => ({ ...s, source: "default" }));
+      }
+    }),
+  );
+
+  res.json({ networks: out });
+});
+
 export default router;
