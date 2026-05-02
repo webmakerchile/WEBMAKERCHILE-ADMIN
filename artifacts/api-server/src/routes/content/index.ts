@@ -760,13 +760,25 @@ Formato de salida:
 { ${wanted.map((t) => `"${t}": "..."`).join(", ")} }`;
 
   try {
-    const resp = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+    // Preferir la API key propia del usuario (OPENAI_API_KEY) — el costo se
+    // carga a su cuenta de OpenAI. Si no está, caemos a la integración de
+    // Replit como respaldo.
+    const { default: OpenAI } = await import("openai");
+    const useOwnKey = !!process.env.OPENAI_API_KEY;
+    const openai = new OpenAI({
+      apiKey: useOwnKey
+        ? process.env.OPENAI_API_KEY
+        : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: useOwnKey ? undefined : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
     });
-    const text = (resp as any)?.candidates?.[0]?.content?.parts?.[0]?.text
-      || (resp as any)?.text
-      || "";
+    const model = process.env.OPENAI_TEMPLATE_MODEL || "gpt-4o-mini";
+    const resp = await openai.chat.completions.create({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      max_tokens: 1500,
+    });
+    const text = resp.choices[0]?.message?.content || "";
     let cleaned = String(text).trim();
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
     let parsed: Record<string, string>;
@@ -775,7 +787,7 @@ Formato de salida:
     } catch {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (!match) {
-        res.status(500).json({ error: "Gemini no devolvió JSON válido", raw: cleaned.slice(0, 500) });
+        res.status(502).json({ error: "La IA no devolvió JSON válido. Intenta de nuevo." });
         return;
       }
       parsed = JSON.parse(match[0]);
@@ -810,8 +822,10 @@ Formato de salida:
 
     res.json({ descriptions: parsed, video: updated });
   } catch (err: any) {
-    console.error("[generate-descriptions] error:", err.message);
-    res.status(500).json({ error: err.message || "Error generando descripciones" });
+    // No exponer mensajes del proveedor (pueden contener detalles operativos
+    // o, en algunos errores de OpenAI, fragmentos sensibles). Detalle solo en log.
+    console.error("[generate-descriptions] error:", err?.message || err);
+    res.status(502).json({ error: "No se pudo generar el contenido con IA. Intenta de nuevo en unos segundos." });
   }
 });
 

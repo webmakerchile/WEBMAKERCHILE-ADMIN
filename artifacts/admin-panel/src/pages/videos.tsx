@@ -2857,19 +2857,54 @@ function StepTikTokInstagram({
   isAutoGenerating: boolean;
   copyText: (text: string) => void;
 }) {
-  const showTikTokPlaceholder = isAutoGenerating && !formData.tiktokDescription;
-  const showInstagramPlaceholder = isAutoGenerating && !formData.instagramDescription;
+  const [aiBusy, setAiBusy] = useState(false);
+  const showTikTokPlaceholder = (isAutoGenerating || aiBusy) && !formData.tiktokDescription;
+  const showInstagramPlaceholder = (isAutoGenerating || aiBusy) && !formData.instagramDescription;
+  const generateAi = async () => {
+    if (!video?.id) return;
+    setAiBusy(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/generate-descriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platforms: ["tiktok", "instagram"], force: true }),
+      });
+      if (!res.ok) throw new Error("Error generando descripciones");
+      const data = await res.json();
+      setFormData((prev: any) => ({
+        ...prev,
+        ...(typeof data?.descriptions?.tiktok === "string" ? { tiktokDescription: data.descriptions.tiktok } : {}),
+        ...(typeof data?.descriptions?.instagram === "string" ? { instagramDescription: data.descriptions.instagram } : {}),
+      }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   return (
     <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
-        <CardTitle className="text-xl flex items-center gap-2">
-          <span className="text-2xl">📱</span>
-          TikTok e Instagram
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Escribe las descripciones para TikTok e Instagram. Incluye hashtags y emojis.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <span className="text-2xl">📱</span>
+              TikTok e Instagram
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Escribe las descripciones para TikTok e Instagram. Incluye hashtags y emojis.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={generateAi}
+            disabled={aiBusy || isAutoGenerating}
+            className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
+          >
+            {(aiBusy || isAutoGenerating) ? "Generando..." : "✨ Generar con IA"}
+          </button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2990,21 +3025,56 @@ function StepYouTube({
   isAutoGenerating: boolean;
   copyText: (text: string) => void;
 }) {
-  const showYoutubeTitlePlaceholder = isAutoGenerating && !formData.youtubeTitle;
-  const showYoutubeDescPlaceholder = isAutoGenerating && !formData.youtubeDescription;
+  const [aiBusy, setAiBusy] = useState(false);
+  const showYoutubeTitlePlaceholder = (isAutoGenerating || aiBusy) && !formData.youtubeTitle;
+  const showYoutubeDescPlaceholder = (isAutoGenerating || aiBusy) && !formData.youtubeDescription;
+  const generateAi = async () => {
+    if (!video?.id) return;
+    setAiBusy(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}/generate-descriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platforms: ["youtube"], force: true }),
+      });
+      if (!res.ok) throw new Error("Error generando descripciones");
+      const data = await res.json();
+      setFormData((prev: any) => ({
+        ...prev,
+        ...(typeof data?.descriptions?.youtube === "string" ? { youtubeDescription: data.descriptions.youtube } : {}),
+        ...(data?.video?.youtubeTitle && !prev.youtubeTitle ? { youtubeTitle: data.video.youtubeTitle } : {}),
+      }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   return (
     <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
-        <CardTitle className="text-xl flex items-center gap-2">
-          <span className="w-7 h-7 rounded bg-red-600 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
-          </span>
-          YouTube
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Título y descripción para YouTube Shorts. El título es diferente al de TikTok/Instagram.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <CardTitle className="text-xl flex items-center gap-2">
+              <span className="w-7 h-7 rounded bg-red-600 flex items-center justify-center">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+              </span>
+              YouTube
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Título y descripción para YouTube Shorts. El título es diferente al de TikTok/Instagram.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={generateAi}
+            disabled={aiBusy || isAutoGenerating}
+            className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
+          >
+            {(aiBusy || isAutoGenerating) ? "Generando..." : "✨ Generar con IA"}
+          </button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
@@ -3123,11 +3193,12 @@ function StepLinkedInX({
       });
       if (!res.ok) throw new Error("Error generando descripciones");
       const data = await res.json();
-      const next = { ...formData };
-      if (typeof data?.descriptions?.linkedin === "string") next.linkedinDescription = data.descriptions.linkedin;
-      if (typeof data?.descriptions?.x === "string") next.xDescription = data.descriptions.x.slice(0, 280);
-      if (typeof data?.descriptions?.facebook === "string") next.facebookDescription = data.descriptions.facebook.slice(0, 500);
-      setFormData(next);
+      setFormData((prev: any) => ({
+        ...prev,
+        ...(typeof data?.descriptions?.linkedin === "string" ? { linkedinDescription: data.descriptions.linkedin } : {}),
+        ...(typeof data?.descriptions?.x === "string" ? { xDescription: data.descriptions.x.slice(0, 280) } : {}),
+        ...(typeof data?.descriptions?.facebook === "string" ? { facebookDescription: data.descriptions.facebook.slice(0, 500) } : {}),
+      }));
     } catch (err) {
       console.error(err);
     } finally {
