@@ -282,12 +282,6 @@ export default function CuentasPage() {
                         Refrescar estado
                       </button>
                     )}
-                    {serverManaged && (
-                      <p className="text-[11px] text-muted-foreground/70 leading-relaxed flex items-start gap-1.5">
-                        <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>{serverManagedNote || "Gestionada por el servidor"}</span>
-                      </p>
-                    )}
                   </div>
                 ) : (
                   <div className="space-y-3">

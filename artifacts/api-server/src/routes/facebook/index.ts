@@ -66,7 +66,7 @@ router.get("/facebook/auth", (req: Request, res: Response) => {
     redirect_uri: redirectUri,
     state: csrfState,
     response_type: "code",
-    scope: "public_profile",
+    scope: "public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_metadata",
   });
 
   const authUrl = `${FB_AUTH_BASE}?${params.toString()}`;
