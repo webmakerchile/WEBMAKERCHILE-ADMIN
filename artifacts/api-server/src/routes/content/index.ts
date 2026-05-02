@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { users, videos } from "@workspace/db/schema";
+import { videos } from "@workspace/db/schema";
 import { eq, desc, lte, and } from "drizzle-orm";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
