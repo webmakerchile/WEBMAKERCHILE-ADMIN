@@ -84,7 +84,7 @@ type TopItem = {
   totals: { views: number; likes: number; comments: number; shares: number };
   engagement: number;
 };
-type TopResponse = { days: number; network: string; items: TopItem[] };
+type TopResponse = { days: number; network: string; items: TopItem[]; unsupported?: boolean; message?: string };
 
 type Insight = { type: "win" | "warning" | "info"; title: string; body: string };
 type InsightsResponse = { insights: Insight[] };
@@ -317,6 +317,12 @@ export default function InsightsPage() {
         {/* Comparativa */}
         {summaryQ.isLoading ? (
           <AnalyticsSkeleton />
+        ) : summaryQ.isError ? (
+          <Card className="bg-card/40 border-rose-500/30">
+            <CardContent className="p-6 text-center text-sm text-rose-400">
+              No se pudieron cargar las métricas. Revisa tu conexión y vuelve a intentar.
+            </CardContent>
+          </Card>
         ) : totalsForCards ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <CompareCard label="Vistas / alcance" value={totalsForCards.views.v} delta={totalsForCards.views.d} icon={<Eye className="w-3 h-3" />} />
@@ -363,6 +369,8 @@ export default function InsightsPage() {
             </div>
             {tsQ.isLoading ? (
               <div className="h-72 flex items-center justify-center text-xs text-muted-foreground">Cargando…</div>
+            ) : tsQ.isError ? (
+              <div className="h-72 flex items-center justify-center text-xs text-rose-400">Error al cargar la serie. Intenta de nuevo.</div>
             ) : chart.networks.length === 0 ? (
               <div className="h-72 flex items-center justify-center text-xs text-muted-foreground">Sin redes conectadas con datos.</div>
             ) : (
@@ -445,6 +453,14 @@ export default function InsightsPage() {
                   <div key={i} className="h-14 rounded-lg bg-foreground/5 animate-pulse" />
                 ))}
               </div>
+            ) : topQ.isError ? (
+              <p className="text-xs text-rose-400 text-center py-6">
+                No se pudo cargar el top de videos. Intenta de nuevo.
+              </p>
+            ) : topQ.data?.unsupported ? (
+              <p className="text-xs text-amber-400 text-center py-6">
+                {topQ.data.message || "Métricas por video no disponibles para esta red."}
+              </p>
             ) : (topQ.data?.items?.length || 0) === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-6">
                 No hay videos con métricas en este rango.

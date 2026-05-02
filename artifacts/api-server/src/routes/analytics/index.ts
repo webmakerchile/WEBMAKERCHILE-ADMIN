@@ -1087,9 +1087,22 @@ router.get("/analytics/top", async (req: Request, res: Response) => {
     .orderBy(desc(videos.publishedAt))
     .limit(200);
 
+  const wants = (n: string) => networkFilter === "all" || networkFilter === n;
+  const SUPPORTED_PER_VIDEO = new Set(["youtube", "instagram", "facebook", "x"]);
+  if (networkFilter !== "all" && !SUPPORTED_PER_VIDEO.has(networkFilter)) {
+    res.json({
+      days,
+      network: networkFilter,
+      items: [],
+      unsupported: true,
+      message: `Métricas por video no disponibles para ${networkFilter}. La API pública de esta red no expone estadísticas por publicación.`,
+    });
+    return;
+  }
+
   // YouTube batch (videos.list, up to 50 ids per call)
   const ytStats = new Map<string, TopMetric>();
-  const ytIds = rows.map((r) => r.youtubeVideoId).filter(Boolean) as string[];
+  const ytIds = wants("youtube") ? (rows.map((r) => r.youtubeVideoId).filter(Boolean) as string[]) : [];
   if (ytIds.length && user.googleAccessToken) {
     try {
       const auth = getOAuth2Client(user);
@@ -1114,7 +1127,7 @@ router.get("/analytics/top", async (req: Request, res: Response) => {
 
   // X batch (tweets?ids=, up to 100)
   const xStats = new Map<string, TopMetric>();
-  const xIds = rows.map((r) => r.xPostId).filter(Boolean) as string[];
+  const xIds = wants("x") ? (rows.map((r) => r.xPostId).filter(Boolean) as string[]) : [];
   if (xIds.length) {
     const token = await getValidXToken(user);
     if (token) {
@@ -1144,7 +1157,7 @@ router.get("/analytics/top", async (req: Request, res: Response) => {
 
   // IG per-media (limited to keep request bounded)
   const igStats = new Map<string, TopMetric>();
-  if (INSTAGRAM_ACCESS_TOKEN) {
+  if (INSTAGRAM_ACCESS_TOKEN && wants("instagram")) {
     const igIds = (rows.map((r) => r.instagramMediaId).filter(Boolean) as string[]).slice(0, 50);
     await Promise.all(igIds.map(async (id) => {
       try {
@@ -1166,7 +1179,7 @@ router.get("/analytics/top", async (req: Request, res: Response) => {
   // Facebook per-post (basic engagement counts)
   const fbStats = new Map<string, TopMetric>();
   const fbToken = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim() || user.facebookPageAccessToken || "";
-  if (fbToken) {
+  if (fbToken && wants("facebook")) {
     const fbIds = (rows.map((r) => r.facebookPostId).filter(Boolean) as string[]).slice(0, 50);
     await Promise.all(fbIds.map(async (id) => {
       try {
