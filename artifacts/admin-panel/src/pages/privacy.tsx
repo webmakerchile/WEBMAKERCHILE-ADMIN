@@ -11,7 +11,7 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">1. Introducción</h2>
             <p>
-              WebMakerChile ("nosotros", "nuestro") opera la plataforma de gestión de contenido disponible en admin.webmakerchile.com ("el Servicio"). Esta Política de Privacidad explica cómo recopilamos, usamos, almacenamos y protegemos su información personal.
+              WebMakerChile ("nosotros", "nuestro") opera la plataforma de gestión de contenido disponible en admin.webmakerlatam.com ("el Servicio"). Esta Política de Privacidad explica cómo recopilamos, usamos, almacenamos y protegemos su información personal.
             </p>
           </section>
 
