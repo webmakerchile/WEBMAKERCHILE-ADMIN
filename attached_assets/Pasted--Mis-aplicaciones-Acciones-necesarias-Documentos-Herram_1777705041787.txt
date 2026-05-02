@@ -1,0 +1,90 @@
+
+Mis aplicaciones
+Acciones necesarias
+Documentos
+Herramientas
+Ayuda
+Buscar entrada
+​
+Buscar...
+Facebook
+Casos de uso
+Personalizar
+Personaliza el caso de uso
+Personaliza la configuración de los casos de uso y los permisos para que tu aplicación funcione como tú quieres.
+Modificador de caso de uso
+​
+Inicio de sesión de Facebook
+​
+Permisos y funciones
+Llamadas a la API
+​
+Estado
+Acción
+email
+El permiso email permite que tu aplicación lea la dirección de correo electrónico principal de una persona.
+…
+Descripción completa
+Requisitos
+public_profile
+El permiso public_profile hace posible que una aplicación lea los campos del perfil público predeterminado en el nodo Usuario . Se concede automáticamente a todas las aplicaciones.
+…
+Descripción completa
+Requisitos
+0
+Listo para prueba
+user_age_range
+El permiso user_gender_range permite que la aplicación acceda al intervalo de edad de una persona, según la información que aparece en su perfil de Facebook.
+…
+Descripción completa
+Requisitos
+user_birthday
+El permiso user_birthday permite que la aplicación determine la fecha de nacimiento de una persona, según la información que aparece en su perfil de Facebook.
+…
+Descripción completa
+Requisitos
+user_friends
+El permiso user_friends permite que la aplicación obtenga una lista de los amigos de una persona que también la usan.
+…
+Descripción completa
+Requisitos
+user_gender
+El permiso user_gender permite que la aplicación determine el sexo de una persona, según la información que aparece en su perfil de Facebook.
+…
+Descripción completa
+Requisitos
+user_hometown
+El permiso user_hometown permite que la aplicación lea la localidad natal de una persona en su perfil de Facebook.
+…
+Descripción completa
+Requisitos
+user_likes
+El permiso user_likes hace posible que la aplicación lea una lista de todas las páginas de Facebook que un usuario ha indicado que le gustan.
+…
+Descripción completa
+Requisitos
+user_link
+El permiso user_link permite que la aplicación acceda a la URL del perfil de Facebook de las personas que la utilizan.
+…
+Descripción completa
+Requisitos
+user_location
+El permiso user_location permite que la aplicación lea el nombre de la ciudad, tal y como figura en el campo de ubicación del perfil de Facebook de la persona.
+…
+Descripción completa
+Requisitos
+user_photos
+El permiso user_photos permite que la aplicación lea las fotos que una persona ha subido a Facebook.
+…
+Descripción completa
+Requisitos
+user_posts
+El permiso user_posts concede acceso a la aplicación a las publicaciones que el usuario ha realizado en su biografía.
+…
+Descripción completa
+Requisitos
+user_videos
+El permiso user_videos permite que la aplicación lea la lista de los vídeos que ha subido una persona.
+…
+Descripción completa
+Requisitos
