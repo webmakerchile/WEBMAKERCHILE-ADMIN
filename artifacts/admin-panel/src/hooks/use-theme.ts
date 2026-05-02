@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 export type ThemeMode = "light" | "dark" | "system";
 
 const STORAGE_KEY = "webmaker.theme";
+const THEME_EVENT = "webmaker:theme-change";
 
 function getSystemPrefersDark(): boolean {
   if (typeof window === "undefined") return false;
@@ -72,6 +73,24 @@ export function useTheme(): {
     return () => window.removeEventListener("storage", handler);
   }, []);
 
+  // Sincronizar entre múltiples instancias del hook en la MISMA pestaña.
+  // El evento `storage` no se dispara en la pestaña que escribió, por eso
+  // emitimos un CustomEvent al cambiar y todas las instancias lo reciben.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: Event) => {
+      const next = (e as CustomEvent<ThemeMode>).detail;
+      if (next !== "light" && next !== "dark" && next !== "system") return;
+      setModeState(next);
+      setResolved(
+        next === "system" ? (getSystemPrefersDark() ? "dark" : "light") : next,
+      );
+    };
+    window.addEventListener(THEME_EVENT, handler as EventListener);
+    return () =>
+      window.removeEventListener(THEME_EVENT, handler as EventListener);
+  }, []);
+
   const setMode = useCallback((next: ThemeMode) => {
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
@@ -80,6 +99,11 @@ export function useTheme(): {
     }
     setModeState(next);
     setResolved(applyTheme(next));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent<ThemeMode>(THEME_EVENT, { detail: next }),
+      );
+    }
   }, []);
 
   const cycle = useCallback(() => {
