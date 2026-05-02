@@ -129,7 +129,9 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
       ...base,
       displayName: raw.user.name,
       picture: raw.user.picture,
-      meta: raw.user.orgUrn ? "Página de empresa" : "Perfil personal",
+      meta: raw.user.orgUrn
+        ? `Página de empresa${raw.user.orgName ? ": " + raw.user.orgName : ""}`
+        : "Perfil personal",
     };
   }
   if (network === "x" && raw.user) {

@@ -84,7 +84,7 @@ router.get("/linkedin/auth", (req: Request, res: Response) => {
     client_id: LINKEDIN_CLIENT_ID,
     redirect_uri: redirectUri,
     state: csrfState,
-    scope: "openid profile email w_member_social",
+    scope: "openid profile email w_member_social r_organization_social w_organization_social",
   });
   const authUrl = `${LINKEDIN_AUTH_BASE}/authorization?${params.toString()}`;
   console.log(`[LinkedIn] Redirecting to: ${authUrl}`);
@@ -160,16 +160,42 @@ router.get("/linkedin/callback", async (req: Request, res: Response) => {
       console.error("[LinkedIn] userinfo fetch failed:", err.message);
     }
 
+    // Auto-detect organization pages the user admins
+    let orgUrn: string | null = null;
+    try {
+      const orgRes = await fetch(
+        `${LINKEDIN_API_BASE}/rest/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenData.access_token}`,
+            "LinkedIn-Version": LINKEDIN_REST_VERSION,
+            "X-Restli-Protocol-Version": "2.0.0",
+          },
+        }
+      );
+      if (orgRes.ok) {
+        const orgData: any = await orgRes.json();
+        const elements = orgData.elements || [];
+        if (elements.length > 0) {
+          orgUrn = elements[0].organizationalTarget || null;
+          console.log(`[LinkedIn] Auto-detected org: ${orgUrn}`);
+        }
+      }
+    } catch (err: any) {
+      console.warn("[LinkedIn] org auto-detect failed:", err.message);
+    }
+
     await db.update(users).set({
       linkedinAccessToken: tokenData.access_token,
       linkedinRefreshToken: tokenData.refresh_token || null,
       linkedinTokenExpiresAt: new Date(Date.now() + (tokenData.expires_in || 3600) * 1000),
       linkedinPersonUrn: personUrn,
+      linkedinOrgUrn: orgUrn,
       linkedinName: name,
       linkedinPicture: picture,
     }).where(eq(users.id, currentUser.id));
 
-    console.log(`[LinkedIn] Connected for user ${currentUser.id}, urn: ${personUrn}`);
+    console.log(`[LinkedIn] Connected for user ${currentUser.id}, urn: ${personUrn}, org: ${orgUrn}`);
     res.redirect("/?linkedin=connected");
   } catch (err: any) {
     console.error("[LinkedIn] Callback error:", err.message);
@@ -188,13 +214,44 @@ router.get("/linkedin/status", async (req: Request, res: Response) => {
     res.json({ connected: false, message: "Token de LinkedIn expirado. Reconecta tu cuenta." });
     return;
   }
+
+  // If org is selected, fetch org name and logo from LinkedIn
+  let orgName: string | null = null;
+  let orgLogo: string | null = null;
+  if (user.linkedinOrgUrn) {
+    try {
+      const orgId = user.linkedinOrgUrn.replace("urn:li:organization:", "");
+      const orgRes = await fetch(
+        `${LINKEDIN_API_BASE}/rest/organizations/${orgId}?fields=id,localizedName,logoV2`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "LinkedIn-Version": LINKEDIN_REST_VERSION,
+            "X-Restli-Protocol-Version": "2.0.0",
+          },
+        }
+      );
+      if (orgRes.ok) {
+        const orgData: any = await orgRes.json();
+        orgName = orgData.localizedName || null;
+        orgLogo = orgData.logoV2?.["original~"]?.elements?.[0]?.identifiers?.[0]?.identifier || null;
+      }
+    } catch (err: any) {
+      console.warn("[LinkedIn] org fetch failed:", err.message);
+    }
+  }
+
   res.json({
     connected: true,
     user: {
       personUrn: user.linkedinPersonUrn,
       orgUrn: user.linkedinOrgUrn,
-      name: user.linkedinName,
-      picture: user.linkedinPicture,
+      name: orgName || user.linkedinName,
+      picture: orgLogo || user.linkedinPicture,
+      orgName,
+      orgLogo,
+      personalName: user.linkedinName,
+      personalPicture: user.linkedinPicture,
     },
   });
 });
