@@ -895,7 +895,8 @@ function MonthView({
   onDayClick: (date: Date) => void;
 }) {
   const DOW_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-  const MAX_DOTS = 5;
+  // Show up to 4 per-publication chips; excess shown as "+N"
+  const MAX_CHIPS = 4;
 
   return (
     <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
@@ -914,17 +915,18 @@ function MonthView({
           const key = date.toDateString();
           const isToday = key === today;
           const videos = videosByDay[key] || [];
-          const isCurrentMonth = inMonth;
-          const networks = Array.from(new Set(videos.flatMap((v) => videoNetworks(v).map((n) => n.network))));
+          const visible = videos.slice(0, MAX_CHIPS);
+          const overflow = videos.length - MAX_CHIPS;
 
           return (
             <button
               key={idx}
               onClick={() => onDayClick(date)}
               className={`min-h-[80px] p-1.5 text-left border-b border-r border-white/[0.04] transition hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-primary/40 ${
-                !isCurrentMonth ? "opacity-30" : ""
+                !inMonth ? "opacity-30" : ""
               } ${isToday ? "bg-primary/5" : ""}`}
             >
+              {/* Day number + count badge */}
               <div className="flex items-center justify-between mb-1">
                 <span
                   className={`text-[11px] font-semibold w-5 h-5 flex items-center justify-center rounded-full ${
@@ -940,21 +942,31 @@ function MonthView({
                 )}
               </div>
 
-              {/* Network icon dots */}
-              {networks.length > 0 && (
-                <div className="flex flex-wrap gap-0.5 mb-1">
-                  {networks.slice(0, MAX_DOTS).map((net) => (
-                    <span
-                      key={net}
-                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ${NETWORK_BG[net]}`}
-                      title={net}
-                    >
-                      <NetworkIcon network={net} className="w-2 h-2" />
-                    </span>
-                  ))}
-                  {networks.length > MAX_DOTS && (
-                    <span className="w-3.5 h-3.5 rounded-full bg-white/10 text-[7px] flex items-center justify-center">
-                      +{networks.length - MAX_DOTS}
+              {/* Per-publication chips (one dot per post, using its first network) */}
+              {visible.length > 0 && (
+                <div className="flex flex-wrap gap-0.5 mb-0.5">
+                  {visible.map((v) => {
+                    const nets = videoNetworks(v);
+                    const primaryNet = nets[0]?.network;
+                    return primaryNet ? (
+                      <span
+                        key={v.id}
+                        className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ring-1 ring-background ${NETWORK_BG[primaryNet]}`}
+                        title={v.title || primaryNet}
+                      >
+                        <NetworkIcon network={primaryNet} className="w-2 h-2" />
+                      </span>
+                    ) : (
+                      <span
+                        key={v.id}
+                        className="w-3.5 h-3.5 rounded-full bg-white/20 ring-1 ring-background"
+                        title={v.title || "Sin red"}
+                      />
+                    );
+                  })}
+                  {overflow > 0 && (
+                    <span className="w-3.5 h-3.5 rounded-full bg-white/10 text-[7px] flex items-center justify-center ring-1 ring-background">
+                      +{overflow}
                     </span>
                   )}
                 </div>
@@ -962,9 +974,8 @@ function MonthView({
 
               {/* First video title preview */}
               {videos[0] && (
-                <p className="text-[9px] leading-tight text-muted-foreground line-clamp-2 mt-0.5">
+                <p className="text-[9px] leading-tight text-muted-foreground line-clamp-1 mt-0.5">
                   {videos[0].title || "Sin título"}
-                  {videos.length > 1 && ` +${videos.length - 1} más`}
                 </p>
               )}
             </button>
