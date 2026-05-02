@@ -590,13 +590,15 @@ async function processScheduledVideos() {
         }
       }
 
+      // Facebook is opt-in: only publish when the wizard explicitly set facebookStatus="pending"
+      const facebookIncluded = video.facebookStatus === "pending";
       const freshUser6 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (freshUser6) {
-        if (video.facebookDescription || video.description) {
+        if (facebookIncluded) {
           results.facebook = await publishToFacebookStep(video, freshUser6);
         } else {
           results.facebook = { success: true };
-          console.log(`[Scheduler] Facebook skipped (no description)`);
+          console.log(`[Scheduler] Facebook skipped (not included by user)`);
         }
       }
 
@@ -622,14 +624,14 @@ async function processScheduledVideos() {
         video.instagramDescription ||
         video.linkedinDescription ||
         video.xDescription ||
-        (video.videoFileDriveId && (video.facebookDescription || video.description));
+        facebookIncluded;
       const anyRealSuccess =
         (results.youtube.success && (video.youtubeTitle || video.youtubeDescription)) ||
         (results.tiktok.success && (video.tiktokDescription || video.description)) ||
         (results.instagram.success && (video.instagramDescription || video.description)) ||
         (results.linkedin.success && video.linkedinDescription) ||
         (results.x.success && video.xDescription) ||
-        (results.facebook.success && video.videoFileDriveId && (video.facebookDescription || video.description));
+        (results.facebook.success && facebookIncluded);
 
       let nextStatus: string;
       if (allSuccess && anyAttempted) nextStatus = "published";
