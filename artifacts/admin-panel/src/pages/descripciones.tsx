@@ -4,6 +4,8 @@ import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLe
 import { motion } from "framer-motion";
 import JSZip from "jszip";
 import { RETRY_PRESETS } from "@/lib/retry-presets";
+import { EmptyState } from "@/components/empty-state";
+import { HelpHint } from "@/components/help-hint";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -317,7 +319,13 @@ export default function DescripcionesPage() {
     <Layout>
       <div className="space-y-8 max-w-6xl mx-auto">
         <header>
-          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Generador de Descripciones</h1>
+          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
+            Generador de Descripciones
+            <HelpHint
+              text="La IA crea imagen(es) y descripciones por red social a partir de un tema. 'Sorpréndeme' propone un tema o lo ajusta al contexto que ya escribiste. Si eliges Carrusel, recibirás varias slides 4:5 listas para Instagram."
+              side="bottom"
+            />
+          </h1>
           <p className="text-muted-foreground text-sm sm:text-lg">
             Imágenes + texto listo para publicar en TikTok, Instagram, YouTube Shorts y X.
           </p>
@@ -505,6 +513,15 @@ export default function DescripcionesPage() {
             )}
           </button>
         </motion.form>
+
+        {!loading && !resultado && !error && (
+          <EmptyState
+            icon={Sparkles}
+            title="Aún no has generado ninguna descripción"
+            description="Escribe un tema, elige tipo de contenido y formato, y la IA generará imagen(es) + textos por red social. Tarda unos segundos."
+            size="md"
+          />
+        )}
 
         {loading && (
           <div className="space-y-3">

@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { WhatsNewBanner } from "@/components/whats-new-banner";
+import { HelpHint } from "@/components/help-hint";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -1004,6 +1005,7 @@ function UpcomingPosts() {
         <h2 className="text-base font-display font-bold flex items-center gap-2">
           <CalendarClock className="w-4 h-4 text-primary" />
           Próximas publicaciones
+          <HelpHint text="Muestra los próximos videos programados, ordenados de más cercano a más lejano. Los estados muestran si están listos (programado) o ya publicados." />
         </h2>
         <Link to="/schedule" className="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5">
           Ver todo <ArrowRight className="w-3 h-3" />
@@ -1259,6 +1261,10 @@ function RecentActivity() {
         <h2 className="text-lg font-display font-bold flex items-center gap-2">
           <History className="w-4 h-4 text-primary" />
           Actividad reciente
+          <HelpHint
+            text="Cada fila muestra una publicación reciente y un punto por red (verde = publicado, azul = subido, rojo = error). Si una red falló, puedes reintentar desde aquí."
+            side="bottom"
+          />
         </h2>
         <span className="text-[11px] text-muted-foreground">{activity.length} publicaciones</span>
       </div>

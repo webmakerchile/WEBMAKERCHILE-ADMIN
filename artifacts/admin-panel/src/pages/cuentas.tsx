@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
 import { CheckCircle2, Loader2, Link2, Unlink, Info, Building2, User, ChevronDown, Search } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
+import { HelpHint } from "@/components/help-hint";
+import { EmptyState } from "@/components/empty-state";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -263,15 +265,36 @@ export default function CuentasPage() {
     fetchOne(network, statusEndpoint);
   };
 
+  const anyLoading = Object.values(accounts).some((a) => a.loading);
+  const noNetworksConnected = useMemo(
+    () => !anyLoading && Object.values(accounts).every((a) => !a.connected),
+    [accounts, anyLoading],
+  );
+
   return (
     <Layout>
       <div className="space-y-8">
         <header>
-          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Cuentas Sociales</h1>
+          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
+            Cuentas Sociales
+            <HelpHint
+              text="Conecta cada red para publicar y traer estadísticas. Algunas redes (Facebook, Instagram) usan credenciales de servidor: aparecen como conectadas si el administrador configuró las llaves correspondientes."
+              side="bottom"
+            />
+          </h1>
           <p className="text-muted-foreground text-sm sm:text-lg">
             Conecta tus redes sociales para publicar y traer estadísticas a tu Inicio.
           </p>
         </header>
+
+        {noNetworksConnected && (
+          <EmptyState
+            icon={Link2}
+            title="Aún no has conectado ninguna red social"
+            description="Comienza por conectar al menos una red abajo. Cada red habilita publicar videos, descripciones e historias en su plataforma."
+            size="sm"
+          />
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {NETWORKS.map(({ network, endpoints, description, serverManaged, serverManagedNote }, idx) => {
@@ -289,8 +312,16 @@ export default function CuentasPage() {
                   <span className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${NETWORK_BG[network]}`}>
                     <NetworkIcon network={network} className="w-5 h-5" />
                   </span>
-                  <div className="min-w-0">
-                    <h2 className="text-lg font-display font-bold leading-tight">{NETWORK_LABELS[network]}</h2>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-display font-bold leading-tight flex items-center gap-1.5">
+                      {NETWORK_LABELS[network]}
+                      {serverManaged && (
+                        <HelpHint
+                          text={serverManagedNote || "Esta red usa credenciales del servidor configuradas por el administrador."}
+                          side="right"
+                        />
+                      )}
+                    </h2>
                     <p className="text-xs text-muted-foreground truncate">{description}</p>
                   </div>
                 </div>

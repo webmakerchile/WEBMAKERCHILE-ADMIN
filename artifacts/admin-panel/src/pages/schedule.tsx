@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { EmptyState } from "@/components/empty-state";
+import { HelpHint } from "@/components/help-hint";
 import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
 import {
   Dialog,
@@ -421,7 +422,13 @@ export default function SchedulePage() {
       <div className="space-y-6">
         <header className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Publicaciones</h1>
+            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
+              Publicaciones
+              <HelpHint
+                text="Aquí ves tus publicaciones programadas. El anillo de cada video indica su estado: verde = publicado, azul = subido, ámbar = pendiente, rojo = error. Usa 'Ejecutar Cola' para procesar manualmente las pendientes."
+                side="bottom"
+              />
+            </h1>
             <p className="text-muted-foreground text-sm sm:text-lg">
               {view === "month"
                 ? "Vista mensual de tus publicaciones programadas."

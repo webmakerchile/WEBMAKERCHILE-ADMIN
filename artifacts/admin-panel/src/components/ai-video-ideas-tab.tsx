@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
+import { HelpHint } from "@/components/help-hint";
 import {
   Check,
   Trash2,
@@ -402,6 +403,10 @@ export default function AiVideoIdeasTab() {
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-4 h-4 text-orange-400" />
             <span className="text-sm font-semibold text-foreground">Generador de Ideas</span>
+            <HelpHint
+              text="La IA propone títulos y guiones de video según la categoría que elijas. Puedes guardar las que te gusten para luego convertirlas en videos. El contexto opcional ajusta el enfoque (nicho, tono, audiencia)."
+              side="right"
+            />
           </div>
 
           <textarea

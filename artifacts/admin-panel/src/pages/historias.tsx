@@ -7,6 +7,8 @@ import {
 import { motion } from "framer-motion";
 import JSZip from "jszip";
 import { RETRY_PRESETS } from "@/lib/retry-presets";
+import { EmptyState } from "@/components/empty-state";
+import { HelpHint } from "@/components/help-hint";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -318,7 +320,13 @@ export default function HistoriasPage() {
     <Layout>
       <div className="space-y-8 max-w-5xl mx-auto">
         <header>
-          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Generador de Historias</h1>
+          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
+            Generador de Historias
+            <HelpHint
+              text="Crea historias verticales 9:16 listas para Instagram/TikTok. Elige formato Única (1 imagen), Serie (2-5 frames conectados con narrativa) o Auto (la IA decide según tu concepto)."
+              side="bottom"
+            />
+          </h1>
           <p className="text-muted-foreground text-sm sm:text-lg">
             Crea historias 9:16 — únicas o en serie de 2-5 frames conectados.
           </p>
