@@ -84,7 +84,7 @@ router.get("/linkedin/auth", (req: Request, res: Response) => {
     client_id: LINKEDIN_CLIENT_ID,
     redirect_uri: redirectUri,
     state: csrfState,
-    scope: "openid profile email w_member_social w_organization_social rw_organization_admin",
+    scope: "openid profile email w_member_social",
   });
   const authUrl = `${LINKEDIN_AUTH_BASE}/authorization?${params.toString()}`;
   console.log(`[LinkedIn] Redirecting to: ${authUrl}`);
