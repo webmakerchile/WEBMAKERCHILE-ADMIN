@@ -591,7 +591,8 @@ async function processScheduledVideos() {
       }
 
       // Facebook is opt-in: only publish when the wizard explicitly set facebookStatus="pending"
-      const facebookIncluded = video.facebookStatus === "pending";
+      // AND facebookDescription is present (double-guard against schema default="pending")
+      const facebookIncluded = video.facebookStatus === "pending" && !!video.facebookDescription;
       const freshUser6 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (freshUser6) {
         if (facebookIncluded) {

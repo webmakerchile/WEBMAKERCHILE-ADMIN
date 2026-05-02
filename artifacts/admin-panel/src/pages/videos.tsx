@@ -655,7 +655,7 @@ function VideoWizard({
           {currentStep === "review" && video && (
             <StepReview
               video={{ ...video, ...formData }}
-              onSchedule={() => {
+              onSchedule={(includeFacebook) => {
                 let scheduledDate: Date;
                 const hour = formData.scheduleHour;
                 if (hour && /^\d{1,2}:\d{2}$/.test(hour)) {
@@ -668,7 +668,6 @@ function VideoWizard({
                 } else {
                   scheduledDate = new Date();
                 }
-                const facebookPatch = formData.facebookDescription ? { facebookStatus: "pending" } : {};
                 onUpdate({
                   status: "scheduled",
                   tiktokStatus: "pending",
@@ -676,11 +675,12 @@ function VideoWizard({
                   youtubeStatus: "pending",
                   linkedinStatus: "pending",
                   xStatus: "pending",
-                  ...facebookPatch,
+                  facebookStatus: includeFacebook ? "pending" : "skipped",
                   scheduledAt: scheduledDate.toISOString(),
                 });
+                const platforms = includeFacebook ? "6 plataformas" : "5 plataformas";
                 toast({
-                  title: "¡Programado en las 6 plataformas!",
+                  title: `¡Programado en las ${platforms}!`,
                   description: hour
                     ? `Se subirá automáticamente a las ${hour} hrs`
                     : "Se subirá automáticamente ahora",
@@ -1652,7 +1652,7 @@ function StepReview({
   copyText,
 }: {
   video: VideoData & Record<string, any>;
-  onSchedule: () => void;
+  onSchedule: (includeFacebook: boolean) => void;
   onPrev: () => void;
   isPending: boolean;
   copyText: (text: string) => void;
@@ -1668,6 +1668,7 @@ function StepReview({
   const [showYtDrivePicker, setShowYtDrivePicker] = useState(false);
   const [showTtDrivePicker, setShowTtDrivePicker] = useState(false);
   const [showIgDrivePicker, setShowIgDrivePicker] = useState(false);
+  const [includeFacebook, setIncludeFacebook] = useState(!!video.facebookDescription);
   const queryClient = useQueryClient();
 
   const hasVideoFile = !!video.videoFileDriveId;
@@ -2425,18 +2426,34 @@ function StepReview({
               Anterior
             </Button>
             {!isScheduled && (
-              <Button
-                onClick={onSchedule}
-                disabled={!allComplete || isPending}
-                className="bg-gradient-to-r from-green-600 to-emerald-500 shadow-lg shadow-green-900/25"
-              >
-                {isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4 mr-2" />
+              <div className="flex items-center gap-3 flex-wrap justify-end">
+                {video.facebookDescription && (
+                  <label className="flex items-center gap-2 cursor-pointer text-sm select-none">
+                    <input
+                      type="checkbox"
+                      checked={includeFacebook}
+                      onChange={(e) => setIncludeFacebook(e.target.checked)}
+                      className="w-4 h-4 accent-[#1877F2] rounded"
+                    />
+                    <span className="w-5 h-5 rounded bg-[#1877F2] flex items-center justify-center flex-shrink-0">
+                      <svg viewBox="0 0 24 24" className="w-3 h-3 fill-white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                    </span>
+                    <span>Incluir Facebook</span>
+                  </label>
                 )}
-                Programar en las 3 Plataformas
-              </Button>
+                <Button
+                  onClick={() => onSchedule(includeFacebook)}
+                  disabled={!allComplete || isPending}
+                  className="bg-gradient-to-r from-green-600 to-emerald-500 shadow-lg shadow-green-900/25"
+                >
+                  {isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4 mr-2" />
+                  )}
+                  Programar
+                </Button>
+              </div>
             )}
           </div>
         </CardContent>
