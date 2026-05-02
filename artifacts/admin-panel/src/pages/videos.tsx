@@ -264,6 +264,7 @@ export default function VideosPage() {
       if (!res.ok) return [];
       return res.json();
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const availableMonths = useMemo(() => {
@@ -320,6 +321,7 @@ export default function VideosPage() {
       const r = await apiFetch(`${API_BASE}/library/campaigns`);
       return r.ok ? r.json() : [];
     },
+    staleTime: 5 * 60 * 1000,
   });
   const campaignsById = useMemo(() => {
     const m = new Map<number, LibraryCampaign>();
@@ -333,6 +335,7 @@ export default function VideosPage() {
       const r = await apiFetch(`${API_BASE}/library/templates`);
       return r.ok ? r.json() : [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   // Drop selections that no longer match the current filtered set so the
@@ -469,12 +472,24 @@ export default function VideosPage() {
       if (!res.ok) throw new Error("Error al eliminar videos");
       return res.json() as Promise<{ deleted: number; ids: number[] }>;
     },
+    onMutate: async (ids: number[]) => {
+      await queryClient.cancelQueries({ queryKey: ["videos"] });
+      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      if (previous) {
+        const set = new Set(ids);
+        queryClient.setQueryData<VideoData[]>(["videos"], previous.filter((v) => !set.has(v.id)));
+      }
+      return { previous };
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedIds(new Set());
       toast({ title: `${data.deleted} videos eliminados` });
     },
-    onError: () => toast({ title: "No se pudieron eliminar los videos", variant: "destructive" }),
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      toast({ title: "No se pudieron eliminar los videos", variant: "destructive" });
+    },
   });
 
   const bulkUpdateMutation = useMutation({
@@ -487,11 +502,26 @@ export default function VideosPage() {
       if (!res.ok) throw new Error("Error al actualizar");
       return res.json() as Promise<{ updated: number; ids: number[] }>;
     },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ["videos"] });
+      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      if (previous) {
+        const set = new Set(vars.ids);
+        queryClient.setQueryData<VideoData[]>(
+          ["videos"],
+          previous.map((v) => (set.has(v.id) ? ({ ...v, ...vars.patch } as VideoData) : v)),
+        );
+      }
+      return { previous };
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       toast({ title: `${data.updated} videos actualizados` });
     },
-    onError: () => toast({ title: "No se pudieron actualizar los videos", variant: "destructive" }),
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      toast({ title: "No se pudieron actualizar los videos", variant: "destructive" });
+    },
   });
 
   const createSavedViewMutation = useMutation({
@@ -726,11 +756,23 @@ export default function VideosPage() {
       }
       return res.json();
     },
+    onMutate: async ({ id, ...patch }) => {
+      await queryClient.cancelQueries({ queryKey: ["videos"] });
+      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      if (previous) {
+        queryClient.setQueryData<VideoData[]>(
+          ["videos"],
+          previous.map((v) => (v.id === id ? ({ ...v, ...patch } as VideoData) : v)),
+        );
+      }
+      return { previous };
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(data);
     },
-    onError: (err: Error) => {
+    onError: (err: Error, _vars, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
       toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
     },
   });
@@ -752,12 +794,25 @@ export default function VideosPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiFetch(`${API_BASE}/content/videos/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error("Error al eliminar");
+    },
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ["videos"] });
+      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      if (previous) {
+        queryClient.setQueryData<VideoData[]>(["videos"], previous.filter((v) => v.id !== id));
+      }
+      return { previous };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(null);
       toast({ title: "Video eliminado" });
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      toast({ title: "No se pudo eliminar el video", variant: "destructive" });
     },
   });
 

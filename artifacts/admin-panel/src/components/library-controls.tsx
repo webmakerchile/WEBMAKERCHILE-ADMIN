@@ -57,6 +57,7 @@ export function LibraryControls({
       const r = await fetch(`${API_BASE}/library/hashtag-groups`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const visibleGroups = groups.filter(
@@ -178,6 +179,7 @@ export function TemplateAndCampaignSelector({
       const r = await fetch(`${API_BASE}/library/templates`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: campaigns = [] } = useQuery<Campaign[]>({
@@ -186,6 +188,7 @@ export function TemplateAndCampaignSelector({
       const r = await fetch(`${API_BASE}/library/campaigns`, { credentials: "include" });
       return r.ok ? r.json() : [];
     },
+    staleTime: 5 * 60 * 1000,
   });
 
   const selectedTemplate = templates.find((t) => t.id === templateId);

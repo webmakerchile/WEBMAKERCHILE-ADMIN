@@ -2608,7 +2608,20 @@ export default function RecordingStudio() {
   const recordMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiFetch(`/api/studio/ideas/${id}/record`, { method: "PATCH" });
+      if (!res.ok) throw new Error("Error al marcar grabado");
       return res.json();
+    },
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/studio/ideas"] });
+      const previous = queryClient.getQueryData<AiVideoIdea[]>(["/api/studio/ideas"]);
+      if (previous) {
+        const now = new Date().toISOString();
+        queryClient.setQueryData<AiVideoIdea[]>(
+          ["/api/studio/ideas"],
+          previous.map((i) => (i.id === id ? { ...i, recordedAt: now } : i)),
+        );
+      }
+      return { previous };
     },
     onSuccess: (_data, id) => {
       setSelectedIdea(null);
@@ -2620,18 +2633,35 @@ export default function RecordingStudio() {
         toast({ title: "Video marcado como grabado" });
       }, 2200);
     },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
+      toast({ title: "No se pudo marcar como grabado", variant: "destructive" });
+    },
   });
 
   const deleteIdeaMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiFetch(`/api/studio/ideas/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/studio/ideas/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error("Error al eliminar");
+    },
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/studio/ideas"] });
+      const previous = queryClient.getQueryData<AiVideoIdea[]>(["/api/studio/ideas"]);
+      if (previous) {
+        queryClient.setQueryData<AiVideoIdea[]>(
+          ["/api/studio/ideas"],
+          previous.filter((i) => i.id !== id),
+        );
+      }
+      return { previous };
     },
     onSuccess: () => {
       setDeleteConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/studio/ideas"] });
       toast({ title: "Idea eliminada" });
     },
-    onError: () => {
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
       toast({ title: "Error al eliminar", variant: "destructive" });
     },
   });
@@ -2639,11 +2669,27 @@ export default function RecordingStudio() {
   const unrecordMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiFetch(`/api/studio/ideas/${id}/unrecord`, { method: "PATCH" });
+      if (!res.ok) throw new Error("Error");
       return res.json();
+    },
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/studio/ideas"] });
+      const previous = queryClient.getQueryData<AiVideoIdea[]>(["/api/studio/ideas"]);
+      if (previous) {
+        queryClient.setQueryData<AiVideoIdea[]>(
+          ["/api/studio/ideas"],
+          previous.map((i) => (i.id === id ? { ...i, recordedAt: null } : i)),
+        );
+      }
+      return { previous };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/studio/ideas"] });
       queryClient.invalidateQueries({ queryKey: ["/api/studio/recording-stats"] });
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
+      toast({ title: "No se pudo deshacer", variant: "destructive" });
     },
   });
 
