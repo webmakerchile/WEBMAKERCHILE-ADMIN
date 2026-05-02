@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { google } from "googleapis";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
@@ -975,6 +975,11 @@ router.get("/analytics/best-times", async (_req: Request, res: Response) => {
               sql`(${videos.scheduledAt} is not null OR ${videos.publishedAt} is not null)`,
             ),
           )
+          // Deterministic ordering: newest first (coalesce to handle either
+          // column being null) so that on datasets larger than the limit,
+          // recommendations stay stable and biased toward recent activity —
+          // which is also where the recency-weighted score draws most signal.
+          .orderBy(desc(sql`coalesce(${videos.scheduledAt}, ${videos.publishedAt})`))
           .limit(500);
         const buckets = new Map<string, number>();
         for (const r of rows) {
