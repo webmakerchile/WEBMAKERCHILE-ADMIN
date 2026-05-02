@@ -388,7 +388,7 @@ export default function VideosPage() {
                           <Badge variant="outline" className={statusBadge.className + " text-[10px] sm:text-xs"}>
                             {statusBadge.label}
                           </Badge>
-                          {!video.tiktokDescription && !video.instagramDescription && !video.youtubeTitle && !video.linkedinDescription && !video.xDescription && video.status !== "published" && (
+                          {!video.tiktokDescription && !video.instagramDescription && !video.youtubeTitle && !video.youtubeDescription && !video.linkedinDescription && !video.xDescription && video.status !== "published" && (
                             <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] sm:text-xs">
                               Sin descripciones
                             </Badge>
