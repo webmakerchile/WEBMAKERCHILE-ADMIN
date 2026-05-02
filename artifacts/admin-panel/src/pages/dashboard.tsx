@@ -1129,9 +1129,26 @@ function useRecentActivity() {
   });
 }
 
+const ERROR_BANNER_SESSION_KEY = "dashboard.errorBannerDismissed";
+
 function ErrorBanner() {
   const { data: activity } = useRecentActivity();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(ERROR_BANNER_SESSION_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  function dismiss() {
+    try {
+      window.sessionStorage.setItem(ERROR_BANNER_SESSION_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    setDismissed(true);
+  }
 
   const errorVideos = useMemo(() => {
     if (!activity) return [];
@@ -1186,7 +1203,7 @@ function ErrorBanner() {
           </ul>
         </div>
         <button
-          onClick={() => setDismissed(true)}
+          onClick={dismiss}
           className="text-rose-300/60 hover:text-rose-300 transition flex-shrink-0"
           aria-label="Cerrar"
         >
