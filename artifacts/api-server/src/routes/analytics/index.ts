@@ -462,21 +462,105 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
   const token = await getValidXToken(user);
   if (!token) return null;
   try {
-    const r = await fetch("https://api.twitter.com/2/users/me?user.fields=public_metrics", {
+    const meR = await fetch("https://api.twitter.com/2/users/me?user.fields=public_metrics", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!r.ok) {
-      console.error("[Analytics][X]", r.status, await r.text().catch(() => ""));
+    if (!meR.ok) {
+      console.error("[Analytics][X]", meR.status, await meR.text().catch(() => ""));
       return null;
     }
-    const data = (await r.json()) as { data?: { public_metrics?: { followers_count?: number } } };
+    const meData = (await meR.json()) as {
+      data?: { id?: string; public_metrics?: { followers_count?: number } };
+    };
+    const fc = Number(meData.data?.public_metrics?.followers_count || 0);
+    const userId = meData.data?.id;
+
     const followers = emptyMetric(days);
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
-    const fc = Number(data.data?.public_metrics?.followers_count || 0);
+
+    // X public_metrics has no per-day follower history. Spread the snapshot
+    // across all days so the sparkline shows a stable line instead of a
+    // misleading flat-zero with a single spike at the last bucket. The
+    // delta vs. previous period stays at 0%, which is honest given we have
+    // no historical signal for followers.
+    for (let i = 0; i < days; i++) {
+      followers.series[i] = fc;
+      followers.prevSeries[i] = fc;
+    }
     followers.total = fc;
-    followers.series[days - 1] = fc;
-    followers.prevSeries[days - 1] = fc;
+
+    // Real per-day reach/interactions: aggregate the user's own recent tweets
+    // by UTC day. start_time/end_time match the UTC-midnight axis used
+    // everywhere else (Tasks #12 / #14). If this call fails (rate limit,
+    // missing tier, etc.) we keep the followers plateau and return.
+    if (userId) {
+      const todayUtcMs = utcMidnightMs();
+      const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
+      const prevStartMs = currStartMs - days * MS_PER_DAY;
+      const endMs = todayUtcMs + MS_PER_DAY;
+
+      type XTweet = {
+        created_at?: string;
+        public_metrics?: {
+          retweet_count?: number;
+          reply_count?: number;
+          like_count?: number;
+          quote_count?: number;
+          impression_count?: number;
+        };
+      };
+      type XTweetsResponse = { data?: XTweet[]; errors?: unknown } | null;
+
+      const fetchTweets = async (startMs: number, endMsArg: number): Promise<XTweetsResponse> => {
+        const params = new URLSearchParams({
+          max_results: "100",
+          "tweet.fields": "created_at,public_metrics",
+          start_time: new Date(startMs).toISOString(),
+          end_time: new Date(endMsArg).toISOString(),
+        });
+        try {
+          const r = await fetch(
+            `https://api.twitter.com/2/users/${encodeURIComponent(userId)}/tweets?${params.toString()}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (!r.ok) {
+            console.error("[Analytics][X] tweets", r.status, await r.text().catch(() => ""));
+            return null;
+          }
+          return (await r.json()) as XTweetsResponse;
+        } catch (e) {
+          console.error("[Analytics][X] tweets", (e instanceof Error ? e.message : String(e)));
+          return null;
+        }
+      };
+
+      const consume = (data: XTweetsResponse, originMs: number, target: "series" | "prevSeries") => {
+        for (const t of data?.data || []) {
+          if (!t.created_at) continue;
+          const tMs = new Date(t.created_at).getTime();
+          const idx = Math.floor((tMs - originMs) / MS_PER_DAY);
+          if (idx < 0 || idx >= days) continue;
+          const m = t.public_metrics || {};
+          reach[target][idx] += Number(m.impression_count || 0);
+          interactions[target][idx] +=
+            Number(m.like_count || 0) +
+            Number(m.reply_count || 0) +
+            Number(m.retweet_count || 0) +
+            Number(m.quote_count || 0);
+        }
+      };
+
+      const [currT, prevT] = await Promise.all([
+        fetchTweets(currStartMs, endMs),
+        fetchTweets(prevStartMs, currStartMs),
+      ]);
+      consume(currT, currStartMs, "series");
+      consume(prevT, prevStartMs, "prevSeries");
+      reach.total = reach.series.reduce((a, b) => a + b, 0);
+      interactions.total = interactions.series.reduce((a, b) => a + b, 0);
+    }
+
     finalizeMetric(followers); finalizeMetric(reach); finalizeMetric(interactions);
     return { followers, reach, interactions };
   } catch (err) {
@@ -509,12 +593,22 @@ async function fetchTikTok(user: AuthedUser, days: number): Promise<{
     const interactions = emptyMetric(days);
     const fc = Number(u?.follower_count || 0);
     const likes = Number(u?.likes_count || 0);
+
+    // TikTok user/info only returns lifetime snapshots and our current OAuth
+    // scope ("user.info.basic,video.upload") doesn't include "video.list", so
+    // we can't fetch per-video stats to build a real per-day series. Spread
+    // the snapshot across all days so the sparkline shows a stable line
+    // instead of zeros with a single spike at the last bucket. Delta vs.
+    // previous period stays at 0%, which is honest given we have no signal.
+    for (let i = 0; i < days; i++) {
+      followers.series[i] = fc;
+      followers.prevSeries[i] = fc;
+      interactions.series[i] = likes;
+      interactions.prevSeries[i] = likes;
+    }
     followers.total = fc;
-    followers.series[days - 1] = fc;
-    followers.prevSeries[days - 1] = fc;
     interactions.total = likes;
-    interactions.series[days - 1] = likes;
-    interactions.prevSeries[days - 1] = likes;
+
     finalizeMetric(followers); finalizeMetric(reach); finalizeMetric(interactions);
     return { followers, reach, interactions };
   } catch (err) {
