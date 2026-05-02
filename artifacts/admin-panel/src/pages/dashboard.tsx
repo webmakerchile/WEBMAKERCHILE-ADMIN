@@ -32,6 +32,7 @@ import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { WhatsNewBanner } from "@/components/whats-new-banner";
 import { HelpHint } from "@/components/help-hint";
+import { AnalyticsSkeleton, KanbanSkeleton } from "@/components/skeletons";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -247,6 +248,10 @@ function AnalyticsRow() {
   const reach = data?.reach || empty;
   const interactions = data?.interactions || empty;
   const posts = data?.posts || empty;
+
+  if (isLoading && !data) {
+    return <AnalyticsSkeleton />;
+  }
 
   const cards: {
     label: string;
@@ -510,6 +515,20 @@ function IdeasKanban() {
     updateIdea.mutate({ id: dragId, kanbanStatus: targetStatus });
   };
 
+  if (isLoading && ideas.length === 0) {
+    return (
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-display font-bold flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            Ideas
+          </h2>
+        </div>
+        <KanbanSkeleton columns={KANBAN_COLUMNS.length} cardsPerCol={2} />
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
@@ -535,7 +554,10 @@ function IdeasKanban() {
 
             <div className="space-y-2 flex-1">
               {isLoading ? (
-                <div className="h-16 rounded-lg bg-foreground/5 animate-pulse" />
+                <>
+                  <div className="h-16 rounded-lg bg-foreground/5 animate-pulse" />
+                  <div className="h-16 rounded-lg bg-foreground/5 animate-pulse" />
+                </>
               ) : (
                 <AnimatePresence>
                   {grouped[col.key].map((idea) => (

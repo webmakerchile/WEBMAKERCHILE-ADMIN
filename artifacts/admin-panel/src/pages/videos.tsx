@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { Link } from "wouter";
+import { Virtuoso } from "react-virtuoso";
 import { Layout } from "@/components/layout";
+import { VideoListSkeleton } from "@/components/skeletons";
 import { PreviewPanel, TruncatedTextarea, type PreviewContent } from "@/components/network-previews";
 import {
   LibraryControls,
@@ -1014,9 +1016,7 @@ export default function VideosPage() {
             )}
 
             {isLoading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-10 h-10 text-primary animate-spin" />
-          </div>
+          <VideoListSkeleton count={6} />
         ) : noVideosAtAll ? (
           <Card className="bg-card/30 border-foreground/10">
             <CardContent className="p-2">
@@ -1065,8 +1065,8 @@ export default function VideosPage() {
               )}
             </div>
 
-            <div className="grid gap-4">
-              {filteredVideos.map((video: VideoData) => {
+            {(() => {
+              const renderVideoCard = (video: VideoData) => {
                 const progress = getVideoProgress(video);
                 const statusBadge = getStatusBadge(video);
                 const isSelected = selectedIds.has(video.id);
@@ -1101,6 +1101,7 @@ export default function VideosPage() {
                               src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
                               className="w-full h-full object-cover"
                               alt=""
+                              loading="lazy"
                             />
                           ) : (
                             <Video className="w-5 h-5 sm:w-6 sm:h-6 text-muted-foreground/30" />
@@ -1173,8 +1174,30 @@ export default function VideosPage() {
                     </CardContent>
                   </Card>
                 );
-              })}
-            </div>
+              };
+              // For long lists (>50 items) virtualize using window scroll so
+              // hundreds of rows don't tank scroll FPS. Below the threshold
+              // use a plain grid — keeps DOM simple and avoids Virtuoso's
+              // mount cost.
+              if (filteredVideos.length > 50) {
+                return (
+                  <Virtuoso
+                    useWindowScroll
+                    data={filteredVideos}
+                    computeItemKey={(_, v) => v.id}
+                    itemContent={(_, video) => (
+                      <div className="pb-4">{renderVideoCard(video)}</div>
+                    )}
+                    increaseViewportBy={{ top: 400, bottom: 600 }}
+                  />
+                );
+              }
+              return (
+                <div className="grid gap-4">
+                  {filteredVideos.map((video) => renderVideoCard(video))}
+                </div>
+              );
+            })()}
           </>
         )}
           </div>

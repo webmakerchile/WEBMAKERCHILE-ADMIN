@@ -2,24 +2,31 @@ import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { createContext, useContext, Component, type ReactNode } from "react";
+import { createContext, useContext, Component, lazy, Suspense, type ReactNode } from "react";
+import { RouteErrorBoundary } from "@/components/route-error-boundary";
+import { ConnectionBanner } from "@/components/connection-banner";
+import { Loader2, AlertTriangle } from "lucide-react";
+
+// Eager: dashboard is the landing page; login pages are tiny and unauthed.
 import Dashboard from "./pages/dashboard";
-import VideosPage from "./pages/videos";
-import CoverGeneratorPage from "./pages/cover-generator";
-import DriveBrowserPage from "./pages/drive-browser";
-import SchedulePage from "./pages/schedule";
-import StudioPage from "./pages/studio";
-import HistoriasPage from "./pages/historias";
-import DescripcionesPage from "./pages/descripciones";
-import CuentasPage from "./pages/cuentas";
-import AyudaPage from "./pages/ayuda";
-import BibliotecaPage from "./pages/biblioteca";
-import CampanaPage from "./pages/campana";
 import LoginPage from "./pages/login";
 import TermsPage from "./pages/terms";
 import PrivacyPage from "./pages/privacy";
 import NotFound from "./pages/not-found";
-import { Loader2, AlertTriangle } from "lucide-react";
+
+// Lazy: heavy/route-specific pages. Each becomes its own chunk so initial
+// load only ships the dashboard.
+const VideosPage = lazy(() => import("./pages/videos"));
+const CoverGeneratorPage = lazy(() => import("./pages/cover-generator"));
+const DriveBrowserPage = lazy(() => import("./pages/drive-browser"));
+const SchedulePage = lazy(() => import("./pages/schedule"));
+const StudioPage = lazy(() => import("./pages/studio"));
+const HistoriasPage = lazy(() => import("./pages/historias"));
+const DescripcionesPage = lazy(() => import("./pages/descripciones"));
+const CuentasPage = lazy(() => import("./pages/cuentas"));
+const AyudaPage = lazy(() => import("./pages/ayuda"));
+const BibliotecaPage = lazy(() => import("./pages/biblioteca"));
+const CampanaPage = lazy(() => import("./pages/campana"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -58,6 +65,10 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
+      // Mild default cache so navigation feels instant; per-query overrides
+      // (e.g. analytics, RSS news, library) bump this further when data is
+      // expensive to fetch and changes infrequently.
+      staleTime: 30_000,
     }
   }
 });
@@ -74,6 +85,22 @@ const AuthContext = createContext<AuthUser | null>(null);
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+function PageLoader() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <Loader2 className="w-6 h-6 animate-spin text-primary" />
+    </div>
+  );
+}
+
+function RouteShell({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <RouteErrorBoundary routeName={name}>
+      <Suspense fallback={<PageLoader />}>{children}</Suspense>
+    </RouteErrorBoundary>
+  );
 }
 
 function AuthLoader({ children }: { children: React.ReactNode }) {
@@ -112,18 +139,42 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/videos" component={VideosPage} />
-      <Route path="/cover" component={CoverGeneratorPage} />
-      <Route path="/drive" component={DriveBrowserPage} />
-      <Route path="/schedule" component={SchedulePage} />
-      <Route path="/estudio" component={StudioPage} />
-      <Route path="/historias" component={HistoriasPage} />
-      <Route path="/descripciones" component={DescripcionesPage} />
-      <Route path="/cuentas" component={CuentasPage} />
-      <Route path="/biblioteca" component={BibliotecaPage} />
-      <Route path="/campanas/:id" component={CampanaPage} />
-      <Route path="/ayuda" component={AyudaPage} />
+      <Route path="/">
+        <RouteShell name="dashboard"><Dashboard /></RouteShell>
+      </Route>
+      <Route path="/videos">
+        <RouteShell name="videos"><VideosPage /></RouteShell>
+      </Route>
+      <Route path="/cover">
+        <RouteShell name="cover"><CoverGeneratorPage /></RouteShell>
+      </Route>
+      <Route path="/drive">
+        <RouteShell name="drive"><DriveBrowserPage /></RouteShell>
+      </Route>
+      <Route path="/schedule">
+        <RouteShell name="schedule"><SchedulePage /></RouteShell>
+      </Route>
+      <Route path="/estudio">
+        <RouteShell name="estudio"><StudioPage /></RouteShell>
+      </Route>
+      <Route path="/historias">
+        <RouteShell name="historias"><HistoriasPage /></RouteShell>
+      </Route>
+      <Route path="/descripciones">
+        <RouteShell name="descripciones"><DescripcionesPage /></RouteShell>
+      </Route>
+      <Route path="/cuentas">
+        <RouteShell name="cuentas"><CuentasPage /></RouteShell>
+      </Route>
+      <Route path="/biblioteca">
+        <RouteShell name="biblioteca"><BibliotecaPage /></RouteShell>
+      </Route>
+      <Route path="/campanas/:id">
+        <RouteShell name="campana"><CampanaPage /></RouteShell>
+      </Route>
+      <Route path="/ayuda">
+        <RouteShell name="ayuda"><AyudaPage /></RouteShell>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -149,6 +200,7 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <ConnectionBanner />
             <PublicRoutes />
           </WouterRouter>
           <Toaster />

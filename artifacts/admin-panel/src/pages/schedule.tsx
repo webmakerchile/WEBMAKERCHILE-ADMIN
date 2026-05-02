@@ -35,6 +35,7 @@ import {
 import { motion } from "framer-motion";
 import { EmptyState } from "@/components/empty-state";
 import { HelpHint } from "@/components/help-hint";
+import { CalendarSkeleton } from "@/components/skeletons";
 import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
 import {
   Dialog,
@@ -944,6 +945,10 @@ export default function SchedulePage() {
                 Procesados: {checkSchedule.data.processed} · Errores: {checkSchedule.data.errors}
               </p>
             </motion.div>
+          )}
+
+          {videosLoading && filteredVideos.length === 0 && (
+            <CalendarSkeleton rows={view === "month" ? 6 : view === "week" ? 1 : 4} cols={view === "day" ? 1 : 7} />
           )}
 
           {!videosLoading && filteredVideos.length === 0 && (
