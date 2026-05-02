@@ -590,6 +590,10 @@ async function fetchX(user: AuthedUser, days: number): Promise<{
 
       // Walk pagination via next_token, capped at MAX_PAGES so a runaway
       // prolific account can't burn rate-limit budget. Returns merged tweets.
+      // Tradeoff: extreme-volume accounts publishing >MAX_PAGES*100 tweets in
+      // a single window will undercount reach/interactions; the cap is
+      // intentional to stay within X API rate limits. If accuracy needs
+      // increase, raise MAX_PAGES or make it env-configurable in a follow-up.
       const MAX_PAGES = 5;
       const fetchAllTweets = async (startMs: number, endMsArg: number): Promise<XTweet[]> => {
         const out: XTweet[] = [];
