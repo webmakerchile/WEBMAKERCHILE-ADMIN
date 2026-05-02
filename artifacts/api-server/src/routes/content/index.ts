@@ -651,19 +651,23 @@ router.get("/content/videos/:id/stats", async (req, res) => {
         const tweetRes = await fetch(
           `https://api.twitter.com/2/tweets/${video.xPostId}?tweet.fields=public_metrics`,
           { headers: { Authorization: `Bearer ${token}` } },
-        ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as any;
+        ).then((r) => (r.ok ? r.json() : null)).catch(() => null) as {
+          data?: { public_metrics?: { like_count?: number; retweet_count?: number; reply_count?: number; bookmark_count?: number; quote_count?: number } };
+        } | null;
 
         if (!tweetRes?.data) {
           stats.x = { error: "not_found" };
           return;
         }
-        const m = tweetRes.data.public_metrics || {};
+        const m = tweetRes.data.public_metrics ?? {};
+        // impression_count is not available in public_metrics without elevated access.
+        // We expose the metrics that are reliably present for all API tiers.
         stats.x = {
-          impressions: Number(m.impression_count || 0),
-          likes: Number(m.like_count || 0),
-          retweets: Number(m.retweet_count || 0),
-          replies: Number(m.reply_count || 0),
-          bookmarks: Number(m.bookmark_count || 0),
+          likes: Number(m.like_count ?? 0),
+          retweets: Number(m.retweet_count ?? 0),
+          replies: Number(m.reply_count ?? 0),
+          quotes: Number(m.quote_count ?? 0),
+          bookmarks: Number(m.bookmark_count ?? 0),
         };
       } catch (err: any) {
         stats.x = { error: err.message };

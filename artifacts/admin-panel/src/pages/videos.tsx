@@ -328,7 +328,7 @@ export default function VideosPage() {
                             <p className="text-xs sm:text-sm text-muted-foreground truncate">{video.description}</p>
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
-                            {video.status === "published" && (
+                            {!!(video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId || video.tiktokPublishId || video.facebookPostId) && (
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -380,16 +380,27 @@ export default function VideosPage() {
   );
 }
 
+type YouTubeMetrics = { views: number; likes: number; comments: number; averageViewDuration: number; url: string };
+type InstagramMetrics = { likes: number; comments: number; plays: number; reach: number; totalInteractions: number };
+type LinkedInMetrics = { impressions: number; clicks: number; reactions: number; comments: number; shares: number };
+type XMetrics = { likes: number; retweets: number; replies: number; quotes: number; bookmarks: number };
+type StatError = { error: string };
+type TikTokUnavailable = { available: false; reason: string };
+
 type VideoStats = {
   videoId: number;
   stats: {
-    youtube?: { views: number; likes: number; comments: number; averageViewDuration: number; url: string } | { error: string };
-    instagram?: { likes: number; comments: number; plays: number; reach: number; totalInteractions: number } | { error: string };
-    linkedin?: { impressions: number; clicks: number; reactions: number; comments: number; shares: number } | { error: string };
-    x?: { impressions: number; likes: number; retweets: number; replies: number; bookmarks: number } | { error: string };
-    tiktok?: { available: false; reason: string };
+    youtube?: YouTubeMetrics | StatError;
+    instagram?: InstagramMetrics | StatError;
+    linkedin?: LinkedInMetrics | StatError;
+    x?: XMetrics | StatError;
+    tiktok?: TikTokUnavailable;
   };
 };
+
+function isStatError(v: unknown): v is StatError {
+  return typeof v === "object" && v !== null && "error" in v;
+}
 
 function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose: () => void }) {
   const { data, isLoading, error } = useQuery<VideoStats>({
@@ -400,11 +411,12 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
       return res.json();
     },
     enabled: !!video,
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
   const hasPublishedNetworks = video && (
-    video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId || video.xPostId || video.tiktokPublishId
+    video.youtubeVideoId || video.instagramMediaId || video.linkedinPostId ||
+    video.xPostId || video.tiktokPublishId || video.facebookPostId
   );
 
   const fmtNum = (n: number) =>
@@ -422,6 +434,11 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
   const ig = data?.stats.instagram;
   const li = data?.stats.linkedin;
   const xd = data?.stats.x;
+
+  const ytOk = yt && !isStatError(yt) ? (yt as YouTubeMetrics) : null;
+  const igOk = ig && !isStatError(ig) ? (ig as InstagramMetrics) : null;
+  const liOk = li && !isStatError(li) ? (li as LinkedInMetrics) : null;
+  const xdOk = xd && !isStatError(xd) ? (xd as XMetrics) : null;
 
   return (
     <Dialog open={!!video} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -455,15 +472,15 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="YouTube"
                 bgClass="bg-red-600"
                 loading={isLoading}
-                error={"error" in (yt ?? {}) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(yt) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
-                rows={yt && !("error" in yt) ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Vistas", value: fmtNum((yt as any).views) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum((yt as any).likes) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum((yt as any).comments) },
-                  { icon: <Clock className="w-3.5 h-3.5" />, label: "Duración promedio", value: fmtTime((yt as any).averageViewDuration) },
+                rows={ytOk ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Vistas", value: fmtNum(ytOk.views) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(ytOk.likes) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(ytOk.comments) },
+                  { icon: <Clock className="w-3.5 h-3.5" />, label: "Duración promedio", value: fmtTime(ytOk.averageViewDuration) },
                 ] : []}
-                link={yt && !("error" in yt) ? (yt as any).url : undefined}
+                link={ytOk?.url}
               />
             )}
 
@@ -473,13 +490,13 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="Instagram"
                 bgClass="bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400"
                 loading={isLoading}
-                error={"error" in (ig ?? {}) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(ig) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
-                rows={ig && !("error" in ig) ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Reproducciones", value: fmtNum((ig as any).plays) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum((ig as any).likes) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum((ig as any).comments) },
-                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Alcance", value: fmtNum((ig as any).reach) },
+                rows={igOk ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Reproducciones", value: fmtNum(igOk.plays) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(igOk.likes) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(igOk.comments) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Alcance", value: fmtNum(igOk.reach) },
                 ] : []}
               />
             )}
@@ -490,14 +507,14 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="LinkedIn"
                 bgClass="bg-[#0A66C2]"
                 loading={isLoading}
-                error={"error" in (li ?? {}) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(li) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
-                rows={li && !("error" in li) ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum((li as any).impressions) },
-                  { icon: <MousePointerClick className="w-3.5 h-3.5" />, label: "Clics", value: fmtNum((li as any).clicks) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Reacciones", value: fmtNum((li as any).reactions) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum((li as any).comments) },
-                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Compartidos", value: fmtNum((li as any).shares) },
+                rows={liOk ? [
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum(liOk.impressions) },
+                  { icon: <MousePointerClick className="w-3.5 h-3.5" />, label: "Clics", value: fmtNum(liOk.clicks) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Reacciones", value: fmtNum(liOk.reactions) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(liOk.comments) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Compartidos", value: fmtNum(liOk.shares) },
                 ] : []}
               />
             )}
@@ -508,13 +525,13 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="X"
                 bgClass="bg-black border border-white/10"
                 loading={isLoading}
-                error={"error" in (xd ?? {}) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(xd) ? "No se pudieron cargar las métricas" : undefined}
                 unavailable={false}
-                rows={xd && !("error" in xd) ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum((xd as any).impressions) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum((xd as any).likes) },
-                  { icon: <Repeat2 className="w-3.5 h-3.5" />, label: "Retweets", value: fmtNum((xd as any).retweets) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Respuestas", value: fmtNum((xd as any).replies) },
+                rows={xdOk ? [
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(xdOk.likes) },
+                  { icon: <Repeat2 className="w-3.5 h-3.5" />, label: "Retweets", value: fmtNum(xdOk.retweets) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Respuestas", value: fmtNum(xdOk.replies) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Citas", value: fmtNum(xdOk.quotes) },
                 ] : []}
               />
             )}
