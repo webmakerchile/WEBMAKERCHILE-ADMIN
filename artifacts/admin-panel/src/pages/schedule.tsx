@@ -13,6 +13,7 @@ import {
   Search,
   Filter,
   Calendar as CalendarIcon,
+  LayoutGrid,
   Plus,
   Loader2,
 } from "lucide-react";
@@ -52,6 +53,25 @@ function fmtRange(from: Date, to: Date): string {
   const t = to.toLocaleDateString("es-CL", { day: "numeric", month: "short", year: "numeric" });
   return `${f} – ${t}`;
 }
+
+function startOfMonth(date: Date): Date {
+  const d = new Date(date);
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function addMonths(date: Date, n: number): Date {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + n);
+  return d;
+}
+
+function fmtMonth(date: Date): string {
+  return date.toLocaleDateString("es-CL", { month: "long", year: "numeric" });
+}
+
+type ViewMode = "week" | "month";
 
 type VideoSummary = {
   id: number;
@@ -185,7 +205,12 @@ export default function SchedulePage() {
   const checkSchedule = useCheckScheduledVideos();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [view, setView] = useState<ViewMode>(() => {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("view") === "month" ? "month" : "week";
+  });
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
+  const [monthStart, setMonthStart] = useState<Date>(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -299,6 +324,28 @@ export default function SchedulePage() {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
 
+  // Month grid: pad with days from prev/next month so grid starts on Monday
+  const monthGridDays = useMemo(() => {
+    const first = startOfMonth(monthStart);
+    const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+    const totalDays = lastDay.getDate();
+    // getDay() returns 0=Sunday..6=Saturday; we want 0=Monday
+    const startDow = (first.getDay() + 6) % 7; // offset to Mon-start
+    const endDow = (lastDay.getDay() + 6) % 7;
+    const cells: { date: Date; inMonth: boolean }[] = [];
+    for (let i = startDow - 1; i >= 0; i--) {
+      cells.push({ date: addDays(first, -(i + 1)), inMonth: false });
+    }
+    for (let i = 0; i < totalDays; i++) {
+      cells.push({ date: addDays(first, i), inMonth: true });
+    }
+    const trailing = endDow === 6 ? 0 : 6 - endDow;
+    for (let i = 1; i <= trailing; i++) {
+      cells.push({ date: addDays(lastDay, i), inMonth: false });
+    }
+    return cells;
+  }, [monthStart]);
+
   const filteredVideos = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (videos || []).filter((v: VideoSummary) => {
@@ -332,10 +379,36 @@ export default function SchedulePage() {
     return buckets;
   }, [filteredVideos, days]);
 
+  const videosByMonthDay = useMemo(() => {
+    const buckets: Record<string, VideoSummary[]> = {};
+    filteredVideos.forEach((v: VideoSummary) => {
+      if (!v.scheduledAt) return;
+      const key = new Date(v.scheduledAt).toDateString();
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push(v);
+    });
+    return buckets;
+  }, [filteredVideos]);
+
   const totalThisWeek = Object.values(videosByDay).reduce((acc, arr) => acc + arr.length, 0);
+  const totalThisMonth = Object.entries(videosByMonthDay).reduce((acc, [key, arr]) => {
+    const d = new Date(key);
+    return d.getMonth() === monthStart.getMonth() && d.getFullYear() === monthStart.getFullYear()
+      ? acc + arr.length
+      : acc;
+  }, 0);
   const today = new Date().toDateString();
   const selectedDate = selectedDay !== null ? days[selectedDay] : null;
   const selectedVideos = selectedDate ? videosByDay[selectedDate.toDateString()] || [] : [];
+
+  const switchView = (v: ViewMode) => {
+    setView(v);
+    setSelectedDay(null);
+    const url = new URL(window.location.href);
+    if (v === "month") url.searchParams.set("view", "month");
+    else url.searchParams.delete("view");
+    window.history.replaceState({}, "", url.toString());
+  };
 
   const dateInputValue = useMemo(() => {
     const d = weekStart;
@@ -349,33 +422,50 @@ export default function SchedulePage() {
           <div>
             <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Publicaciones</h1>
             <p className="text-muted-foreground text-sm sm:text-lg">
-              Vista semanal de tus publicaciones programadas en todas las redes.
+              {view === "month"
+                ? "Vista mensual de tus publicaciones programadas."
+                : "Vista semanal de tus publicaciones programadas en todas las redes."}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <div
-              className="inline-flex items-center gap-1.5 glass-card rounded-xl border border-white/5 px-3 py-2 text-xs font-medium text-primary"
-              aria-label="Vista actual: semanal"
-              title="Vista semanal"
-            >
-              <CalendarIcon className="w-4 h-4" />
-              Vista semanal
+            {/* View toggle */}
+            <div className="flex items-center gap-0.5 glass-card rounded-xl border border-white/5 p-1">
+              <button
+                onClick={() => switchView("week")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  view === "week" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <CalendarIcon className="w-3.5 h-3.5" />
+                Semana
+              </button>
+              <button
+                onClick={() => switchView("month")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  view === "month" ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Mes
+              </button>
             </div>
+
+            {/* Navigation */}
             <div className="flex items-center gap-1 glass-card rounded-xl border border-white/5 p-1">
               <button
                 onClick={() => {
-                  setWeekStart(addDays(weekStart, -7));
-                  setSelectedDay(null);
+                  if (view === "month") setMonthStart(addMonths(monthStart, -1));
+                  else { setWeekStart(addDays(weekStart, -7)); setSelectedDay(null); }
                 }}
                 className="p-2 rounded-lg hover:bg-white/5 transition"
-                aria-label="Semana anterior"
+                aria-label="Anterior"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => {
-                  setWeekStart(startOfWeek(new Date()));
-                  setSelectedDay(null);
+                  if (view === "month") setMonthStart(startOfMonth(new Date()));
+                  else { setWeekStart(startOfWeek(new Date())); setSelectedDay(null); }
                 }}
                 className="px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-white/5 transition"
               >
@@ -383,30 +473,32 @@ export default function SchedulePage() {
               </button>
               <button
                 onClick={() => {
-                  setWeekStart(addDays(weekStart, 7));
-                  setSelectedDay(null);
+                  if (view === "month") setMonthStart(addMonths(monthStart, 1));
+                  else { setWeekStart(addDays(weekStart, 7)); setSelectedDay(null); }
                 }}
                 className="p-2 rounded-lg hover:bg-white/5 transition"
-                aria-label="Semana siguiente"
+                aria-label="Siguiente"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
 
-            <label className="flex items-center gap-2 glass-card rounded-xl border border-white/5 px-3 py-2 cursor-pointer hover:border-primary/40 transition">
-              <CalendarIcon className="w-4 h-4 text-primary" />
-              <input
-                type="date"
-                value={dateInputValue}
-                onChange={(e) => {
-                  if (!e.target.value) return;
-                  const [y, m, d] = e.target.value.split("-").map(Number);
-                  setWeekStart(startOfWeek(new Date(y, m - 1, d)));
-                  setSelectedDay(null);
-                }}
-                className="bg-transparent border-none outline-none text-sm text-foreground"
-              />
-            </label>
+            {view === "week" && (
+              <label className="flex items-center gap-2 glass-card rounded-xl border border-white/5 px-3 py-2 cursor-pointer hover:border-primary/40 transition">
+                <CalendarIcon className="w-4 h-4 text-primary" />
+                <input
+                  type="date"
+                  value={dateInputValue}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [y, m, d] = e.target.value.split("-").map(Number);
+                    setWeekStart(startOfWeek(new Date(y, m - 1, d)));
+                    setSelectedDay(null);
+                  }}
+                  className="bg-transparent border-none outline-none text-sm text-foreground"
+                />
+              </label>
+            )}
 
             <button
               onClick={() => checkSchedule.mutate()}
@@ -495,9 +587,13 @@ export default function SchedulePage() {
         </div>
 
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-display font-bold">{fmtRange(weekStart, weekEnd)}</h2>
+          <h2 className="text-lg font-display font-bold capitalize">
+            {view === "month" ? fmtMonth(monthStart) : fmtRange(weekStart, weekEnd)}
+          </h2>
           <span className="text-xs text-muted-foreground">
-            {totalThisWeek} publicación{totalThisWeek === 1 ? "" : "es"} esta semana
+            {view === "month"
+              ? `${totalThisMonth} publicación${totalThisMonth === 1 ? "" : "es"} este mes`
+              : `${totalThisWeek} publicación${totalThisWeek === 1 ? "" : "es"} esta semana`}
           </span>
         </div>
 
@@ -516,6 +612,19 @@ export default function SchedulePage() {
             </p>
           </motion.div>
         )}
+
+        {view === "month" ? (
+          <MonthView
+            monthGridDays={monthGridDays}
+            videosByDay={videosByMonthDay}
+            today={today}
+            monthStart={monthStart}
+            onDayClick={(date) => {
+              switchView("week");
+              setWeekStart(startOfWeek(date));
+            }}
+          />
+        ) : (<>
 
         <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
             <div className="grid grid-cols-7 border-b border-white/5">
@@ -748,6 +857,7 @@ export default function SchedulePage() {
             </div>
           </motion.div>
         )}
+        </>)}
       </div>
 
       <Link
@@ -768,6 +878,100 @@ export default function SchedulePage() {
         isPending={quickCreateMutation.isPending}
       />
     </Layout>
+  );
+}
+
+function MonthView({
+  monthGridDays,
+  videosByDay,
+  today,
+  monthStart,
+  onDayClick,
+}: {
+  monthGridDays: { date: Date; inMonth: boolean }[];
+  videosByDay: Record<string, VideoSummary[]>;
+  today: string;
+  monthStart: Date;
+  onDayClick: (date: Date) => void;
+}) {
+  const DOW_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const MAX_DOTS = 5;
+
+  return (
+    <div className="glass-card rounded-3xl border border-white/5 overflow-hidden">
+      {/* Day-of-week headers */}
+      <div className="grid grid-cols-7 border-b border-white/5 bg-white/[0.02]">
+        {DOW_LABELS.map((label) => (
+          <div key={label} className="py-2 text-center text-[11px] font-medium text-muted-foreground">
+            {label}
+          </div>
+        ))}
+      </div>
+
+      {/* Grid cells */}
+      <div className="grid grid-cols-7">
+        {monthGridDays.map(({ date, inMonth }, idx) => {
+          const key = date.toDateString();
+          const isToday = key === today;
+          const videos = videosByDay[key] || [];
+          const isCurrentMonth = inMonth;
+          const networks = Array.from(new Set(videos.flatMap((v) => videoNetworks(v).map((n) => n.network))));
+
+          return (
+            <button
+              key={idx}
+              onClick={() => onDayClick(date)}
+              className={`min-h-[80px] p-1.5 text-left border-b border-r border-white/[0.04] transition hover:bg-white/5 focus:outline-none focus:ring-1 focus:ring-primary/40 ${
+                !isCurrentMonth ? "opacity-30" : ""
+              } ${isToday ? "bg-primary/5" : ""}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span
+                  className={`text-[11px] font-semibold w-5 h-5 flex items-center justify-center rounded-full ${
+                    isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {date.getDate()}
+                </span>
+                {videos.length > 0 && (
+                  <span className="text-[9px] font-medium text-primary bg-primary/10 rounded-full px-1.5 py-0.5 leading-none">
+                    {videos.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Network icon dots */}
+              {networks.length > 0 && (
+                <div className="flex flex-wrap gap-0.5 mb-1">
+                  {networks.slice(0, MAX_DOTS).map((net) => (
+                    <span
+                      key={net}
+                      className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ${NETWORK_BG[net]}`}
+                      title={net}
+                    >
+                      <NetworkIcon network={net} className="w-2 h-2" />
+                    </span>
+                  ))}
+                  {networks.length > MAX_DOTS && (
+                    <span className="w-3.5 h-3.5 rounded-full bg-white/10 text-[7px] flex items-center justify-center">
+                      +{networks.length - MAX_DOTS}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* First video title preview */}
+              {videos[0] && (
+                <p className="text-[9px] leading-tight text-muted-foreground line-clamp-2 mt-0.5">
+                  {videos[0].title || "Sin título"}
+                  {videos.length > 1 && ` +${videos.length - 1} más`}
+                </p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
