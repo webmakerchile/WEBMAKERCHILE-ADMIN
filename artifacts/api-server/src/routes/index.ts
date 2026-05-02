@@ -18,6 +18,7 @@ import onboardingRouter from "./onboarding";
 import savedViewsRouter from "./saved-views";
 import socialRouter from "./social";
 import libraryRouter from "./library";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(onboardingRouter);
 router.use(savedViewsRouter);
 router.use(socialRouter);
 router.use(libraryRouter);
+router.use(notificationsRouter);
 
 export default router;

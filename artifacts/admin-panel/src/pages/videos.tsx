@@ -1848,38 +1848,40 @@ function VideoWizard({
         )}
       </div>
 
-      <div className="flex items-center gap-1 bg-card/30 rounded-2xl p-1.5 sm:p-2 border border-foreground/10 overflow-x-auto">
-        {STEPS.map((step, i) => {
-          const isActive = step.key === currentStep;
-          const isComplete = isStepComplete(video, step.key);
-          const isClickable = !isCreating || step.key === "info";
+      <div className="sticky top-0 z-20 -mx-4 px-4 sm:mx-0 sm:px-0 bg-background/85 backdrop-blur-md py-2 sm:py-0 sm:bg-transparent sm:backdrop-blur-none">
+        <div className="flex items-center gap-1 bg-card/40 rounded-2xl p-1.5 sm:p-2 border border-foreground/10 overflow-x-auto scrollbar-none">
+          {STEPS.map((step, i) => {
+            const isActive = step.key === currentStep;
+            const isComplete = isStepComplete(video, step.key);
+            const isClickable = !isCreating || step.key === "info";
 
-          return (
-            <button
-              key={step.key}
-              onClick={() => isClickable && onStepChange(step.key)}
-              disabled={!isClickable}
-              className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 min-w-0 ${
-                isActive
-                  ? "bg-primary text-white shadow-lg shadow-primary/20"
-                  : isComplete
-                  ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
-                  : "text-muted-foreground hover:bg-foreground/5"
-              } ${!isClickable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            >
-              {isComplete && !isActive ? (
-                <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              ) : (
-                <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold shrink-0 ${
-                  isActive ? "bg-foreground/20" : "bg-foreground/5"
-                }`}>
-                  {i + 1}
-                </span>
-              )}
-              <span className="hidden sm:inline">{step.shortLabel}</span>
-            </button>
-          );
-        })}
+            return (
+              <button
+                key={step.key}
+                onClick={() => isClickable && onStepChange(step.key)}
+                disabled={!isClickable}
+                className={`flex-1 flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-3 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-medium transition-all duration-200 min-w-0 ${
+                  isActive
+                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                    : isComplete
+                    ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15"
+                    : "text-muted-foreground hover:bg-foreground/5"
+                } ${!isClickable ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                {isComplete && !isActive ? (
+                  <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                ) : (
+                  <span className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-[10px] sm:text-xs font-bold shrink-0 ${
+                    isActive ? "bg-foreground/20" : "bg-foreground/5"
+                  }`}>
+                    {i + 1}
+                  </span>
+                )}
+                <span className={isActive ? "inline" : "hidden sm:inline"}>{step.shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {isAutoGenerating && (

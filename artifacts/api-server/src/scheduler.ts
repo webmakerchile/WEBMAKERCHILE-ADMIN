@@ -10,6 +10,7 @@ import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-se
 import { publishLinkedInPost, publishLinkedInVideo } from "./routes/linkedin";
 import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 import { publishToFacebook } from "./routes/facebook";
+import { createNotification } from "./lib/notifications";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -699,6 +700,38 @@ async function processScheduledVideos() {
         console.warn(`[Scheduler] Video #${video.id} published partially. Errors: ${errors}`);
       } else {
         console.error(`[Scheduler] Video #${video.id} had errors: ${errors}`);
+      }
+
+      // Notify the admin user (single-tenant) about the outcome. We always pick
+      // the first admin user — same logic the scheduler uses for credentials.
+      try {
+        if (nextStatus === "published") {
+          await createNotification({
+            userId: adminUser.id,
+            type: "publish_success",
+            title: "Publicación exitosa",
+            body: `"${video.title}" se publicó correctamente.`,
+            link: `/videos?select=${video.id}`,
+          });
+        } else if (nextStatus === "partial") {
+          await createNotification({
+            userId: adminUser.id,
+            type: "publish_partial",
+            title: "Publicación parcial",
+            body: `"${video.title}" tuvo errores en algunas redes: ${errors}`,
+            link: `/videos?select=${video.id}`,
+          });
+        } else {
+          await createNotification({
+            userId: adminUser.id,
+            type: "publish_error",
+            title: "Error al publicar",
+            body: `"${video.title}" falló: ${errors || "error desconocido"}`,
+            link: `/videos?select=${video.id}`,
+          });
+        }
+      } catch (notifErr: any) {
+        console.error("[Scheduler] Failed to create notification:", notifErr?.message || notifErr);
       }
     }
   } catch (err: any) {

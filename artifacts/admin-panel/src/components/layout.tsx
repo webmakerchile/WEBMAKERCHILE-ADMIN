@@ -24,6 +24,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { GlobalShortcutsProvider } from "@/components/global-shortcuts-provider";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { NotificationsBell } from "@/components/notifications-bell";
+import { InstallBanner } from "@/components/install-banner";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -142,6 +144,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <p className="text-sm font-medium truncate">{user.name || "Admin"}</p>
                 <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
               </div>
+              <NotificationsBell />
               <ThemeToggle />
             </div>
           )}
@@ -164,6 +167,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <div className="flex items-center gap-1">
+            <NotificationsBell />
             <ThemeToggle />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -296,6 +300,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
       </div>
+
+      <InstallBanner />
     </div>
   );
 }

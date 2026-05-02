@@ -1185,9 +1185,12 @@ function WeekView({
   activeDragId: number | null;
   onAddAtDay: (date: Date) => void;
 }) {
+  // On mobile we render the week as a horizontally scrollable strip so each
+  // day gets a usable column width (~70vw). Snap-points keep navigation crisp.
+  // On md+ we keep the original 7-column grid so the calendar fits on screen.
   return (
     <div className="glass-card rounded-3xl border border-foreground/10 overflow-hidden">
-      <div className="grid grid-cols-7 border-b border-foreground/10">
+      <div className="hidden md:grid grid-cols-7 border-b border-foreground/10">
         {days.map((d, i) => {
           const isToday = d.toDateString() === today;
           const isSelected = selectedDay === i;
@@ -1214,7 +1217,7 @@ function WeekView({
         })}
       </div>
 
-      <div className="grid grid-cols-7 max-h-[60vh] overflow-y-auto">
+      <div className="hidden md:grid grid-cols-7 max-h-[60vh] overflow-y-auto">
         {days.map((d, i) => {
           const items = videosByDay[d.toDateString()] || [];
           const isToday = d.toDateString() === today;
@@ -1229,6 +1232,54 @@ function WeekView({
               activeDragId={activeDragId}
               compact={false}
             />
+          );
+        })}
+      </div>
+
+      <div className="md:hidden flex overflow-x-auto snap-x snap-mandatory scroll-px-3 px-3 gap-3 py-3">
+        {days.map((d, i) => {
+          const items = videosByDay[d.toDateString()] || [];
+          const isToday = d.toDateString() === today;
+          const count = items.length;
+          const isSelected = selectedDay === i;
+          return (
+            <div
+              key={i}
+              className={`snap-start flex-shrink-0 w-[78vw] max-w-[320px] rounded-2xl border ${
+                isToday ? "border-primary/40 bg-primary/[0.04]" : "border-foreground/10"
+              } ${isSelected ? "ring-2 ring-primary/40" : ""}`}
+            >
+              <button
+                type="button"
+                onClick={() => onSelectDay(isSelected ? null : i)}
+                className="w-full flex items-center justify-between px-3 py-2 border-b border-foreground/10"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center justify-center min-w-[36px] h-9 px-2 rounded-full text-sm font-bold ${
+                      isToday ? "bg-primary text-primary-foreground" : "bg-foreground/5"
+                    }`}
+                  >
+                    {d.getDate()}
+                  </span>
+                  <div className="text-left">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{DAYS_ES[i]}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {count > 0 ? `${count} publicación${count === 1 ? "" : "es"}` : "Sin publicaciones"}
+                    </p>
+                  </div>
+                </div>
+              </button>
+              <DayDropCell
+                date={d}
+                items={items}
+                isToday={isToday}
+                onAdd={() => onAddAtDay(d)}
+                onClickDay={() => onSelectDay(i)}
+                activeDragId={activeDragId}
+                compact={false}
+              />
+            </div>
           );
         })}
       </div>

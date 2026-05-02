@@ -8,3 +8,4 @@ export * from "./ideas";
 export * from "./competitors";
 export * from "./saved-views";
 export * from "./library";
+export * from "./notifications";
