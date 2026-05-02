@@ -182,6 +182,22 @@ export default function VideosPage() {
     },
   });
 
+  useEffect(() => {
+    if (isLoading || selectedVideo) return;
+    const params = new URLSearchParams(window.location.search);
+    const selectId = params.get("select");
+    if (!selectId) return;
+    const target = videos.find((v) => String(v.id) === selectId);
+    if (target) {
+      setSelectedVideo(target);
+      if (!target.coverImageBase64) setWizardStep("cover");
+      else if (!target.tiktokDescription || !target.instagramDescription) setWizardStep("tiktok-instagram");
+      else if (!target.youtubeTitle || !target.youtubeDescription) setWizardStep("youtube");
+      else if (!target.linkedinDescription || !target.xDescription) setWizardStep("linkedin-x");
+      else setWizardStep("review");
+    }
+  }, [isLoading, videos]);
+
   const createMutation = useMutation({
     mutationFn: async (data: { title: string; description: string; month?: string; week?: string; day?: string; videoNumber?: string; scheduleHour?: string }) => {
       const res = await apiFetch(`${API_BASE}/content/videos`, {

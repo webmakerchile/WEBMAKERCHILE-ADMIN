@@ -87,12 +87,26 @@ function getPublicBaseUrl(): string {
   return "https://admin.webmakerlatam.com";
 }
 
+async function persistPlatformError(videoId: number, platform: "youtube" | "tiktok" | "instagram", error: string) {
+  const statusKey = `${platform}Status` as const;
+  const errorKey = `${platform}Error` as const;
+  await db.update(videos).set({
+    [statusKey]: "error",
+    [errorKey]: error,
+    updatedAt: new Date(),
+  }).where(eq(videos.id, videoId));
+}
+
 async function uploadToYouTube(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (!user.googleAccessToken || !user.googleRefreshToken) {
-    return { success: false, error: "No Google tokens" };
+    const error = "No Google tokens";
+    await persistPlatformError(video.id, "youtube", error);
+    return { success: false, error };
   }
   if (!video.videoFileDriveId) {
-    return { success: false, error: "No video file in Drive" };
+    const error = "No video file in Drive";
+    await persistPlatformError(video.id, "youtube", error);
+    return { success: false, error };
   }
   if (video.youtubeVideoId) {
     return { success: true };
@@ -143,6 +157,7 @@ async function uploadToYouTube(video: any, user: any): Promise<{ success: boolea
     await db.update(videos).set({
       youtubeVideoId: ytVideoId,
       youtubeStatus: "uploaded",
+      youtubeError: null,
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
 
@@ -150,6 +165,11 @@ async function uploadToYouTube(video: any, user: any): Promise<{ success: boolea
     return { success: true };
   } catch (err: any) {
     console.error(`[Scheduler] YouTube upload error: ${err.message}`);
+    await db.update(videos).set({
+      youtubeStatus: "error",
+      youtubeError: err.message,
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
     return { success: false, error: err.message };
   }
 }
@@ -161,10 +181,14 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
 
   const token = await getValidTikTokToken(user);
   if (!token) {
-    return { success: false, error: "No TikTok token" };
+    const error = "No TikTok token";
+    await persistPlatformError(video.id, "tiktok", error);
+    return { success: false, error };
   }
   if (!video.videoFileDriveId) {
-    return { success: false, error: "No video file in Drive" };
+    const error = "No video file in Drive";
+    await persistPlatformError(video.id, "tiktok", error);
+    return { success: false, error };
   }
 
   try {
@@ -197,14 +221,18 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
 
     const initData = await initRes.json();
     if (initData.error?.code !== "ok") {
-      return { success: false, error: `TikTok init failed: ${initData.error?.message || JSON.stringify(initData.error)}` };
+      const error = `TikTok init failed: ${initData.error?.message || JSON.stringify(initData.error)}`;
+      await persistPlatformError(video.id, "tiktok", error);
+      return { success: false, error };
     }
 
     const uploadUrl = initData.data?.upload_url;
     const publishId = initData.data?.publish_id;
 
     if (!uploadUrl) {
-      return { success: false, error: "No TikTok upload URL" };
+      const error = "No TikTok upload URL";
+      await persistPlatformError(video.id, "tiktok", error);
+      return { success: false, error };
     }
 
     for (let i = 0; i < totalChunkCount; i++) {
@@ -222,13 +250,16 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
       });
 
       if (!chunkRes.ok) {
-        return { success: false, error: `TikTok chunk ${i} upload failed` };
+        const error = `TikTok chunk ${i} upload failed`;
+        await persistPlatformError(video.id, "tiktok", error);
+        return { success: false, error };
       }
     }
 
     await db.update(videos).set({
       tiktokPublishId: publishId,
       tiktokStatus: "uploaded",
+      tiktokError: null,
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
 
@@ -236,6 +267,11 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
     return { success: true };
   } catch (err: any) {
     console.error(`[Scheduler] TikTok upload error: ${err.message}`);
+    await db.update(videos).set({
+      tiktokStatus: "error",
+      tiktokError: err.message,
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
     return { success: false, error: err.message };
   }
 }
@@ -384,13 +420,19 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
     return { success: true };
   }
   if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) {
-    return { success: false, error: "Instagram not configured" };
+    const error = "Instagram not configured";
+    await persistPlatformError(video.id, "instagram", error);
+    return { success: false, error };
   }
   if (!video.videoFileDriveId) {
-    return { success: false, error: "No video file in Drive" };
+    const error = "No video file in Drive";
+    await persistPlatformError(video.id, "instagram", error);
+    return { success: false, error };
   }
   if (!user.googleAccessToken || !user.googleRefreshToken) {
-    return { success: false, error: "No Google tokens for Drive access" };
+    const error = "No Google tokens for Drive access";
+    await persistPlatformError(video.id, "instagram", error);
+    return { success: false, error };
   }
 
   let tempToken: string | null = null;
@@ -465,6 +507,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
     await db.update(videos).set({
       instagramMediaId: mediaId,
       instagramStatus: "uploaded",
+      instagramError: null,
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
 
@@ -472,6 +515,11 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
     return { success: true };
   } catch (err: any) {
     console.error(`[Scheduler] Instagram upload error: ${err.message}`);
+    await db.update(videos).set({
+      instagramStatus: "error",
+      instagramError: err.message,
+      updatedAt: new Date(),
+    }).where(eq(videos.id, video.id));
     return { success: false, error: err.message };
   } finally {
     if (tempToken) {
@@ -661,6 +709,32 @@ async function processScheduledVideos() {
 }
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
+
+export async function retryPlatformForVideo(
+  videoId: number,
+  platform: string,
+  user: any,
+): Promise<{ success: boolean; error?: string }> {
+  const [video] = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
+  if (!video) return { success: false, error: "Video not found" };
+
+  switch (platform) {
+    case "youtube":
+      return uploadToYouTube(video, user);
+    case "tiktok":
+      return uploadToTikTok(video, user);
+    case "instagram":
+      return uploadToInstagram(video, user);
+    case "linkedin":
+      return publishToLinkedIn(video, user);
+    case "x":
+      return publishToX(video, user);
+    case "facebook":
+      return publishToFacebookStep(video, user);
+    default:
+      return { success: false, error: `Unknown platform: ${platform}` };
+  }
+}
 
 export function startScheduler() {
   if (intervalId) return;

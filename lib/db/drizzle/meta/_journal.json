@@ -29,6 +29,13 @@
       "when": 1893500000000,
       "tag": "0003_ideas_competitors",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1746190800000,
+      "tag": "0004_platform_error_columns",
+      "breakpoints": true
     }
   ]
 }

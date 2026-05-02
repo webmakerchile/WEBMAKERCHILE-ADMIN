@@ -20,8 +20,14 @@ import {
   X,
   ArrowRight,
   CalendarClock,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  History,
 } from "lucide-react";
 import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -1079,6 +1085,256 @@ function UpcomingPosts() {
   );
 }
 
+/* ------------------------- Recent Activity & Error Banner ------------------------- */
+
+type ActivityVideo = {
+  id: number;
+  title: string;
+  status: string;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
+  youtubeStatus?: string | null;
+  youtubeError?: string | null;
+  tiktokStatus?: string | null;
+  tiktokError?: string | null;
+  instagramStatus?: string | null;
+  instagramError?: string | null;
+  linkedinStatus?: string | null;
+  linkedinError?: string | null;
+  xStatus?: string | null;
+  xError?: string | null;
+  facebookStatus?: string | null;
+  facebookError?: string | null;
+};
+
+const PLATFORM_KEYS: Array<{ platform: Network; statusKey: keyof ActivityVideo; errorKey?: keyof ActivityVideo }> = [
+  { platform: "youtube", statusKey: "youtubeStatus", errorKey: "youtubeError" },
+  { platform: "tiktok", statusKey: "tiktokStatus", errorKey: "tiktokError" },
+  { platform: "instagram", statusKey: "instagramStatus", errorKey: "instagramError" },
+  { platform: "linkedin", statusKey: "linkedinStatus", errorKey: "linkedinError" },
+  { platform: "x", statusKey: "xStatus", errorKey: "xError" },
+  { platform: "facebook", statusKey: "facebookStatus", errorKey: "facebookError" },
+];
+
+function useRecentActivity() {
+  return useQuery<ActivityVideo[]>({
+    queryKey: ["recent-activity"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/content/videos/recent-activity`, { credentials: "include" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+function ErrorBanner() {
+  const { data: activity } = useRecentActivity();
+  const [dismissed, setDismissed] = useState(false);
+
+  const errorVideos = useMemo(() => {
+    if (!activity) return [];
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return activity.filter((v) => {
+      const ts = v.updatedAt ? new Date(v.updatedAt).getTime() : 0;
+      if (ts < cutoff) return false;
+      return PLATFORM_KEYS.some((p) => v[p.statusKey] === "error");
+    });
+  }, [activity]);
+
+  if (dismissed || errorVideos.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3"
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-rose-300">
+            {errorVideos.length === 1
+              ? "1 publicación falló en las últimas 24 h"
+              : `${errorVideos.length} publicaciones fallaron en las últimas 24 h`}
+          </p>
+          <ul className="mt-2 space-y-1.5">
+            {errorVideos.slice(0, 3).map((v) => {
+              const failedPlatforms = PLATFORM_KEYS
+                .filter((p) => v[p.statusKey] === "error")
+                .map((p) => NETWORK_LABELS[p.platform])
+                .join(", ");
+              return (
+                <li key={v.id} className="flex items-center gap-2 text-xs text-rose-200/80">
+                  <span className="font-medium truncate flex-1">{v.title}</span>
+                  <span className="text-rose-300/60 flex-shrink-0">— {failedPlatforms}</span>
+                  <Link
+                    to={`/videos?select=${v.id}`}
+                    className="flex-shrink-0 text-[11px] font-medium px-2 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 transition"
+                  >
+                    Ver
+                  </Link>
+                </li>
+              );
+            })}
+            {errorVideos.length > 3 && (
+              <li className="text-[11px] text-rose-300/60">
+                y {errorVideos.length - 3} más…
+              </li>
+            )}
+          </ul>
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="text-rose-300/60 hover:text-rose-300 transition flex-shrink-0"
+          aria-label="Cerrar"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+function RecentActivity() {
+  const qc = useQueryClient();
+  const { data: activity = [], isLoading } = useRecentActivity();
+  const { toast } = useToast();
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const [tooltipId, setTooltipId] = useState<string | null>(null);
+  const displayItems = activity;
+
+  async function handleRetry(videoId: number, platform: string, platformLabel: string) {
+    const key = `${videoId}-${platform}`;
+    setRetrying(key);
+    try {
+      const r = await fetch(`${API_BASE}/content/videos/${videoId}/retry/${platform}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const contentType = r.headers.get("content-type") || "";
+      const data = contentType.includes("application/json") ? await r.json() : null;
+      if (r.ok && data?.success) {
+        toast({ title: `Reintento exitoso en ${platformLabel}` });
+      } else {
+        toast({
+          title: `Falló el reintento en ${platformLabel}`,
+          description: data?.error || (r.ok ? "Error desconocido" : `Error ${r.status}`),
+          variant: "destructive",
+        });
+      }
+      qc.invalidateQueries({ queryKey: ["recent-activity"] });
+    } catch (err: any) {
+      toast({
+        title: `Error al reintentar en ${platformLabel}`,
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setRetrying(null);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-display font-bold flex items-center gap-2">
+          <History className="w-4 h-4 text-primary" />
+          Actividad reciente
+        </h2>
+        <span className="text-[11px] text-muted-foreground">{activity.length} publicaciones</span>
+      </div>
+
+      <div className="glass-card rounded-2xl border border-white/5 overflow-hidden">
+        {isLoading ? (
+          <div className="space-y-px">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-14 bg-white/5 animate-pulse" />
+            ))}
+          </div>
+        ) : activity.length === 0 ? (
+          <div className="py-10 text-center">
+            <History className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+            <p className="text-xs text-muted-foreground">Sin publicaciones publicadas aún.</p>
+          </div>
+        ) : (
+          <>
+            <div className="divide-y divide-white/5">
+              {displayItems.map((v) => {
+                const date = v.publishedAt || v.updatedAt;
+                const dateStr = date
+                  ? new Date(date).toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                  : "—";
+                const activePlatforms = PLATFORM_KEYS.filter(
+                  (p) => v[p.statusKey] && v[p.statusKey] !== "pending" && v[p.statusKey] !== "skipped",
+                );
+                return (
+                  <div key={v.id} className="flex items-center gap-3 px-4 py-3 hover:bg-white/[0.02] transition">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{v.title}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{dateStr}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {activePlatforms.map((p) => {
+                        const status = v[p.statusKey] as string | null | undefined;
+                        const error = p.errorKey ? (v[p.errorKey] as string | null | undefined) : null;
+                        const isError = status === "error";
+                        const isOk = status === "published" || status === "uploaded";
+                        const ttKey = `${v.id}-${p.platform}`;
+                        const isRetrying = retrying === ttKey;
+                        return (
+                          <div key={p.platform} className="relative flex items-center gap-0.5">
+                            <div
+                              className={`relative group flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
+                                isError
+                                  ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                                  : isOk
+                                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                                  : "bg-white/5 border-white/10 text-muted-foreground"
+                              }`}
+                              onMouseEnter={() => error && setTooltipId(ttKey)}
+                              onMouseLeave={() => setTooltipId(null)}
+                            >
+                              <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ${NETWORK_BG[p.platform]}`}>
+                                <NetworkIcon network={p.platform} className="w-2 h-2" />
+                              </span>
+                              {isError ? (
+                                <XCircle className="w-2.5 h-2.5" />
+                              ) : isOk ? (
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                              ) : null}
+                              {tooltipId === ttKey && error && (
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-50 w-48 rounded-lg bg-background border border-white/10 px-2 py-1.5 text-[10px] text-muted-foreground shadow-lg pointer-events-none">
+                                  {error}
+                                </div>
+                              )}
+                            </div>
+                            {isError && (
+                              <button
+                                onClick={() => handleRetry(v.id, p.platform, NETWORK_LABELS[p.platform])}
+                                disabled={isRetrying}
+                                className="w-5 h-5 rounded-full flex items-center justify-center bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-300 transition disabled:opacity-50"
+                                title={`Reintentar en ${NETWORK_LABELS[p.platform]}`}
+                              >
+                                <RefreshCw className={`w-2.5 h-2.5 ${isRetrying ? "animate-spin" : ""}`} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* ------------------------- Page ------------------------- */
 
 export default function Dashboard() {
@@ -1092,6 +1348,8 @@ export default function Dashboard() {
   return (
     <Layout>
       <div className="space-y-6">
+        <ErrorBanner />
+
         <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl sm:text-4xl font-display font-bold">
@@ -1111,6 +1369,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
           <div className="space-y-8 min-w-0">
             <AnalyticsRow />
+            <RecentActivity />
             <IdeasKanban />
             <InspirationsBlock />
           </div>

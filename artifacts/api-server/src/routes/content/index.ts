@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { videos } from "@workspace/db/schema";
-import { eq, desc, lte, and } from "drizzle-orm";
+import { videos, users } from "@workspace/db/schema";
+import { eq, desc, lte, and, or, inArray } from "drizzle-orm";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
+import { retryPlatformForVideo } from "../../scheduler";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import { google } from "googleapis";
@@ -136,6 +137,44 @@ router.post("/content/videos", async (req, res) => {
     })
     .returning();
   res.status(201).json(row);
+});
+
+router.get("/content/videos/recent-activity", async (_req, res) => {
+  const rows = await db
+    .select({
+      id: videos.id,
+      title: videos.title,
+      status: videos.status,
+      publishedAt: videos.publishedAt,
+      updatedAt: videos.updatedAt,
+      youtubeStatus: videos.youtubeStatus,
+      youtubeError: videos.youtubeError,
+      tiktokStatus: videos.tiktokStatus,
+      tiktokError: videos.tiktokError,
+      instagramStatus: videos.instagramStatus,
+      instagramError: videos.instagramError,
+      linkedinStatus: videos.linkedinStatus,
+      linkedinError: videos.linkedinError,
+      xStatus: videos.xStatus,
+      xError: videos.xError,
+      facebookStatus: videos.facebookStatus,
+      facebookError: videos.facebookError,
+    })
+    .from(videos)
+    .where(
+      or(
+        inArray(videos.status, ["published", "partial", "error"]),
+        eq(videos.linkedinStatus, "error"),
+        eq(videos.xStatus, "error"),
+        eq(videos.facebookStatus, "error"),
+        eq(videos.youtubeStatus, "error"),
+        eq(videos.tiktokStatus, "error"),
+        eq(videos.instagramStatus, "error"),
+      ),
+    )
+    .orderBy(desc(videos.updatedAt))
+    .limit(20);
+  res.json(rows);
 });
 
 router.get("/content/videos/:id", async (req, res) => {
@@ -522,6 +561,75 @@ router.post("/content/videos/:id/schedule", async (req, res) => {
     return;
   }
   res.json(updated);
+});
+
+router.post("/content/videos/:id/retry/:platform", async (req, res) => {
+  const id = Number(req.params.id);
+  const platform = req.params.platform;
+  const allowed = ["youtube", "tiktok", "instagram", "linkedin", "x", "facebook"];
+  if (!allowed.includes(platform)) {
+    res.status(400).json({ error: "Invalid platform" });
+    return;
+  }
+
+  const [video] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
+  if (!video) {
+    res.status(404).json({ error: "Video not found" });
+    return;
+  }
+
+  type AuthedUser = { id: number };
+  const reqUser = req.user as AuthedUser | undefined;
+  if (!reqUser?.id) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const [retryUser] = await db.select().from(users).where(eq(users.id, reqUser.id)).limit(1);
+  if (!retryUser) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  try {
+    const result = await retryPlatformForVideo(id, platform, retryUser);
+
+    const [fresh] = await db.select({
+      youtubeStatus: videos.youtubeStatus,
+      tiktokStatus: videos.tiktokStatus,
+      instagramStatus: videos.instagramStatus,
+      linkedinStatus: videos.linkedinStatus,
+      xStatus: videos.xStatus,
+      facebookStatus: videos.facebookStatus,
+    }).from(videos).where(eq(videos.id, id)).limit(1);
+
+    if (fresh) {
+      const allPlatforms = [
+        fresh.youtubeStatus, fresh.tiktokStatus, fresh.instagramStatus,
+        fresh.linkedinStatus, fresh.xStatus, fresh.facebookStatus,
+      ].filter((s) => s && s !== "pending" && s !== "skipped");
+
+      const hasError = allPlatforms.some((s) => s === "error");
+      const allPublished = allPlatforms.length > 0 && allPlatforms.every((s) => s === "published" || s === "uploaded");
+
+      let newStatus: string | null = null;
+      if (!hasError && allPublished) newStatus = "published";
+      else if (!hasError && allPlatforms.length > 0) newStatus = "partial";
+      else if (hasError && allPlatforms.some((s) => s === "published" || s === "uploaded")) newStatus = "partial";
+
+      if (newStatus) {
+        await db.update(videos).set({
+          status: newStatus,
+          publishedAt: newStatus === "published" || newStatus === "partial" ? new Date() : undefined,
+          updatedAt: new Date(),
+        }).where(eq(videos.id, id));
+      }
+    }
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || "Retry failed" });
+  }
 });
 
 router.post("/content/schedule/check", async (_req, res) => {
