@@ -688,6 +688,13 @@ export default function VideosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      // 403 can now come back from the new campaign/template ownership checks
+      // — surface a friendly message instead of letting an HTML/error body
+      // crash JSON parsing or trigger a misleading "Video creado" toast.
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(detail?.error || `No se pudo crear el video (HTTP ${res.status})`);
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -699,6 +706,9 @@ export default function VideosPage() {
       autoGenerateMutation.mutate(data.id);
       toast({ title: "Video creado", description: "Generando contenido con IA en segundo plano..." });
     },
+    onError: (err: Error) => {
+      toast({ title: "Error al crear video", description: err.message, variant: "destructive" });
+    },
   });
 
   const updateMutation = useMutation({
@@ -708,11 +718,18 @@ export default function VideosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(detail?.error || `No se pudo guardar (HTTP ${res.status})`);
+      }
       return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(data);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
     },
   });
 
