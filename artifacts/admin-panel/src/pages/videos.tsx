@@ -2230,9 +2230,18 @@ function StepInfo({
             // Template field keys mirror the persisted shape from
             // `lib/db/src/schema/library.ts#TemplateFields` so the wizard
             // honours every per-network description the user saved.
-            const next: Record<string, any> = { ...formData, templateId: template.id };
-            const fields = template.fields || {};
-            const targets: ReadonlyArray<keyof typeof fields> = [
+            // Each key here is also a (string-typed) field on `VideoData`,
+            // so we can write into a typed Partial<VideoData> without `any`.
+            type TemplateTargetKey =
+              | "description"
+              | "tiktokDescription"
+              | "instagramDescription"
+              | "youtubeTitle"
+              | "youtubeDescription"
+              | "linkedinDescription"
+              | "xDescription"
+              | "facebookDescription";
+            const targets: readonly TemplateTargetKey[] = [
               "description",
               "tiktokDescription",
               "instagramDescription",
@@ -2242,13 +2251,15 @@ function StepInfo({
               "xDescription",
               "facebookDescription",
             ];
+            const fields = template.fields || {};
+            const patch: Partial<VideoData> = { templateId: template.id };
             for (const key of targets) {
               const raw = fields[key];
               if (typeof raw === "string" && raw.length > 0) {
-                next[key] = fillTemplateVariables(raw, values);
+                patch[key] = fillTemplateVariables(raw, values);
               }
             }
-            setFormData(next);
+            setFormData({ ...formData, ...patch });
           }}
         />
 

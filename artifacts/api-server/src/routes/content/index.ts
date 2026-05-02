@@ -1,7 +1,32 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { videos, users } from "@workspace/db/schema";
+import { videos, users, campaigns, templates } from "@workspace/db/schema";
 import { eq, desc, lte, and, or, inArray, ilike, sql } from "drizzle-orm";
+
+/**
+ * Resolve a finite numeric library reference (campaignId/templateId) to either
+ *   - `null`        when the caller passed null/undefined/non-finite,
+ *   - the same id   when the row exists and is owned by `userId`,
+ *   - `"forbidden"` when the row exists for someone else (or doesn't exist).
+ *
+ * Used by POST/PATCH /content/videos so users can only attach videos to their
+ * own campaigns/templates.
+ */
+async function resolveOwnedLibraryId(
+  raw: unknown,
+  table: typeof campaigns | typeof templates,
+  userId: number | null,
+): Promise<number | null | "forbidden"> {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  if (!userId) return "forbidden";
+  const [row] = await db
+    .select({ id: table.id })
+    .from(table)
+    .where(and(eq(table.id, raw), eq(table.userId, userId)))
+    .limit(1);
+  return row ? raw : "forbidden";
+}
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
 import { retryPlatformForVideo } from "../../scheduler";
@@ -327,12 +352,21 @@ router.delete("/content/videos/bulk", async (req, res) => {
 
 router.post("/content/videos", async (req, res) => {
   const body = CreateVideoBody.parse(req.body);
+  const userId = (req.user as { id?: number } | undefined)?.id ?? null;
   const campaignIdRaw = (req.body as { campaignId?: unknown })?.campaignId;
   const templateIdRaw = (req.body as { templateId?: unknown })?.templateId;
-  const campaignId =
-    typeof campaignIdRaw === "number" && Number.isFinite(campaignIdRaw) ? campaignIdRaw : null;
-  const templateId =
-    typeof templateIdRaw === "number" && Number.isFinite(templateIdRaw) ? templateIdRaw : null;
+  const campaignResolved = await resolveOwnedLibraryId(campaignIdRaw, campaigns, userId);
+  if (campaignResolved === "forbidden") {
+    res.status(403).json({ error: "Campaña no encontrada o no autorizada" });
+    return;
+  }
+  const templateResolved = await resolveOwnedLibraryId(templateIdRaw, templates, userId);
+  if (templateResolved === "forbidden") {
+    res.status(403).json({ error: "Plantilla no encontrada o no autorizada" });
+    return;
+  }
+  const campaignId = campaignResolved;
+  const templateId = templateResolved;
   const [row] = await db
     .insert(videos)
     .values({
@@ -438,20 +472,22 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
   if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
   if (body.campaignId !== undefined) {
-    updateData.campaignId =
-      body.campaignId === null
-        ? null
-        : typeof body.campaignId === "number" && Number.isFinite(body.campaignId)
-          ? body.campaignId
-          : null;
+    const userId = (req.user as { id?: number } | undefined)?.id ?? null;
+    const resolved = await resolveOwnedLibraryId(body.campaignId, campaigns, userId);
+    if (resolved === "forbidden") {
+      res.status(403).json({ error: "Campaña no encontrada o no autorizada" });
+      return;
+    }
+    updateData.campaignId = resolved;
   }
   if (body.templateId !== undefined) {
-    updateData.templateId =
-      body.templateId === null
-        ? null
-        : typeof body.templateId === "number" && Number.isFinite(body.templateId)
-          ? body.templateId
-          : null;
+    const userId = (req.user as { id?: number } | undefined)?.id ?? null;
+    const resolved = await resolveOwnedLibraryId(body.templateId, templates, userId);
+    if (resolved === "forbidden") {
+      res.status(403).json({ error: "Plantilla no encontrada o no autorizada" });
+      return;
+    }
+    updateData.templateId = resolved;
   }
 
   const [row] = await db

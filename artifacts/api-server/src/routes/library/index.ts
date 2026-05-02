@@ -331,19 +331,24 @@ router.delete("/library/campaigns/:id", async (req: Request, res: Response) => {
   if (!userId) return unauthorized(res);
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return badRequest(res, "ID inválido");
-  // Detach videos before delete so we don't dangle a FK if it exists.
+  // Verify ownership BEFORE touching `videos`, otherwise a request for someone
+  // else's campaign id would still detach their videos.
+  const [own] = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)))
+    .limit(1);
+  if (!own) {
+    res.status(404).json({ error: "Campaña no encontrada" });
+    return;
+  }
+  // Detach first to avoid relying on the FK ON DELETE SET NULL in environments
+  // where the migration hasn't been applied yet.
   await db
     .update(videos)
     .set({ campaignId: null, updatedAt: new Date() })
     .where(eq(videos.campaignId, id));
-  const deleted = await db
-    .delete(campaigns)
-    .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)))
-    .returning({ id: campaigns.id });
-  if (!deleted.length) {
-    res.status(404).json({ error: "Campaña no encontrada" });
-    return;
-  }
+  await db.delete(campaigns).where(eq(campaigns.id, id));
   res.status(204).send();
 });
 
