@@ -305,10 +305,10 @@ function AnalyticsRow() {
               <span>{c.label}</span>
               {c.sublabel && <span className="text-[10px] text-muted-foreground/70">{c.sublabel}</span>}
             </div>
-            {(c.series && c.series.length > 0) ? (
+            {(c.series && c.series.length > 0 && c.series.some((p) => p.value !== 0)) ? (
               <MiniBars series={c.series} prevSeries={c.prevSeries} accent={c.bar} />
             ) : (
-              <div className="h-8 mt-2 rounded bg-white/[0.02]" />
+              <div className="h-8 mt-2 rounded bg-white/[0.02]" title="Sin datos en el rango" />
             )}
           </motion.div>
         ))}
