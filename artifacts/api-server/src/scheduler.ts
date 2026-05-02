@@ -791,17 +791,8 @@ async function processScheduledVideos() {
         (results.x.success && video.xDescription) ||
         (results.facebook.success && facebookIncluded);
 
-      let nextStatus: string;
-      if (anyCooldown) {
-        // Hold the video in its current "scheduled" lane; the scheduler will
-        // re-pick it via nextRetryAt when at least one cooldown elapses.
-        nextStatus = video.status || "scheduled";
-      } else if (allSuccess && anyAttempted) nextStatus = "published";
-      else if (anyRealSuccess) nextStatus = "partial";
-      else nextStatus = "error";
-
-      // Reload to know whether any platform is still queued for a retry; if so,
-      // keep nextRetryAt so the scheduler will re-pick the video on the next tick.
+      // Reload AFTER all platform attempts so we observe the side-effects of
+      // recordFailure() (status="retrying", *NextRetryAt, etc).
       const [postRun] = await db.select({
         youtubeStatus: videos.youtubeStatus,
         tiktokStatus: videos.tiktokStatus,
@@ -835,6 +826,20 @@ async function processScheduledVideos() {
         else videoNextRetryAt = undefined;
       }
 
+      // Compute next status AFTER reading post-run state so any platform that
+      // got scheduled for a retry (anyCooldown OR stillRetrying) keeps the
+      // video in a retry-eligible status — the scheduler must be able to
+      // re-pick it via nextRetryAt. Only mark "error" once the retry budget
+      // is exhausted on every failing platform.
+      let nextStatus: string;
+      if (anyCooldown || stillRetrying) {
+        // If any real success already happened keep "partial" so the user sees
+        // partial progress; otherwise stay in "scheduled" for the retry pass.
+        nextStatus = anyRealSuccess ? "partial" : (video.status === "scheduled" || video.status === "partial" ? video.status : "scheduled");
+      } else if (allSuccess && anyAttempted) nextStatus = "published";
+      else if (anyRealSuccess) nextStatus = "partial";
+      else nextStatus = "error";
+
       await db.update(videos).set({
         status: nextStatus,
         workflowStatus: nextStatus === "published" ? "publicado" : undefined,
@@ -853,8 +858,13 @@ async function processScheduledVideos() {
 
       // Notify the admin user (single-tenant) about the outcome. We always pick
       // the first admin user — same logic the scheduler uses for credentials.
+      // Skip notifications while retries are still pending so the user only
+      // hears about a definitive failure once the retry budget is exhausted.
       try {
-        if (nextStatus === "published") {
+        if (stillRetrying || anyCooldown) {
+          const nextAtStr = videoNextRetryAt ? new Date(videoNextRetryAt).toISOString() : "pronto";
+          console.log(`[Scheduler] Video #${video.id} retries pending; next attempt ~${nextAtStr}. Skipping outcome notification.`);
+        } else if (nextStatus === "published") {
           await createNotification({
             userId: adminUser.id,
             type: "publish_success",
@@ -875,7 +885,7 @@ async function processScheduledVideos() {
             userId: adminUser.id,
             type: "publish_error",
             title: "Error al publicar",
-            body: `"${video.title}" falló: ${errors || "error desconocido"}`,
+            body: `"${video.title}" falló tras agotar reintentos: ${errors || "error desconocido"}`,
             link: `/videos?select=${video.id}`,
           });
         }
