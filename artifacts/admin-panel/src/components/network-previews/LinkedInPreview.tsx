@@ -2,7 +2,7 @@ import { ThumbsUp, MessageSquare, Repeat2, Send, Globe } from "lucide-react";
 import { Avatar } from "./Avatar";
 import { HighlightedText, formatCount, splitAtTruncation } from "./text-utils";
 import { NETWORK_LIMITS } from "./limits";
-import type { NetworkProfile, PreviewVideo } from "./types";
+import { isLinkedInExtra, type NetworkProfile, type PreviewVideo } from "./types";
 
 export function LinkedInPreview({
   text,
@@ -15,7 +15,7 @@ export function LinkedInPreview({
 }) {
   const name = profile?.name || "Tu cuenta";
   const subs = profile?.followers != null ? `${formatCount(profile.followers)} seguidores` : "Profesional";
-  const isOrg = !!(profile?.extra && (profile.extra as any).isOrg);
+  const isOrg = isLinkedInExtra(profile?.extra) ? profile.extra.isOrg : false;
   const { head, tail } = splitAtTruncation(text || "", NETWORK_LIMITS.linkedin.truncateAt);
 
   return (

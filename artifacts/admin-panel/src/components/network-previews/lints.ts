@@ -1,5 +1,13 @@
 import type { Network } from "../social-icons";
-import { NETWORK_LIMITS, YOUTUBE_TITLE_MAX, YOUTUBE_TITLE_TRUNCATE, countHashtags, detectUrls } from "./limits";
+import {
+  NETWORK_LIMITS,
+  YOUTUBE_TITLE_MAX,
+  YOUTUBE_TITLE_TRUNCATE,
+  countEmojis,
+  countHashtags,
+  detectUrls,
+  hasZwjEmoji,
+} from "./limits";
 
 export type LintLevel = "error" | "warn" | "info";
 
@@ -49,7 +57,7 @@ export function lintContent({ network, text, title }: LintInput): LintIssue[] {
   if (network === "x" && urls.length > 0) {
     issues.push({
       level: "warn",
-      message: "Las URLs cuentan ~23 caracteres en X y pueden romper el preview.",
+      message: "X no genera tarjetas de enlace en posts simples · el link se verá como texto plano.",
     });
   }
   if (network === "instagram" && urls.length > 0) {
@@ -62,6 +70,28 @@ export function lintContent({ network, text, title }: LintInput): LintIssue[] {
     issues.push({
       level: "info",
       message: "TikTok no muestra enlaces clickeables en la descripción.",
+    });
+  }
+
+  // Emoji compatibility checks per network.
+  const emojiCount = countEmojis(value);
+  if (limits.emojiWarnAbove && emojiCount > limits.emojiWarnAbove) {
+    const where = network === "linkedin" ? "feed corporativo" : "buscadores y miniaturas";
+    issues.push({
+      level: "warn",
+      message: `${emojiCount} emojis · pueden ocultarse en el ${where} de ${networkProperName(network)}.`,
+    });
+  }
+  if (network === "youtube" && title && countEmojis(title) > 0) {
+    issues.push({
+      level: "info",
+      message: "Los emojis en el título no aparecen en el buscador ni en miniaturas de YouTube.",
+    });
+  }
+  if (hasZwjEmoji(value)) {
+    issues.push({
+      level: "info",
+      message: "Algunos emojis combinados (familias, profesiones) pueden no verse en clientes antiguos.",
     });
   }
 
@@ -95,6 +125,23 @@ export function lintContent({ network, text, title }: LintInput): LintIssue[] {
   }
 
   return issues;
+}
+
+function networkProperName(n: Network): string {
+  switch (n) {
+    case "linkedin":
+      return "LinkedIn";
+    case "youtube":
+      return "YouTube";
+    case "tiktok":
+      return "TikTok";
+    case "facebook":
+      return "Facebook";
+    case "instagram":
+      return "Instagram";
+    case "x":
+      return "X";
+  }
 }
 
 export function severity(issues: LintIssue[]): LintLevel | null {

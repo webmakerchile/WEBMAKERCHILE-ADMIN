@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { Layout } from "@/components/layout";
-import { PreviewPanel, type PreviewContent } from "@/components/network-previews";
+import { PreviewPanel, TruncatedTextarea, type PreviewContent } from "@/components/network-previews";
 import type { Network } from "@/components/social-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2550,11 +2550,13 @@ function StepTikTokInstagram({
             {showTikTokPlaceholder ? (
               <AutoGeneratingPlaceholder label="descripción de TikTok" />
             ) : (
-              <textarea
+              <TruncatedTextarea
                 value={formData.tiktokDescription}
                 onChange={(e) => setFormData({ ...formData, tiktokDescription: e.target.value })}
-                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+                truncateAt={150}
+                maxLength={2200}
                 placeholder={"✨ [Título atractivo]\n\n📌 [Descripción corta]\n\n#hashtag1 #hashtag2 #hashtag3"}
+                ariaLabel="Descripción para TikTok"
               />
             )}
             {!showTikTokPlaceholder && (
@@ -2579,11 +2581,13 @@ function StepTikTokInstagram({
             {showInstagramPlaceholder ? (
               <AutoGeneratingPlaceholder label="descripción de Instagram" />
             ) : (
-              <textarea
+              <TruncatedTextarea
                 value={formData.instagramDescription}
                 onChange={(e) => setFormData({ ...formData, instagramDescription: e.target.value })}
-                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+                truncateAt={125}
+                maxLength={2200}
                 placeholder={"✨ [Título atractivo]\n\n📌 [Descripción para Instagram]\n\n💡 Síguenos para más tips\n\n#hashtag1 #hashtag2 #hashtag3"}
+                ariaLabel="Descripción para Instagram"
               />
             )}
             {!showInstagramPlaceholder && (
@@ -2687,11 +2691,14 @@ function StepYouTube({
           {showYoutubeDescPlaceholder ? (
             <AutoGeneratingPlaceholder label="descripción de YouTube" />
           ) : (
-            <textarea
+            <TruncatedTextarea
               value={formData.youtubeDescription}
               onChange={(e) => setFormData({ ...formData, youtubeDescription: e.target.value })}
-              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[200px]"
+              truncateAt={157}
+              maxLength={5000}
+              minHeightClass="min-h-[200px]"
               placeholder={"📌 [Descripción del video]\n\n🔔 Suscríbete para más contenido\n💻 Visítanos: webmakerchile.com\n\n#shorts #webdev #programacion"}
+              ariaLabel="Descripción para YouTube"
             />
           )}
           {!showYoutubeDescPlaceholder && (
@@ -2805,12 +2812,13 @@ function StepLinkedInX({
             {showLinkedInPlaceholder ? (
               <AutoGeneratingPlaceholder label="descripción de LinkedIn" />
             ) : (
-              <textarea
+              <TruncatedTextarea
                 value={formData.linkedinDescription}
                 onChange={(e) => setFormData({ ...formData, linkedinDescription: e.target.value })}
-                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
-                placeholder={"💡 [Insight profesional]\n\n📌 [Descripción extendida con contexto de negocio]\n\n#WebDev #ChileTech #DesarrolloWeb"}
+                truncateAt={210}
                 maxLength={3000}
+                placeholder={"💡 [Insight profesional]\n\n📌 [Descripción extendida con contexto de negocio]\n\n#WebDev #ChileTech #DesarrolloWeb"}
+                ariaLabel="Descripción para LinkedIn"
               />
             )}
             {!showLinkedInPlaceholder && (
@@ -2866,12 +2874,14 @@ function StepLinkedInX({
               </button>
             )}
           </div>
-          <textarea
+          <TruncatedTextarea
             value={formData.facebookDescription}
             onChange={(e) => setFormData({ ...formData, facebookDescription: e.target.value.slice(0, 500) })}
-            className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[100px]"
-            placeholder={"¿Qué aprendes hoy? Comparte con tu comunidad 👇\n\n#WebDev #Chile"}
+            truncateAt={480}
             maxLength={500}
+            minHeightClass="min-h-[100px]"
+            placeholder={"¿Qué aprendes hoy? Comparte con tu comunidad 👇\n\n#WebDev #Chile"}
+            ariaLabel="Descripción para Facebook"
           />
           <p className="text-[10px] text-muted-foreground">Máximo 500 caracteres · {(formData.facebookDescription || "").length}/500</p>
         </div>

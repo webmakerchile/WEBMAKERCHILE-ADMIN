@@ -23,13 +23,33 @@ const X_API_BASE = "https://api.twitter.com/2";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
+/** Subset of the user row consumed by the social profile aggregator. */
+type SocialUser = {
+  id?: number | string;
+  tiktokAccessToken?: string | null;
+  tiktokOpenId?: string | null;
+  googleAccessToken?: string | null;
+  googleRefreshToken?: string | null;
+  linkedinAccessToken?: string | null;
+  linkedinPersonUrn?: string | null;
+  linkedinOrgUrn?: string | null;
+  linkedinName?: string | null;
+  linkedinPicture?: string | null;
+  xAccessToken?: string | null;
+  xUserId?: string | null;
+  xUsername?: string | null;
+  facebookUserAccessToken?: string | null;
+  facebookPageName?: string | null;
+  facebookPagePicture?: string | null;
+};
+
 export type NetworkProfile = {
   connected: boolean;
   name?: string | null;
   handle?: string | null;
   avatar?: string | null;
   followers?: number | null;
-  extra?: Record<string, unknown>;
+  extra?: Record<string, unknown> | null;
 };
 
 export type SocialProfilesResponse = {
@@ -43,18 +63,75 @@ export type SocialProfilesResponse = {
 
 const EMPTY: NetworkProfile = { connected: false };
 
+// Narrow shapes for upstream JSON responses we care about.
+type IGResponse = {
+  error?: { message?: string };
+  id?: string;
+  username?: string;
+  name?: string;
+  profile_picture_url?: string;
+  followers_count?: number;
+};
+
+type FBPageResponse = {
+  error?: { message?: string };
+  id?: string;
+  name?: string;
+  picture?: { data?: { url?: string } };
+  fan_count?: number;
+};
+
+type TikTokResponse = {
+  data?: {
+    user?: {
+      open_id?: string;
+      display_name?: string;
+      avatar_url?: string;
+    };
+  };
+};
+
+type LinkedInOrgResponse = {
+  localizedName?: string;
+  logoV2?: {
+    "original~"?: {
+      elements?: Array<{
+        identifiers?: Array<{ identifier?: string }>;
+      }>;
+    };
+  };
+};
+
+type XUserResponse = {
+  data?: {
+    id?: string;
+    name?: string;
+    username?: string;
+    profile_image_url?: string;
+  };
+};
+
+async function safeJson<T>(r: Response | globalThis.Response): Promise<T | null> {
+  try {
+    return (await (r as globalThis.Response).json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function getInstagramProfile(): Promise<NetworkProfile> {
   if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) return EMPTY;
   try {
     const r = await fetch(
       `${IG_API_BASE}/${INSTAGRAM_USER_ID}?fields=id,username,name,profile_picture_url,followers_count&access_token=${INSTAGRAM_ACCESS_TOKEN}`,
     );
-    const data: any = await r.json();
-    if (data.error) return EMPTY;
+    if (!r.ok) return EMPTY;
+    const data = await safeJson<IGResponse>(r);
+    if (!data || data.error) return EMPTY;
     return {
       connected: true,
-      name: data.name || data.username,
-      handle: data.username,
+      name: data.name || data.username || null,
+      handle: data.username || null,
       avatar: data.profile_picture_url || null,
       followers: typeof data.followers_count === "number" ? data.followers_count : null,
     };
@@ -63,27 +140,29 @@ async function getInstagramProfile(): Promise<NetworkProfile> {
   }
 }
 
-async function getFacebookProfile(user: any): Promise<NetworkProfile> {
+async function getFacebookProfile(user: SocialUser | null): Promise<NetworkProfile> {
   if (SERVER_FB_PAGE_ID && SERVER_FB_PAGE_TOKEN) {
     try {
       const r = await fetch(
         `${FB_GRAPH_BASE}/${SERVER_FB_PAGE_ID}?fields=id,name,picture,fan_count&access_token=${SERVER_FB_PAGE_TOKEN}`,
       );
-      const data: any = await r.json();
-      if (!data.error) {
-        return {
-          connected: true,
-          name: data.name || "Facebook Page",
-          handle: data.name || null,
-          avatar: data.picture?.data?.url || null,
-          followers: typeof data.fan_count === "number" ? data.fan_count : null,
-        };
+      if (r.ok) {
+        const data = await safeJson<FBPageResponse>(r);
+        if (data && !data.error) {
+          return {
+            connected: true,
+            name: data.name || "Facebook Page",
+            handle: data.name || null,
+            avatar: data.picture?.data?.url || null,
+            followers: typeof data.fan_count === "number" ? data.fan_count : null,
+          };
+        }
       }
     } catch {
       /* fall through */
     }
   }
-  if (user?.facebookUserAccessToken && user?.facebookPageName) {
+  if (user?.facebookUserAccessToken && user.facebookPageName) {
     return {
       connected: true,
       name: user.facebookPageName,
@@ -94,15 +173,15 @@ async function getFacebookProfile(user: any): Promise<NetworkProfile> {
   return EMPTY;
 }
 
-async function getTikTokProfile(user: any): Promise<NetworkProfile> {
-  if (!user?.tiktokAccessToken || !user?.tiktokOpenId) return EMPTY;
+async function getTikTokProfile(user: SocialUser | null): Promise<NetworkProfile> {
+  if (!user?.tiktokAccessToken || !user.tiktokOpenId) return EMPTY;
   try {
     const r = await fetch(
       `${TIKTOK_API_BASE}/v2/user/info/?fields=open_id,display_name,avatar_url`,
       { headers: { Authorization: `Bearer ${user.tiktokAccessToken}` } },
     );
     if (!r.ok) return EMPTY;
-    const data: any = await r.json();
+    const data = await safeJson<TikTokResponse>(r);
     const u = data?.data?.user;
     if (!u) return EMPTY;
     return {
@@ -116,8 +195,8 @@ async function getTikTokProfile(user: any): Promise<NetworkProfile> {
   }
 }
 
-async function getYouTubeProfile(user: any): Promise<NetworkProfile> {
-  if (!user?.googleAccessToken || !user?.googleRefreshToken) return EMPTY;
+async function getYouTubeProfile(user: SocialUser | null): Promise<NetworkProfile> {
+  if (!user?.googleAccessToken || !user.googleRefreshToken) return EMPTY;
   try {
     const oauth = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
     oauth.setCredentials({
@@ -141,8 +220,8 @@ async function getYouTubeProfile(user: any): Promise<NetworkProfile> {
   }
 }
 
-async function getLinkedInProfile(user: any): Promise<NetworkProfile> {
-  if (!user?.linkedinAccessToken || !user?.linkedinPersonUrn) return EMPTY;
+async function getLinkedInProfile(user: SocialUser | null): Promise<NetworkProfile> {
+  if (!user?.linkedinAccessToken || !user.linkedinPersonUrn) return EMPTY;
   let orgName: string | null = null;
   let orgLogo: string | null = null;
   if (user.linkedinOrgUrn) {
@@ -159,9 +238,9 @@ async function getLinkedInProfile(user: any): Promise<NetworkProfile> {
         },
       );
       if (r.ok) {
-        const data: any = await r.json();
-        orgName = data.localizedName || null;
-        orgLogo = data.logoV2?.["original~"]?.elements?.[0]?.identifiers?.[0]?.identifier || null;
+        const data = await safeJson<LinkedInOrgResponse>(r);
+        orgName = data?.localizedName || null;
+        orgLogo = data?.logoV2?.["original~"]?.elements?.[0]?.identifiers?.[0]?.identifier || null;
       }
     } catch {
       /* ignore */
@@ -176,8 +255,8 @@ async function getLinkedInProfile(user: any): Promise<NetworkProfile> {
   };
 }
 
-async function getXProfile(user: any): Promise<NetworkProfile> {
-  if (!user?.xAccessToken || !user?.xUserId) return EMPTY;
+async function getXProfile(user: SocialUser | null): Promise<NetworkProfile> {
+  if (!user?.xAccessToken || !user.xUserId) return EMPTY;
   const fallback: NetworkProfile = {
     connected: true,
     name: user.xUsername || null,
@@ -189,7 +268,7 @@ async function getXProfile(user: any): Promise<NetworkProfile> {
       headers: { Authorization: `Bearer ${user.xAccessToken}` },
     });
     if (!r.ok) return fallback;
-    const data: any = await r.json();
+    const data = await safeJson<XUserResponse>(r);
     const u = data?.data;
     if (!u) return fallback;
     return {
@@ -204,11 +283,15 @@ async function getXProfile(user: any): Promise<NetworkProfile> {
 }
 
 router.get("/social/profiles", async (req: Request, res: Response) => {
-  const u = req.user as any;
-  let user = u;
-  if (u?.id) {
-    const fresh = await db.select().from(users).where(eq(users.id, u.id)).limit(1);
-    if (fresh[0]) user = fresh[0];
+  const sessionUser = req.user as SocialUser | undefined;
+  let user: SocialUser | null = sessionUser ?? null;
+  if (sessionUser?.id != null) {
+    const fresh = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, Number(sessionUser.id)))
+      .limit(1);
+    if (fresh[0]) user = fresh[0] as SocialUser;
   }
   const [instagram, tiktok, youtube, linkedin, x, facebook] = await Promise.all([
     getInstagramProfile(),
@@ -219,7 +302,8 @@ router.get("/social/profiles", async (req: Request, res: Response) => {
     getFacebookProfile(user),
   ]);
   res.set("Cache-Control", "private, max-age=60");
-  res.json({ instagram, tiktok, youtube, linkedin, x, facebook });
+  const payload: SocialProfilesResponse = { instagram, tiktok, youtube, linkedin, x, facebook };
+  res.json(payload);
 });
 
 export default router;
