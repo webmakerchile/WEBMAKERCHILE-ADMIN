@@ -526,8 +526,17 @@ export default function VideosPage() {
   // returns the queued ids; we then call the existing per-video generator
   // sequentially so Gemini calls don't block each other or the UI.
   const handleBulkGenerateDescriptions = async () => {
-    setGeneratingDescriptions(true);
     const ids = Array.from(selectedIds);
+    // Backend caps this endpoint at 50 ids — surface that here so the user
+    // gets a clear message instead of a generic 400 in the middle of a batch.
+    if (ids.length > 50) {
+      toast({
+        title: `Selecciona máximo 50 videos para generar descripciones (tienes ${ids.length})`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setGeneratingDescriptions(true);
     try {
       const res = await apiFetch(`${API_BASE}/content/videos/bulk-generate-descriptions`, {
         method: "POST",

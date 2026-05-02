@@ -272,11 +272,11 @@ router.post("/content/videos/bulk-schedule", async (req, res) => {
   res.json({ scheduled: updated.length, ids: updated.map((u) => u.id) });
 });
 
-// Bulk generate descriptions: stub that flags videos for description
-// regeneration. The actual generation pipeline runs per-video in the
-// existing /:id/generate-descriptions endpoint; here we just zero out the
-// existing descriptions so the editor knows to regenerate them. Returns the
-// list of affected ids so the UI can chain individual generation calls.
+// Bulk generate descriptions: validates the selection and returns the list
+// of queued ids. The actual generation runs per-video in the existing
+// /:id/generate-descriptions endpoint; the frontend chains those calls so
+// long Gemini requests don't tie up a single connection. We deliberately do
+// not mutate the rows here — the per-video endpoint owns the write.
 router.post("/content/videos/bulk-generate-descriptions", async (req, res) => {
   const idsRaw = req.body?.ids;
   if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
