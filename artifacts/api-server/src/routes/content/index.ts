@@ -373,7 +373,8 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
     : targets.filter((t) => {
         if (t === "tiktok") return !video.tiktokDescription;
         if (t === "instagram") return !video.instagramDescription;
-        if (t === "youtube") return !video.youtubeTitle;
+        // Skip YouTube only when both title AND description are already set
+        if (t === "youtube") return !video.youtubeTitle && !video.youtubeDescription;
         if (t === "linkedin") return !video.linkedinDescription;
         if (t === "x") return !video.xDescription;
         if (t === "facebook") return !video.facebookDescription;

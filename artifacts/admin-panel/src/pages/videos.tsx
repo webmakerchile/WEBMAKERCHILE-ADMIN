@@ -217,6 +217,21 @@ export default function VideosPage() {
     },
   });
 
+  // Atomically: update info fields → then trigger auto-generation if needed (no race condition)
+  const handleSaveInfoStep = (infoData: Record<string, any>, shouldAutoGenerate: boolean) => {
+    if (!selectedVideo) return;
+    updateMutation.mutate(
+      { id: selectedVideo.id, ...infoData },
+      {
+        onSuccess: (data) => {
+          if (shouldAutoGenerate) {
+            autoGenerateMutation.mutate(data.id);
+          }
+        },
+      }
+    );
+  };
+
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiFetch(`${API_BASE}/content/videos/${id}`, { method: "DELETE" });
@@ -261,6 +276,7 @@ export default function VideosPage() {
           onUpdate={(data) => {
             if (selectedVideo) updateMutation.mutate({ id: selectedVideo.id, ...data });
           }}
+          onSaveInfoStep={handleSaveInfoStep}
           onGenerateCover={() => {
             if (selectedVideo) generateCoverMutation.mutate(selectedVideo.id);
           }}
@@ -662,6 +678,7 @@ function VideoWizard({
   onBack,
   onCreate,
   onUpdate,
+  onSaveInfoStep,
   onGenerateCover,
   onAutoGenerate,
   onDelete,
@@ -678,6 +695,7 @@ function VideoWizard({
   onBack: () => void;
   onCreate: (data: any) => void;
   onUpdate: (data: any) => void;
+  onSaveInfoStep: (infoData: Record<string, any>, shouldAutoGenerate: boolean) => void;
   onGenerateCover: () => void;
   onAutoGenerate: (videoId: number) => void;
   onDelete: () => void;
@@ -778,37 +796,30 @@ function VideoWizard({
       toast({ title: "Completa el título del video", variant: "destructive" });
       return;
     }
+    const infoData = {
+      title: formData.title,
+      description: formData.description,
+      month: formData.month || undefined,
+      week: formData.week || undefined,
+      day: formData.day || undefined,
+      videoNumber: formData.videoNumber || undefined,
+      scheduleHour: formData.scheduleHour || undefined,
+    };
     if (isCreating) {
-      onCreate({
-        title: formData.title,
-        description: formData.description,
-        month: formData.month || undefined,
-        week: formData.week || undefined,
-        day: formData.day || undefined,
-        videoNumber: formData.videoNumber || undefined,
-        scheduleHour: formData.scheduleHour || undefined,
-      });
+      onCreate(infoData);
       // Auto-generation for new videos is triggered in createMutation.onSuccess (VideosPage)
     } else {
-      onUpdate({
-        title: formData.title,
-        description: formData.description,
-        month: formData.month || undefined,
-        week: formData.week || undefined,
-        day: formData.day || undefined,
-        videoNumber: formData.videoNumber || undefined,
-        scheduleHour: formData.scheduleHour || undefined,
-      });
-      // Trigger auto-generation for existing videos that have no descriptions yet
+      // Check before update, using video prop (stable snapshot from before user edits)
       const hasNoDescriptions =
         !video?.tiktokDescription &&
         !video?.instagramDescription &&
         !video?.youtubeTitle &&
+        !video?.youtubeDescription &&
         !video?.linkedinDescription &&
         !video?.xDescription;
-      if (hasNoDescriptions && video?.id) {
-        onAutoGenerate(video.id);
-      }
+      // onSaveInfoStep: updates DB first, then (in onSuccess) optionally triggers auto-generation
+      // This guarantees auto-generate reads the freshly-saved title+description from DB
+      onSaveInfoStep(infoData, hasNoDescriptions);
       goNext();
     }
   };
@@ -944,6 +955,7 @@ function VideoWizard({
               }
               onPrev={goPrev}
               isPending={isUpdating}
+              isAutoGenerating={isAutoGenerating}
               copyText={copyText}
             />
           )}
@@ -961,6 +973,7 @@ function VideoWizard({
               }
               onPrev={goPrev}
               isPending={isUpdating}
+              isAutoGenerating={isAutoGenerating}
               copyText={copyText}
             />
           )}
@@ -979,6 +992,7 @@ function VideoWizard({
               }
               onPrev={goPrev}
               isPending={isUpdating}
+              isAutoGenerating={isAutoGenerating}
               copyText={copyText}
             />
           )}
@@ -1631,6 +1645,15 @@ function StepCover({
   );
 }
 
+function AutoGeneratingPlaceholder({ label }: { label: string }) {
+  return (
+    <div className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 min-h-[180px] flex flex-col items-center justify-center gap-2 text-primary/60">
+      <Loader2 className="w-5 h-5 animate-spin" />
+      <span className="text-xs">Generando {label} con IA...</span>
+    </div>
+  );
+}
+
 function StepTikTokInstagram({
   formData,
   setFormData,
@@ -1638,6 +1661,7 @@ function StepTikTokInstagram({
   onSave,
   onPrev,
   isPending,
+  isAutoGenerating,
   copyText,
 }: {
   formData: any;
@@ -1646,8 +1670,12 @@ function StepTikTokInstagram({
   onSave: () => void;
   onPrev: () => void;
   isPending: boolean;
+  isAutoGenerating: boolean;
   copyText: (text: string) => void;
 }) {
+  const showTikTokPlaceholder = isAutoGenerating && !formData.tiktokDescription;
+  const showInstagramPlaceholder = isAutoGenerating && !formData.instagramDescription;
+
   return (
     <Card className="bg-card/50 border-white/5">
       <CardHeader>
@@ -1675,13 +1703,19 @@ function StepTikTokInstagram({
                 </button>
               )}
             </div>
-            <textarea
-              value={formData.tiktokDescription}
-              onChange={(e) => setFormData({ ...formData, tiktokDescription: e.target.value })}
-              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
-              placeholder={"✨ [Título atractivo]\n\n📌 [Descripción corta]\n\n#hashtag1 #hashtag2 #hashtag3"}
-            />
-            <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.tiktokDescription.length}/2200</p>
+            {showTikTokPlaceholder ? (
+              <AutoGeneratingPlaceholder label="descripción de TikTok" />
+            ) : (
+              <textarea
+                value={formData.tiktokDescription}
+                onChange={(e) => setFormData({ ...formData, tiktokDescription: e.target.value })}
+                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+                placeholder={"✨ [Título atractivo]\n\n📌 [Descripción corta]\n\n#hashtag1 #hashtag2 #hashtag3"}
+              />
+            )}
+            {!showTikTokPlaceholder && (
+              <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.tiktokDescription.length}/2200</p>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1698,13 +1732,19 @@ function StepTikTokInstagram({
                 </button>
               )}
             </div>
-            <textarea
-              value={formData.instagramDescription}
-              onChange={(e) => setFormData({ ...formData, instagramDescription: e.target.value })}
-              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
-              placeholder={"✨ [Título atractivo]\n\n📌 [Descripción para Instagram]\n\n💡 Síguenos para más tips\n\n#hashtag1 #hashtag2 #hashtag3"}
-            />
-            <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.instagramDescription.length}/2200</p>
+            {showInstagramPlaceholder ? (
+              <AutoGeneratingPlaceholder label="descripción de Instagram" />
+            ) : (
+              <textarea
+                value={formData.instagramDescription}
+                onChange={(e) => setFormData({ ...formData, instagramDescription: e.target.value })}
+                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+                placeholder={"✨ [Título atractivo]\n\n📌 [Descripción para Instagram]\n\n💡 Síguenos para más tips\n\n#hashtag1 #hashtag2 #hashtag3"}
+              />
+            )}
+            {!showInstagramPlaceholder && (
+              <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.instagramDescription.length}/2200</p>
+            )}
           </div>
         </div>
 
@@ -1715,7 +1755,7 @@ function StepTikTokInstagram({
           </Button>
           <Button
             onClick={onSave}
-            disabled={isPending || !formData.tiktokDescription || !formData.instagramDescription}
+            disabled={isPending || isAutoGenerating || !formData.tiktokDescription || !formData.instagramDescription}
             className="bg-primary"
           >
             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
@@ -1734,6 +1774,7 @@ function StepYouTube({
   onSave,
   onPrev,
   isPending,
+  isAutoGenerating,
   copyText,
 }: {
   formData: any;
@@ -1742,8 +1783,12 @@ function StepYouTube({
   onSave: () => void;
   onPrev: () => void;
   isPending: boolean;
+  isAutoGenerating: boolean;
   copyText: (text: string) => void;
 }) {
+  const showYoutubeTitlePlaceholder = isAutoGenerating && !formData.youtubeTitle;
+  const showYoutubeDescPlaceholder = isAutoGenerating && !formData.youtubeDescription;
+
   return (
     <Card className="bg-card/50 border-white/5">
       <CardHeader>
@@ -1767,14 +1812,23 @@ function StepYouTube({
               </button>
             )}
           </div>
-          <input
-            value={formData.youtubeTitle}
-            onChange={(e) => setFormData({ ...formData, youtubeTitle: e.target.value })}
-            className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-            placeholder="Título optimizado para YouTube (máx. 100 caracteres)"
-            maxLength={100}
-          />
-          <p className="text-[10px] text-muted-foreground">{formData.youtubeTitle.length}/100 caracteres</p>
+          {showYoutubeTitlePlaceholder ? (
+            <div className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 h-12 flex items-center gap-2 text-primary/60">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span className="text-xs">Generando título de YouTube con IA...</span>
+            </div>
+          ) : (
+            <input
+              value={formData.youtubeTitle}
+              onChange={(e) => setFormData({ ...formData, youtubeTitle: e.target.value })}
+              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+              placeholder="Título optimizado para YouTube (máx. 100 caracteres)"
+              maxLength={100}
+            />
+          )}
+          {!showYoutubeTitlePlaceholder && (
+            <p className="text-[10px] text-muted-foreground">{formData.youtubeTitle.length}/100 caracteres</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -1786,13 +1840,19 @@ function StepYouTube({
               </button>
             )}
           </div>
-          <textarea
-            value={formData.youtubeDescription}
-            onChange={(e) => setFormData({ ...formData, youtubeDescription: e.target.value })}
-            className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[200px]"
-            placeholder={"📌 [Descripción del video]\n\n🔔 Suscríbete para más contenido\n💻 Visítanos: webmakerchile.com\n\n#shorts #webdev #programacion"}
-          />
-          <p className="text-[10px] text-muted-foreground">{formData.youtubeDescription.length}/5000 caracteres</p>
+          {showYoutubeDescPlaceholder ? (
+            <AutoGeneratingPlaceholder label="descripción de YouTube" />
+          ) : (
+            <textarea
+              value={formData.youtubeDescription}
+              onChange={(e) => setFormData({ ...formData, youtubeDescription: e.target.value })}
+              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[200px]"
+              placeholder={"📌 [Descripción del video]\n\n🔔 Suscríbete para más contenido\n💻 Visítanos: webmakerchile.com\n\n#shorts #webdev #programacion"}
+            />
+          )}
+          {!showYoutubeDescPlaceholder && (
+            <p className="text-[10px] text-muted-foreground">{formData.youtubeDescription.length}/5000 caracteres</p>
+          )}
         </div>
 
         <div className="pt-4 flex justify-between">
@@ -1802,7 +1862,7 @@ function StepYouTube({
           </Button>
           <Button
             onClick={onSave}
-            disabled={isPending || !formData.youtubeTitle || !formData.youtubeDescription}
+            disabled={isPending || isAutoGenerating || !formData.youtubeTitle || !formData.youtubeDescription}
             className="bg-primary"
           >
             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
@@ -1821,6 +1881,7 @@ function StepLinkedInX({
   onSave,
   onPrev,
   isPending,
+  isAutoGenerating,
   copyText,
 }: {
   formData: any;
@@ -1829,10 +1890,13 @@ function StepLinkedInX({
   onSave: () => void;
   onPrev: () => void;
   isPending: boolean;
+  isAutoGenerating: boolean;
   copyText: (text: string) => void;
 }) {
   const xLen = (formData.xDescription || "").length;
   const [aiBusy, setAiBusy] = useState(false);
+  const showLinkedInPlaceholder = (isAutoGenerating || aiBusy) && !formData.linkedinDescription;
+  const showXPlaceholder = (isAutoGenerating || aiBusy) && !formData.xDescription;
   const generateAi = async () => {
     if (!video?.id) return;
     setAiBusy(true);
@@ -1871,10 +1935,10 @@ function StepLinkedInX({
           <button
             type="button"
             onClick={generateAi}
-            disabled={aiBusy}
+            disabled={aiBusy || isAutoGenerating}
             className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
           >
-            {aiBusy ? "Generando..." : "✨ Generar con IA"}
+            {(aiBusy || isAutoGenerating) ? "Generando..." : "✨ Generar con IA"}
           </button>
         </div>
       </CardHeader>
@@ -1894,14 +1958,20 @@ function StepLinkedInX({
                 </button>
               )}
             </div>
-            <textarea
-              value={formData.linkedinDescription}
-              onChange={(e) => setFormData({ ...formData, linkedinDescription: e.target.value })}
-              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
-              placeholder={"💡 [Insight profesional]\n\n📌 [Descripción extendida con contexto de negocio]\n\n#WebDev #ChileTech #DesarrolloWeb"}
-              maxLength={3000}
-            />
-            <p className="text-[10px] text-muted-foreground">Máximo 3000 caracteres · {(formData.linkedinDescription || "").length}/3000</p>
+            {showLinkedInPlaceholder ? (
+              <AutoGeneratingPlaceholder label="descripción de LinkedIn" />
+            ) : (
+              <textarea
+                value={formData.linkedinDescription}
+                onChange={(e) => setFormData({ ...formData, linkedinDescription: e.target.value })}
+                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+                placeholder={"💡 [Insight profesional]\n\n📌 [Descripción extendida con contexto de negocio]\n\n#WebDev #ChileTech #DesarrolloWeb"}
+                maxLength={3000}
+              />
+            )}
+            {!showLinkedInPlaceholder && (
+              <p className="text-[10px] text-muted-foreground">Máximo 3000 caracteres · {(formData.linkedinDescription || "").length}/3000</p>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1918,16 +1988,22 @@ function StepLinkedInX({
                 </button>
               )}
             </div>
-            <textarea
-              value={formData.xDescription}
-              onChange={(e) => setFormData({ ...formData, xDescription: e.target.value })}
-              className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
-              placeholder={"🚀 [Tweet corto y directo]\n\n#WebDev #Chile"}
-              maxLength={280}
-            />
-            <p className={`text-[10px] ${xLen > 280 ? "text-red-400" : "text-muted-foreground"}`}>
-              Máximo 280 caracteres · {xLen}/280
-            </p>
+            {showXPlaceholder ? (
+              <AutoGeneratingPlaceholder label="tweet para X" />
+            ) : (
+              <textarea
+                value={formData.xDescription}
+                onChange={(e) => setFormData({ ...formData, xDescription: e.target.value })}
+                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
+                placeholder={"🚀 [Tweet corto y directo]\n\n#WebDev #Chile"}
+                maxLength={280}
+              />
+            )}
+            {!showXPlaceholder && (
+              <p className={`text-[10px] ${xLen > 280 ? "text-red-400" : "text-muted-foreground"}`}>
+                Máximo 280 caracteres · {xLen}/280
+              </p>
+            )}
           </div>
         </div>
 
@@ -1963,7 +2039,7 @@ function StepLinkedInX({
           </Button>
           <Button
             onClick={onSave}
-            disabled={isPending || !formData.linkedinDescription || !formData.xDescription || xLen > 280}
+            disabled={isPending || isAutoGenerating || !formData.linkedinDescription || !formData.xDescription || xLen > 280}
             className="bg-primary"
           >
             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
