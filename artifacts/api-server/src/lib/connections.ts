@@ -153,13 +153,16 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
     const hasToken = !!user.googleAccessToken;
     const hasRefresh = !!user.googleRefreshToken;
     const isRevoked = revoked.has("youtube");
-    const state: ConnectionState = isRevoked
+    // The ternary's narrowed return type does not include "expiring" but the
+    // `connected` flag below tests for it. Cast to the wider ConnectionState
+    // so TS doesn't reject the comparison as never-true.
+    const state: ConnectionState = (isRevoked
       ? "revoked"
       : !hasToken
       ? "disconnected"
       : hasRefresh
       ? "connected"
-      : "unknown";
+      : "unknown") as ConnectionState;
     const message = isRevoked
       ? messageForState("youtube", "revoked", null)
       : !hasToken

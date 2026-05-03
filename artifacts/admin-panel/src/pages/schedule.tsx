@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCheckScheduledVideos, useListVideos } from "@workspace/api-client-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout";
 import {
   CalendarClock,
@@ -292,6 +292,7 @@ export default function SchedulePage() {
   const checkSchedule = useCheckScheduledVideos();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [view, setView] = useState<ViewMode>(() => {
     const p = new URLSearchParams(window.location.search);
     const v = p.get("view");
@@ -389,6 +390,16 @@ export default function SchedulePage() {
     },
   });
 
+  /**
+   * Quick-post mutation: creates the video, then PATCHes scheduledAt + the
+   * per-network "pending" flags. Used by both "Programar" (closes modal,
+   * stays in /agenda) and "Crear video completo" (navigates to the wizard
+   * for cover/descriptions/etc).
+   *
+   * The "andEdit" flag is propagated through the mutation context so we
+   * branch in onSuccess instead of duplicating the create+patch fetch
+   * logic in two near-identical mutations.
+   */
   const quickCreateMutation = useMutation({
     mutationFn: async (input: {
       title: string;
@@ -396,6 +407,7 @@ export default function SchedulePage() {
       day: Date;
       hour: string;
       networks: Network[];
+      andEdit?: boolean;
     }) => {
       const createRes = await fetch(`${API_BASE}/content/videos`, {
         method: "POST",
@@ -421,13 +433,23 @@ export default function SchedulePage() {
         body: JSON.stringify(patchBody),
       });
       if (!patchRes.ok) throw new Error(`HTTP ${patchRes.status} al programar`);
-      return patchRes.json();
+      const patched = await patchRes.json();
+      return { video: patched, andEdit: !!input.andEdit };
     },
-    onSuccess: () => {
-      toast({ title: "Publicación programada" });
+    onSuccess: ({ video, andEdit }) => {
       setQuickCreateDate(null);
       queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["videos"] });
+      if (andEdit && video?.id) {
+        // Hand the user off to the wizard at this video. /videos already
+        // reads ?select=<id> on mount and opens the wizard at the right
+        // step, so we can plug into that existing deep-link handler
+        // without touching the wizard itself.
+        toast({ title: "Video creado", description: "Continúa en el editor para portada y descripciones." });
+        setLocation(`/videos?select=${video.id}`);
+      } else {
+        toast({ title: "Publicación programada" });
+      }
     },
     onError: (err) => {
       const description = err instanceof Error ? err.message : "Inténtalo de nuevo";
@@ -1025,6 +1047,7 @@ export default function SchedulePage() {
             if (!quickCreateMutation.isPending) setQuickCreateDate(null);
           }}
           onSubmit={(values) => quickCreateMutation.mutate(values)}
+          onCreateAndEdit={(values) => quickCreateMutation.mutate({ ...values, andEdit: true })}
           isPending={quickCreateMutation.isPending}
           bestTimes={bestTimesQuery.data?.networks}
         />
@@ -1912,12 +1935,20 @@ function QuickPostModal({
   date,
   onClose,
   onSubmit,
+  onCreateAndEdit,
   isPending,
   bestTimes,
 }: {
   date: Date | null;
   onClose: () => void;
   onSubmit: (values: QuickPostValues) => void;
+  /**
+   * Same payload as `onSubmit`, but the parent should create the video AND
+   * navigate the user into the full wizard so they can pick a cover, fine
+   * tune per-network descriptions, etc. Wired to the secondary footer
+   * button "Crear video completo".
+   */
+  onCreateAndEdit: (values: QuickPostValues) => void;
   isPending: boolean;
   bestTimes?: Record<Network, BestTimeSlot[]>;
 }) {
@@ -2140,7 +2171,7 @@ function QuickPostModal({
             </div>
           )}
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
             <button
               type="button"
               onClick={onClose}
@@ -2148,6 +2179,25 @@ function QuickPostModal({
               className="px-4 py-2 rounded-lg text-sm border border-foreground/10 hover:bg-foreground/5 transition disabled:opacity-50"
             >
               Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={!canSubmit || !day}
+              onClick={() => {
+                if (!canSubmit || !day) return;
+                onCreateAndEdit({
+                  title: title.trim(),
+                  description: description.trim(),
+                  day,
+                  hour,
+                  networks,
+                });
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border border-primary/40 text-primary hover:bg-primary/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Programa la publicación y abre el editor para portada, descripciones por red, etc."
+            >
+              {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Crear video completo →
             </button>
             <button
               type="submit"

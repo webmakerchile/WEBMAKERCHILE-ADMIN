@@ -37,6 +37,9 @@ export type NotificationType =
   | "publish_error"
   | "schedule_reminder"
   | "idea_done"
+  | "connection_expiring"
+  | "connection_expired"
+  | "connection_revoked"
   | "system";
 
 export type CreateNotificationInput = {
