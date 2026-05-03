@@ -11,7 +11,7 @@ import {
   type Campaign as LibraryCampaign,
   type Template as LibraryTemplate,
 } from "@/components/library-controls";
-import type { Network } from "@/components/social-icons";
+import { NETWORK_BG, NetworkIcon, type Network } from "@/components/social-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
@@ -229,7 +229,8 @@ function isStepComplete(video: VideoData | null, step: WizardStep): boolean {
     case "info":
       return !!video.title && !!video.description;
     case "cover":
-      return !!video.coverImageBase64;
+      // Optional — never block the wizard on cover.
+      return true;
     case "tiktok-instagram":
       return !!video.tiktokDescription && !!video.instagramDescription;
     case "youtube":
@@ -939,6 +940,60 @@ export default function VideosPage() {
     onError: () => toast({ title: "Error al generar portada", variant: "destructive" }),
   });
 
+  // Upload a custom cover from the user's device. We read the file in the
+  // browser as base64 and PATCH the existing fields the IA generator also
+  // writes (`coverImageBase64`, `coverMimeType`), so the rest of the app
+  // (publishing, previews, list thumbnails) needs no changes.
+  const uploadCoverMutation = useMutation({
+    mutationFn: async ({ id, file }: { id: number; file: File }) => {
+      if (file.size > 8 * 1024 * 1024) {
+        throw new Error("La portada no puede superar 8MB");
+      }
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+        reader.readAsDataURL(file);
+      });
+      const comma = dataUrl.indexOf(",");
+      const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+      if (!base64) throw new Error("Archivo de portada vacío o inválido");
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          coverImageBase64: base64,
+          coverMimeType: file.type || "image/png",
+        }),
+      });
+      if (!res.ok) throw new Error("No se pudo subir la portada");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      setSelectedVideo(data);
+      toast({ title: "Portada subida" });
+    },
+    onError: (err: Error) => toast({ title: "Error al subir portada", description: err.message, variant: "destructive" }),
+  });
+
+  const clearCoverMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coverImageBase64: null, coverMimeType: null }),
+      });
+      if (!res.ok) throw new Error("No se pudo quitar la portada");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      setSelectedVideo(data);
+    },
+    onError: () => toast({ title: "Error al quitar portada", variant: "destructive" }),
+  });
+
   if (selectedVideo || isCreating) {
     return (
       <Layout>
@@ -957,6 +1012,13 @@ export default function VideosPage() {
             if (selectedVideo) updateMutation.mutate({ id: selectedVideo.id, ...data });
           }}
           onSaveInfoStep={handleSaveInfoStep}
+          onUploadCover={(file) => {
+            if (selectedVideo) uploadCoverMutation.mutate({ id: selectedVideo.id, file });
+          }}
+          isUploadingCover={uploadCoverMutation.isPending}
+          onClearCover={() => {
+            if (selectedVideo) clearCoverMutation.mutate(selectedVideo.id);
+          }}
           onGenerateCover={() => {
             if (selectedVideo) generateCoverMutation.mutate(selectedVideo.id);
           }}
@@ -1769,6 +1831,9 @@ function VideoWizard({
   onUpdate,
   onSaveInfoStep,
   onGenerateCover,
+  onUploadCover,
+  isUploadingCover,
+  onClearCover,
   onAutoGenerate,
   onDelete,
   isCreatingPending,
@@ -1786,6 +1851,9 @@ function VideoWizard({
   onUpdate: (data: any) => void;
   onSaveInfoStep: (infoData: Record<string, any>, shouldAutoGenerate: boolean) => void;
   onGenerateCover: () => void;
+  onUploadCover: (file: File) => void;
+  isUploadingCover: boolean;
+  onClearCover: () => void;
   onAutoGenerate: (videoId: number) => void;
   onDelete: () => void;
   isCreatingPending: boolean;
@@ -2081,6 +2149,9 @@ function VideoWizard({
               video={video}
               onGenerate={onGenerateCover}
               isGenerating={isGeneratingCover}
+              onUpload={onUploadCover}
+              isUploading={isUploadingCover}
+              onClear={onClearCover}
               onNext={goNext}
               onPrev={goPrev}
             />
@@ -2881,88 +2952,199 @@ function StepInfo({
   );
 }
 
+/**
+ * Per-network thumbnail dimensions used in the cover preview grid. Each
+ * network crops the cover to its native aspect-ratio so the user can see
+ * how the image will look across all 5 destinations before publishing.
+ */
+const COVER_NETWORK_PREVIEWS: { network: Network; label: string; ratio: string }[] = [
+  { network: "tiktok", label: "TikTok", ratio: "9/16" },
+  { network: "instagram", label: "Instagram", ratio: "4/5" },
+  { network: "youtube", label: "YouTube", ratio: "16/9" },
+  { network: "linkedin", label: "LinkedIn", ratio: "1.91/1" },
+  { network: "x", label: "X", ratio: "16/9" },
+  { network: "facebook", label: "Facebook", ratio: "1.91/1" },
+];
+
+function CoverNetworkGrid({ src }: { src: string }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {COVER_NETWORK_PREVIEWS.map(({ network, label, ratio }) => (
+        <div
+          key={network}
+          className="bg-card/70 border border-foreground/10 rounded-xl overflow-hidden"
+        >
+          <div className="px-2 py-1.5 flex items-center gap-1.5 border-b border-foreground/5">
+            <span className={`w-4 h-4 rounded flex items-center justify-center ${NETWORK_BG[network]}`}>
+              <NetworkIcon network={network} className="w-2.5 h-2.5" />
+            </span>
+            <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+          </div>
+          <div className="bg-black/40 flex items-center justify-center">
+            <img
+              src={src}
+              alt={`Vista previa ${label}`}
+              className="w-full object-cover"
+              style={{ aspectRatio: ratio }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StepCover({
   video,
   onGenerate,
   isGenerating,
+  onUpload,
+  isUploading,
+  onClear,
   onNext,
   onPrev,
 }: {
   video: VideoData;
   onGenerate: () => void;
   isGenerating: boolean;
+  onUpload: (file: File) => void;
+  isUploading: boolean;
+  onClear: () => void;
   onNext: () => void;
   onPrev: () => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const hasCover = !!video.coverImageBase64;
+  const coverSrc = hasCover
+    ? `data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`
+    : null;
+
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onUpload(file);
+    // Allow re-selecting the same file later.
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   return (
     <Card className="bg-card/50 border-foreground/10">
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <ImageIcon className="w-5 h-5 text-primary" />
-          Portada del Video
+          Portada del Video <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Genera la portada con IA basada en el título del video
+          Sube tu propia portada o genérala con IA. Si no quieres definirla ahora, puedes continuar y volver más tarde.
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
-        {video.coverImageBase64 ? (
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-48 rounded-2xl overflow-hidden border border-foreground/10 shadow-2xl">
-              <img
-                src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
-                className="w-full aspect-[9/16] object-cover"
-                alt="Portada"
-              />
-            </div>
-            <div className="flex items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={onPick}
+        />
+
+        {hasCover && coverSrc ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
                 <Check className="w-3 h-3 mr-1" />
-                Portada generada
+                Portada lista
               </Badge>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading || isGenerating}
+                  className="border-foreground/10"
+                >
+                  {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                  Reemplazar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onGenerate}
+                  disabled={isGenerating || isUploading}
+                  className="border-foreground/10"
+                >
+                  {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  Regenerar con IA
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onClear}
+                  disabled={isUploading || isGenerating}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Quitar
+                </Button>
+              </div>
             </div>
-            <Button variant="outline" onClick={onGenerate} disabled={isGenerating} className="border-foreground/10">
-              {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              Regenerar portada
-            </Button>
+
+            <div>
+              <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
+                Cómo se verá en cada red
+              </p>
+              <CoverNetworkGrid src={coverSrc} />
+            </div>
           </div>
         ) : (
-          <div className="text-center py-8">
-            <div className="w-32 h-56 mx-auto rounded-2xl border-2 border-dashed border-foreground/15 flex items-center justify-center mb-6 bg-foreground/[0.04]">
+          <div className="text-center py-8 space-y-5">
+            <div className="w-32 h-56 mx-auto rounded-2xl border-2 border-dashed border-foreground/15 flex items-center justify-center bg-foreground/[0.04]">
               <ImageIcon className="w-12 h-12 text-muted-foreground/20" />
             </div>
-            <p className="text-muted-foreground mb-4">
-              Se generará una portada con IA usando el estilo del zorro de WebMakerChile
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || isGenerating}
+                variant="outline"
+                className="border-foreground/15"
+              >
+                {isUploading ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Subiendo...</>
+                ) : (
+                  <><Upload className="w-4 h-4 mr-2" />Subir portada</>
+                )}
+              </Button>
+              <Button
+                onClick={onGenerate}
+                disabled={isGenerating || isUploading}
+                className="bg-gradient-to-r from-primary to-orange-400"
+              >
+                {isGenerating ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generando...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4 mr-2" />Generar con IA</>
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              PNG, JPG o WEBP · La portada es opcional, puedes continuar sin ella.
             </p>
-            <Button
-              onClick={onGenerate}
-              disabled={isGenerating}
-              className="bg-gradient-to-r from-primary to-orange-400"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Generando portada...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Generar Portada con IA
-                </>
-              )}
-            </Button>
           </div>
         )}
 
-        <div className="pt-4 flex justify-between">
+        <div className="pt-4 flex flex-col sm:flex-row sm:justify-between gap-2">
           <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Anterior
           </Button>
-          <Button onClick={onNext} className="bg-primary">
-            <ChevronRight className="w-4 h-4 mr-2" />
-            Continuar
-          </Button>
+          <div className="flex gap-2 sm:ml-auto">
+            {!hasCover ? (
+              <Button variant="ghost" onClick={onNext} className="text-muted-foreground hover:text-foreground">
+                Continuar sin portada
+              </Button>
+            ) : null}
+            <Button onClick={onNext} className="bg-primary">
+              <ChevronRight className="w-4 h-4 mr-2" />
+              Continuar
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -3777,10 +3959,12 @@ function StepReview({
     }
   };
 
+  // Cover is optional (Publer-style flow): user can schedule without it and
+  // come back later to add/generate one. Per-network descriptions remain
+  // required so each platform receives valid content at publish time.
   const allComplete =
     video.title &&
     video.description &&
-    video.coverImageBase64 &&
     video.tiktokDescription &&
     video.instagramDescription &&
     video.youtubeTitle &&

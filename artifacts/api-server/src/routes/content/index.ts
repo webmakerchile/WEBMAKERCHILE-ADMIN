@@ -492,6 +492,11 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
   if (body.coverPrompt !== undefined) updateData.coverPrompt = body.coverPrompt;
+  // Allow uploading/clearing a custom cover from the wizard. The same fields
+  // are written by `/generate-cover`; here we let the user override with their
+  // own image (base64) or remove it (null).
+  if (body.coverImageBase64 !== undefined) updateData.coverImageBase64 = body.coverImageBase64;
+  if (body.coverMimeType !== undefined) updateData.coverMimeType = body.coverMimeType;
   if (body.status !== undefined) updateData.status = body.status;
   if (body.workflowStatus !== undefined) updateData.workflowStatus = body.workflowStatus;
   if (body.month !== undefined) updateData.month = body.month;
