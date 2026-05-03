@@ -1,5 +1,5 @@
 import { db } from "@workspace/db";
-import { videos, users } from "@workspace/db/schema";
+import { videos, users, publishAttempts } from "@workspace/db/schema";
 import { eq, and, lte, or, isNull, sql } from "drizzle-orm";
 import { google } from "googleapis";
 import { Readable } from "stream";
@@ -15,10 +15,68 @@ import { checkConnectionsForAdmin } from "./lib/connections";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
+const ALL_PLATFORMS: readonly PublishPlatform[] = [
+  "youtube", "tiktok", "instagram", "linkedin", "x", "facebook",
+] as const;
+
+/**
+ * Typed map from a platform name to its column accessors on the `videos`
+ * row. Avoids ad-hoc `(video as any)["xNextRetryAt"]` lookups in the
+ * retry-critical scheduling code.
+ */
+type PlatformVideoFields = {
+  status: keyof typeof videos.$inferSelect;
+  retries: keyof typeof videos.$inferSelect;
+  error: keyof typeof videos.$inferSelect;
+  nextRetryAt: keyof typeof videos.$inferSelect;
+};
+const PLATFORM_FIELDS: Record<PublishPlatform, PlatformVideoFields> = {
+  youtube:   { status: "youtubeStatus",   retries: "youtubeRetries",   error: "youtubeError",   nextRetryAt: "youtubeNextRetryAt" },
+  tiktok:    { status: "tiktokStatus",    retries: "tiktokRetries",    error: "tiktokError",    nextRetryAt: "tiktokNextRetryAt" },
+  instagram: { status: "instagramStatus", retries: "instagramRetries", error: "instagramError", nextRetryAt: "instagramNextRetryAt" },
+  linkedin:  { status: "linkedinStatus",  retries: "linkedinRetries",  error: "linkedinError",  nextRetryAt: "linkedinNextRetryAt" },
+  x:         { status: "xStatus",         retries: "xRetries",         error: "xError",         nextRetryAt: "xNextRetryAt" },
+  facebook:  { status: "facebookStatus",  retries: "facebookRetries",  error: "facebookError",  nextRetryAt: "facebookNextRetryAt" },
+};
+
+/** Read a typed field off a video row without unsafe `any` casts. */
+function readField<T = unknown>(video: typeof videos.$inferSelect, key: keyof typeof videos.$inferSelect): T {
+  return (video as Record<string, unknown>)[key as string] as T;
+}
+
 /** Max number of post-initial retries before marking a platform as failed for good. */
 const MAX_RETRIES = 3;
 /** Backoff schedule, indexed by current retry attempt (0-based). 1m, 5m, 30m. */
 const BACKOFF_MS = [60_000, 5 * 60_000, 30 * 60_000];
+
+/**
+ * Append-only audit entry for an individual publish attempt. Survives the
+ * mutation of the video's per-platform status/error columns, so the UI can
+ * show the full retry timeline (attempt #, outcome, error reason, next retry).
+ */
+async function logAttempt(input: {
+  videoId: number;
+  platform: PublishPlatform;
+  attemptNumber: number;
+  outcome: "success" | "transient_failure" | "permanent_failure" | "skipped";
+  errorKind?: "transient" | "permanent" | null;
+  errorMessage?: string | null;
+  nextRetryAt?: Date | null;
+}): Promise<void> {
+  try {
+    await db.insert(publishAttempts).values({
+      videoId: input.videoId,
+      platform: input.platform,
+      attemptNumber: input.attemptNumber,
+      outcome: input.outcome,
+      errorKind: input.errorKind ?? null,
+      errorMessage: input.errorMessage ? input.errorMessage.slice(0, 1000) : null,
+      nextRetryAt: input.nextRetryAt ?? null,
+    });
+  } catch (err: any) {
+    console.error("[Scheduler] Failed to log publish attempt:", err?.message || err);
+  }
+}
 
 /**
  * Classify a publish-step error message as either transient (worth retrying)
@@ -41,49 +99,55 @@ function classifyError(err: string | undefined | null): "transient" | "permanent
 async function recordFailure(videoId: number, platform: PublishPlatform, errorMsg: string): Promise<void> {
   const [v] = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   if (!v) return;
-  const retriesKey = `${platform}Retries` as keyof typeof v;
-  const statusKey = `${platform}Status` as keyof typeof v;
-  const errorKey = `${platform}Error` as keyof typeof v;
-  const platNextKey = `${platform}NextRetryAt` as keyof typeof v;
-  const current = ((v as any)[retriesKey] as number) ?? 0;
+  const fields = PLATFORM_FIELDS[platform];
+  const current = (readField<number | null>(v, fields.retries)) ?? 0;
   const kind = classifyError(errorMsg);
-  const update: Record<string, any> = {
-    [errorKey]: errorMsg.slice(0, 1000),
+  const update: Record<string, unknown> = {
+    [fields.error]: errorMsg.slice(0, 1000),
     updatedAt: new Date(),
   };
   if (kind === "transient" && current < MAX_RETRIES) {
     const idx = Math.min(current, BACKOFF_MS.length - 1);
     const nextAt = new Date(Date.now() + BACKOFF_MS[idx]);
-    update[statusKey] = "retrying";
-    update[retriesKey] = current + 1;
-    update[platNextKey] = nextAt;
-    // Recompute video-level nextRetryAt as MIN of all per-platform deadlines
-    // (this is just the scheduler's "wake up at" hint; per-platform gating
-    // is enforced separately in the main loop).
-    const otherPlats: PublishPlatform[] = ["youtube", "tiktok", "instagram", "linkedin", "x", "facebook"];
+    update[fields.status as string] = "retrying";
+    update[fields.retries as string] = current + 1;
+    update[fields.nextRetryAt as string] = nextAt;
+    // Recompute video-level nextRetryAt as MIN of all per-platform deadlines.
     const deadlines: number[] = [nextAt.getTime()];
-    for (const p of otherPlats) {
+    for (const p of ALL_PLATFORMS) {
       if (p === platform) continue;
-      const d = (v as any)[`${p}NextRetryAt`];
-      const status = (v as any)[`${p}Status`];
+      const f = PLATFORM_FIELDS[p];
+      const d = readField<Date | string | null>(v, f.nextRetryAt);
+      const status = readField<string | null>(v, f.status);
       if (d && status === "retrying") {
         const ts = new Date(d).getTime();
         if (ts > Date.now()) deadlines.push(ts);
       }
     }
     update.nextRetryAt = new Date(Math.min(...deadlines));
+    await db.update(videos).set(update).where(eq(videos.id, videoId));
+    await logAttempt({
+      videoId, platform, attemptNumber: current + 1,
+      outcome: "transient_failure", errorKind: "transient",
+      errorMessage: errorMsg, nextRetryAt: nextAt,
+    });
     console.log(`[Scheduler] ${platform} retry scheduled #${current + 1}/${MAX_RETRIES} at ${nextAt.toISOString()} (transient: ${errorMsg})`);
   } else {
-    update[statusKey] = "error";
-    update[platNextKey] = null;
+    update[fields.status as string] = "error";
+    update[fields.nextRetryAt as string] = null;
+    await db.update(videos).set(update).where(eq(videos.id, videoId));
+    await logAttempt({
+      videoId, platform, attemptNumber: current + 1,
+      outcome: "permanent_failure", errorKind: kind,
+      errorMessage: errorMsg, nextRetryAt: null,
+    });
     console.log(`[Scheduler] ${platform} marked error (${kind}, retries=${current}): ${errorMsg}`);
   }
-  await db.update(videos).set(update).where(eq(videos.id, videoId));
 }
 
 /** True if a platform is in a terminal failure state and should not be re-attempted. */
-function isTerminalError(video: any, platform: PublishPlatform): boolean {
-  return video[`${platform}Status`] === "error";
+function isTerminalError(video: typeof videos.$inferSelect, platform: PublishPlatform): boolean {
+  return readField<string | null>(video, PLATFORM_FIELDS[platform].status) === "error";
 }
 
 /**
@@ -92,9 +156,10 @@ function isTerminalError(video: any, platform: PublishPlatform): boolean {
  * Callers should treat this as "skip silently" (do NOT mark the video as
  * failed, do NOT increment any counter).
  */
-function isRetryCooldown(video: any, platform: PublishPlatform): boolean {
-  if (video[`${platform}Status`] !== "retrying") return false;
-  const d = video[`${platform}NextRetryAt`];
+function isRetryCooldown(video: typeof videos.$inferSelect, platform: PublishPlatform): boolean {
+  const fields = PLATFORM_FIELDS[platform];
+  if (readField<string | null>(video, fields.status) !== "retrying") return false;
+  const d = readField<Date | string | null>(video, fields.nextRetryAt);
   if (!d) return false;
   return new Date(d).getTime() > Date.now();
 }
@@ -809,21 +874,39 @@ async function processScheduledVideos() {
         facebookNextRetryAt: videos.facebookNextRetryAt,
       }).from(videos).where(eq(videos.id, video.id)).limit(1);
       const stillRetrying = postRun
-        ? [postRun.youtubeStatus, postRun.tiktokStatus, postRun.instagramStatus, postRun.linkedinStatus, postRun.xStatus, postRun.facebookStatus].some((s) => s === "retrying")
+        ? ALL_PLATFORMS.some((p) => (postRun as Record<string, unknown>)[PLATFORM_FIELDS[p].status as string] === "retrying")
         : false;
       // Recompute the video-level wake-up time as MIN of all live per-platform deadlines.
       let videoNextRetryAt: Date | null | undefined = null;
       if (stillRetrying && postRun) {
         const candidates: number[] = [];
-        for (const p of ["youtube", "tiktok", "instagram", "linkedin", "x", "facebook"] as PublishPlatform[]) {
-          if ((postRun as any)[`${p}Status`] !== "retrying") continue;
-          const d = (postRun as any)[`${p}NextRetryAt`];
+        for (const p of ALL_PLATFORMS) {
+          const f = PLATFORM_FIELDS[p];
+          if ((postRun as Record<string, unknown>)[f.status as string] !== "retrying") continue;
+          const d = (postRun as Record<string, unknown>)[f.nextRetryAt as string] as Date | string | null;
           if (d) candidates.push(new Date(d).getTime());
         }
         if (candidates.length) videoNextRetryAt = new Date(Math.min(...candidates));
         // If statuses are "retrying" but no deadlines are set (shouldn't normally
         // happen), leave existing nextRetryAt untouched.
         else videoNextRetryAt = undefined;
+      }
+
+      // Append-only success logging: only log a success when this run actually
+      // attempted the platform (skipped/cooldown platforms don't get an entry).
+      const successResults: Array<[PublishPlatform, boolean]> = [
+        ["youtube",   results.youtube.success   && !cooldown.youtube   && !!(video.youtubeTitle || video.youtubeDescription)],
+        ["tiktok",    results.tiktok.success    && !cooldown.tiktok    && !!(video.tiktokDescription || video.description)],
+        ["instagram", results.instagram.success && !cooldown.instagram && !!(video.instagramDescription || video.description)],
+        ["linkedin",  results.linkedin.success  && !cooldown.linkedin  && !!video.linkedinDescription],
+        ["x",         results.x.success         && !cooldown.x         && !!video.xDescription],
+        ["facebook",  results.facebook.success  && !cooldown.facebook  && facebookIncluded],
+      ];
+      for (const [p, ok] of successResults) {
+        if (!ok) continue;
+        const fields = PLATFORM_FIELDS[p];
+        const attemptNumber = (readField<number | null>(video, fields.retries) ?? 0) + 1;
+        await logAttempt({ videoId: video.id, platform: p, attemptNumber, outcome: "success" });
       }
 
       // Compute next status AFTER reading post-run state so any platform that

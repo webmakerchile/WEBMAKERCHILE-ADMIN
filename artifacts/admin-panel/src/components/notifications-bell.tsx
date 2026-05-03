@@ -87,6 +87,31 @@ export function NotificationsBell() {
     refetchInterval: 60 * 1000,
   });
 
+  // Toast on newly arrived publish/connection notifications. We track the
+  // highest id we've already toasted in sessionStorage so a refresh doesn't
+  // re-fire the same toasts. Persisted notifications still appear in the bell.
+  const TOAST_TYPES = new Set([
+    "publish_success", "publish_partial", "publish_error",
+    "connection_expiring", "connection_expired", "connection_revoked",
+  ]);
+  useEffect(() => {
+    if (!items.length) return;
+    const KEY = "notifications:lastToastedId";
+    const lastSeen = Number(sessionStorage.getItem(KEY) || "0");
+    let highest = lastSeen;
+    const fresh = items
+      .filter((n) => n.id > lastSeen && TOAST_TYPES.has(n.type))
+      .sort((a, b) => a.id - b.id);
+    for (const n of fresh) {
+      const variant = n.type === "publish_error" || n.type === "connection_revoked" || n.type === "connection_expired"
+        ? "destructive" as const
+        : undefined;
+      toast({ title: n.title, description: n.body || undefined, variant });
+      if (n.id > highest) highest = n.id;
+    }
+    if (highest > lastSeen) sessionStorage.setItem(KEY, String(highest));
+  }, [items, toast]);
+
   const { data: unread } = useQuery<{ count: number }>({
     queryKey: ["notifications", "unread"],
     queryFn: async () => {

@@ -32,6 +32,7 @@ import { EmptyState } from "@/components/empty-state";
 import { OnboardingChecklist } from "@/components/onboarding-checklist";
 import { WhatsNewBanner } from "@/components/whats-new-banner";
 import { ConnectionHealthBanner } from "@/components/connection-health-banner";
+import { PublishLogDialog } from "@/components/publish-log-dialog";
 import { HelpHint } from "@/components/help-hint";
 import { AnalyticsSkeleton, KanbanSkeleton } from "@/components/skeletons";
 
@@ -1245,6 +1246,7 @@ function RecentActivity() {
   const { toast } = useToast();
   const [retrying, setRetrying] = useState<string | null>(null);
   const [tooltipId, setTooltipId] = useState<string | null>(null);
+  const [logFor, setLogFor] = useState<{ id: number; title: string } | null>(null);
   const displayItems = activity;
 
   async function handleRetry(videoId: number, platform: string, platformLabel: string) {
@@ -1320,10 +1322,15 @@ function RecentActivity() {
                 );
                 return (
                   <div key={v.id} className="flex items-center gap-3 px-4 py-3 hover:bg-foreground/[0.02] transition">
-                    <div className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => setLogFor({ id: v.id, title: v.title })}
+                      className="min-w-0 flex-1 text-left rounded-md hover:bg-foreground/[0.04] transition px-1 -mx-1 py-0.5"
+                      title="Ver historial de publicación"
+                    >
                       <p className="text-sm font-medium truncate">{v.title}</p>
                       <p className="text-[11px] text-muted-foreground mt-0.5">{dateStr}</p>
-                    </div>
+                    </button>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {activePlatforms.map((p) => {
                         const status = v[p.statusKey] as string | null | undefined;
@@ -1380,6 +1387,12 @@ function RecentActivity() {
           </>
         )}
       </div>
+      <PublishLogDialog
+        videoId={logFor?.id ?? null}
+        videoTitle={logFor?.title}
+        open={!!logFor}
+        onOpenChange={(o) => { if (!o) setLogFor(null); }}
+      />
     </section>
   );
 }
