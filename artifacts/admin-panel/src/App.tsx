@@ -122,6 +122,10 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  useEffect(() => {
+    setSentryUser(user ? { id: user.id, email: user.email } : null);
+  }, [user]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -129,10 +133,6 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  useEffect(() => {
-    setSentryUser(user ? { id: user.id, email: user.email } : null);
-  }, [user]);
 
   if (error || !user) {
     return <LoginPage />;
