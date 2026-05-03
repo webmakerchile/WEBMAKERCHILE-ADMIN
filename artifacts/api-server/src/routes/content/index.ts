@@ -222,7 +222,9 @@ router.post("/content/videos/bulk-update", async (req, res) => {
     "error",
   ]);
   // month/week/day/etc. are short labels — restrict to a safe character set.
-  const isSafeLabel = (v: string) => /^[\w\-./# ]{1,80}$/.test(v);
+  // Unicode-aware so acentos (Miércoles, día) y ñ pasan; sigue bloqueando
+  // caracteres potencialmente peligrosos (<, >, ;, etc.).
+  const isSafeLabel = (v: string) => /^[\p{L}\p{N}_\-./# ]{1,80}$/u.test(v);
   const update: Record<string, unknown> = { updatedAt: new Date() };
 
   if (patch.status !== undefined) {
@@ -383,7 +385,9 @@ router.post("/content/videos/import-csv", async (req, res) => {
     res.status(400).json({ error: "Máximo 200 filas por importación" });
     return;
   }
-  const isSafeLabel = (v: string) => /^[\w\-./# ]{1,80}$/.test(v);
+  // Unicode-aware so acentos (Miércoles, día) y ñ pasan; sigue bloqueando
+  // caracteres potencialmente peligrosos (<, >, ;, etc.).
+  const isSafeLabel = (v: string) => /^[\p{L}\p{N}_\-./# ]{1,80}$/u.test(v);
   // HH:MM (24h) or HH:MM:SS — the wizard usually stores HH:MM, but tolerate
   // seconds for paste-from-spreadsheet flows.
   const isValidHour = (v: string) => /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(v);
