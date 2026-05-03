@@ -3,6 +3,43 @@ import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { createNotification } from "./notifications";
 
+/** Parse the comma-separated `users.revokedNetworks` flag column. */
+function parseRevoked(csv: string | null | undefined): Set<Network> {
+  if (!csv) return new Set();
+  return new Set(csv.split(",").map((s) => s.trim()).filter(Boolean) as Network[]);
+}
+
+/**
+ * Mark a network as revoked on the given user. Idempotent. Called by the
+ * scheduler when an auth-flavoured error (401/invalid_grant/...) is seen
+ * during a publish attempt.
+ */
+export async function markNetworkRevoked(userId: number, network: Network): Promise<void> {
+  const [u] = await db.select({ revokedNetworks: users.revokedNetworks }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!u) return;
+  const set = parseRevoked(u.revokedNetworks);
+  if (set.has(network)) return;
+  set.add(network);
+  await db.update(users)
+    .set({ revokedNetworks: Array.from(set).join(",") })
+    .where(eq(users.id, userId));
+}
+
+/**
+ * Clear a network's revoked flag — call this from each OAuth callback after
+ * a successful re-connect so the UI/notifications stop nagging.
+ */
+export async function clearNetworkRevoked(userId: number, network: Network): Promise<void> {
+  const [u] = await db.select({ revokedNetworks: users.revokedNetworks }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!u) return;
+  const set = parseRevoked(u.revokedNetworks);
+  if (!set.has(network)) return;
+  set.delete(network);
+  await db.update(users)
+    .set({ revokedNetworks: Array.from(set).join(",") })
+    .where(eq(users.id, userId));
+}
+
 export type ConnectionState =
   | "connected"
   | "expiring"
@@ -106,6 +143,7 @@ function messageForState(network: Network, state: ConnectionState, days: number 
 
 export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[]> {
   const out: ConnectionHealth[] = [];
+  const revoked = parseRevoked(user.revokedNetworks);
 
   // YouTube (Google) - tokens auto-refresh as long as we have a refresh token.
   // Without a refresh token the access token will silently die ~1h after issuance,
@@ -114,12 +152,17 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
   {
     const hasToken = !!user.googleAccessToken;
     const hasRefresh = !!user.googleRefreshToken;
-    const state: ConnectionState = !hasToken
+    const isRevoked = revoked.has("youtube");
+    const state: ConnectionState = isRevoked
+      ? "revoked"
+      : !hasToken
       ? "disconnected"
       : hasRefresh
       ? "connected"
       : "unknown";
-    const message = !hasToken
+    const message = isRevoked
+      ? messageForState("youtube", "revoked", null)
+      : !hasToken
       ? messageForState("youtube", "disconnected", null)
       : hasRefresh
       ? messageForState("youtube", "connected", null)
@@ -139,7 +182,8 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
   // TikTok
   {
     const hasToken = !!user.tiktokAccessToken;
-    const { state, days, iso } = classifyByExpiry(hasToken, !!user.tiktokRefreshToken, user.tiktokTokenExpiresAt);
+    let { state, days, iso } = classifyByExpiry(hasToken, !!user.tiktokRefreshToken, user.tiktokTokenExpiresAt);
+    if (revoked.has("tiktok") && hasToken) state = "revoked";
     out.push({
       network: "tiktok",
       connected: state === "connected" || state === "expiring",
@@ -156,7 +200,8 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
   // LinkedIn
   {
     const hasToken = !!user.linkedinAccessToken;
-    const { state, days, iso } = classifyByExpiry(hasToken, false, user.linkedinTokenExpiresAt);
+    let { state, days, iso } = classifyByExpiry(hasToken, false, user.linkedinTokenExpiresAt);
+    if (revoked.has("linkedin") && hasToken) state = "revoked";
     out.push({
       network: "linkedin",
       connected: state === "connected" || state === "expiring",
@@ -174,7 +219,8 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
   // X
   {
     const hasToken = !!user.xAccessToken;
-    const { state, days, iso } = classifyByExpiry(hasToken, !!user.xRefreshToken, user.xTokenExpiresAt);
+    let { state, days, iso } = classifyByExpiry(hasToken, !!user.xRefreshToken, user.xTokenExpiresAt);
+    if (revoked.has("x") && hasToken) state = "revoked";
     out.push({
       network: "x",
       connected: state === "connected" || state === "expiring",
@@ -205,7 +251,8 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
       });
     } else {
       const hasToken = !!user.facebookPageAccessToken || !!user.facebookUserAccessToken;
-      const { state, days, iso } = classifyByExpiry(hasToken, false, user.facebookTokenExpiresAt);
+      let { state, days, iso } = classifyByExpiry(hasToken, false, user.facebookTokenExpiresAt);
+      if (revoked.has("facebook") && hasToken) state = "revoked";
       out.push({
         network: "facebook",
         connected: state === "connected" || state === "expiring",
@@ -252,19 +299,26 @@ const lastWarnedAt = new Map<string, number>();
 export async function notifyExpiringConnections(userId: number, health: ConnectionHealth[]): Promise<void> {
   const now = Date.now();
   for (const h of health) {
-    if (h.state !== "expiring" && h.state !== "expired") continue;
+    if (h.state !== "expiring" && h.state !== "expired" && h.state !== "revoked") continue;
     const key = `${userId}:${h.network}:${h.state}`;
     const last = lastWarnedAt.get(key) || 0;
     if (now - last < ONE_DAY_MS) continue;
     lastWarnedAt.set(key, now);
+    const typeMap = {
+      expiring: "connection_expiring",
+      expired: "connection_expired",
+      revoked: "connection_revoked",
+    } as const;
+    const titleMap = {
+      expiring: `Conexión por expirar: ${HUMAN_LABELS[h.network]}`,
+      expired: `Conexión expirada: ${HUMAN_LABELS[h.network]}`,
+      revoked: `Conexión revocada: ${HUMAN_LABELS[h.network]}`,
+    } as const;
     try {
       await createNotification({
         userId,
-        type: "system",
-        title:
-          h.state === "expired"
-            ? `Conexión expirada: ${HUMAN_LABELS[h.network]}`
-            : `Conexión por expirar: ${HUMAN_LABELS[h.network]}`,
+        type: typeMap[h.state as keyof typeof typeMap],
+        title: titleMap[h.state as keyof typeof titleMap],
         body: h.message,
         link: "/cuentas",
       });

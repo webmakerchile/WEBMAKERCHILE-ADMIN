@@ -33,6 +33,12 @@ export const users = pgTable("users", {
   facebookPageAccessToken: text("facebook_page_access_token"),
   facebookUserAccessToken: text("facebook_user_access_token"),
   facebookTokenExpiresAt: timestamp("facebook_token_expires_at"),
+  /**
+   * Comma-separated list of networks whose connection has been observed as
+   * revoked by the provider (e.g. 401/invalid_grant on a refresh attempt).
+   * Cleared on successful re-auth in the OAuth callback.
+   */
+  revokedNetworks: text("revoked_networks").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
 });

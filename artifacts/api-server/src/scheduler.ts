@@ -11,7 +11,7 @@ import { publishLinkedInPost, publishLinkedInVideo } from "./routes/linkedin";
 import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 import { publishToFacebook } from "./routes/facebook";
 import { createNotification } from "./lib/notifications";
-import { checkConnectionsForAdmin } from "./lib/connections";
+import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -92,6 +92,17 @@ function classifyError(err: string | undefined | null): "transient" | "permanent
 }
 
 /**
+ * True if an error message looks like the provider rejected our credentials
+ * (401/invalid_grant/invalid_token/revoked). Used to flip the per-user
+ * revoked flag so the UI shows a "Revocada" badge instead of just "Expirada".
+ */
+function isAuthRevocationError(err: string | undefined | null): boolean {
+  if (!err) return false;
+  const e = err.toLowerCase();
+  return /\b401\b|unauthor|invalid_grant|invalid_token|invalid token|revoked|token (was )?revoked|forbidden|expired_token/.test(e);
+}
+
+/**
  * Record a publish failure: classifies the error and either schedules a retry
  * (status = "retrying", bumps retry counter, sets nextRetryAt) or marks the
  * platform as permanently failed (status = "error").
@@ -99,6 +110,18 @@ function classifyError(err: string | undefined | null): "transient" | "permanent
 async function recordFailure(videoId: number, platform: PublishPlatform, errorMsg: string): Promise<void> {
   const [v] = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   if (!v) return;
+  // If the provider says the credentials are dead, flip the per-user revoked
+  // flag so the UI/notifications can surface "Revocada" instead of just
+  // "Expirada". We pull the admin user (single-tenant) since publish flow
+  // already runs under that identity.
+  if (isAuthRevocationError(errorMsg)) {
+    try {
+      const [admin] = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin")).limit(1);
+      if (admin) await markNetworkRevoked(admin.id, platform);
+    } catch (e: any) {
+      console.error("[Scheduler] markNetworkRevoked failed:", e?.message || e);
+    }
+  }
   const fields = PLATFORM_FIELDS[platform];
   const current = (readField<number | null>(v, fields.retries)) ?? 0;
   const kind = classifyError(errorMsg);
@@ -735,7 +758,7 @@ async function processScheduledVideos() {
         linkedin: false, x: false, facebook: false,
       };
       function logCooldown(p: PublishPlatform) {
-        const at = (video as any)[`${p}NextRetryAt`];
+        const at = readField<Date | string | null>(video, PLATFORM_FIELDS[p].nextRetryAt);
         console.log(`[Scheduler] ${p} on cooldown until ${at ? new Date(at).toISOString() : "?"} — skipping this tick`);
       }
 
