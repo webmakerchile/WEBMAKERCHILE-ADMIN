@@ -1359,15 +1359,26 @@ function DayDropCell({
           <span>Agregar</span>
         </button>
       ) : (
-        items.map((v) => (
-          <DraggableVideoCard
-            key={v.id}
-            video={v}
-            onClick={onClickDay}
-            isDragging={activeDragId === v.id}
-            compact={compact}
-          />
-        ))
+        <>
+          {items.map((v) => (
+            <DraggableVideoCard
+              key={v.id}
+              video={v}
+              onClick={onClickDay}
+              isDragging={activeDragId === v.id}
+              compact={compact}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={onAdd}
+            className="w-full flex items-center justify-center gap-1 py-2 text-[11px] text-muted-foreground/60 hover:text-primary hover:bg-primary/5 border border-dashed border-foreground/15 hover:border-primary/40 rounded-lg transition"
+            title="Agregar otra publicación a este día"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Agregar otra</span>
+          </button>
+        </>
       )}
     </div>
   );
