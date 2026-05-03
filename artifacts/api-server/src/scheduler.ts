@@ -916,14 +916,27 @@ async function processScheduledVideos() {
       }
 
       // Append-only success logging: only log a success when this run actually
-      // attempted the platform (skipped/cooldown platforms don't get an entry).
+      // attempted the platform. We must guard against three "fake successes":
+      //  (a) cooldown platforms that returned `{success:true}` without trying,
+      //  (b) platforms with no content for that network (nothing to publish),
+      //  (c) platforms that already had a post-id from a previous run and
+      //      short-circuited inside upload*() (would otherwise log a duplicate
+      //      success row on every retry tick that touches the video).
+      const preAlreadyPosted: Record<PublishPlatform, boolean> = {
+        youtube:   !!video.youtubeVideoId,
+        tiktok:    !!video.tiktokPublishId,
+        instagram: !!video.instagramMediaId,
+        linkedin:  !!video.linkedinPostId,
+        x:         !!video.xPostId,
+        facebook:  !!video.facebookPostId,
+      };
       const successResults: Array<[PublishPlatform, boolean]> = [
-        ["youtube",   results.youtube.success   && !cooldown.youtube   && !!(video.youtubeTitle || video.youtubeDescription)],
-        ["tiktok",    results.tiktok.success    && !cooldown.tiktok    && !!(video.tiktokDescription || video.description)],
-        ["instagram", results.instagram.success && !cooldown.instagram && !!(video.instagramDescription || video.description)],
-        ["linkedin",  results.linkedin.success  && !cooldown.linkedin  && !!video.linkedinDescription],
-        ["x",         results.x.success         && !cooldown.x         && !!video.xDescription],
-        ["facebook",  results.facebook.success  && !cooldown.facebook  && facebookIncluded],
+        ["youtube",   results.youtube.success   && !cooldown.youtube   && !preAlreadyPosted.youtube   && !!(video.youtubeTitle || video.youtubeDescription)],
+        ["tiktok",    results.tiktok.success    && !cooldown.tiktok    && !preAlreadyPosted.tiktok    && !!(video.tiktokDescription || video.description)],
+        ["instagram", results.instagram.success && !cooldown.instagram && !preAlreadyPosted.instagram && !!(video.instagramDescription || video.description)],
+        ["linkedin",  results.linkedin.success  && !cooldown.linkedin  && !preAlreadyPosted.linkedin  && !!video.linkedinDescription],
+        ["x",         results.x.success         && !cooldown.x         && !preAlreadyPosted.x         && !!video.xDescription],
+        ["facebook",  results.facebook.success  && !cooldown.facebook  && !preAlreadyPosted.facebook  && facebookIncluded],
       ];
       for (const [p, ok] of successResults) {
         if (!ok) continue;

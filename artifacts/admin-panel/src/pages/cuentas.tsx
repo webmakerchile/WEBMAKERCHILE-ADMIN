@@ -394,7 +394,12 @@ export default function CuentasPage() {
                   <div className="h-20 rounded-xl bg-foreground/5 animate-pulse flex items-center justify-center">
                     <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
                   </div>
-                ) : info.connected ? (
+                ) : (info.connected || info.state === "expired" || info.state === "revoked") ? (
+                  // Render the "connected" card branch even when health says
+                  // !connected but the state is expired/revoked, so the user
+                  // sees the semáforo (Expirada/Revocada badge) and the
+                  // "Reconectar ahora" CTA instead of falling back to the
+                  // generic "No conectado" card.
                   (() => {
                     const state: ConnectionState = info.state || "connected";
                     const isWarn = state === "expiring";
