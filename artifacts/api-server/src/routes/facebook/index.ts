@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { clearNetworkRevoked } from "../../lib/connections";
 import crypto from "crypto";
 import { google } from "googleapis";
 
@@ -168,6 +169,8 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
       facebookUserAccessToken: longLivedUserToken,
       facebookTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
     }).where(eq(users.id, currentUser.id));
+    // Fresh token → drop any stale "revoked" flag so the UI stops nagging.
+    try { await clearNetworkRevoked(currentUser.id, "facebook"); } catch {}
 
     res.redirect("/cuentas?facebook=connected");
   } catch (err: any) {

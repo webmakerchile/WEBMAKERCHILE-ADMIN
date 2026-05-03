@@ -430,6 +430,11 @@ export default function CuentasPage() {
                           <p className="text-xs text-muted-foreground truncate">{info.handle}</p>
                         )}
                         {info.meta && <p className="text-xs text-muted-foreground truncate">{info.meta}</p>}
+                        {info.expiresAt && (state === "connected" || state === "expiring" || state === "expired") && (
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Vence el {new Date(info.expiresAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}
+                          </p>
+                        )}
                         {state === "expiring" && info.daysUntilExpiry != null && (
                           <p className="text-[11px] text-amber-300/90 mt-1">
                             La sesión caduca en {info.daysUntilExpiry} día{info.daysUntilExpiry === 1 ? "" : "s"}. Reconecta pronto para evitar fallas.

@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { clearNetworkRevoked } from "../../lib/connections";
 import crypto from "crypto";
 
 const router: IRouter = Router();
@@ -191,6 +192,8 @@ router.get("/x/callback", async (req: Request, res: Response) => {
       xUserId,
       xUsername,
     }).where(eq(users.id, currentUser.id));
+    // Fresh token → drop any stale "revoked" flag so the UI stops nagging.
+    try { await clearNetworkRevoked(currentUser.id, "x"); } catch {}
 
     console.log(`[X] Connected for user ${currentUser.id}, x user: @${xUsername}`);
     res.redirect("/?x=connected");

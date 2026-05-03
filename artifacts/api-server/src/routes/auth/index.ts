@@ -4,6 +4,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { clearNetworkRevoked } from "../../lib/connections";
 
 const router: IRouter = Router();
 
@@ -60,6 +61,8 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               .update(users)
               .set(updateData)
               .where(eq(users.id, existing.id));
+            // Fresh Google token → clear any stale YouTube "revoked" flag.
+            try { await clearNetworkRevoked(existing.id, "youtube"); } catch {}
             return done(null, { ...existing, ...updateData });
           }
 

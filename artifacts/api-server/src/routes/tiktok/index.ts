@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { clearNetworkRevoked } from "../../lib/connections";
 import multer from "multer";
 import crypto from "crypto";
 import { google } from "googleapis";
@@ -168,6 +169,8 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
       tiktokRefreshToken: tokenData.refresh_token,
       tiktokTokenExpiresAt: new Date(Date.now() + (tokenData.expires_in || 86400) * 1000),
     }).where(eq(users.id, currentUser.id));
+    // Fresh token → drop any stale "revoked" flag so the UI stops nagging.
+    try { await clearNetworkRevoked(currentUser.id, "tiktok"); } catch {}
 
     console.log(`[TikTok] Connected for user ${currentUser.id}, open_id: ${tokenData.open_id}`);
     res.redirect("/?tiktok=connected");
