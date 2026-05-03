@@ -682,7 +682,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
   }
 }
 
-async function processScheduledVideos() {
+export async function processScheduledVideos() {
   if (schedulerRunning) return;
   schedulerRunning = true;
 
