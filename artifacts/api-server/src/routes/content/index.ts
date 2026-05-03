@@ -384,15 +384,22 @@ router.post("/content/videos/import-csv", async (req, res) => {
     return;
   }
   const isSafeLabel = (v: string) => /^[\w\-./# ]{1,80}$/.test(v);
+  // HH:MM (24h) or HH:MM:SS — the wizard usually stores HH:MM, but tolerate
+  // seconds for paste-from-spreadsheet flows.
+  const isValidHour = (v: string) => /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(v);
   const text = (v: unknown): string | null => {
     if (v === null || v === undefined) return null;
     const s = String(v).trim();
     return s.length > 0 ? s : null;
   };
-  const numOrNull = (v: unknown): number | null => {
-    if (v === null || v === undefined || v === "") return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+  type NumResult = { ok: true; value: number | null } | { ok: false; raw: string };
+  const parseId = (v: unknown): NumResult => {
+    if (v === null || v === undefined || v === "") return { ok: true, value: null };
+    const raw = String(v).trim();
+    if (raw === "") return { ok: true, value: null };
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return { ok: false, raw };
+    return { ok: true, value: n };
   };
 
   type Prepared = {
@@ -422,13 +429,21 @@ router.post("/content/videos/import-csv", async (req, res) => {
     const day = text(r.day);
     const videoNumber = text(r.videoNumber);
     const scheduleHour = text(r.scheduleHour);
-    for (const [k, v] of [["mes", month], ["semana", week], ["día", day], ["videoNumber", videoNumber], ["hora", scheduleHour]] as const) {
-      if (v && !isSafeLabel(v)) {
-        errors.push({ row: i, error: `Valor inválido para ${k}` });
-      }
+    let labelError: string | null = null;
+    for (const [k, v] of [["mes", month], ["semana", week], ["día", day], ["videoNumber", videoNumber]] as const) {
+      if (v && !isSafeLabel(v)) { labelError = `Valor inválido para ${k}`; break; }
     }
-    const campaignId = numOrNull(r.campaignId);
-    const templateId = numOrNull(r.templateId);
+    if (labelError) { errors.push({ row: i, error: labelError }); continue; }
+    if (scheduleHour && !isValidHour(scheduleHour)) {
+      errors.push({ row: i, error: `Hora inválida (usa HH:MM, ej. 09:00): "${scheduleHour}"` });
+      continue;
+    }
+    const campaignParsed = parseId(r.campaignId);
+    if (!campaignParsed.ok) { errors.push({ row: i, error: `campaignId inválido: "${campaignParsed.raw}"` }); continue; }
+    const templateParsed = parseId(r.templateId);
+    if (!templateParsed.ok) { errors.push({ row: i, error: `templateId inválido: "${templateParsed.raw}"` }); continue; }
+    const campaignId = campaignParsed.value;
+    const templateId = templateParsed.value;
     if (campaignId !== null) {
       const ok = await resolveOwnedLibraryId(campaignId, campaigns, userId);
       if (ok === "forbidden") { errors.push({ row: i, error: `Campaña ${campaignId} no encontrada` }); continue; }
