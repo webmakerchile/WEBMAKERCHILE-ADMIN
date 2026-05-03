@@ -7,6 +7,7 @@ import path from "path";
 import crypto from "crypto";
 import { mkdirSync } from "fs";
 import { ai } from "@workspace/integrations-gemini-ai";
+import { firstText } from "../../lib/gemini-parts";
 
 const router: IRouter = Router();
 
@@ -291,7 +292,7 @@ RESPONDE SOLO EN JSON valido:
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
 
-      const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const responseText = firstText(response.candidates?.[0]?.content?.parts);
       const cleanedText = responseText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const parsed = JSON.parse(cleanedText);
       if (!parsed.ideas || !Array.isArray(parsed.ideas)) return [];
@@ -338,7 +339,7 @@ RESPONDE SOLO EN JSON valido:
         model: "gemini-3.1-pro-preview",
         contents: [{ role: "user", parts: [{ text: packPrompt }] }],
       });
-      const responseText = response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const responseText = firstText(response.candidates?.[0]?.content?.parts);
       const cleanedText = responseText.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
       const parsed = JSON.parse(cleanedText);
       if (parsed.ideas && Array.isArray(parsed.ideas)) {
@@ -938,7 +939,7 @@ REGLAS:
           contents: [{ role: "user", parts: [{ text: descPromptText }] }],
         });
 
-        const descRaw = descResp.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const descRaw = firstText(descResp.candidates?.[0]?.content?.parts);
         if (descRaw.trim()) {
           const cleanDescTxt = descRaw.replace(/\*\*/g, "").trim();
           const { uploadDescriptionsToDrive } = await import("./google-drive");

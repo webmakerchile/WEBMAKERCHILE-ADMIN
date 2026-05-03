@@ -3,6 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { seleccionarPosePortada, bloquePoseRequerida } from "../../lib/pose-bank.js";
 import { ai } from "@workspace/integrations-gemini-ai";
+import { firstInlineData } from "../../lib/gemini-parts";
 
 async function resolveAsset(...segments: string[]): Promise<string> {
   const candidates = [
@@ -199,16 +200,14 @@ async function generateFoxIllustration(videoDescription: string): Promise<Buffer
       });
 
       const candidate = response.candidates?.[0];
-      const imagePart = candidate?.content?.parts?.find(
-        (part: any) => part.inlineData
-      );
+      const inline = firstInlineData(candidate?.content?.parts);
 
-      if (!imagePart?.inlineData?.data) {
+      if (!inline?.data) {
         throw new Error("Gemini no devolvió imagen en este intento");
       }
 
       console.log(`[CoverGen] Fox illustration generated successfully`);
-      return Buffer.from(imagePart.inlineData.data, "base64");
+      return Buffer.from(inline.data, "base64");
     } catch (err: any) {
       const rateLimited = isRateLimitError(err);
       console.warn(`[CoverGen] Attempt ${attempt} failed (rate_limit=${rateLimited}): ${err.message}`);

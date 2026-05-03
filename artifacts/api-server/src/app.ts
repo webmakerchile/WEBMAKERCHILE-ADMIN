@@ -11,6 +11,9 @@ const app: Express = express();
 
 app.use("/uploads", express.static(path.join(process.cwd(), "public", "uploads")));
 
+import { requestId } from "./lib/request-id";
+app.use(requestId);
+
 app.use(cors({
   origin: true,
   credentials: true,
@@ -73,6 +76,7 @@ app.use((err: Error & { status?: number }, req: Request, res: Response, next: Ne
     Sentry.withScope((scope) => {
       scope.setTag("route", req.path);
       scope.setTag("method", req.method);
+      if (req.requestId) scope.setTag("request_id", req.requestId);
       if (user?.id !== undefined) scope.setUser({ id: String(user.id) });
       Sentry.captureException(err);
     });

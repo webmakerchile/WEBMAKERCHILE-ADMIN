@@ -495,7 +495,7 @@ Responde SOLO con un array JSON de 10 strings (sin el símbolo #). Ejemplo: ["we
   try {
     const result = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: prompt,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
     });
     const text = result.text || "[]";
     const cleaned = text

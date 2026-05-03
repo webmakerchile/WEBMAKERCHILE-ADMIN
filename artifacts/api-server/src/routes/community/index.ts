@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { communityContent } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
+import { firstText } from "../../lib/gemini-parts";
 import { readFile } from "fs/promises";
 import path from "path";
 
@@ -1729,7 +1730,7 @@ async function validarConsistenciaZorro(
 Responde EXCLUSIVAMENTE con una sola palabra: SI o NO. Sin explicación.` },
       ] }],
     });
-    const txt = (resp.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "").trim().toUpperCase();
+    const txt = firstText(resp.candidates?.[0]?.content?.parts).trim().toUpperCase();
     return txt.startsWith("SI") || txt.startsWith("SÍ") || txt.startsWith("YES");
   } catch (e) {
     console.warn("[Descripciones] validación Vision falló:", (e as Error).message);
@@ -1770,7 +1771,7 @@ Reglas:
 - NO repitas el mismo defecto en problemas y correcciones; sé conciso.` },
       ] }],
     });
-    const txt = (resp.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "").trim();
+    const txt = firstText(resp.candidates?.[0]?.content?.parts).trim();
     // Limpia posible bloque markdown ```json ... ```
     const limpio = txt.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
     const json = JSON.parse(limpio);

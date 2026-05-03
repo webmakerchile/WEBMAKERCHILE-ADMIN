@@ -222,7 +222,7 @@ ${bloquePoseRequerida(poseElegida)}`;
           prompt: basePrompt,
           size: "1024x1536",
         });
-        const b64_json = response.data[0]?.b64_json ?? "";
+        const b64_json = response.data?.[0]?.b64_json ?? "";
         if (!b64_json) throw new Error("No se recibió imagen en la respuesta");
         return { b64_json, mimeType: "image/png" };
       } else {
