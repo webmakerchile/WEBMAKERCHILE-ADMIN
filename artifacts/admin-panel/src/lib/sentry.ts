@@ -9,9 +9,11 @@ export function initSentry(): void {
     console.log("[Sentry] VITE_SENTRY_DSN not set, error monitoring disabled");
     return;
   }
+  const release = import.meta.env["VITE_SENTRY_RELEASE"] || import.meta.env["VITE_APP_VERSION"];
   Sentry.init({
     dsn,
     environment: import.meta.env.MODE,
+    release: release || undefined,
     tracesSampleRate: 0.1,
   });
   initialized = true;
