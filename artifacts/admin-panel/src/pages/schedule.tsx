@@ -408,6 +408,7 @@ export default function SchedulePage() {
       hour: string;
       networks: Network[];
       andEdit?: boolean;
+      asDraft?: boolean;
     }) => {
       const createRes = await fetch(`${API_BASE}/content/videos`, {
         method: "POST",
@@ -419,12 +420,16 @@ export default function SchedulePage() {
       const created = await createRes.json();
 
       const scheduledAt = buildScheduledAt(input.day, input.hour);
-      const patchBody: Record<string, unknown> = {
-        status: "scheduled",
-        scheduledAt,
-      };
-      for (const net of input.networks) {
-        patchBody[`${net}Status`] = "pending";
+      // Drafts: keep the chosen day/hour for reference but leave status as
+      // "draft" and don't flip per-network flags to "pending" — the scheduler
+      // ignores drafts so nothing is published until the user promotes it.
+      const patchBody: Record<string, unknown> = input.asDraft
+        ? { status: "draft", scheduledAt }
+        : { status: "scheduled", scheduledAt };
+      if (!input.asDraft) {
+        for (const net of input.networks) {
+          patchBody[`${net}Status`] = "pending";
+        }
       }
       const patchRes = await fetch(`${API_BASE}/content/videos/${created.id}`, {
         method: "PATCH",
@@ -432,11 +437,11 @@ export default function SchedulePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patchBody),
       });
-      if (!patchRes.ok) throw new Error(`HTTP ${patchRes.status} al programar`);
+      if (!patchRes.ok) throw new Error(`HTTP ${patchRes.status} al guardar`);
       const patched = await patchRes.json();
-      return { video: patched, andEdit: !!input.andEdit };
+      return { video: patched, andEdit: !!input.andEdit, asDraft: !!input.asDraft };
     },
-    onSuccess: ({ video, andEdit }) => {
+    onSuccess: ({ video, andEdit, asDraft }) => {
       setQuickCreateDate(null);
       queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["videos"] });
@@ -447,6 +452,8 @@ export default function SchedulePage() {
         // without touching the wizard itself.
         toast({ title: "Video creado", description: "Continúa en el editor para portada y descripciones." });
         setLocation(`/videos?select=${video.id}`);
+      } else if (asDraft) {
+        toast({ title: "Borrador guardado", description: "Lo encuentras en Publicaciones, filtrando por estado Borrador." });
       } else {
         toast({ title: "Publicación programada" });
       }
@@ -1048,6 +1055,7 @@ export default function SchedulePage() {
           }}
           onSubmit={(values) => quickCreateMutation.mutate(values)}
           onCreateAndEdit={(values) => quickCreateMutation.mutate({ ...values, andEdit: true })}
+          onSaveDraft={(values) => quickCreateMutation.mutate({ ...values, asDraft: true })}
           isPending={quickCreateMutation.isPending}
           bestTimes={bestTimesQuery.data?.networks}
         />
@@ -1947,6 +1955,7 @@ function QuickPostModal({
   onClose,
   onSubmit,
   onCreateAndEdit,
+  onSaveDraft,
   isPending,
   bestTimes,
 }: {
@@ -1960,6 +1969,12 @@ function QuickPostModal({
    * button "Crear video completo".
    */
   onCreateAndEdit: (values: QuickPostValues) => void;
+  /**
+   * Saves the post without scheduling it: status stays "draft", per-network
+   * flags are not flipped to "pending", and the scheduler will ignore it
+   * until the user promotes it from /publicaciones.
+   */
+  onSaveDraft: (values: QuickPostValues) => void;
   isPending: boolean;
   bestTimes?: Record<Network, BestTimeSlot[]>;
 }) {
@@ -1996,6 +2011,10 @@ function QuickPostModal({
 
   const canSubmit =
     !!day && title.trim().length > 0 && description.trim().length > 0 && networks.length > 0 && !isPending;
+  // Drafts only require a title — description and networks can be filled in
+  // later from the editor. Networks default to [] is fine because the patch
+  // skips per-network "pending" flags when asDraft.
+  const canSaveDraft = !!day && title.trim().length > 0 && !isPending;
 
   const toggleNetwork = (n: Network) => {
     setNetworks((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
@@ -2190,6 +2209,25 @@ function QuickPostModal({
               className="px-4 py-2 rounded-lg text-sm border border-foreground/10 hover:bg-foreground/5 transition disabled:opacity-50"
             >
               Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={!canSaveDraft || !day}
+              onClick={() => {
+                if (!canSaveDraft || !day) return;
+                onSaveDraft({
+                  title: title.trim(),
+                  description: description.trim(),
+                  day,
+                  hour,
+                  networks,
+                });
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-foreground/15 text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Guarda sin programar. Lo encuentras luego en Publicaciones › Borrador."
+            >
+              {isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Guardar borrador
             </button>
             <button
               type="button"
