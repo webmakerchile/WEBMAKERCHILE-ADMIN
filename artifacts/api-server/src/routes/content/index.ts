@@ -33,6 +33,7 @@ import { retryPlatformForVideo } from "../../scheduler";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
+import { generateDescriptionsForVideo } from "../../lib/generate-descriptions";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import {
@@ -954,117 +955,34 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
     return;
   }
 
-  // When force is false (default), skip platforms that already have content
-  const effectiveTargets = forceOverwrite
-    ? targets
-    : targets.filter((t) => {
-        if (t === "tiktok") return !video.tiktokDescription;
-        if (t === "instagram") return !video.instagramDescription;
-        // Skip YouTube only when both title AND description are already set
-        if (t === "youtube") return !video.youtubeTitle && !video.youtubeDescription;
-        if (t === "linkedin") return !video.linkedinDescription;
-        if (t === "x") return !video.xDescription;
-        if (t === "facebook") return !video.facebookDescription;
-        return true;
-      });
+  const reqUserId = (req.user as { id?: number } | undefined)?.id ?? null;
+  const { default: OpenAI } = await import("openai");
+  const useOwnKey = !!process.env.OPENAI_API_KEY;
+  const openai = new OpenAI({
+    apiKey: useOwnKey ? process.env.OPENAI_API_KEY : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: useOwnKey ? undefined : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+  const model = process.env.OPENAI_TEMPLATE_MODEL || "gpt-4o-mini";
 
-  if (effectiveTargets.length === 0) {
+  const result = await generateDescriptionsForVideo(video, targets, forceOverwrite, reqUserId, openai, model);
+  if (result.status === 502) {
+    res.status(502).json({ error: result.error });
+    return;
+  }
+  if ("skipped" in result && result.skipped) {
     res.json({ descriptions: {}, video, skipped: true });
     return;
   }
-
-  const baseInfo = `Título: "${video.title}"\nDescripción base: "${video.description || ""}"`;
-  const guides: Record<string, string> = {
-    tiktok: "TikTok (máx 2200): tono cercano, hook fuerte en la 1ra línea, 4-6 hashtags relevantes en español.",
-    instagram: "Instagram (máx 2200): tono inspirador, emojis moderados, 5-10 hashtags al final en español.",
-    youtube: "YouTube descripción (máx 5000): primer párrafo descriptivo con keywords SEO, luego beneficios, sin hashtags.",
-    linkedin: "LinkedIn (~150-300 caracteres): tono profesional, sin emojis excesivos, 2-3 hashtags al final.",
-    x: "X/Twitter (HASTA 280 caracteres ESTRICTOS, incluyendo hashtags): un solo tweet conciso, 1-2 hashtags.",
-    facebook: "Facebook (máx 500 caracteres): tono cercano y conversacional, 1-3 hashtags, invita a interactuar (comentar/compartir).",
-  };
-
-  const wanted = effectiveTargets.filter((t) => guides[t]);
-  const reqUserId = (req.user as { id?: number } | undefined)?.id ?? null;
-  const toneSuffix = await buildBrandToneSuffix(reqUserId);
-  const prompt = `Eres un copywriter experto para WebMakerChile (emprendimiento, agencia digital, Chile). Genera descripciones para un video, una por red social.
-
-${baseInfo}
-
-Devuelve EXCLUSIVAMENTE JSON válido (sin markdown, sin backticks) con las claves solicitadas y nada más:
-
-${wanted.map((t) => `- ${t}: ${guides[t]}`).join("\n")}
-
-Formato de salida:
-{ ${wanted.map((t) => `"${t}": "..."`).join(", ")} }${toneSuffix}`;
-
-  try {
-    // Preferir la API key propia del usuario (OPENAI_API_KEY) — el costo se
-    // carga a su cuenta de OpenAI. Si no está, caemos a la integración de
-    // Replit como respaldo.
-    const { default: OpenAI } = await import("openai");
-    const useOwnKey = !!process.env.OPENAI_API_KEY;
-    const openai = new OpenAI({
-      apiKey: useOwnKey
-        ? process.env.OPENAI_API_KEY
-        : process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      baseURL: useOwnKey ? undefined : process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    });
-    const model = process.env.OPENAI_TEMPLATE_MODEL || "gpt-4o-mini";
-    const resp = await openai.chat.completions.create({
-      model,
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      max_tokens: 1500,
-    });
-    const text = resp.choices[0]?.message?.content || "";
-    let cleaned = String(text).trim();
-    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
-    let parsed: Record<string, string>;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      if (!match) {
-        res.status(502).json({ error: "La IA no devolvió JSON válido. Intenta de nuevo." });
-        return;
-      }
-      parsed = JSON.parse(match[0]);
-    }
-
-    if (typeof parsed.x === "string") parsed.x = parsed.x.slice(0, 280);
-    if (typeof parsed.facebook === "string") parsed.facebook = parsed.facebook.slice(0, 500);
-
-    // Persist generated descriptions to the database
-    const updateData: Record<string, any> = { updatedAt: new Date() };
-    if (typeof parsed.tiktok === "string" && effectiveTargets.includes("tiktok"))
-      updateData.tiktokDescription = parsed.tiktok;
-    if (typeof parsed.instagram === "string" && effectiveTargets.includes("instagram"))
-      updateData.instagramDescription = parsed.instagram;
-    if (effectiveTargets.includes("youtube")) {
-      // Use base title as YouTube title if not set; store generated text as description
-      if (!video.youtubeTitle) updateData.youtubeTitle = video.title;
-      if (typeof parsed.youtube === "string") updateData.youtubeDescription = parsed.youtube;
-    }
-    if (typeof parsed.linkedin === "string" && effectiveTargets.includes("linkedin"))
-      updateData.linkedinDescription = parsed.linkedin;
-    if (typeof parsed.x === "string" && effectiveTargets.includes("x"))
-      updateData.xDescription = parsed.x;
-    if (typeof parsed.facebook === "string" && effectiveTargets.includes("facebook"))
-      updateData.facebookDescription = parsed.facebook;
-
-    const [updated] = await db
-      .update(videos)
-      .set(updateData)
-      .where(eq(videos.id, id))
-      .returning();
-
-    res.json({ descriptions: parsed, video: updated });
-  } catch (err: any) {
-    // No exponer mensajes del proveedor (pueden contener detalles operativos
-    // o, en algunos errores de OpenAI, fragmentos sensibles). Detalle solo en log.
-    console.error("[generate-descriptions] error:", err?.message || err);
-    res.status(502).json({ error: "No se pudo generar el contenido con IA. Intenta de nuevo en unos segundos." });
+  if (!("updateData" in result)) {
+    res.json({ descriptions: {}, video, skipped: true });
+    return;
   }
+  const [updated] = await db
+    .update(videos)
+    .set(result.updateData)
+    .where(eq(videos.id, id))
+    .returning();
+  res.json({ descriptions: result.descriptions, video: updated });
 });
 
 router.post("/content/videos/:id/generate-cover", async (req, res) => {
