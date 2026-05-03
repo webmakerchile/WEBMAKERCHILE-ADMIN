@@ -15,6 +15,53 @@ export function initSentry(): void {
     tracesSampleRate: 0.1,
   });
   initialized = true;
+  installFetchInterceptor();
+  installUnhandledRejectionHandler();
+}
+
+export function isSentryEnabled(): boolean {
+  return initialized;
+}
+
+export function setSentryUser(user: { id?: string | number; email?: string } | null): void {
+  if (!initialized) return;
+  if (!user) {
+    Sentry.setUser(null);
+    return;
+  }
+  Sentry.setUser({
+    id: user.id !== undefined ? String(user.id) : undefined,
+    email: user.email,
+  });
+}
+
+export function setSentryRoute(path: string): void {
+  if (!initialized) return;
+  Sentry.getCurrentScope().setTag("route", path);
+}
+
+let lastRequestId: string | null = null;
+export function getLastRequestId(): string | null {
+  return lastRequestId;
+}
+
+function installFetchInterceptor(): void {
+  const orig = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const res = await orig(input, init);
+    const rid = res.headers.get("X-Request-Id");
+    if (rid) {
+      lastRequestId = rid;
+      Sentry.getCurrentScope().setTag("request_id", rid);
+    }
+    return res;
+  };
+}
+
+function installUnhandledRejectionHandler(): void {
+  window.addEventListener("unhandledrejection", (event) => {
+    Sentry.captureException(event.reason ?? new Error("Unhandled rejection"));
+  });
 }
 
 export { Sentry };

@@ -6,6 +6,8 @@ import { createContext, useContext, Component, lazy, Suspense, type ReactNode } 
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle } from "lucide-react";
+import { setSentryUser, setSentryRoute } from "@/lib/sentry";
+import { useEffect } from "react";
 
 // Eager: dashboard is the landing page; login pages are tiny and unauthed.
 import Dashboard from "./pages/dashboard";
@@ -128,15 +130,28 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     );
   }
 
+  useEffect(() => {
+    setSentryUser(user ? { id: user.id, email: user.email } : null);
+  }, [user]);
+
   if (error || !user) {
     return <LoginPage />;
   }
 
   return (
     <AuthContext.Provider value={user}>
+      <RouteTracker />
       {children}
     </AuthContext.Provider>
   );
+}
+
+function RouteTracker() {
+  const [location] = useLocation();
+  useEffect(() => {
+    setSentryRoute(location);
+  }, [location]);
+  return null;
 }
 
 function Router() {
