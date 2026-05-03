@@ -67,6 +67,11 @@ if [[ -n "${BACKUP_S3_URI:-}" ]]; then
 fi
 
 if [[ "$UPLOADED" -eq 0 ]]; then
+  if [[ "${BACKUP_REQUIRE_OFFHOST:-0}" == "1" ]]; then
+    echo "[backup] FATAL: no off-host destination succeeded and BACKUP_REQUIRE_OFFHOST=1." >&2
+    echo "[backup] FATAL: set BACKUP_DRIVE_FOLDER_ID or BACKUP_S3_URI (and check upload logs above)." >&2
+    exit 1
+  fi
   echo "[backup] WARN: no off-host destination configured (set BACKUP_DRIVE_FOLDER_ID or BACKUP_S3_URI). Backup is LOCAL ONLY." >&2
 fi
 
