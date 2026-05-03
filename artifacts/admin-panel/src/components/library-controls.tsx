@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Hash, Sparkles, Loader2, ChevronDown } from "lucide-react";
+import { Hash, Sparkles, Loader2, ChevronDown, Plus, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Network } from "@/components/social-icons";
 
@@ -50,6 +50,7 @@ export function LibraryControls({
   const { toast } = useToast();
   const [aiBusy, setAiBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const { data: groups = [] } = useQuery<HashtagGroup[]>({
     queryKey: ["library", "hashtag-groups"],
@@ -98,8 +99,19 @@ export function LibraryControls({
       });
       if (!r.ok) throw new Error("No se pudo generar");
       const data = (await r.json()) as { suggestions: string[] };
-      appendHashtags(data.suggestions || []);
-      toast({ title: "Hashtags sugeridos agregados" });
+      const list = Array.from(
+        new Set(
+          (data.suggestions || [])
+            .map((s) => s.replace(/^#+/, "").toLowerCase().trim())
+            .filter(Boolean),
+        ),
+      );
+      if (list.length === 0) {
+        toast({ title: "La IA no devolvió sugerencias" });
+        return;
+      }
+      setSuggestions(list);
+      toast({ title: `Tienes ${list.length} sugerencias para esta red` });
     } catch (err) {
       toast({ title: "Error al sugerir hashtags", description: String(err), variant: "destructive" });
     } finally {
@@ -107,7 +119,12 @@ export function LibraryControls({
     }
   };
 
+  const usedSet = new Set(
+    (currentText.match(/#[\p{L}\p{N}_]+/gu) || []).map((h) => h.slice(1).toLowerCase()),
+  );
+
   return (
+    <div className="space-y-2">
     <div className="flex items-center gap-2 flex-wrap text-[11px]">
       <div className="relative">
         <button
@@ -148,6 +165,52 @@ export function LibraryControls({
         {aiBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
         Sugerir con IA
       </button>
+    </div>
+    {suggestions.length > 0 && (
+      <div className="rounded-lg border border-primary/20 bg-primary/[0.04] p-2.5 space-y-2">
+        <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span>Sugerencias para {network} · click para añadir</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => appendHashtags(suggestions.filter((t) => !usedSet.has(t)))}
+              className="text-primary hover:underline normal-case"
+            >
+              Añadir todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setSuggestions([])}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Cerrar sugerencias"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.map((tag) => {
+            const used = usedSet.has(tag);
+            return (
+              <button
+                key={tag}
+                type="button"
+                disabled={used}
+                onClick={() => appendHashtags([tag])}
+                className={
+                  used
+                    ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-muted/40 text-muted-foreground/60 line-through cursor-not-allowed"
+                    : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-background border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                }
+              >
+                {!used && <Plus className="w-2.5 h-2.5" />}
+                #{tag}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    )}
     </div>
   );
 }

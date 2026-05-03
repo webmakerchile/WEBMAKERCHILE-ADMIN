@@ -9,6 +9,7 @@ import {
 } from "@workspace/db/schema";
 import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
+import { buildBrandToneSuffix } from "../../lib/brand-tone";
 
 const router: IRouter = Router();
 
@@ -489,7 +490,7 @@ router.post("/content/hashtag-suggestions", async (req: Request, res: Response) 
 Título: ${title || "(sin título)"}
 Descripción: ${description || "(sin descripción)"}
 
-Responde SOLO con un array JSON de 10 strings (sin el símbolo #). Ejemplo: ["webdev","chile","tipsdevs",...]. No agregues texto antes ni después.`;
+Responde SOLO con un array JSON de 10 strings (sin el símbolo #). Ejemplo: ["webdev","chile","tipsdevs",...]. No agregues texto antes ni después.${await buildBrandToneSuffix(userId)}`;
 
   try {
     const result = await ai.models.generateContent({
@@ -655,7 +656,7 @@ Genera SOLO un objeto JSON con estas claves exactas y nada más:
 ${expectedKeys.map((k) => `  "${k}": string`).join(",\n")}
 
 Guías por red:
-${guideLines}`;
+${guideLines}${await buildBrandToneSuffix(userId)}`;
 
   try {
     const { default: OpenAI } = await import("openai");

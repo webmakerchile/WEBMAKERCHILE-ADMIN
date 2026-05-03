@@ -6,6 +6,7 @@ import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { getValidLinkedInToken } from "../linkedin";
 import { getValidXToken } from "../x";
+import { buildBrandToneSuffix } from "../../lib/brand-tone";
 
 const router: IRouter = Router();
 
@@ -1313,7 +1314,7 @@ Reglas:
 - Días: 0=Lunes, 6=Domingo.
 
 Datos:
-${JSON.stringify(dataSnapshot)}`;
+${JSON.stringify(dataSnapshot)}${await buildBrandToneSuffix(getUser(req).id)}`;
 
     const r = await openai.chat.completions.create({
       model: "gpt-4o-mini",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
-import { CheckCircle2, Loader2, Link2, Unlink, Info, Building2, User, ChevronDown, Search } from "lucide-react";
+import { CheckCircle2, Loader2, Link2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { HelpHint } from "@/components/help-hint";
@@ -96,6 +96,223 @@ const NETWORKS: NetworkConfig[] = [
     description: "Canal vinculado a tu cuenta de Google",
   },
 ];
+
+type BrandToneState = {
+  voice: string;
+  persona: string;
+  values: string;
+  avoidWords: string;
+  examples: string;
+};
+
+const EMPTY_TONE: BrandToneState = {
+  voice: "",
+  persona: "",
+  values: "",
+  avoidWords: "",
+  examples: "",
+};
+
+function BrandToneSection() {
+  const [tone, setTone] = useState<BrandToneState>(EMPTY_TONE);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/settings/brand-tone`, { credentials: "include" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = (await r.json()) as Partial<BrandToneState>;
+        if (cancelled) return;
+        setTone({
+          voice: data.voice || "",
+          persona: data.persona || "",
+          values: data.values || "",
+          avoidWords: data.avoidWords || "",
+          examples: data.examples || "",
+        });
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API_BASE}/settings/brand-tone`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tone),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = (await r.json()) as Partial<BrandToneState>;
+      setTone({
+        voice: data.voice || "",
+        persona: data.persona || "",
+        values: data.values || "",
+        avoidWords: data.avoidWords || "",
+        examples: data.examples || "",
+      });
+      setSavedAt(Date.now());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isFilled =
+    !!(tone.voice || tone.persona || tone.values || tone.avoidWords || tone.examples);
+
+  return (
+    <section className="rounded-2xl border border-foreground/10 bg-card/50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 hover:bg-foreground/[0.02] transition-colors text-left"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <Sparkles className="w-5 h-5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+              Tono de marca
+              {isFilled ? (
+                <span className="text-[10px] uppercase tracking-wide bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-full">
+                  Activo
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded-full">
+                  Sin configurar
+                </span>
+              )}
+            </h2>
+            <p className="text-xs text-muted-foreground line-clamp-1">
+              La IA usará esta guía al generar descripciones, hashtags e insights.
+            </p>
+          </div>
+        </div>
+        <ChevronDown className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-3 border-t border-foreground/5 pt-4">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Cargando…
+            </div>
+          ) : (
+            <>
+              <BrandToneField
+                label="Voz / tono general"
+                placeholder="Cercano y didáctico, sin jerga, con humor seco. Usar tuteo."
+                value={tone.voice}
+                onChange={(v) => setTone((s) => ({ ...s, voice: v }))}
+                max={280}
+              />
+              <BrandToneField
+                label="Persona / quién habla"
+                placeholder="Una agencia chilena de desarrollo web que explica cosas como un colega senior."
+                value={tone.persona}
+                onChange={(v) => setTone((s) => ({ ...s, persona: v }))}
+                max={280}
+              />
+              <BrandToneField
+                label="Valores y temas que defendemos"
+                placeholder="Calidad técnica, soluciones reales para PYMEs, código mantenible, sin BS."
+                value={tone.values}
+                onChange={(v) => setTone((s) => ({ ...s, values: v }))}
+                max={500}
+                rows={2}
+              />
+              <BrandToneField
+                label="Palabras o expresiones a evitar"
+                placeholder="No usar: 'sinergia', 'disruptivo', emojis exagerados, mayúsculas en todo."
+                value={tone.avoidWords}
+                onChange={(v) => setTone((s) => ({ ...s, avoidWords: v }))}
+                max={500}
+                rows={2}
+              />
+              <BrandToneField
+                label="Ejemplos de copy aprobado (opcional)"
+                placeholder={"Pega 1 o 2 descripciones tuyas que reflejen el estilo perfecto.\nLa IA imitará el tono de estos ejemplos."}
+                value={tone.examples}
+                onChange={(v) => setTone((s) => ({ ...s, examples: v }))}
+                max={1500}
+                rows={4}
+              />
+
+              {error && (
+                <p className="text-xs text-rose-300">{error}</p>
+              )}
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <p className="text-[11px] text-muted-foreground">
+                  {savedAt ? `Guardado ${new Date(savedAt).toLocaleTimeString()}` : "Cambios sin guardar se perderán al recargar."}
+                </p>
+                <button
+                  type="button"
+                  onClick={save}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground text-sm font-medium transition disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Guardar tono de marca
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BrandToneField({
+  label,
+  placeholder,
+  value,
+  onChange,
+  max,
+  rows = 1,
+}: {
+  label: string;
+  placeholder?: string;
+  value: string;
+  onChange: (v: string) => void;
+  max: number;
+  rows?: number;
+}) {
+  return (
+    <label className="block space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
+        <span className="text-[10px] text-muted-foreground/60">{value.length}/{max}</span>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value.slice(0, max))}
+        placeholder={placeholder}
+        rows={rows}
+        className="w-full bg-background border border-foreground/10 rounded-lg px-3 py-2 text-sm focus:border-primary outline-none resize-y leading-snug"
+      />
+    </label>
+  );
+}
 
 type StatusPayload = {
   connected?: boolean;
@@ -350,6 +567,8 @@ export default function CuentasPage() {
             Conecta tus redes sociales para publicar y traer estadísticas a tu Inicio.
           </p>
         </header>
+
+        <BrandToneSection />
 
         {noNetworksConnected && (
           <EmptyState

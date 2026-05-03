@@ -21,6 +21,7 @@ import libraryRouter from "./library";
 import notificationsRouter from "./notifications";
 import collaborationRouter from "./collaboration";
 import connectionsRouter from "./connections";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(libraryRouter);
 router.use(notificationsRouter);
 router.use(collaborationRouter);
 router.use(connectionsRouter);
+router.use(settingsRouter);
 
 export default router;

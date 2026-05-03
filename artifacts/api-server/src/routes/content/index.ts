@@ -32,6 +32,7 @@ import { getValidXToken } from "../x";
 import { retryPlatformForVideo } from "../../scheduler";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
+import { buildBrandToneSuffix } from "../../lib/brand-tone";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import {
@@ -983,6 +984,8 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
   };
 
   const wanted = effectiveTargets.filter((t) => guides[t]);
+  const reqUserId = (req.user as { id?: number } | undefined)?.id ?? null;
+  const toneSuffix = await buildBrandToneSuffix(reqUserId);
   const prompt = `Eres un copywriter experto para WebMakerChile (emprendimiento, agencia digital, Chile). Genera descripciones para un video, una por red social.
 
 ${baseInfo}
@@ -992,7 +995,7 @@ Devuelve EXCLUSIVAMENTE JSON válido (sin markdown, sin backticks) con las clave
 ${wanted.map((t) => `- ${t}: ${guides[t]}`).join("\n")}
 
 Formato de salida:
-{ ${wanted.map((t) => `"${t}": "..."`).join(", ")} }`;
+{ ${wanted.map((t) => `"${t}": "..."`).join(", ")} }${toneSuffix}`;
 
   try {
     // Preferir la API key propia del usuario (OPENAI_API_KEY) — el costo se

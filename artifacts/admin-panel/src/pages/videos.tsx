@@ -3743,6 +3743,32 @@ function StepCover({
     ? `data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`
     : null;
 
+  const { toast } = useToast();
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState<string>(video.coverPrompt || "");
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  useEffect(() => {
+    setCustomPrompt(video.coverPrompt || "");
+  }, [video.id, video.coverPrompt]);
+
+  const savePromptAndGenerate = async () => {
+    setSavingPrompt(true);
+    try {
+      const trimmed = customPrompt.trim();
+      const res = await apiFetch(`${API_BASE}/content/videos/${video.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coverPrompt: trimmed ? trimmed : null }),
+      });
+      if (!res.ok) throw new Error("No se pudo guardar el prompt");
+      onGenerate();
+    } catch (err) {
+      toast({ title: "Error guardando prompt", description: String(err), variant: "destructive" });
+    } finally {
+      setSavingPrompt(false);
+    }
+  };
+
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) onUpload(file);
@@ -3852,6 +3878,54 @@ function StepCover({
             </p>
           </div>
         )}
+
+        <div className="rounded-xl border border-foreground/10 bg-background/40">
+          <button
+            type="button"
+            onClick={() => setPromptOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-foreground/[0.02] transition"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Prompt personalizado para la IA</span>
+              {video.coverPrompt ? (
+                <span className="text-[10px] uppercase tracking-wide bg-primary/15 text-primary px-2 py-0.5 rounded-full">
+                  Activo
+                </span>
+              ) : null}
+            </div>
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${promptOpen ? "rotate-180" : ""}`} />
+          </button>
+          {promptOpen && (
+            <div className="px-4 pb-4 space-y-2 border-t border-foreground/5 pt-3">
+              <p className="text-xs text-muted-foreground">
+                Escribe instrucciones específicas (estilo, colores, texto en pantalla, escena). Se sobrescribe sobre el prompt por defecto. Déjalo vacío para volver al estilo automático.
+              </p>
+              <textarea
+                value={customPrompt}
+                onChange={(e) => setCustomPrompt(e.target.value.slice(0, 4000))}
+                rows={6}
+                placeholder={`Ej: Portada vertical 9:16, estilo flat vector amarillo, zorro con lentes apuntando a un gráfico. Texto grande arriba: "${video.title || "TÍTULO"}".`}
+                className="w-full bg-background border border-foreground/10 rounded-lg px-3 py-2 text-sm focus:border-primary outline-none font-mono resize-y leading-snug"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-muted-foreground/70">{customPrompt.length}/4000</span>
+                <Button
+                  size="sm"
+                  onClick={savePromptAndGenerate}
+                  disabled={savingPrompt || isGenerating}
+                  className="bg-primary"
+                >
+                  {savingPrompt || isGenerating ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generando…</>
+                  ) : (
+                    <><Sparkles className="w-4 h-4 mr-2" />Generar con este prompt</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="pt-4 flex flex-col sm:flex-row sm:justify-between gap-2">
           <Button variant="outline" onClick={onPrev} className="border-foreground/10">
