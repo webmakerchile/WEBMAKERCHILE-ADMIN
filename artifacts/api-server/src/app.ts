@@ -64,6 +64,23 @@ app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-uploa
 
 app.use("/api", requireAuth, router);
 
+import { Sentry, isSentryEnabled } from "./lib/sentry";
+import type { Request, Response, NextFunction } from "express";
+app.use((err: Error & { status?: number }, req: Request, res: Response, next: NextFunction) => {
+  const status = err.status ?? 500;
+  if (status >= 500 && isSentryEnabled()) {
+    const user = req.user as { id?: string | number } | undefined;
+    Sentry.withScope((scope) => {
+      scope.setTag("route", req.path);
+      scope.setTag("method", req.method);
+      if (user?.id !== undefined) scope.setUser({ id: String(user.id) });
+      Sentry.captureException(err);
+    });
+  }
+  if (res.headersSent) return next(err);
+  res.status(status).json({ error: err.message || "Internal Server Error" });
+});
+
 if (process.env.NODE_ENV === "production") {
   const frontendDist = path.join(process.cwd(), "artifacts", "admin-panel", "dist", "public");
   app.use(express.static(frontendDist));

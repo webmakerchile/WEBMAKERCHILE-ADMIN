@@ -1,3 +1,4 @@
+import type { TikTokTokenJson, TikTokInitJson, IgContainerJson, IgStatusJson, IgPublishJson } from "./lib/platform-types";
 import { db } from "@workspace/db";
 import { videos, users, publishAttempts } from "@workspace/db/schema";
 import { eq, and, lte, or, isNull, sql } from "drizzle-orm";
@@ -239,7 +240,7 @@ async function getValidTikTokToken(user: any): Promise<string | null> {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache" },
       body: params.toString(),
     });
-    const data = await res.json() as any;
+    const data = (await res.json()) as TikTokTokenJson;
     if (data.access_token) {
       await db.update(users).set({
         tiktokAccessToken: data.access_token,
@@ -387,7 +388,7 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
       }),
     });
 
-    const initData = await initRes.json() as any;
+    const initData = (await initRes.json()) as TikTokInitJson;
     if (initData.error?.code !== "ok") {
       const error = `TikTok init failed: ${initData.error?.message || JSON.stringify(initData.error)}`;
       await persistPlatformError(video.id, "tiktok", error);
@@ -624,7 +625,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
       }),
     });
 
-    const containerData = await containerRes.json() as any;
+    const containerData = (await containerRes.json()) as IgContainerJson;
     if (containerData.error) {
       throw new Error(containerData.error.message || "Container creation failed");
     }
@@ -636,7 +637,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
       const statusRes = await fetch(
         `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${INSTAGRAM_ACCESS_TOKEN}`
       );
-      const statusData = await statusRes.json() as any;
+      const statusData = (await statusRes.json()) as IgStatusJson;
       if (statusData.status_code === "FINISHED") break;
       if (statusData.status_code === "ERROR") {
         throw new Error(`Instagram processing error: ${statusData.status || "Unknown"}`);
@@ -653,7 +654,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
       }),
     });
 
-    const publishData = await publishRes.json() as any;
+    const publishData = (await publishRes.json()) as IgPublishJson;
     if (publishData.error) {
       throw new Error(publishData.error.message || "Publish failed");
     }

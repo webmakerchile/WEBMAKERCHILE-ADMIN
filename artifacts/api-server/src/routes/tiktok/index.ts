@@ -1,3 +1,4 @@
+import type { TikTokTokenResponse, TikTokUserInfoResponse, TikTokInitResponse } from "../../lib/tiktok-types";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users, videos } from "@workspace/db/schema";
@@ -51,7 +52,7 @@ async function refreshTikTokToken(user: any): Promise<string | null> {
       body: params.toString(),
     });
 
-    const data = await res.json() as any;
+    const data = (await res.json()) as TikTokTokenResponse;
     if (data.access_token) {
       await db.update(users).set({
         tiktokAccessToken: data.access_token,
@@ -149,7 +150,7 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
       body: params.toString(),
     });
 
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json()) as TikTokTokenResponse;
 
     if (!tokenData.access_token) {
       console.error("[TikTok] Token exchange failed:", tokenData);
@@ -201,7 +202,7 @@ router.get("/tiktok/status", async (req: Request, res: Response) => {
       },
     });
 
-    const userInfo = await userInfoRes.json() as any;
+    const userInfo = (await userInfoRes.json()) as TikTokUserInfoResponse;
 
     if (userInfo.data?.user) {
       res.json({
@@ -284,7 +285,7 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
       }),
     });
 
-    const initData = await initRes.json() as any;
+    const initData = (await initRes.json()) as TikTokInitResponse;
     console.log("[TikTok] Init response:", JSON.stringify(initData));
 
     if (initData.error?.code !== "ok") {
@@ -399,7 +400,7 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
       }),
     });
 
-    const initData = await initRes.json() as any;
+    const initData = (await initRes.json()) as TikTokInitResponse;
     console.log("[TikTok] Init response:", JSON.stringify(initData));
 
     if (initData.error?.code !== "ok") {
