@@ -325,6 +325,389 @@ function videoMatchesNetwork(v: VideoData, net: string): boolean {
   }
 }
 
+// CSV parser tolerant to quoted fields with commas/newlines and "" escapes.
+// Returns rows of strings (header included). Empty trailing newlines are
+// dropped. Unicode-friendly (no regex character class assumptions).
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else { field += ch; }
+    } else {
+      if (ch === '"') { inQuotes = true; }
+      else if (ch === ",") { row.push(field); field = ""; }
+      else if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (ch === "\r") { /* skip; handle on next \n */ }
+      else { field += ch; }
+    }
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => c.trim().length > 0));
+}
+
+const CSV_TEMPLATE = `title,description,month,week,day,videoNumber,scheduleHour,campaignId,templateId
+Cómo escalar tu agencia,"Tres claves para crecer sin perder calidad",Mes 1,Semana 1,Lunes,1,09:00,,
+Errores comunes en TikTok,"Lo que nadie te dijo sobre el algoritmo",Mes 1,Semana 1,Miércoles,2,18:30,,
+`;
+
+type ParsedCsvRow = {
+  index: number;
+  raw: Record<string, string>;
+  title: string;
+  description: string;
+  month: string;
+  week: string;
+  day: string;
+  videoNumber: string;
+  scheduleHour: string;
+  campaignId: string;
+  templateId: string;
+  error: string | null;
+};
+
+function normalizeHeader(h: string): string {
+  return h.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+const HEADER_ALIASES: Record<string, keyof ParsedCsvRow> = {
+  title: "title", titulo: "title", título: "title",
+  description: "description", descripcion: "description", descripción: "description",
+  month: "month", mes: "month",
+  week: "week", semana: "week",
+  day: "day", dia: "day", día: "day",
+  videonumber: "videoNumber", numero: "videoNumber", número: "videoNumber", "n°": "videoNumber",
+  schedulehour: "scheduleHour", hora: "scheduleHour", time: "scheduleHour",
+  campaignid: "campaignId", campana: "campaignId", campaña: "campaignId",
+  templateid: "templateId", plantilla: "templateId", template: "templateId",
+};
+
+function ImportCsvDialog({
+  open,
+  onClose,
+  onImported,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [rows, setRows] = useState<ParsedCsvRow[]>([]);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [serverErrors, setServerErrors] = useState<{ row: number; error: string }[]>([]);
+  const [importing, setImporting] = useState(false);
+
+  const reset = () => {
+    setFileName(null); setRows([]); setParseError(null); setProgress(null);
+    setServerErrors([]); setImporting(false); setDragOver(false);
+  };
+
+  const close = () => { if (!importing) { reset(); onClose(); } };
+
+  const handleFile = (file: File) => {
+    setFileName(file.name);
+    setServerErrors([]);
+    setProgress(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = String(reader.result || "");
+        const grid = parseCsv(text);
+        if (grid.length < 2) { setParseError("El CSV está vacío o sólo tiene encabezados."); setRows([]); return; }
+        const header = grid[0].map(normalizeHeader);
+        const colIdx: Partial<Record<keyof ParsedCsvRow, number>> = {};
+        header.forEach((h, i) => { const k = HEADER_ALIASES[h]; if (k) colIdx[k] = i; });
+        if (colIdx.title === undefined || colIdx.description === undefined) {
+          setParseError("Faltan columnas obligatorias: title y description.");
+          setRows([]); return;
+        }
+        const parsed: ParsedCsvRow[] = grid.slice(1).map((cells, i) => {
+          const get = (k: keyof ParsedCsvRow): string => {
+            const idx = colIdx[k]; return idx !== undefined ? (cells[idx] ?? "").trim() : "";
+          };
+          const row: ParsedCsvRow = {
+            index: i,
+            raw: Object.fromEntries(header.map((h, j) => [h, (cells[j] ?? "").trim()])),
+            title: get("title"),
+            description: get("description"),
+            month: get("month"),
+            week: get("week"),
+            day: get("day"),
+            videoNumber: get("videoNumber"),
+            scheduleHour: get("scheduleHour"),
+            campaignId: get("campaignId"),
+            templateId: get("templateId"),
+            error: null,
+          };
+          if (!row.title) row.error = "Falta el título";
+          else if (!row.description) row.error = "Falta la descripción";
+          else if (row.title.length > 240) row.error = "Título demasiado largo (máx 240)";
+          else if (row.campaignId && !Number.isFinite(Number(row.campaignId)))
+            row.error = `campaignId inválido: "${row.campaignId}"`;
+          else if (row.templateId && !Number.isFinite(Number(row.templateId)))
+            row.error = `templateId inválido: "${row.templateId}"`;
+          return row;
+        });
+        if (parsed.length === 0) { setParseError("No se encontraron filas con datos."); setRows([]); return; }
+        if (parsed.length > 200) { setParseError(`Demasiadas filas (${parsed.length}). El máximo por importación es 200.`); setRows([]); return; }
+        setParseError(null);
+        setRows(parsed);
+      } catch (err: any) {
+        setParseError(err?.message || "No se pudo leer el archivo CSV");
+        setRows([]);
+      }
+    };
+    reader.onerror = () => setParseError("No se pudo leer el archivo");
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate = () => {
+    const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "plantilla-videos.csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const validRows = useMemo(() => rows.filter((r) => !r.error), [rows]);
+  const localErrorCount = rows.length - validRows.length;
+
+  const handleImport = async () => {
+    if (validRows.length === 0) {
+      toast({ title: "No hay filas válidas para importar", variant: "destructive" });
+      return;
+    }
+    setImporting(true);
+    setServerErrors([]);
+    // Chunk so the progress bar reflects real work; each chunk is its own
+    // server-side transaction (all-or-nothing per chunk).
+    const CHUNK = 25;
+    const total = validRows.length;
+    setProgress({ done: 0, total });
+    let createdTotal = 0;
+    const allErrors: { row: number; error: string }[] = [];
+    try {
+      for (let off = 0; off < total; off += CHUNK) {
+        const chunk = validRows.slice(off, off + CHUNK).map((r) => ({
+          title: r.title,
+          description: r.description,
+          month: r.month || null,
+          week: r.week || null,
+          day: r.day || null,
+          videoNumber: r.videoNumber || null,
+          scheduleHour: r.scheduleHour || null,
+          campaignId: r.campaignId ? Number(r.campaignId) : null,
+          templateId: r.templateId ? Number(r.templateId) : null,
+        }));
+        const res = await apiFetch(`${API_BASE}/content/videos/import-csv`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: chunk }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (Array.isArray(data?.errors)) {
+            // Translate chunk-relative indices back to the ORIGINAL CSV row
+            // index (`r.index`), since the table is keyed by that. Without
+            // this hop, rows skipped locally would shift the mapping.
+            data.errors.forEach((e: { row: number; error: string }) => {
+              const valid = validRows[off + e.row];
+              if (valid) allErrors.push({ row: valid.index, error: e.error });
+              else allErrors.push({ row: off + e.row, error: e.error });
+            });
+          } else {
+            allErrors.push({ row: validRows[off]?.index ?? off, error: data?.error || `Error ${res.status}` });
+          }
+          break;
+        }
+        createdTotal += data.created || 0;
+        setProgress({ done: Math.min(total, off + chunk.length), total });
+      }
+      if (allErrors.length > 0) {
+        setServerErrors(allErrors);
+        toast({
+          title: createdTotal > 0
+            ? `${createdTotal} importados, ${allErrors.length} con error`
+            : "La importación falló",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `${createdTotal} videos importados como borrador` });
+        onImported();
+        // Small pause so the user sees the bar at 100% before closing.
+        await new Promise((r) => setTimeout(r, 400));
+        reset();
+        onClose();
+        return;
+      }
+      if (createdTotal > 0) onImported();
+    } catch (err: any) {
+      toast({ title: err?.message || "Error en la importación", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="w-5 h-5" />
+            Importar videos desde CSV
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Sube un archivo .csv con columnas <code className="px-1 py-0.5 rounded bg-muted text-foreground/80">title</code> y <code className="px-1 py-0.5 rounded bg-muted text-foreground/80">description</code> (opcional: mes, semana, día, videoNumber, hora, campaignId, templateId). Los videos quedan como <strong>borrador</strong>.
+            </p>
+            <Button size="sm" variant="outline" onClick={downloadTemplate} className="gap-2 shrink-0">
+              <Download className="w-4 h-4" />
+              Plantilla
+            </Button>
+          </div>
+
+          {rows.length === 0 && (
+            <label
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault(); setDragOver(false);
+                const f = e.dataTransfer.files?.[0]; if (f) handleFile(f);
+              }}
+              className={cn(
+                "block rounded-xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors",
+                dragOver ? "border-primary bg-primary/5" : "border-foreground/15 hover:border-foreground/30",
+              )}
+            >
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+              />
+              <FileText className="w-8 h-8 text-muted-foreground/60 mx-auto mb-2" />
+              <p className="text-sm text-foreground">Arrastra tu CSV aquí o haz clic para seleccionar</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Hasta 200 filas por archivo</p>
+            </label>
+          )}
+
+          {parseError && (
+            <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="flex-1">{parseError}</div>
+              <button onClick={reset} className="text-rose-200 hover:text-rose-50">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {rows.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <FileText className="w-4 h-4" />
+                  <span className="font-medium text-foreground truncate max-w-[20rem]">{fileName}</span>
+                  <span>·</span>
+                  <span>{validRows.length} válidas</span>
+                  {localErrorCount > 0 && (
+                    <span className="text-rose-400">· {localErrorCount} con error</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={reset}
+                  disabled={importing}
+                  className="text-muted-foreground/60 hover:text-foreground disabled:opacity-50"
+                >
+                  Cambiar archivo
+                </button>
+              </div>
+
+              <div className="rounded-lg border border-foreground/10 overflow-hidden">
+                <div className="max-h-[40vh] overflow-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-foreground/5 text-muted-foreground sticky top-0">
+                      <tr>
+                        <th className="text-left p-2 font-medium">#</th>
+                        <th className="text-left p-2 font-medium">Título</th>
+                        <th className="text-left p-2 font-medium">Descripción</th>
+                        <th className="text-left p-2 font-medium">Mes/Semana/Día</th>
+                        <th className="text-left p-2 font-medium">Hora</th>
+                        <th className="text-left p-2 font-medium">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r) => {
+                        const serverErr = serverErrors.find((e) => e.row === r.index)?.error;
+                        const err = r.error || serverErr;
+                        return (
+                          <tr key={r.index} className={cn("border-t border-foreground/5", err && "bg-rose-500/5")}>
+                            <td className="p-2 align-top text-muted-foreground">{r.index + 2}</td>
+                            <td className="p-2 align-top max-w-[12rem] truncate" title={r.title}>{r.title || <span className="text-muted-foreground/50 italic">vacío</span>}</td>
+                            <td className="p-2 align-top max-w-[16rem] truncate" title={r.description}>{r.description || <span className="text-muted-foreground/50 italic">vacío</span>}</td>
+                            <td className="p-2 align-top text-muted-foreground">{[r.month, r.week, r.day].filter(Boolean).join(" / ") || "—"}</td>
+                            <td className="p-2 align-top text-muted-foreground">{r.scheduleHour || "—"}</td>
+                            <td className="p-2 align-top">
+                              {err
+                                ? <span className="inline-flex items-center gap-1 text-rose-400"><AlertCircle className="w-3 h-3" />{err}</span>
+                                : <span className="inline-flex items-center gap-1 text-emerald-400"><CheckCircle2 className="w-3 h-3" />OK</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {progress && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>{importing ? "Importando..." : "Importación completada"}</span>
+                    <span>{progress.done} / {progress.total}</span>
+                  </div>
+                  <div className="h-2 bg-foreground/5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-primary to-orange-400 transition-all"
+                      style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-foreground/10">
+          <Button variant="outline" onClick={close} disabled={importing}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={importing || validRows.length === 0}
+            className="gap-2"
+          >
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {importing ? "Importando..." : `Importar ${validRows.length} video${validRows.length === 1 ? "" : "s"}`}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function VideosPage() {
   const [selectedVideo, setSelectedVideo] = useState<VideoData | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -573,6 +956,24 @@ export default function VideosPage() {
       setSelectedIds(new Set(filteredVideos.map((v) => v.id)));
     }
   };
+
+  const [importOpen, setImportOpen] = useState(false);
+
+  // Clone an existing video as a "remix" — the backend keeps cover/file/
+  // template/campaign and blanks per-network text + publish state, leaving the
+  // user a fresh draft in the wizard ready for new descriptions.
+  const duplicateMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiFetch(`${API_BASE}/content/videos/${id}/duplicate`, { method: "POST" });
+      if (!res.ok) throw new Error("Error al duplicar el video");
+      return res.json() as Promise<VideoData>;
+    },
+    onSuccess: (row) => {
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      toast({ title: `Duplicado como "${row.title}"` });
+    },
+    onError: () => toast({ title: "No se pudo duplicar el video", variant: "destructive" }),
+  });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
@@ -1054,17 +1455,35 @@ export default function VideosPage() {
             <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Gestor de Videos</h1>
             <p className="text-muted-foreground text-xs sm:text-lg">Tu editora puede completar cada video paso a paso sin salir de aquí.</p>
           </div>
-          <Button
-            onClick={() => { setIsCreating(true); setWizardStep("info"); }}
-            className="bg-gradient-to-r from-primary to-orange-400 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-primary/25 gap-2"
-          >
-            <Plus className="w-5 h-5" />
-            Nuevo Video
-            <KbdGroup className="ml-1 hidden sm:inline-flex">
-              <Kbd className="bg-white/20 text-white">N</Kbd>
-            </KbdGroup>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setImportOpen(true)}
+              className="gap-2"
+              title="Importar videos desde un archivo CSV"
+            >
+              <Upload className="w-4 h-4" />
+              Importar CSV
+            </Button>
+            <Button
+              onClick={() => { setIsCreating(true); setWizardStep("info"); }}
+              className="bg-gradient-to-r from-primary to-orange-400 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-primary/25 gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Nuevo Video
+              <KbdGroup className="ml-1 hidden sm:inline-flex">
+                <Kbd className="bg-white/20 text-white">N</Kbd>
+              </KbdGroup>
+            </Button>
+          </div>
         </header>
+        <ImportCsvDialog
+          open={importOpen}
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            queryClient.invalidateQueries({ queryKey: ["videos"] });
+          }}
+        />
 
         <div className={cn("grid gap-4 lg:gap-6", !noVideosAtAll && "lg:grid-cols-[14rem_1fr]")}>
           {!noVideosAtAll && (
@@ -1373,6 +1792,21 @@ export default function VideosPage() {
                                   <BarChart2 className="w-4 h-4" />
                                 </Button>
                               )}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="w-7 h-7 text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  duplicateMutation.mutate(video.id);
+                                }}
+                                disabled={duplicateMutation.isPending}
+                                title="Duplicar como remix (copia portada y archivo, descripciones en blanco)"
+                              >
+                                {duplicateMutation.isPending && duplicateMutation.variables === video.id
+                                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                                  : <Copy className="w-4 h-4" />}
+                              </Button>
                               <ChevronRight className="w-5 h-5 text-muted-foreground/30 hidden sm:block" />
                             </div>
                           </div>

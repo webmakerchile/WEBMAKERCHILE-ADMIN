@@ -367,6 +367,170 @@ router.delete("/content/videos/bulk", async (req, res) => {
   res.json({ deleted: deleted.length, ids: deleted.map((d) => d.id) });
 });
 
+// Bulk import N videos from a parsed CSV. The frontend parses the file and
+// posts the validated rows here; we re-validate row by row and insert in a
+// single transaction so the user gets all-or-nothing semantics per chunk.
+// Returns per-row errors so the UI can highlight bad lines, and the list of
+// created ids so the caller can refresh / link to them.
+router.post("/content/videos/import-csv", async (req, res) => {
+  const userId = (req.user as { id?: number } | undefined)?.id ?? null;
+  const rowsRaw = (req.body as any)?.rows;
+  if (!Array.isArray(rowsRaw) || rowsRaw.length === 0) {
+    res.status(400).json({ error: "Faltan filas para importar" });
+    return;
+  }
+  if (rowsRaw.length > 200) {
+    res.status(400).json({ error: "Máximo 200 filas por importación" });
+    return;
+  }
+  const isSafeLabel = (v: string) => /^[\w\-./# ]{1,80}$/.test(v);
+  const text = (v: unknown): string | null => {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+  };
+  const numOrNull = (v: unknown): number | null => {
+    if (v === null || v === undefined || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  type Prepared = {
+    title: string;
+    description: string;
+    month: string | null;
+    week: string | null;
+    day: string | null;
+    videoNumber: string | null;
+    scheduleHour: string | null;
+    campaignId: number | null;
+    templateId: number | null;
+  };
+
+  const prepared: Prepared[] = [];
+  const errors: { row: number; error: string }[] = [];
+
+  for (let i = 0; i < rowsRaw.length; i++) {
+    const r = rowsRaw[i] || {};
+    const title = text(r.title);
+    const description = text(r.description);
+    if (!title) { errors.push({ row: i, error: "Falta el título" }); continue; }
+    if (!description) { errors.push({ row: i, error: "Falta la descripción" }); continue; }
+    if (title.length > 240) { errors.push({ row: i, error: "Título demasiado largo (máx 240)" }); continue; }
+    const month = text(r.month);
+    const week = text(r.week);
+    const day = text(r.day);
+    const videoNumber = text(r.videoNumber);
+    const scheduleHour = text(r.scheduleHour);
+    for (const [k, v] of [["mes", month], ["semana", week], ["día", day], ["videoNumber", videoNumber], ["hora", scheduleHour]] as const) {
+      if (v && !isSafeLabel(v)) {
+        errors.push({ row: i, error: `Valor inválido para ${k}` });
+      }
+    }
+    const campaignId = numOrNull(r.campaignId);
+    const templateId = numOrNull(r.templateId);
+    if (campaignId !== null) {
+      const ok = await resolveOwnedLibraryId(campaignId, campaigns, userId);
+      if (ok === "forbidden") { errors.push({ row: i, error: `Campaña ${campaignId} no encontrada` }); continue; }
+    }
+    if (templateId !== null) {
+      const ok = await resolveOwnedLibraryId(templateId, templates, userId);
+      if (ok === "forbidden") { errors.push({ row: i, error: `Plantilla ${templateId} no encontrada` }); continue; }
+    }
+    prepared.push({ title, description, month, week, day, videoNumber, scheduleHour, campaignId, templateId });
+  }
+
+  if (errors.length > 0) {
+    res.status(400).json({ created: 0, ids: [], errors });
+    return;
+  }
+
+  // All-or-nothing: a single transaction so a partial failure doesn't leave
+  // half the import committed. If anything throws, drizzle rolls everything
+  // back and we surface the error to the caller.
+  try {
+    const inserted = await db.transaction(async (tx) => {
+      const out: { id: number }[] = [];
+      for (const p of prepared) {
+        const [row] = await tx.insert(videos).values({
+          title: p.title,
+          description: p.description,
+          status: "draft",
+          month: p.month,
+          week: p.week,
+          day: p.day,
+          videoNumber: p.videoNumber,
+          scheduleHour: p.scheduleHour,
+          campaignId: p.campaignId,
+          templateId: p.templateId,
+        }).returning({ id: videos.id });
+        out.push(row);
+      }
+      return out;
+    });
+    res.status(201).json({ created: inserted.length, ids: inserted.map((r) => r.id), errors: [] });
+  } catch (err: any) {
+    console.error("[import-csv] transaction failed:", err?.message);
+    res.status(500).json({ error: err?.message || "Error en la importación" });
+  }
+});
+
+// Duplicate an existing video as a "remix": copies the cover, the linked
+// video file and the template/campaign so the user keeps the same visual
+// identity, but blanks per-network descriptions and publish state so it's
+// truly a fresh draft they can iterate on. Returns the new row.
+router.post("/content/videos/:id/duplicate", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "ID inválido" });
+    return;
+  }
+  const [src] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
+  if (!src) {
+    res.status(404).json({ error: "Video no encontrado" });
+    return;
+  }
+  const baseTitle = src.title.endsWith(" v2") ? src.title : `${src.title} v2`;
+  // Re-validate library ownership: the source video may reference a campaign
+  // or template the current caller doesn't own (e.g. legacy data, role
+  // changes). Drop the link in that case instead of silently propagating it,
+  // matching the policy of POST/PATCH/import-csv.
+  const userId = (req.user as { id?: number } | undefined)?.id ?? null;
+  const campaignSafe = src.campaignId == null
+    ? null
+    : (await resolveOwnedLibraryId(src.campaignId, campaigns, userId)) === src.campaignId
+      ? src.campaignId
+      : null;
+  const templateSafe = src.templateId == null
+    ? null
+    : (await resolveOwnedLibraryId(src.templateId, templates, userId)) === src.templateId
+      ? src.templateId
+      : null;
+  const [row] = await db.insert(videos).values({
+    title: baseTitle,
+    description: src.description,
+    coverPrompt: src.coverPrompt,
+    coverImageBase64: src.coverImageBase64,
+    coverMimeType: src.coverMimeType,
+    videoFileDriveId: src.videoFileDriveId,
+    videoFileName: src.videoFileName,
+    driveFileId: src.driveFileId,
+    driveFolderId: src.driveFolderId,
+    status: "draft",
+    workflowStatus: "borrador",
+    month: src.month,
+    week: src.week,
+    day: src.day,
+    videoNumber: src.videoNumber,
+    scheduleHour: src.scheduleHour,
+    campaignId: campaignSafe,
+    templateId: templateSafe,
+    // Per-network text/IDs/status are deliberately left at defaults (null /
+    // "pending") so the remix is a clean draft.
+  }).returning();
+  res.status(201).json(row);
+});
+
 router.post("/content/videos", async (req, res) => {
   const body = CreateVideoBody.parse(req.body);
   const userId = (req.user as { id?: number } | undefined)?.id ?? null;
