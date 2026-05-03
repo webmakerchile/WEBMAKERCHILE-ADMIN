@@ -111,4 +111,86 @@ describe("scheduler.retryPlatformForVideo (public dispatcher)", () => {
     expect(r.error).toBe("rate limited");
     expect(xPostMock).toHaveBeenCalledOnce();
   });
+
+  it("returns 'No Google tokens' on YouTube retry without google creds", async () => {
+    const { retryPlatformForVideo } = await import("./scheduler");
+    const r = await retryPlatformForVideo(99, "youtube", { id: 1 });
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("No Google tokens");
+  });
+
+  it("returns 'No video file in Drive' on YouTube retry when video has no driveId", async () => {
+    const { retryPlatformForVideo } = await import("./scheduler");
+    const r = await retryPlatformForVideo(99, "youtube", {
+      id: 1, googleAccessToken: "g", googleRefreshToken: "r",
+    });
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("No video file in Drive");
+  });
+
+  it("returns 'No TikTok token' on TikTok retry without tiktok creds", async () => {
+    const { retryPlatformForVideo } = await import("./scheduler");
+    const r = await retryPlatformForVideo(99, "tiktok", { id: 1 });
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("No TikTok token");
+  });
+
+  it("returns 'Instagram not configured' on IG retry when env creds missing", async () => {
+    const orig = {
+      tok: process.env.INSTAGRAM_ACCESS_TOKEN,
+      uid: process.env.INSTAGRAM_USER_ID,
+    };
+    delete process.env.INSTAGRAM_ACCESS_TOKEN;
+    delete process.env.INSTAGRAM_USER_ID;
+    vi.resetModules();
+    try {
+      const { retryPlatformForVideo } = await import("./scheduler");
+      const r = await retryPlatformForVideo(99, "instagram", { id: 1 });
+      expect(r.success).toBe(false);
+      expect(r.error).toBe("Instagram not configured");
+    } finally {
+      if (orig.tok !== undefined) process.env.INSTAGRAM_ACCESS_TOKEN = orig.tok;
+      if (orig.uid !== undefined) process.env.INSTAGRAM_USER_ID = orig.uid;
+      vi.resetModules();
+    }
+  });
+
+  it("returns 'Facebook not connected' on FB retry when neither env nor user has tokens", async () => {
+    const orig = {
+      pid: process.env.FACEBOOK_PAGE_ID,
+      tok: process.env.FACEBOOK_PAGE_ACCESS_TOKEN,
+    };
+    delete process.env.FACEBOOK_PAGE_ID;
+    delete process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+    vi.resetModules();
+    try {
+      const { retryPlatformForVideo } = await import("./scheduler");
+      const r = await retryPlatformForVideo(99, "facebook", { id: 1 });
+      expect(r.success).toBe(false);
+      expect(r.error).toBe("Facebook not connected");
+      expect(facebookPostMock).not.toHaveBeenCalled();
+    } finally {
+      if (orig.pid !== undefined) process.env.FACEBOOK_PAGE_ID = orig.pid;
+      if (orig.tok !== undefined) process.env.FACEBOOK_PAGE_ACCESS_TOKEN = orig.tok;
+      vi.resetModules();
+    }
+  });
+});
+
+describe("scheduler.processScheduledVideos (selection + state transitions)", () => {
+  beforeEach(() => {
+    dbState.row = { ...fakeRow };
+    linkedinPostMock.mockReset();
+    xPostMock.mockReset();
+    facebookPostMock.mockReset();
+  });
+
+  it("returns without error when there are no due videos to process", async () => {
+    dbState.row = null;
+    const { processScheduledVideos } = await import("./scheduler");
+    await expect(processScheduledVideos()).resolves.toBeUndefined();
+    expect(linkedinPostMock).not.toHaveBeenCalled();
+    expect(xPostMock).not.toHaveBeenCalled();
+    expect(facebookPostMock).not.toHaveBeenCalled();
+  });
 });
