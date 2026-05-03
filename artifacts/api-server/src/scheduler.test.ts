@@ -1,39 +1,53 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("./db", () => ({
+const dbState = { found: true as boolean };
+
+vi.mock("@workspace/db", () => ({
   db: {
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => undefined) })) })),
-    select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(async () => []) })) })),
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => (dbState.found ? [{ id: 99, title: "demo" }] : []),
+        }),
+        limit: async () => (dbState.found ? [{ id: 99, title: "demo" }] : []),
+      }),
+    }),
+    update: () => ({ set: () => ({ where: async () => undefined }) }),
+    insert: () => ({ values: async () => undefined }),
   },
 }));
+vi.mock("@workspace/db/schema", () => ({
+  videos: {}, users: {}, publishAttempts: {},
+}));
+vi.mock("./routes/linkedin", () => ({
+  publishLinkedInPost: vi.fn(), publishLinkedInVideo: vi.fn(),
+}));
+vi.mock("./routes/x", () => ({ publishXPost: vi.fn(), publishXTweetWithVideo: vi.fn() }));
+vi.mock("./routes/facebook", () => ({ publishToFacebook: vi.fn() }));
+vi.mock("./lib/notifications", () => ({ createNotification: vi.fn() }));
+vi.mock("./lib/connections", () => ({
+  checkConnectionsForAdmin: vi.fn(), markNetworkRevoked: vi.fn(),
+}));
+vi.mock("./routes/instagram/temp-serve", () => ({
+  registerTempFile: vi.fn(), unregisterTempFile: vi.fn(),
+}));
+vi.mock("googleapis", () => ({ google: {} }));
 
-describe("scheduler helpers (smoke)", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
+describe("scheduler.retryPlatformForVideo (public dispatcher)", () => {
+  beforeEach(() => { dbState.found = true; });
+
+  it("returns 'Video not found' when DB has no row", async () => {
+    dbState.found = false;
+    const { retryPlatformForVideo } = await import("./scheduler");
+    const r = await retryPlatformForVideo(404, "linkedin", { id: 1 });
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("Video not found");
   });
 
-  it("uses fetch and parses TikTok token JSON shape without throwing", async () => {
-    const fakeFetch = vi.fn(async () => ({
-      json: async () => ({ access_token: "atk", refresh_token: "rtk", expires_in: 3600 }),
-    })) as unknown as typeof fetch;
-    vi.stubGlobal("fetch", fakeFetch);
-
-    const res = await fetch("https://example/test", { method: "POST" });
-    const data = (await res.json()) as { access_token?: string };
-    expect(data.access_token).toBe("atk");
-    expect(fakeFetch).toHaveBeenCalledOnce();
-  });
-
-  it("treats Instagram container error JSON as a thrown failure path", async () => {
-    const fakeFetch = vi.fn(async () => ({
-      json: async () => ({ error: { message: "bad media" } }),
-    })) as unknown as typeof fetch;
-    vi.stubGlobal("fetch", fakeFetch);
-
-    const res = await fetch("https://example/ig", { method: "POST" });
-    const body = (await res.json()) as { error?: { message?: string } };
-    expect(() => {
-      if (body.error) throw new Error(body.error.message || "fail");
-    }).toThrow("bad media");
+  it("returns 'Unknown platform' for an unsupported value", async () => {
+    const { retryPlatformForVideo } = await import("./scheduler");
+    const r = await retryPlatformForVideo(99, "myspace", { id: 1 });
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/Unknown platform: myspace/);
   });
 });

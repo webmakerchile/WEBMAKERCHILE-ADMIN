@@ -48,7 +48,7 @@ async function start(app: express.Express) {
 
 describe("/api/library/templates/ai-fill (handler-level)", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    openaiCreate.mockReset();
     process.env.OPENAI_API_KEY = "test-key";
     process.env.AI_INTEGRATIONS_OPENAI_API_KEY = "test-key";
   });
