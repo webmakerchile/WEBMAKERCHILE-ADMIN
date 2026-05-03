@@ -15,7 +15,8 @@ export function unregisterTempFile(token: string) {
 }
 
 export function serveTempVideo(req: Request, res: Response) {
-  const { token } = req.params;
+  const tokenRaw = req.params.token;
+  const token = Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw;
 
   if (!token || !/^[a-f0-9]{64}$/.test(token)) {
     res.status(400).json({ error: "Token inválido" });

@@ -135,6 +135,12 @@ artifacts-monorepo/
 - All /api routes except auth and health require authentication
 - Callback URL: https://admin.webmakerchile.com/api/auth/google/callback
 
+### Hardening (Task #53)
+- **Rate limiting** (`artifacts/api-server/src/lib/rate-limit.ts`): Three named limiters (aiLimiter, publishLimiter, uploadLimiter) keyed by user id (fallback to IPv6-safe IP via `ipKeyGenerator`). Wired in `app.ts` via path-regex `app.use(...)` to AI endpoints (templates ai-fill, generate-descriptions, hashtag-suggestions, analytics insights), publish endpoints (`/api/{youtube,tiktok,instagram,linkedin,x,facebook}/{upload,publish,upload-from-drive}`) and uploads (studio chunk/preview/finalize, content import-csv). 429 responses include `Retry-After` and `retryAfterSeconds`.
+- **Tests** (Vitest): `pnpm --filter @workspace/api-server test`. Smoke tests for the rate-limit middleware and the brand-tone helper. Config in `artifacts/api-server/vitest.config.ts`.
+- **TypeScript hardening**: cleared TS errors in api-server (tiktok unknown json, instagram temp-serve string|string[], library youtubeTitle Record, studio multer callback returns, auth test-login return paths, community sharp Buffer types and recurse `best` typing, scheduler unknown json). Pre-existing TS6305 stale-dist warnings on lib refs remain (unrelated to this task — libs need their own typecheck pass).
+- **Out of scope / follow-ups**: Sentry monitoring (needs DSN secret + release tagging), DB backups (needs external bucket/object storage). Tracked as follow-up tasks.
+
 ### Database Tables
 - `users` - Authenticated admin users (Google OAuth, email whitelist, YouTube access/refresh tokens, TikTok open_id/access/refresh tokens, LinkedIn access/refresh tokens + personUrn/name/picture, X access/refresh tokens + userId/username)
 - `conversations` - Gemini AI chat conversations

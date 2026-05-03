@@ -598,11 +598,13 @@ router.post("/library/templates/ai-fill", async (req: Request, res: Response) =>
     );
   }
 
-  const guideByNetwork: Record<AllowedNetwork, string> = {
+  const guideByNetwork: Record<AllowedNetwork | "youtubeTitle" | "youtubeDescription", string> = {
     tiktok:
       "TikTok: 1-2 líneas en tono cercano y directo. Hook fuerte al inicio. 3-5 hashtags al final. Máximo 280 caracteres.",
     instagram:
       "Instagram: 2-4 líneas, tono inspirador y visual. Emoji ocasional. CTA al final. 5-8 hashtags al final. Máximo 1500 caracteres.",
+    youtube:
+      "YouTube: combina título y descripción según las guías específicas.",
     youtubeTitle:
       "Título YouTube: máximo 70 caracteres, claro y atractivo, sin emojis al inicio. Optimizado para búsqueda.",
     youtubeDescription:

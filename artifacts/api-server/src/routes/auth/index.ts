@@ -130,7 +130,8 @@ router.post("/auth/test-login", async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body || {};
     if (username !== TEST_USERNAME || password !== TEST_PASSWORD) {
-      return res.status(401).json({ error: "Credenciales incorrectas" });
+      res.status(401).json({ error: "Credenciales incorrectas" });
+      return;
     }
 
     const testGoogleId = "test-reviewer-account";
@@ -163,7 +164,10 @@ router.post("/auth/test-login", async (req: Request, res: Response) => {
     }
 
     req.login(testUser, (err) => {
-      if (err) return res.status(500).json({ error: "Error al iniciar sesión" });
+      if (err) {
+        res.status(500).json({ error: "Error al iniciar sesión" });
+        return;
+      }
       res.json({ success: true, user: { id: testUser.id, email: testEmail, name: "TikTok Reviewer" } });
     });
   } catch (error: any) {

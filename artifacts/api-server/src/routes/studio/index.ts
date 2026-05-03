@@ -591,7 +591,8 @@ router.post("/studio/temp-preview", (req, res, next) => {
   studioVideoUpload.single("video")(req, res, (err: any) => {
     if (err) {
       console.error("[studio] Multer error (temp-preview):", err.message, "| code:", err.code);
-      return res.status(400).json({ error: "Error receiving video file" });
+      res.status(400).json({ error: "Error receiving video file" });
+      return;
     }
     next();
   });
@@ -645,7 +646,8 @@ router.post("/studio/upload-chunk", (req, res, next) => {
   studioChunkUpload.single("chunk")(req, res, (err: any) => {
     if (err) {
       console.error("[studio] Multer chunk error:", err.message);
-      return res.status(400).json({ error: "Error receiving chunk" });
+      res.status(400).json({ error: "Error receiving chunk" });
+      return;
     }
     next();
   });
@@ -1015,7 +1017,8 @@ router.post("/studio/upload-video", (req, res, next) => {
   studioVideoUpload.single("video")(req, res, (err: any) => {
     if (err) {
       console.error("[studio] Multer error (upload-video):", err.message, "| code:", err.code);
-      return res.status(400).json({ error: "Error al recibir el archivo de video" });
+      res.status(400).json({ error: "Error al recibir el archivo de video" });
+      return;
     }
     next();
   });

@@ -239,7 +239,7 @@ async function getValidTikTokToken(user: any): Promise<string | null> {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Cache-Control": "no-cache" },
       body: params.toString(),
     });
-    const data = await res.json();
+    const data = await res.json() as any;
     if (data.access_token) {
       await db.update(users).set({
         tiktokAccessToken: data.access_token,
@@ -387,7 +387,7 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
       }),
     });
 
-    const initData = await initRes.json();
+    const initData = await initRes.json() as any;
     if (initData.error?.code !== "ok") {
       const error = `TikTok init failed: ${initData.error?.message || JSON.stringify(initData.error)}`;
       await persistPlatformError(video.id, "tiktok", error);

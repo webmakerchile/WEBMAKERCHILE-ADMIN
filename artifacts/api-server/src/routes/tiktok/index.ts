@@ -51,7 +51,7 @@ async function refreshTikTokToken(user: any): Promise<string | null> {
       body: params.toString(),
     });
 
-    const data = await res.json();
+    const data = await res.json() as any;
     if (data.access_token) {
       await db.update(users).set({
         tiktokAccessToken: data.access_token,
@@ -149,7 +149,7 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
       body: params.toString(),
     });
 
-    const tokenData = await tokenRes.json();
+    const tokenData = await tokenRes.json() as any;
 
     if (!tokenData.access_token) {
       console.error("[TikTok] Token exchange failed:", tokenData);
@@ -201,7 +201,7 @@ router.get("/tiktok/status", async (req: Request, res: Response) => {
       },
     });
 
-    const userInfo = await userInfoRes.json();
+    const userInfo = await userInfoRes.json() as any;
 
     if (userInfo.data?.user) {
       res.json({
@@ -284,7 +284,7 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
       }),
     });
 
-    const initData = await initRes.json();
+    const initData = await initRes.json() as any;
     console.log("[TikTok] Init response:", JSON.stringify(initData));
 
     if (initData.error?.code !== "ok") {
@@ -399,7 +399,7 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
       }),
     });
 
-    const initData = await initRes.json();
+    const initData = await initRes.json() as any;
     console.log("[TikTok] Init response:", JSON.stringify(initData));
 
     if (initData.error?.code !== "ok") {

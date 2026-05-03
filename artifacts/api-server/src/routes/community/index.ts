@@ -269,7 +269,8 @@ function balanceTokensAcrossLines(
   numLines: number,
 ): string[] | null {
   if (numLines < 1 || tokens.length === 0) return null;
-  let best: { lines: string[]; maxLen: number } | null = null;
+  type BestT = { lines: string[]; maxLen: number };
+  let best: BestT | null = null;
   function recurse(start: number, linesSoFar: string[]) {
     const remaining = numLines - linesSoFar.length;
     if (remaining === 1) {
@@ -277,7 +278,8 @@ function balanceTokensAcrossLines(
       if (line.length > maxChars) return;
       const all = [...linesSoFar, line];
       const maxLen = Math.max(...all.map((l) => l.length));
-      if (!best || maxLen < best.maxLen) best = { lines: all, maxLen };
+      const cur: BestT | null = best;
+      if (!cur || maxLen < cur.maxLen) best = { lines: all, maxLen };
       return;
     }
     for (let end = start + 1; end <= tokens.length - (remaining - 1); end++) {
@@ -287,7 +289,7 @@ function balanceTokensAcrossLines(
     }
   }
   recurse(0, []);
-  return best ? best.lines : null;
+  return best ? (best as BestT).lines : null;
 }
 
 // Ajusta el font size para que tokens (hashtags) quepan en hasta `maxLines`
@@ -686,7 +688,7 @@ Devuelve SOLO el tema, máx 100 caracteres, sin comillas ni prefijos.`;
     let tema = block && block.type === "text" ? block.text.trim() : "";
     tema = tema.replace(/^["'`]+|["'`]+$/g, "").replace(/^[-*•]\s*/, "").trim();
     // si el modelo devolvió varias líneas, quédate con la primera no vacía
-    tema = tema.split(/\n+/).map((s) => s.trim()).filter(Boolean)[0] || tema;
+    tema = tema.split(/\n+/).map((s: string) => s.trim()).filter(Boolean)[0] || tema;
     if (tema.length > 120) tema = tema.slice(0, 117) + "...";
     res.json({ success: true, data: { tema, _seed: { angulo: angulo.letra, formato, vertical, pivote } } });
   } catch (err: any) {
@@ -1821,9 +1823,9 @@ async function renderTextoEnSlide(
   let imgBuffer = Buffer.from(imagenBase64, "base64");
   // Garantizar dimensiones exactas según formato (Gemini suele devolver 1:1 aunque pidamos 4:5)
   if (formatoForzado === "4:5") {
-    imgBuffer = await sharp(imgBuffer).resize(1080, 1350, { fit: "cover", position: "center" }).png().toBuffer();
+    imgBuffer = Buffer.from(await sharp(imgBuffer).resize(1080, 1350, { fit: "cover", position: "center" }).png().toBuffer());
   } else if (formatoForzado === "1:1") {
-    imgBuffer = await sharp(imgBuffer).resize(1080, 1080, { fit: "cover", position: "center" }).png().toBuffer();
+    imgBuffer = Buffer.from(await sharp(imgBuffer).resize(1080, 1080, { fit: "cover", position: "center" }).png().toBuffer());
   }
   const meta = await sharp(imgBuffer).metadata();
   const w = meta.width || 1080;
