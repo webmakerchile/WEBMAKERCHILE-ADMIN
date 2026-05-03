@@ -329,6 +329,9 @@ function videoMatchesNetwork(v: VideoData, net: string): boolean {
 // Returns rows of strings (header included). Empty trailing newlines are
 // dropped. Unicode-friendly (no regex character class assumptions).
 function parseCsv(text: string): string[][] {
+  // Strip UTF-8 BOM (\uFEFF) — Excel/Sheets often add it on export, which
+  // would otherwise corrupt the first header (`\uFEFFtitle` !== `title`).
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -528,9 +531,11 @@ function ImportCsvDialog({
           } else {
             allErrors.push({ row: validRows[off]?.index ?? off, error: data?.error || `Error ${res.status}` });
           }
-          break;
+          // Continue with subsequent chunks for best-effort partial import:
+          // a transient failure on one chunk shouldn't strand the rest.
+        } else {
+          createdTotal += data.created || 0;
         }
-        createdTotal += data.created || 0;
         setProgress({ done: Math.min(total, off + chunk.length), total });
       }
       if (allErrors.length > 0) {
