@@ -674,6 +674,53 @@ router.post("/content/videos/:id/link-drive-video", async (req, res) => {
   res.json({ success: true, driveFileId, fileName: updated.videoFileName, video: updated });
 });
 
+// Streams the linked Drive video back to the client with `inline` disposition
+// so it can be embedded in a <video> tag for in-wizard preview. Supports HTTP
+// Range requests so the user can scrub the timeline without downloading the
+// whole file (Google Drive returns the requested byte range).
+router.get("/content/videos/:id/preview-video", async (req, res) => {
+  const id = Number(req.params.id);
+  const [video] = await db
+    .select()
+    .from(videos)
+    .where(eq(videos.id, id))
+    .limit(1);
+  if (!video || !video.videoFileDriveId) {
+    res.status(404).json({ error: "Video no encontrado o sin archivo adjunto" });
+    return;
+  }
+  try {
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
+    const headers: Record<string, string> = {};
+    const range = req.headers.range;
+    if (typeof range === "string") headers["Range"] = range;
+    const driveResponse = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "stream", headers },
+    );
+    const upstream = driveResponse.headers as Record<string, string | undefined>;
+    const status = (driveResponse as any).status === 206 || range ? 206 : 200;
+    res.status(status);
+    if (upstream["content-type"]) res.set("Content-Type", upstream["content-type"]);
+    else res.set("Content-Type", "video/mp4");
+    if (upstream["content-length"]) res.set("Content-Length", upstream["content-length"] as string);
+    if (upstream["content-range"]) res.set("Content-Range", upstream["content-range"] as string);
+    res.set("Accept-Ranges", "bytes");
+    res.set("Content-Disposition", `inline; filename="${(video.videoFileName || "video.mp4").replace(/"/g, "")}"`);
+    (driveResponse.data as NodeJS.ReadableStream).on("error", (err) => {
+      console.error("[Preview] Stream error:", err);
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+    (driveResponse.data as NodeJS.ReadableStream).pipe(res);
+  } catch (err: any) {
+    console.error("[Preview] Error:", err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/content/videos/:id/download-video", async (req, res) => {
   const id = Number(req.params.id);
 

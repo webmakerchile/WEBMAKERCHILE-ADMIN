@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, type ReactNode } from "react";
 import { Link } from "wouter";
 import { Virtuoso } from "react-virtuoso";
 import { Layout } from "@/components/layout";
@@ -66,6 +66,10 @@ import {
   CircleSlash2,
   ShieldCheck,
   AtSign,
+  Download,
+  FileText,
+  FileDown,
+  CloudOff,
 } from "lucide-react";
 import {
   Dialog,
@@ -1821,6 +1825,205 @@ function NetworkStatCard({
   );
 }
 
+type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
+
+// Field allow-list for the wizard auto-save. Only string fields the user can
+// type into are debounced; status/schedule fields go through dedicated flows.
+const AUTO_SAVE_FIELDS = [
+  "title",
+  "description",
+  "month",
+  "week",
+  "day",
+  "videoNumber",
+  "scheduleHour",
+  "tiktokDescription",
+  "instagramDescription",
+  "youtubeTitle",
+  "youtubeDescription",
+  "linkedinDescription",
+  "xDescription",
+  "facebookDescription",
+] as const;
+
+function useWizardAutoSave({
+  videoId,
+  isCreating,
+  formData,
+  toast,
+}: {
+  videoId: number | null;
+  isCreating: boolean;
+  formData: Record<string, any>;
+  toast: any;
+}) {
+  const [status, setStatus] = useState<SaveStatus>("idle");
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const lastSavedRef = useRef<Record<string, any> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
+
+  // Reset baseline whenever the wizard switches to a different video so the
+  // first edits are compared against the freshly-loaded server values.
+  useEffect(() => {
+    if (videoId == null || isCreating) {
+      lastSavedRef.current = null;
+      setStatus("idle");
+      return;
+    }
+    const snapshot: Record<string, any> = {};
+    for (const k of AUTO_SAVE_FIELDS) snapshot[k] = formData[k] ?? "";
+    lastSavedRef.current = snapshot;
+    setStatus("idle");
+    // Intentionally keying only on videoId; we don't want every keystroke to
+    // reset the baseline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId, isCreating]);
+
+  const computeDiff = useCallback((): Record<string, any> | null => {
+    const baseline = lastSavedRef.current;
+    if (!baseline) return null;
+    const data = formDataRef.current;
+    const diff: Record<string, any> = {};
+    let any = false;
+    for (const k of AUTO_SAVE_FIELDS) {
+      const a = data[k] ?? "";
+      const b = baseline[k] ?? "";
+      if (a !== b) {
+        diff[k] = a;
+        any = true;
+      }
+    }
+    return any ? diff : null;
+  }, []);
+
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (videoId == null || isCreating) return false;
+    const diff = computeDiff();
+    if (!diff) return false;
+    if (abortRef.current) abortRef.current.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setStatus("saving");
+    try {
+      const res = await apiFetch(`${API_BASE}/content/videos/${videoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(diff),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(detail?.error || `HTTP ${res.status}`);
+      }
+      lastSavedRef.current = { ...(lastSavedRef.current || {}), ...diff };
+      // If the user typed more during the request, we'll be marked dirty by
+      // the watcher effect on the next render; otherwise we land on "saved".
+      const stillDirty = computeDiff() !== null;
+      setStatus(stillDirty ? "dirty" : "saved");
+      setSavedAt(Date.now());
+      return true;
+    } catch (e: any) {
+      if (e?.name === "AbortError") return false;
+      console.error("[wizard auto-save]", e);
+      setStatus("error");
+      toast?.({ title: "No se pudo auto-guardar", description: e?.message || "Reintenta", variant: "destructive" });
+      return false;
+    }
+  }, [videoId, isCreating, computeDiff, toast]);
+
+  // Schedule a debounced flush whenever there's a diff vs the saved baseline.
+  useEffect(() => {
+    if (videoId == null || isCreating) return;
+    const diff = computeDiff();
+    if (!diff) {
+      // Field reverted to the saved value; clear "dirty" without overwriting
+      // a healthy "saved" indicator.
+      setStatus((s) => (s === "dirty" ? "saved" : s));
+      return;
+    }
+    setStatus((s) => (s === "saving" ? s : "dirty"));
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      flush();
+    }, 1500);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [formData, videoId, isCreating, computeDiff, flush]);
+
+  // Best-effort save when the tab is being hidden so the user doesn't lose
+  // last-second edits if they close before the debounce fires.
+  useEffect(() => {
+    if (videoId == null || isCreating) return;
+    const onHide = () => {
+      if (computeDiff()) flush();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") onHide();
+    };
+    window.addEventListener("beforeunload", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("beforeunload", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [videoId, isCreating, computeDiff, flush]);
+
+  return { status, savedAt, flush };
+}
+
+function SaveStatusIndicator({ status, savedAt }: { status: SaveStatus; savedAt: number | null }) {
+  // Simple "x s atrás" formatter that ticks every 30s while a video is open.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (status !== "saved") return;
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [status, savedAt]);
+  if (status === "idle") return null;
+  if (status === "saving") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        Guardando...
+      </span>
+    );
+  }
+  if (status === "dirty") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-amber-400">
+        <CloudOff className="w-3.5 h-3.5" />
+        Sin guardar
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-red-400">
+        <AlertCircle className="w-3.5 h-3.5" />
+        Error al guardar
+      </span>
+    );
+  }
+  // saved
+  let label = "Guardado";
+  if (savedAt) {
+    const diffSec = Math.max(0, Math.floor((Date.now() - savedAt) / 1000));
+    if (diffSec < 5) label = "Guardado";
+    else if (diffSec < 60) label = `Guardado hace ${diffSec}s`;
+    else label = `Guardado hace ${Math.floor(diffSec / 60)} min`;
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
+      <CheckCircle2 className="w-3.5 h-3.5" />
+      {label}
+    </span>
+  );
+}
+
 function VideoWizard({
   video,
   isCreating,
@@ -2036,6 +2239,44 @@ function VideoWizard({
     toast({ title: "Copiado al portapapeles" });
   };
 
+  const autoSave = useWizardAutoSave({
+    videoId: video?.id ?? null,
+    isCreating,
+    formData,
+    toast,
+  });
+
+  // Keyboard shortcuts: ←/→ navigate steps (ignored while typing), Cmd/Ctrl+S
+  // forces an auto-save flush regardless of focus context.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const isEditable = tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        autoSave.flush().then((didSave) => {
+          if (!didSave) toast({ title: "Sin cambios pendientes" });
+        });
+        return;
+      }
+      if (isEditable) return;
+      if (e.key === "ArrowRight") {
+        if (currentStepIndex < STEPS.length - 1) {
+          e.preventDefault();
+          goNext();
+        }
+      } else if (e.key === "ArrowLeft") {
+        if (currentStepIndex > 0) {
+          e.preventDefault();
+          goPrev();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [currentStepIndex, autoSave, toast]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
@@ -2055,11 +2296,16 @@ function VideoWizard({
           <h1 className="text-lg sm:text-2xl font-display font-bold truncate">
             {isCreating ? "Nuevo Video" : video?.title}
           </h1>
-          {video && (
-            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 line-clamp-1">
-              Completa todos los pasos para programar en las 6 plataformas
-            </p>
-          )}
+          <div className="flex items-center gap-3 mt-0.5">
+            {video && (
+              <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">
+                Completa todos los pasos para programar en las 6 plataformas
+              </p>
+            )}
+            {!isCreating && video && (
+              <SaveStatusIndicator status={autoSave.status} savedAt={autoSave.savedAt} />
+            )}
+          </div>
         </div>
         {video && (
           <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 hidden sm:flex shrink-0">
@@ -2099,6 +2345,23 @@ function VideoWizard({
                   </span>
                 )}
                 <span className={isActive ? "inline" : "hidden sm:inline"}>{step.shortLabel}</span>
+                {isActive && (autoSave.status === "dirty" || autoSave.status === "saving") && (
+                  <span
+                    title={autoSave.status === "saving" ? "Guardando..." : "Hay cambios sin guardar"}
+                    className={`hidden sm:inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
+                      autoSave.status === "saving"
+                        ? "bg-white/15 text-white/90"
+                        : "bg-amber-400/15 text-amber-200"
+                    }`}
+                  >
+                    {autoSave.status === "saving" ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                      <CloudOff className="w-2.5 h-2.5" />
+                    )}
+                    {autoSave.status === "saving" ? "Guardando" : "Sin guardar"}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -2806,28 +3069,50 @@ function StepInfo({
           </label>
 
           {videoAttached ? (
-            <div className="flex items-center gap-3 p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-              <FileVideo className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-emerald-400">
-                  {hasVideoLinked ? "Video vinculado" : hasPending && pendingVideoFile?.type === "drive" ? "Video de Drive seleccionado" : "Video seleccionado"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {displayFileName || "Archivo adjunto"}
-                </p>
-                {hasPending && !hasVideoLinked && (
-                  <p className="text-xs text-primary/70 mt-1">Se vinculará al guardar</p>
-                )}
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
+              {/* Inline preview when the video is linked to a Drive file. The
+                  /preview-video endpoint streams with `inline` disposition and
+                  supports Range so seeking works without buffering the whole
+                  file. Falls back to a metadata-only block while the user has
+                  only a pending selection (no DB row to stream from yet). */}
+              {hasVideoLinked && video?.id ? (
+                <div className="bg-black">
+                  <video
+                    key={video.videoFileDriveId || video.id}
+                    src={`${API_BASE}/content/videos/${video.id}/preview-video`}
+                    poster={video.coverImageBase64 ? `data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}` : undefined}
+                    controls
+                    preload="metadata"
+                    playsInline
+                    className="w-full max-h-[480px] bg-black object-contain"
+                  >
+                    Tu navegador no soporta la reproducción de este video.
+                  </video>
+                </div>
+              ) : null}
+              <div className="flex items-center gap-3 p-4">
+                <FileVideo className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-emerald-400">
+                    {hasVideoLinked ? "Video vinculado" : hasPending && pendingVideoFile?.type === "drive" ? "Video de Drive seleccionado" : "Video seleccionado"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {displayFileName || "Archivo adjunto"}
+                  </p>
+                  {hasPending && !hasVideoLinked && (
+                    <p className="text-xs text-primary/70 mt-1">Se vinculará al guardar</p>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearSelection}
+                  disabled={linking || uploading}
+                  className="text-xs"
+                >
+                  Cambiar
+                </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleClearSelection}
-                disabled={linking || uploading}
-                className="text-xs"
-              >
-                Cambiar
-              </Button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -3972,6 +4257,148 @@ function StepReview({
     video.linkedinDescription &&
     video.xDescription;
 
+  // Plain-text export shared by "Copiar todo" and the .txt download. Sections
+  // are skipped when the corresponding network has no description so the file
+  // stays compact and only contains real content.
+  const buildExportText = (): string => {
+    const parts: string[] = [];
+    parts.push(video.title || "(Sin título)");
+    if (video.description) parts.push("", video.description);
+    const sections: { label: string; body: string }[] = [
+      { label: "TikTok", body: video.tiktokDescription || "" },
+      { label: "Instagram", body: video.instagramDescription || "" },
+      {
+        label: "YouTube",
+        body: [video.youtubeTitle, video.youtubeDescription].filter(Boolean).join("\n\n"),
+      },
+      { label: "LinkedIn", body: video.linkedinDescription || "" },
+      { label: "X (Twitter)", body: video.xDescription || "" },
+      { label: "Facebook", body: video.facebookDescription || "" },
+    ];
+    for (const s of sections) {
+      if (!s.body.trim()) continue;
+      parts.push("", `=== ${s.label} ===`, s.body);
+    }
+    return parts.join("\n");
+  };
+
+  const handleCopyAll = () => {
+    copyText(buildExportText());
+  };
+
+  const sanitizeFilename = (s: string) =>
+    (s || "video")
+      .normalize("NFKD")
+      .replace(/[^\w\s.-]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .slice(0, 60) || "video";
+
+  const handleDownloadTxt = () => {
+    const blob = new Blob([buildExportText()], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${sanitizeFilename(video.title)}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      // Lazy-loaded so the (~250 KB) library doesn't ship in the initial bundle.
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 48;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      const ensureSpace = (needed: number) => {
+        if (y + needed > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(20);
+      const titleLines = doc.splitTextToSize(video.title || "(Sin título)", contentWidth);
+      doc.text(titleLines, margin, y);
+      y += titleLines.length * 24 + 12;
+
+      if (video.coverImageBase64) {
+        const mime = video.coverMimeType || "image/png";
+        const fmt = mime.includes("jpeg") || mime.includes("jpg") ? "JPEG" : "PNG";
+        const imgW = 120;
+        const imgH = imgW * (16 / 9);
+        ensureSpace(imgH);
+        try {
+          doc.addImage(`data:${mime};base64,${video.coverImageBase64}`, fmt, margin, y, imgW, imgH);
+          y += imgH + 16;
+        } catch (e) {
+          // Some Drive-served PNGs are RGBA; jsPDF can throw. Skip silently and
+          // keep the rest of the document.
+          console.warn("[export pdf] cover image skipped:", e);
+        }
+      }
+
+      if (video.description) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        const lines = doc.splitTextToSize(video.description, contentWidth);
+        ensureSpace(lines.length * 14);
+        doc.text(lines, margin, y);
+        y += lines.length * 14 + 12;
+      }
+
+      const sections: { label: string; body: string }[] = [
+        { label: "TikTok", body: video.tiktokDescription || "" },
+        { label: "Instagram", body: video.instagramDescription || "" },
+        {
+          label: "YouTube",
+          body: [video.youtubeTitle, video.youtubeDescription].filter(Boolean).join("\n\n"),
+        },
+        { label: "LinkedIn", body: video.linkedinDescription || "" },
+        { label: "X (Twitter)", body: video.xDescription || "" },
+        { label: "Facebook", body: video.facebookDescription || "" },
+      ];
+      for (const s of sections) {
+        if (!s.body.trim()) continue;
+        ensureSpace(40);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.text(s.label, margin, y);
+        y += 18;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        const lines = doc.splitTextToSize(s.body, contentWidth);
+        // Render line by line so we can paginate cleanly when the section
+        // overflows; jsPDF won't auto-break across pages.
+        for (const line of lines) {
+          ensureSpace(14);
+          doc.text(line, margin, y);
+          y += 14;
+        }
+        y += 10;
+      }
+
+      doc.save(`${sanitizeFilename(video.title)}.pdf`);
+    } catch (e: any) {
+      console.error("[export pdf] failed:", e);
+      // Surface to the user; there's no toast in scope here so use the parent's
+      // copyText path-adjacent pattern instead.
+      alert(`No se pudo exportar el PDF: ${e?.message || "error desconocido"}`);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const isScheduled = video.status === "scheduled" || video.status === "published";
 
   const platforms = [
@@ -4079,6 +4506,31 @@ function StepReview({
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={handleCopyAll} className="border-foreground/10">
+              <Copy className="w-4 h-4 mr-2" />
+              Copiar todo
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleDownloadTxt} className="border-foreground/10">
+              <FileText className="w-4 h-4 mr-2" />
+              Descargar .txt
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportPdf}
+              disabled={exportingPdf}
+              className="border-foreground/10"
+            >
+              {exportingPdf ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <FileDown className="w-4 h-4 mr-2" />
+              )}
+              Exportar .pdf
+            </Button>
           </div>
 
           <div className="space-y-3">
