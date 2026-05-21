@@ -144,7 +144,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-xs text-muted-foreground/40 mt-6">
-          © {new Date().getFullYear()} WebMakerChile
+          © {new Date().getFullYear()} WebMaker Latam
         </p>
       </motion.div>
     </div>

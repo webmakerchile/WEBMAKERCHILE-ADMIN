@@ -1,0 +1,66 @@
+Política de Privacidad
+Última actualización: 22 de mayo de 2026
+
+Aplicable a la aplicación WebMaker Latam (también referida como "WebMakerChile") disponible en admin.webmakerlatam.com.
+
+1. Introducción
+WebMakerChile ("nosotros", "nuestro") opera WebMaker Latam, la plataforma de gestión de contenido disponible en admin.webmakerlatam.com ("WebMaker Latam" o "el Servicio"). Esta Política de Privacidad explica cómo WebMaker Latam recopila, usa, almacena y protege su información personal.
+
+2. Información que Recopilamos
+Recopilamos los siguientes tipos de información:
+
+Información de cuenta de Google: Al iniciar sesión con Google OAuth, recibimos su nombre, dirección de correo electrónico y foto de perfil.
+Tokens de acceso: Almacenamos tokens de acceso y actualización de Google para permitir la integración con YouTube y Google Drive en su nombre. Estos tokens se almacenan de forma segura en nuestra base de datos.
+Contenido creado: Videos, imágenes de portada, descripciones y otros contenidos que usted crea dentro del Servicio.
+Datos de uso: Información sobre cómo utiliza el Servicio, incluyendo ideas generadas, videos programados y publicaciones realizadas.
+Información de TikTok: Al conectar su cuenta de TikTok, podemos acceder a información básica de su perfil y publicar contenido en su nombre según los permisos otorgados.
+3. Cómo Usamos su Información
+Utilizamos su información para:
+
+Autenticar su identidad y gestionar el acceso al Servicio.
+Publicar contenido en TikTok, Instagram, YouTube y Google Drive en su nombre.
+Generar contenido con inteligencia artificial (ideas, portadas, descripciones).
+Programar y automatizar la publicación de videos.
+Mejorar y mantener la funcionalidad del Servicio.
+4. Compartición de Datos
+No vendemos ni compartimos su información personal con terceros, excepto en los siguientes casos:
+
+Plataformas de redes sociales: Compartimos su contenido con TikTok, Instagram y YouTube exclusivamente cuando usted programa o publica contenido a través del Servicio.
+Google Drive: Almacenamos archivos en su Google Drive según sus instrucciones.
+Proveedores de IA: Enviamos prompts de texto a servicios de inteligencia artificial para generar contenido. No se envía información personal identificable.
+Requerimientos legales: Podemos divulgar información si es requerido por ley.
+5. Almacenamiento y Seguridad
+Su información se almacena en servidores seguros. Los tokens de acceso a plataformas de terceros se almacenan en nuestra base de datos con medidas de seguridad apropiadas. Utilizamos conexiones HTTPS cifradas para todas las comunicaciones.
+
+6. Retención de Datos
+Conservamos su información mientras su cuenta esté activa. Puede solicitar la eliminación de su cuenta y datos asociados en cualquier momento contactándonos por correo electrónico. Los tokens de acceso se invalidan cuando cierra sesión.
+
+7. Sus Derechos
+Usted tiene derecho a:
+
+Acceder a los datos personales que tenemos sobre usted.
+Solicitar la corrección de datos inexactos.
+Solicitar la eliminación de sus datos.
+Revocar el acceso a sus cuentas de redes sociales en cualquier momento desde la configuración de cada plataforma.
+Retirar su consentimiento para el procesamiento de datos.
+8. Cookies y Sesiones
+Utilizamos cookies de sesión para mantener su autenticación. Estas cookies son esenciales para el funcionamiento del Servicio y expiran después de 7 días de inactividad. No utilizamos cookies de seguimiento ni publicidad.
+
+9. Integración con TikTok
+Cuando conecta su cuenta de TikTok con WebMaker Latam, la aplicación accede a los siguientes datos según los permisos (scopes) que usted otorgue:
+
+user.info.basic: información básica del perfil de TikTok (open id, nombre público, avatar) para mostrarle qué cuenta está conectada a WebMaker Latam.
+video.upload: capacidad de subir videos a su cuenta de TikTok como borradores (drafts) para que usted los revise y publique desde la app de TikTok.
+WebMaker Latam no publica contenido en TikTok sin que usted lo haya iniciado explícitamente desde la plataforma, y no comparte sus datos de TikTok con terceros. Puede revocar el acceso de WebMaker Latam a su cuenta de TikTok en cualquier momento desde la configuración de TikTok → Seguridad y permisos → Gestionar permisos de apps.
+
+10. Menores de Edad
+El Servicio no está dirigido a menores de 18 años. No recopilamos intencionalmente información de menores de edad.
+
+11. Cambios a esta Política
+Podemos actualizar esta Política de Privacidad periódicamente. Los cambios serán publicados en esta página con una fecha de actualización revisada.
+
+12. Contacto
+Para consultas sobre esta Política de Privacidad o para ejercer sus derechos, contacte a: webmakerchile@gmail.com
+
+© 2026 WebMakerChile. Todos los derechos reservados.
+Explicar

@@ -3017,7 +3017,7 @@ function DriveVideoPicker({
 }) {
   const [folderId, setFolderId] = useState(DEFAULT_DRIVE_ROOT);
   const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([
-    { id: DEFAULT_DRIVE_ROOT, name: "WebMakerChile" },
+    { id: DEFAULT_DRIVE_ROOT, name: "WebMaker Latam" },
   ]);
 
   const { data: filesData, isLoading: filesLoading, error: filesError } = useQuery({

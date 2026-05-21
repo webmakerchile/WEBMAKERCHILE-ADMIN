@@ -5,14 +5,14 @@ export default function TermsPage() {
         <div className="mb-12">
           <h1 className="text-4xl font-bold mb-4">Términos de Servicio</h1>
           <p className="text-muted-foreground">Última actualización: 22 de mayo de 2026</p>
-          <p className="text-muted-foreground mt-2">Aplicable a la aplicación <strong className="text-foreground">WebMaker Latam</strong> (también referida como "WebMakerChile") disponible en admin.webmakerlatam.com.</p>
+          <p className="text-muted-foreground mt-2">Aplicable a la aplicación <strong className="text-foreground">WebMaker Latam</strong> disponible en admin.webmakerlatam.com.</p>
         </div>
 
         <div className="prose prose-invert max-w-none space-y-8 text-sm leading-relaxed text-muted-foreground">
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">1. Aceptación de los Términos</h2>
             <p>
-              Al acceder y utilizar <strong className="text-foreground">WebMaker Latam</strong> ("WebMaker Latam" o "el Servicio"), aplicación operada por WebMakerChile ("nosotros", "nuestro") en admin.webmakerlatam.com, usted acepta estar sujeto a estos Términos de Servicio. Si no está de acuerdo con estos términos, no utilice WebMaker Latam.
+              Al acceder y utilizar <strong className="text-foreground">WebMaker Latam</strong> ("WebMaker Latam", "el Servicio", "nosotros" o "nuestro"), disponible en admin.webmakerlatam.com, usted acepta estar sujeto a estos Términos de Servicio. Si no está de acuerdo con estos términos, no utilice WebMaker Latam.
             </p>
           </section>
 
@@ -79,13 +79,13 @@ export default function TermsPage() {
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">10. Contacto</h2>
             <p>
-              Para consultas sobre estos Términos de Servicio, contacte a: <a href="mailto:webmakerchile@gmail.com" className="text-primary hover:underline">webmakerchile@gmail.com</a>
+              Para consultas sobre estos Términos de Servicio, contacte a: <a href="mailto:webmakerlatam@gmail.com" className="text-primary hover:underline">webmakerlatam@gmail.com</a>
             </p>
           </section>
         </div>
 
         <div className="mt-16 pt-8 border-t border-foreground/15 text-center text-xs text-muted-foreground">
-          © 2026 WebMakerChile. Todos los derechos reservados.
+          © 2026 WebMaker Latam. Todos los derechos reservados.
         </div>
       </div>
     </div>
