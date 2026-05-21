@@ -91,12 +91,21 @@ function classifyByExpiry(
   }
   const expiryMs = new Date(expiresAt).getTime();
   const iso = new Date(expiresAt).toISOString();
+  const days = daysBetween(expiresAt);
+  // If we hold a refresh_token (TikTok, X), the access token rotates
+  // automatically via getValid*Token() right before each request. The user
+  // never has to reconnect, so we never surface "expiring" / "expired"
+  // warnings — the platform behaves as if the connection were permanent.
+  // Only when the refresh_token itself gets revoked by the provider does
+  // the publish path fail with an auth error, and that flips the
+  // `revokedNetworks` flag separately (handled by the caller).
+  if (hasRefresh) {
+    return { state: "connected", days, iso };
+  }
   // Use raw ms diff to avoid rounding masking a freshly-expired token.
   if (expiryMs <= Date.now()) {
-    const days = daysBetween(expiresAt);
-    return { state: hasRefresh ? "connected" : "expired", days, iso };
+    return { state: "expired", days, iso };
   }
-  const days = daysBetween(expiresAt);
   if (days === null) return { state: "unknown", days: null, iso };
   if (days <= EXPIRY_WARNING_DAYS) return { state: "expiring", days, iso };
   return { state: "connected", days, iso };
