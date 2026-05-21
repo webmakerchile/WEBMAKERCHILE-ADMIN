@@ -4,21 +4,22 @@ export default function TermsPage() {
       <div className="max-w-3xl mx-auto px-6 py-16">
         <div className="mb-12">
           <h1 className="text-4xl font-bold mb-4">Términos de Servicio</h1>
-          <p className="text-muted-foreground">Última actualización: 16 de marzo de 2026</p>
+          <p className="text-muted-foreground">Última actualización: 22 de mayo de 2026</p>
+          <p className="text-muted-foreground mt-2">Aplicable a la aplicación <strong className="text-foreground">WebMaker Latam</strong> (también referida como "WebMakerChile") disponible en admin.webmakerlatam.com.</p>
         </div>
 
         <div className="prose prose-invert max-w-none space-y-8 text-sm leading-relaxed text-muted-foreground">
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">1. Aceptación de los Términos</h2>
             <p>
-              Al acceder y utilizar la plataforma WebMakerChile ("el Servicio"), operada por WebMakerChile ("nosotros", "nuestro"), usted acepta estar sujeto a estos Términos de Servicio. Si no está de acuerdo con estos términos, no utilice el Servicio.
+              Al acceder y utilizar <strong className="text-foreground">WebMaker Latam</strong> ("WebMaker Latam" o "el Servicio"), aplicación operada por WebMakerChile ("nosotros", "nuestro") en admin.webmakerlatam.com, usted acepta estar sujeto a estos Términos de Servicio. Si no está de acuerdo con estos términos, no utilice WebMaker Latam.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">2. Descripción del Servicio</h2>
             <p>
-              WebMakerChile es una plataforma de gestión de contenido que permite a los usuarios crear, programar y publicar videos en plataformas de redes sociales, incluyendo TikTok, Instagram y YouTube. El Servicio incluye herramientas de generación de contenido con inteligencia artificial, gestión de archivos multimedia y automatización de publicaciones.
+              <strong className="text-foreground">WebMaker Latam</strong> es una plataforma de gestión de contenido que permite a los usuarios crear, programar y publicar videos en plataformas de redes sociales, incluyendo TikTok, Instagram, YouTube, LinkedIn, X y Facebook. WebMaker Latam incluye herramientas de generación de contenido con inteligencia artificial, gestión de archivos multimedia y automatización de publicaciones. La integración con TikTok se realiza mediante Login Kit (scope <strong className="text-foreground">user.info.basic</strong>) y Content Posting API (scope <strong className="text-foreground">video.upload</strong>), permitiendo a WebMaker Latam subir videos como borradores a la cuenta de TikTok del usuario para que éste los revise y publique desde la app oficial de TikTok.
             </p>
           </section>
 

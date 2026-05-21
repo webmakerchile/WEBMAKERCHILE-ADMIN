@@ -4,14 +4,15 @@ export default function PrivacyPage() {
       <div className="max-w-3xl mx-auto px-6 py-16">
         <div className="mb-12">
           <h1 className="text-4xl font-bold mb-4">Política de Privacidad</h1>
-          <p className="text-muted-foreground">Última actualización: 16 de marzo de 2026</p>
+          <p className="text-muted-foreground">Última actualización: 22 de mayo de 2026</p>
+          <p className="text-muted-foreground mt-2">Aplicable a la aplicación <strong className="text-foreground">WebMaker Latam</strong> (también referida como "WebMakerChile") disponible en admin.webmakerlatam.com.</p>
         </div>
 
         <div className="prose prose-invert max-w-none space-y-8 text-sm leading-relaxed text-muted-foreground">
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">1. Introducción</h2>
             <p>
-              WebMakerChile ("nosotros", "nuestro") opera la plataforma de gestión de contenido disponible en admin.webmakerlatam.com ("el Servicio"). Esta Política de Privacidad explica cómo recopilamos, usamos, almacenamos y protegemos su información personal.
+              WebMakerChile ("nosotros", "nuestro") opera <strong className="text-foreground">WebMaker Latam</strong>, la plataforma de gestión de contenido disponible en admin.webmakerlatam.com ("WebMaker Latam" o "el Servicio"). Esta Política de Privacidad explica cómo WebMaker Latam recopila, usa, almacena y protege su información personal.
             </p>
           </section>
 
@@ -98,14 +99,14 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold text-foreground mb-3">9. Integración con TikTok</h2>
             <p>
-              Cuando conecta su cuenta de TikTok con nuestro Servicio, accedemos a los siguientes datos según los permisos que usted otorgue:
+              Cuando conecta su cuenta de TikTok con <strong className="text-foreground">WebMaker Latam</strong>, la aplicación accede a los siguientes datos según los permisos (scopes) que usted otorgue:
             </p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li>Información básica del perfil de TikTok.</li>
-              <li>Capacidad de publicar videos en su cuenta de TikTok.</li>
+              <li><strong className="text-foreground">user.info.basic</strong>: información básica del perfil de TikTok (open id, nombre público, avatar) para mostrarle qué cuenta está conectada a WebMaker Latam.</li>
+              <li><strong className="text-foreground">video.upload</strong>: capacidad de subir videos a su cuenta de TikTok como borradores (drafts) para que usted los revise y publique desde la app de TikTok.</li>
             </ul>
             <p className="mt-2">
-              Puede revocar el acceso de nuestra aplicación a su cuenta de TikTok en cualquier momento desde la configuración de TikTok → Seguridad y permisos → Gestionar permisos de apps.
+              WebMaker Latam no publica contenido en TikTok sin que usted lo haya iniciado explícitamente desde la plataforma, y no comparte sus datos de TikTok con terceros. Puede revocar el acceso de WebMaker Latam a su cuenta de TikTok en cualquier momento desde la configuración de TikTok → Seguridad y permisos → Gestionar permisos de apps.
             </p>
           </section>
 
