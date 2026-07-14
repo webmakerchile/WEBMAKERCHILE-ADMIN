@@ -439,7 +439,7 @@ function ImportCsvDialog({
         const colIdx: Partial<Record<keyof ParsedCsvRow, number>> = {};
         header.forEach((h, i) => { const k = HEADER_ALIASES[h]; if (k) colIdx[k] = i; });
         if (colIdx.title === undefined || colIdx.description === undefined) {
-          setParseError("Faltan columnas obligatorias: title y description.");
+          setParseError(t.csvMissingCols);
           setRows([]); return;
         }
         const parsed: ParsedCsvRow[] = grid.slice(1).map((cells, i) => {
@@ -464,21 +464,21 @@ function ImportCsvDialog({
           else if (!row.description) row.error = t.csvRowMissingDesc;
           else if (row.title.length > 240) row.error = t.csvRowTitleTooLong;
           else if (row.campaignId && !Number.isFinite(Number(row.campaignId)))
-            row.error = `campaignId inválido: "${row.campaignId}"`;
+            row.error = t.csvCampaignIdInvalid(row.campaignId);
           else if (row.templateId && !Number.isFinite(Number(row.templateId)))
-            row.error = `templateId inválido: "${row.templateId}"`;
+            row.error = t.csvTemplateIdInvalid(row.templateId);
           return row;
         });
-        if (parsed.length === 0) { setParseError("No se encontraron filas con datos."); setRows([]); return; }
-        if (parsed.length > 200) { setParseError(`Demasiadas filas (${parsed.length}). El máximo por importación es 200.`); setRows([]); return; }
+        if (parsed.length === 0) { setParseError(t.csvNoData); setRows([]); return; }
+        if (parsed.length > 200) { setParseError(t.csvTooManyRows(parsed.length)); setRows([]); return; }
         setParseError(null);
         setRows(parsed);
       } catch (err: any) {
-        setParseError(err?.message || "No se pudo leer el archivo CSV");
+        setParseError(err?.message || t.csvReadError);
         setRows([]);
       }
     };
-    reader.onerror = () => setParseError("No se pudo leer el archivo");
+    reader.onerror = () => setParseError(t.csvReadFileError);
     reader.readAsText(file);
   };
 
@@ -584,11 +584,11 @@ function ImportCsvDialog({
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              Sube un archivo .csv con columnas <code className="px-1 py-0.5 rounded bg-muted text-foreground/80">title</code> y <code className="px-1 py-0.5 rounded bg-muted text-foreground/80">description</code> (opcional: mes, semana, día, videoNumber, hora, campaignId, templateId). Los videos quedan como <strong>borrador</strong>.
+              {t.csvInstructions}
             </p>
             <Button size="sm" variant="outline" onClick={downloadTemplate} className="gap-2 shrink-0">
               <Download className="w-4 h-4" />
-              Plantilla
+              {t.btnTemplate}
             </Button>
           </div>
 
@@ -612,8 +612,8 @@ function ImportCsvDialog({
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
               />
               <FileText className="w-8 h-8 text-muted-foreground/60 mx-auto mb-2" />
-              <p className="text-sm text-foreground">Arrastra tu CSV aquí o haz clic para seleccionar</p>
-              <p className="text-[11px] text-muted-foreground mt-1">Hasta 200 filas por archivo</p>
+              <p className="text-sm text-foreground">{t.csvDragHere}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{t.csvMaxRows}</p>
             </label>
           )}
 
@@ -634,9 +634,9 @@ function ImportCsvDialog({
                   <FileText className="w-4 h-4" />
                   <span className="font-medium text-foreground truncate max-w-[20rem]">{fileName}</span>
                   <span>·</span>
-                  <span>{validRows.length} válidas</span>
+                  <span>{t.csvValidRows(validRows.length)}</span>
                   {localErrorCount > 0 && (
-                    <span className="text-rose-400">· {localErrorCount} con error</span>
+                    <span className="text-rose-400">· {t.csvBadRows(localErrorCount)}</span>
                   )}
                 </div>
                 <button
@@ -645,7 +645,7 @@ function ImportCsvDialog({
                   disabled={importing}
                   className="text-muted-foreground/60 hover:text-foreground disabled:opacity-50"
                 >
-                  Cambiar archivo
+                  {t.btnChangeFile}
                 </button>
               </div>
 
@@ -655,11 +655,11 @@ function ImportCsvDialog({
                     <thead className="bg-foreground/5 text-muted-foreground sticky top-0">
                       <tr>
                         <th className="text-left p-2 font-medium">#</th>
-                        <th className="text-left p-2 font-medium">Título</th>
-                        <th className="text-left p-2 font-medium">Descripción</th>
-                        <th className="text-left p-2 font-medium">Mes/Semana/Día</th>
-                        <th className="text-left p-2 font-medium">Hora</th>
-                        <th className="text-left p-2 font-medium">Estado</th>
+                        <th className="text-left p-2 font-medium">{t.csvColTitle}</th>
+                        <th className="text-left p-2 font-medium">{t.csvColDesc}</th>
+                        <th className="text-left p-2 font-medium">{t.csvColMonthWeekDay}</th>
+                        <th className="text-left p-2 font-medium">{t.csvColHour}</th>
+                        <th className="text-left p-2 font-medium">{t.csvColStatus}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -982,14 +982,14 @@ export default function VideosPage() {
   const duplicateMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiFetch(`${API_BASE}/content/videos/${id}/duplicate`, { method: "POST" });
-      if (!res.ok) throw new Error("Error al duplicar el video");
+      if (!res.ok) throw new Error(t.toastDuplicateError);
       return res.json() as Promise<VideoData>;
     },
     onSuccess: (row) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
-      toast({ title: `Duplicado como "${row.title}"` });
+      toast({ title: t.toastDuplicatedAs(row.title) });
     },
-    onError: () => toast({ title: "No se pudo duplicar el video", variant: "destructive" }),
+    onError: () => toast({ title: t.toastDuplicateFailed, variant: "destructive" }),
   });
 
   const bulkDeleteMutation = useMutation({
@@ -1014,7 +1014,7 @@ export default function VideosPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedIds(new Set());
-      toast({ title: `${data.deleted} videos eliminados` });
+      toast({ title: t.toastBulkDeleted(data.deleted) });
     },
     onError: (_err, _ids, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
@@ -1029,7 +1029,7 @@ export default function VideosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vars),
       });
-      if (!res.ok) throw new Error("Error al actualizar");
+      if (!res.ok) throw new Error(t.toastBulkUpdateError);
       return res.json() as Promise<{ updated: number; ids: number[] }>;
     },
     onMutate: async (vars) => {
@@ -1046,11 +1046,11 @@ export default function VideosPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
-      toast({ title: `${data.updated} videos actualizados` });
+      toast({ title: t.toastBulkUpdated(data.updated) });
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
-      toast({ title: "No se pudieron actualizar los videos", variant: "destructive" });
+      toast({ title: t.toastBulkUpdateFailed, variant: "destructive" });
     },
   });
 
@@ -1061,7 +1061,7 @@ export default function VideosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vars),
       });
-      if (!res.ok) throw new Error("Error al guardar la vista");
+      if (!res.ok) throw new Error(t.toastSaveViewFailed);
       return res.json() as Promise<SavedView>;
     },
     onSuccess: () => {
@@ -1076,7 +1076,7 @@ export default function VideosPage() {
   const deleteSavedViewMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiFetch(`${API_BASE}/saved-views/${id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 204) throw new Error("Error al eliminar la vista");
+      if (!res.ok && res.status !== 204) throw new Error(t.toastDeleteViewFailed);
       return id;
     },
     onSuccess: () => {
@@ -1100,7 +1100,7 @@ export default function VideosPage() {
   const handleSaveCurrentView = () => {
     const name = newViewName.trim();
     if (!name) {
-      toast({ title: "Ingresa un nombre para la vista", variant: "destructive" });
+      toast({ title: t.toastViewNameRequired, variant: "destructive" });
       return;
     }
     createSavedViewMutation.mutate({
@@ -1127,7 +1127,7 @@ export default function VideosPage() {
   const handleBulkAssignMonth = () => {
     const month = bulkMonth.trim();
     if (!month) {
-      toast({ title: "Ingresa un mes (ej. Mes 1)", variant: "destructive" });
+      toast({ title: t.toastMonthRequired, variant: "destructive" });
       return;
     }
     bulkUpdateMutation.mutate(
@@ -1139,7 +1139,7 @@ export default function VideosPage() {
   // Bulk: schedule N videos at the same datetime via /content/videos/bulk-schedule.
   const handleBulkSchedule = async () => {
     if (!bulkScheduleAt) {
-      toast({ title: "Selecciona fecha y hora", variant: "destructive" });
+      toast({ title: t.toastDateTimeRequired, variant: "destructive" });
       return;
     }
     const scheduledAt = new Date(bulkScheduleAt).toISOString();
@@ -1153,9 +1153,9 @@ export default function VideosPage() {
       const data = (await res.json()) as { scheduled: number };
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setBulkScheduleAt("");
-      toast({ title: `${data.scheduled} videos programados` });
+      toast({ title: t.toastBulkScheduled(data.scheduled) });
     } catch {
-      toast({ title: "No se pudieron programar los videos", variant: "destructive" });
+      toast({ title: t.toastBulkScheduleFailed, variant: "destructive" });
     }
   };
 
@@ -1168,7 +1168,7 @@ export default function VideosPage() {
     // gets a clear message instead of a generic 400 in the middle of a batch.
     if (ids.length > 50) {
       toast({
-        title: `Selecciona máximo 50 videos para generar descripciones (tienes ${ids.length})`,
+        title: t.toastBulkGenMax(ids.length),
         variant: "destructive",
       });
       return;
@@ -1198,11 +1198,11 @@ export default function VideosPage() {
       }
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       toast({
-        title: `Descripciones generadas: ${ok}${failed ? ` · Fallaron: ${failed}` : ""}`,
+        title: t.toastBulkGenResult(ok, failed),
         variant: failed && !ok ? "destructive" : "default",
       });
     } catch {
-      toast({ title: "No se pudieron generar las descripciones", variant: "destructive" });
+      toast({ title: t.toastBulkGenFailed, variant: "destructive" });
     } finally {
       setGeneratingDescriptions(false);
     }
@@ -1255,7 +1255,7 @@ export default function VideosPage() {
       // crash JSON parsing or trigger a misleading "Video creado" toast.
       if (!res.ok) {
         const detail = await res.json().catch(() => ({} as { error?: string }));
-        throw new Error(detail?.error || `No se pudo crear el video (HTTP ${res.status})`);
+        throw new Error(detail?.error || t.toastCreateFailed(res.status));
       }
       return res.json();
     },
@@ -1303,7 +1303,7 @@ export default function VideosPage() {
     },
     onError: (err: Error, _vars, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
-      toast({ title: "Error al guardar", description: err.message, variant: "destructive" });
+      toast({ title: t.toastSaveFailed, description: err.message, variant: "destructive" });
     },
   });
 
@@ -1325,7 +1325,7 @@ export default function VideosPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiFetch(`${API_BASE}/content/videos/${id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 204) throw new Error("Error al eliminar");
+      if (!res.ok && res.status !== 204) throw new Error(t.toastDeleteFailed);
     },
     onMutate: async (id: number) => {
       await queryClient.cancelQueries({ queryKey: ["videos"] });
@@ -1369,12 +1369,12 @@ export default function VideosPage() {
   const uploadCoverMutation = useMutation({
     mutationFn: async ({ id, file }: { id: number; file: File }) => {
       if (file.size > 8 * 1024 * 1024) {
-        throw new Error("La portada no puede superar 8MB");
+        throw new Error(t.coverSizeError);
       }
       const dataUrl: string = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+        reader.onerror = () => reject(new Error(t.coverReadError));
         reader.readAsDataURL(file);
       });
       const comma = dataUrl.indexOf(",");
@@ -1388,7 +1388,7 @@ export default function VideosPage() {
           coverMimeType: file.type || "image/png",
         }),
       });
-      if (!res.ok) throw new Error("No se pudo subir la portada");
+      if (!res.ok) throw new Error(t.coverUploadFailed);
       return res.json();
     },
     onSuccess: (data) => {
@@ -1396,7 +1396,7 @@ export default function VideosPage() {
       setSelectedVideo(data);
       toast({ title: t.toastCoverUploaded });
     },
-    onError: (err: Error) => toast({ title: "Error al subir portada", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: t.toastCoverUploadError, description: err.message, variant: "destructive" }),
   });
 
   const clearCoverMutation = useMutation({
@@ -1406,14 +1406,14 @@ export default function VideosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ coverImageBase64: null, coverMimeType: null }),
       });
-      if (!res.ok) throw new Error("No se pudo quitar la portada");
+      if (!res.ok) throw new Error(t.clearCoverFailed);
       return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(data);
     },
-    onError: () => toast({ title: "Error al quitar portada", variant: "destructive" }),
+    onError: () => toast({ title: t.toastClearCoverError, variant: "destructive" }),
   });
 
   if (selectedVideo || isCreating) {
@@ -1469,8 +1469,8 @@ export default function VideosPage() {
       <div className="space-y-6 pb-28">
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Gestor de Videos</h1>
-            <p className="text-muted-foreground text-xs sm:text-lg">Tu editora puede completar cada video paso a paso sin salir de aquí.</p>
+            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">{t.headerGestorVideos}</h1>
+            <p className="text-muted-foreground text-xs sm:text-lg">{t.headerGestorDesc}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -1487,7 +1487,7 @@ export default function VideosPage() {
               className="bg-gradient-to-r from-primary to-orange-400 hover:from-orange-500 hover:to-orange-400 shadow-lg shadow-primary/25 gap-2"
             >
               <Plus className="w-5 h-5" />
-              Nuevo Video
+              {t.btnNewVideo}
               <KbdGroup className="ml-1 hidden sm:inline-flex">
                 <Kbd className="bg-white/20 text-white">N</Kbd>
               </KbdGroup>
@@ -1508,7 +1508,7 @@ export default function VideosPage() {
               <div className="flex items-center justify-between gap-2 px-1">
                 <span className="text-xs uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
                   <Bookmark className="w-3 h-3" />
-                  Vistas guardadas
+                  {t.savedViewsLabel}
                 </span>
               </div>
               <button
@@ -1521,7 +1521,7 @@ export default function VideosPage() {
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                <span className="flex-1 text-left">Mis revisiones pendientes</span>
+                <span className="flex-1 text-left">{t.pendingReviewsLabel}</span>
                 {pendingReviews.length > 0 && (
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/30 text-amber-100">
                     {pendingReviews.length}
@@ -1531,7 +1531,7 @@ export default function VideosPage() {
               <div className="rounded-xl border border-foreground/10 bg-card/40 divide-y divide-foreground/5 overflow-hidden">
                 {savedViews.length === 0 && (
                   <p className="text-[11px] text-muted-foreground/70 px-3 py-3 leading-snug">
-                    Aún no tienes vistas. Aplica filtros y guarda una para acceder rápido.
+                    {t.noSavedViews}
                   </p>
                 )}
                 {savedViews.map((view) => (
@@ -1551,7 +1551,7 @@ export default function VideosPage() {
                       type="button"
                       onClick={() => deleteSavedViewMutation.mutate(view.id)}
                       className="text-muted-foreground/40 hover:text-destructive opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                      aria-label={`Eliminar vista ${view.name}`}
+                      aria-label={t.ariaDeleteView(view.name)}
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1597,7 +1597,7 @@ export default function VideosPage() {
                       onClick={() => { setSavingView(false); setNewViewName(""); }}
                       className="h-7 text-xs"
                     >
-                      Cancelar
+                      {t.btnCancel}
                     </Button>
                   </div>
                 </div>
@@ -1621,7 +1621,7 @@ export default function VideosPage() {
                       type="button"
                       onClick={() => setQ("")}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground rounded transition-base"
-                      aria-label="Limpiar búsqueda"
+                      aria-label={t.ariaClearSearch}
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -1804,7 +1804,7 @@ export default function VideosPage() {
                                     e.stopPropagation();
                                     setStatsVideo(video);
                                   }}
-                                  title="Ver estadísticas"
+                                  title={t.ariaViewStats}
                                 >
                                   <BarChart2 className="w-4 h-4" />
                                 </Button>
@@ -1818,7 +1818,7 @@ export default function VideosPage() {
                                   duplicateMutation.mutate(video.id);
                                 }}
                                 disabled={duplicateMutation.isPending}
-                                title="Duplicar como remix (copia portada y archivo, descripciones en blanco)"
+                                title={t.ariaRemixDuplicate}
                               >
                                 {duplicateMutation.isPending && duplicateMutation.variables === video.id
                                   ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -1924,7 +1924,7 @@ export default function VideosPage() {
                   onClick={() => setSelectedIds(new Set())}
                 >
                   <X className="w-3 h-3 mr-1" />
-                  Cancelar
+                  {t.btnCancel}
                 </Button>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1959,7 +1959,7 @@ export default function VideosPage() {
                     className="h-8 text-xs"
                     onClick={handleBulkAssignMonth}
                     disabled={bulkUpdateMutation.isPending || !bulkMonth.trim()}
-                    aria-label="Asignar mes a la selección"
+                    aria-label={t.ariaBulkMonth}
                   >
                     <Folder className="w-3 h-3" />
                   </Button>
@@ -1977,7 +1977,7 @@ export default function VideosPage() {
                     className="h-8 text-xs"
                     onClick={handleBulkSchedule}
                     disabled={!bulkScheduleAt}
-                    aria-label="Programar selección en lote"
+                    aria-label={t.ariaBulkSchedule}
                   >
                     <CalendarClock className="w-3 h-3" />
                   </Button>
@@ -2429,19 +2429,20 @@ function useWizardAutoSave({
 }
 
 function SaveStatusIndicator({ status, savedAt }: { status: SaveStatus; savedAt: number | null }) {
-  // Simple "x s atrás" formatter that ticks every 30s while a video is open.
+  const { t } = useLang();
+  // Simple "x s ago" formatter that ticks every 30s while a video is open.
   const [, setTick] = useState(0);
   useEffect(() => {
     if (status !== "saved") return;
-    const t = setInterval(() => setTick((n) => n + 1), 30_000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(timer);
   }, [status, savedAt]);
   if (status === "idle") return null;
   if (status === "saving") {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        Guardando...
+        {t.autoSavingLabel}
       </span>
     );
   }
@@ -2449,7 +2450,7 @@ function SaveStatusIndicator({ status, savedAt }: { status: SaveStatus; savedAt:
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-amber-400">
         <CloudOff className="w-3.5 h-3.5" />
-        Sin guardar
+        {t.autoUnsavedLabel}
       </span>
     );
   }
@@ -2457,17 +2458,17 @@ function SaveStatusIndicator({ status, savedAt }: { status: SaveStatus; savedAt:
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-red-400">
         <AlertCircle className="w-3.5 h-3.5" />
-        Error al guardar
+        {t.autoSaveErrorLabel}
       </span>
     );
   }
   // saved
-  let label = "Guardado";
+  let label: string = t.autoSavedLabel;
   if (savedAt) {
     const diffSec = Math.max(0, Math.floor((Date.now() - savedAt) / 1000));
-    if (diffSec < 5) label = "Guardado";
-    else if (diffSec < 60) label = `Guardado hace ${diffSec}s`;
-    else label = `Guardado hace ${Math.floor(diffSec / 60)} min`;
+    if (diffSec < 5) label = t.autoSavedLabel;
+    else if (diffSec < 60) label = t.autoSavedSecsAgo(diffSec);
+    else label = t.autoSavedMinAgo(Math.floor(diffSec / 60));
   }
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
@@ -2581,26 +2582,26 @@ function VideoWizard({
           if (cancelled) return;
           if (!r.ok) {
             const detail = await r.json().catch(() => ({} as { error?: string }));
-            throw new Error(detail?.error || `Error vinculando video (HTTP ${r.status})`);
+            throw new Error(detail?.error || t.errorLinkVideo(r.status));
           }
           toast({ title: t.videoLinked, description: pendingVideoFile.fileName });
         } else if (pendingVideoFile.type === "upload") {
           // Progreso real durante la subida diferida (post-creación) usando XHR.
-          const t = toast({ title: "Subiendo video...", description: `${pendingVideoFile.fileName} · 0%` });
+          const uploadToast = toast({ title: t.toastUploadingVideo, description: `${pendingVideoFile.fileName} · 0%` });
           pendingHandle = uploadVideoWithProgress(
             `${API_BASE}/content/videos/${video.id}/upload-video`,
             pendingVideoFile.file,
             (p) => {
               if (cancelled) return;
-              t.update({ id: t.id, title: "Subiendo video...", description: `${pendingVideoFile.fileName} · ${p.pct}%` });
+              uploadToast.update({ id: uploadToast.id, title: t.toastUploadingVideo, description: `${pendingVideoFile.fileName} · ${p.pct}%` });
             },
           );
           const r = await pendingHandle.promise;
           if (cancelled) return;
           if (!r.ok) {
-            throw new Error(r.data?.error || `Error subiendo video (HTTP ${r.status})`);
+            throw new Error(r.data?.error || t.errorUploadVideo(r.status));
           }
-          t.update({ id: t.id, title: "Video subido", description: pendingVideoFile.fileName });
+          uploadToast.update({ id: uploadToast.id, title: t.toastVideoUploaded, description: pendingVideoFile.fileName });
         }
         if (cancelled) return;
         queryClient.invalidateQueries({ queryKey: ["videos"] });
@@ -3030,6 +3031,7 @@ function DriveVideoPicker({
   onSelect: (file: { id: string; name: string; mimeType: string }) => void;
   onClose: () => void;
 }) {
+  const { t } = useLang();
   const [folderId, setFolderId] = useState(DEFAULT_DRIVE_ROOT);
   const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([
     { id: DEFAULT_DRIVE_ROOT, name: "WebMaker Latam" },
@@ -3040,8 +3042,8 @@ function DriveVideoPicker({
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/drive/files?folderId=${folderId}`);
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Error al cargar archivos" }));
-        throw new Error(err.error || "Error al cargar archivos");
+        const err = await res.json().catch(() => ({ error: t.driveLoadFilesError }));
+        throw new Error(err.error || t.driveLoadFilesError);
       }
       return res.json();
     },
@@ -3053,8 +3055,8 @@ function DriveVideoPicker({
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/drive/folders?parentId=${folderId}`);
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Error al cargar carpetas" }));
-        throw new Error(err.error || "Error al cargar carpetas");
+        const err = await res.json().catch(() => ({ error: t.driveLoadFoldersError }));
+        throw new Error(err.error || t.driveLoadFoldersError);
       }
       return res.json();
     },
@@ -3088,7 +3090,7 @@ function DriveVideoPicker({
         <div className="p-4 border-b border-foreground/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <HardDrive className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold text-lg">Seleccionar Video desde Drive</h3>
+            <h3 className="font-semibold text-lg">{t.drivePickerTitle}</h3>
           </div>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-foreground/10 transition-colors">
             <X className="w-5 h-5" />
@@ -3129,11 +3131,11 @@ function DriveVideoPicker({
         <div className="flex-1 overflow-y-auto p-4 min-h-[300px]">
           {(filesError || foldersError) ? (
             <div className="flex flex-col items-center justify-center py-16 text-red-400">
-              <p className="text-sm font-medium mb-2">Error al acceder a Google Drive</p>
+              <p className="text-sm font-medium mb-2">{t.driveAccessError}</p>
               <p className="text-xs text-muted-foreground text-center max-w-md">
-                {(filesError as any)?.message || (foldersError as any)?.message || "Error desconocido"}
+                {(filesError as any)?.message || (foldersError as any)?.message || t.driveUnknownError}
               </p>
-              <p className="text-xs text-muted-foreground mt-2">Cierra sesión y vuelve a iniciar para otorgar permisos de Drive.</p>
+              <p className="text-xs text-muted-foreground mt-2">{t.driveSignOutHint}</p>
             </div>
           ) : isLoading ? (
             <div className="flex justify-center py-16">
@@ -3142,7 +3144,7 @@ function DriveVideoPicker({
           ) : folders.length === 0 && files.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <FolderOpen className="w-12 h-12 mb-3 opacity-30" />
-              <p className="text-sm">No hay carpetas ni videos en esta ubicación</p>
+              <p className="text-sm">{t.driveEmptyFolder}</p>
             </div>
           ) : (
             <div className="space-y-1">
@@ -3174,7 +3176,7 @@ function DriveVideoPicker({
                     )}
                   </div>
                   <span className="text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity font-medium">
-                    Seleccionar
+                    {t.driveSelect}
                   </span>
                 </button>
               ))}
@@ -4493,7 +4495,7 @@ function StepLinkedInX({
                 <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
               </span>
               Facebook
-              <span className="text-[10px] text-muted-foreground font-normal">(opcional)</span>
+              <span className="text-[10px] text-muted-foreground font-normal">{t.fbDescOptional}</span>
             </label>
             {formData.facebookDescription && (
               <button onClick={() => copyText(formData.facebookDescription)} className="text-xs text-primary hover:text-primary/80">
@@ -5275,11 +5277,11 @@ function StepReview({
                       )}
                       {ytResult.thumbnailSet === false && ytResult.thumbnailError && (
                         <p className="text-xs text-amber-400 mt-2">
-                          ⚠ Portada no aplicada: {ytResult.thumbnailError}
+                          {t.reviewThumbnailError(ytResult.thumbnailError)}
                         </p>
                       )}
                       {ytResult.thumbnailSet && (
-                        <p className="text-xs text-emerald-400 mt-1">✓ Portada aplicada como miniatura</p>
+                        <p className="text-xs text-emerald-400 mt-1">{t.reviewThumbnailApplied}</p>
                       )}
                     </div>
                   ) : (
