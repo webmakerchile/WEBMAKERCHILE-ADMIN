@@ -2874,7 +2874,7 @@ export default function RecordingStudio() {
             data-testid="tab-ideas-ia"
           >
             <Sparkles className="w-3.5 h-3.5" />
-            Ideas IA
+            {t.studioIdeasTab}
           </button>
         </div>
 
@@ -2903,10 +2903,10 @@ export default function RecordingStudio() {
               <Clock className="w-4 h-4 text-purple-400" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-foreground">Destino en Drive</p>
+              <p className="text-xs font-semibold text-foreground">{t.studioDayDest}</p>
               {suggestedDayData && (
                 <p className="text-[10px] text-muted-foreground/60">
-                  Hoy: {suggestedDayData.currentDay} ({suggestedDayData.hour}:00 hrs)
+                  {t.studioTodayHint(suggestedDayData.currentDay, suggestedDayData.hour)}
                 </p>
               )}
             </div>
@@ -2968,7 +2968,7 @@ export default function RecordingStudio() {
           </div>
           {targetTime && (
             <p className="text-[10px] text-purple-400/80 px-1">
-              Hora de publicacion: {targetTime} hrs
+              {t.studioPublishTime(targetTime)}
             </p>
           )}
         </div>
@@ -3007,7 +3007,7 @@ export default function RecordingStudio() {
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2 px-1">
                   <Target className="w-3.5 h-3.5 text-orange-400/70" />
-                  <span className="text-xs font-semibold text-muted-foreground/80 uppercase tracking-wider">Listos para grabar</span>
+                  <span className="text-xs font-semibold text-muted-foreground/80 uppercase tracking-wider">{t.studioReadyToRecord}</span>
                 </div>
                 {readyIdeas.map((idea) => {
                   const sections2 = parseGuion(idea.guion);
@@ -3065,7 +3065,7 @@ export default function RecordingStudio() {
               <div className="space-y-2">
                 <button onClick={() => setShowRecorded(!showRecorded)} className="flex items-center gap-2 w-full px-1 py-1" data-testid="button-toggle-recorded">
                   <Trophy className="w-3.5 h-3.5 text-green-500/60" />
-                  <span className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider">Grabados ({recordedIdeas.length})</span>
+                  <span className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider">{t.studioRecordedCount(recordedIdeas.length)}</span>
                   <div className="ml-auto">
                     {showRecorded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground/40" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/40" />}
                   </div>
@@ -3106,8 +3106,8 @@ export default function RecordingStudio() {
                   <Trash2 className="w-5 h-5 text-red-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground">Eliminar idea</h3>
-                  <p className="text-[11px] text-muted-foreground/60">Esta accion no se puede deshacer</p>
+                  <h3 className="text-sm font-semibold text-foreground">{t.studioDeleteIdeaTitle}</h3>
+                  <p className="text-[11px] text-muted-foreground/60">{t.studioDeleteIdeaDesc}</p>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground/70 mb-4">
@@ -3119,7 +3119,7 @@ export default function RecordingStudio() {
                   className="flex-1 h-9 rounded-xl bg-muted/30 border border-border/50 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
                   data-testid="button-cancel-delete"
                 >
-                  Cancelar
+                  {t.btnCancel}
                 </button>
                 <button
                   onClick={() => deleteConfirmId && deleteIdeaMutation.mutate(deleteConfirmId)}

@@ -408,6 +408,7 @@ function ImportCsvDialog({
   onClose: () => void;
   onImported: () => void;
 }) {
+  const { t } = useLang();
   const { toast } = useToast();
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<ParsedCsvRow[]>([]);
@@ -459,9 +460,9 @@ function ImportCsvDialog({
             templateId: get("templateId"),
             error: null,
           };
-          if (!row.title) row.error = "Falta el título";
-          else if (!row.description) row.error = "Falta la descripción";
-          else if (row.title.length > 240) row.error = "Título demasiado largo (máx 240)";
+          if (!row.title) row.error = t.csvRowMissingTitle;
+          else if (!row.description) row.error = t.csvRowMissingDesc;
+          else if (row.title.length > 240) row.error = t.csvRowTitleTooLong;
           else if (row.campaignId && !Number.isFinite(Number(row.campaignId)))
             row.error = `campaignId inválido: "${row.campaignId}"`;
           else if (row.templateId && !Number.isFinite(Number(row.templateId)))
@@ -495,7 +496,7 @@ function ImportCsvDialog({
 
   const handleImport = async () => {
     if (validRows.length === 0) {
-      toast({ title: "No hay filas válidas para importar", variant: "destructive" });
+      toast({ title: t.csvNoValidRows, variant: "destructive" });
       return;
     }
     setImporting(true);
@@ -550,12 +551,12 @@ function ImportCsvDialog({
         setServerErrors(allErrors);
         toast({
           title: createdTotal > 0
-            ? `${createdTotal} importados, ${allErrors.length} con error`
-            : "La importación falló",
+            ? t.csvPartialError(createdTotal, allErrors.length)
+            : t.csvImportFailed,
           variant: "destructive",
         });
       } else {
-        toast({ title: `${createdTotal} videos importados como borrador` });
+        toast({ title: t.csvImportedDraft(createdTotal) });
         onImported();
         // Small pause so the user sees the bar at 100% before closing.
         await new Promise((r) => setTimeout(r, 400));
@@ -565,7 +566,7 @@ function ImportCsvDialog({
       }
       if (createdTotal > 0) onImported();
     } catch (err: any) {
-      toast({ title: err?.message || "Error en la importación", variant: "destructive" });
+      toast({ title: err?.message || t.csvImportError, variant: "destructive" });
     } finally {
       setImporting(false);
     }
@@ -577,7 +578,7 @@ function ImportCsvDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="w-5 h-5" />
-            Importar videos desde CSV
+            {t.csvImportTitle}
           </DialogTitle>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
@@ -688,7 +689,7 @@ function ImportCsvDialog({
               {progress && (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{importing ? "Importando..." : "Importación completada"}</span>
+                    <span>{importing ? t.csvImporting : t.csvImportDone}</span>
                     <span>{progress.done} / {progress.total}</span>
                   </div>
                   <div className="h-2 bg-foreground/5 rounded-full overflow-hidden">
@@ -705,7 +706,7 @@ function ImportCsvDialog({
 
         <div className="flex items-center justify-end gap-2 pt-3 border-t border-foreground/10">
           <Button variant="outline" onClick={close} disabled={importing}>
-            Cancelar
+            {t.btnCancel}
           </Button>
           <Button
             onClick={handleImport}
@@ -713,7 +714,7 @@ function ImportCsvDialog({
             className="gap-2"
           >
             {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {importing ? "Importando..." : `Importar ${validRows.length} video${validRows.length === 1 ? "" : "s"}`}
+            {importing ? t.csvImporting : t.csvImportBtn(validRows.length)}
           </Button>
         </div>
       </DialogContent>
@@ -1476,10 +1477,10 @@ export default function VideosPage() {
               variant="outline"
               onClick={() => setImportOpen(true)}
               className="gap-2"
-              title="Importar videos desde un archivo CSV"
+              title={t.csvImportTitle}
             >
               <Upload className="w-4 h-4" />
-              Importar CSV
+              {t.csvImportTitle}
             </Button>
             <Button
               onClick={() => { setIsCreating(true); setWizardStep("info"); }}
@@ -1577,7 +1578,7 @@ export default function VideosPage() {
                       if (e.key === "Enter") handleSaveCurrentView();
                       if (e.key === "Escape") { setSavingView(false); setNewViewName(""); }
                     }}
-                    placeholder="Nombre de la vista"
+                    placeholder={t.viewNamePlaceholder}
                     className="h-8 text-xs"
                     autoFocus
                   />
@@ -1649,10 +1650,10 @@ export default function VideosPage() {
                 </Select>
                 <Select value={monthFilter} onValueChange={setMonthFilter}>
                   <SelectTrigger className="sm:w-40 bg-card/40 border-foreground/10">
-                    <SelectValue placeholder="Todos los meses" />
+                    <SelectValue placeholder={t.filterAllMonths} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos los meses</SelectItem>
+                    <SelectItem value="all">{t.filterAllMonths}</SelectItem>
                     {availableMonths.map((m) => (
                       <SelectItem key={m} value={m}>{m}</SelectItem>
                     ))}
@@ -1660,11 +1661,11 @@ export default function VideosPage() {
                 </Select>
                 <Select value={campaignFilter} onValueChange={setCampaignFilter}>
                   <SelectTrigger className="sm:w-44 bg-card/40 border-foreground/10">
-                    <SelectValue placeholder="Todas las campañas" />
+                    <SelectValue placeholder={t.filterAllCampaigns} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todas las campañas</SelectItem>
-                    <SelectItem value="none">Sin campaña</SelectItem>
+                    <SelectItem value="all">{t.filterAllCampaigns}</SelectItem>
+                    <SelectItem value="none">{t.filterNoCampaign}</SelectItem>
                     {campaigns.map((c) => (
                       <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
                     ))}
@@ -1672,11 +1673,11 @@ export default function VideosPage() {
                 </Select>
                 <Select value={templateFilter} onValueChange={setTemplateFilter}>
                   <SelectTrigger className="sm:w-44 bg-card/40 border-foreground/10">
-                    <SelectValue placeholder="Todas las plantillas" />
+                    <SelectValue placeholder={t.filterAllTemplates} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todas las plantillas</SelectItem>
-                    <SelectItem value="none">Sin plantilla</SelectItem>
+                    <SelectItem value="all">{t.filterAllTemplates}</SelectItem>
+                    <SelectItem value="none">{t.filterNoTemplate}</SelectItem>
                     {templates.map((t) => (
                       <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                     ))}
@@ -1708,7 +1709,7 @@ export default function VideosPage() {
                   label: t.createFirstVideo,
                   onClick: () => { setIsCreating(true); setWizardStep("info"); },
                 }}
-                secondaryAction={{ label: "Ver ayuda", href: "/ayuda" }}
+                secondaryAction={{ label: t.secondaryViewHelp, href: "/ayuda" }}
                 size="lg"
               />
             </CardContent>
@@ -1936,7 +1937,7 @@ export default function VideosPage() {
                   }}
                 >
                   <SelectTrigger className="h-8 text-xs w-40">
-                    <SelectValue placeholder="Cambiar estado..." />
+                    <SelectValue placeholder={t.bulkChangeStatus} />
                   </SelectTrigger>
                   <SelectContent>
                     {statusOptions.filter((o) => o.value !== "all").map((opt) => (
@@ -1949,7 +1950,7 @@ export default function VideosPage() {
                     value={bulkMonth}
                     onChange={(e) => setBulkMonth(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") handleBulkAssignMonth(); }}
-                    placeholder="Asignar mes"
+                    placeholder={t.bulkAssignMonth}
                     className="h-8 text-xs w-32"
                   />
                   <Button
@@ -2052,6 +2053,7 @@ function isStatError(v: unknown): v is StatError {
 }
 
 function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose: () => void }) {
+  const { t } = useLang();
   const { data, isLoading, error } = useQuery<VideoStats>({
     queryKey: ["video-stats", video?.id],
     queryFn: async () => {
@@ -2121,13 +2123,13 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="YouTube"
                 bgClass="bg-red-600"
                 loading={isLoading}
-                error={isStatError(yt) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(yt) ? t.statErrorMsg : undefined}
                 unavailable={false}
                 rows={ytOk ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Vistas", value: fmtNum(ytOk.views) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(ytOk.likes) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(ytOk.comments) },
-                  { icon: <Clock className="w-3.5 h-3.5" />, label: "Duración promedio", value: fmtTime(ytOk.averageViewDuration) },
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: t.statViews, value: fmtNum(ytOk.views) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: t.statLikes, value: fmtNum(ytOk.likes) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: t.statComments, value: fmtNum(ytOk.comments) },
+                  { icon: <Clock className="w-3.5 h-3.5" />, label: t.statDuration, value: fmtTime(ytOk.averageViewDuration) },
                 ] : []}
                 link={ytOk?.url}
               />
@@ -2139,13 +2141,13 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="Instagram"
                 bgClass="bg-gradient-to-tr from-purple-600 via-pink-500 to-orange-400"
                 loading={isLoading}
-                error={isStatError(ig) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(ig) ? t.statErrorMsg : undefined}
                 unavailable={false}
                 rows={igOk ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Reproducciones", value: fmtNum(igOk.plays) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(igOk.likes) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(igOk.comments) },
-                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Alcance", value: fmtNum(igOk.reach) },
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: t.statPlays, value: fmtNum(igOk.plays) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: t.statLikes, value: fmtNum(igOk.likes) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: t.statComments, value: fmtNum(igOk.comments) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: t.statReach, value: fmtNum(igOk.reach) },
                 ] : []}
               />
             )}
@@ -2156,14 +2158,14 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="LinkedIn"
                 bgClass="bg-[#0A66C2]"
                 loading={isLoading}
-                error={isStatError(li) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(li) ? t.statErrorMsg : undefined}
                 unavailable={false}
                 rows={liOk ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum(liOk.impressions) },
-                  { icon: <MousePointerClick className="w-3.5 h-3.5" />, label: "Clics", value: fmtNum(liOk.clicks) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Reacciones", value: fmtNum(liOk.reactions) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Comentarios", value: fmtNum(liOk.comments) },
-                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Compartidos", value: fmtNum(liOk.shares) },
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: t.statImpressions, value: fmtNum(liOk.impressions) },
+                  { icon: <MousePointerClick className="w-3.5 h-3.5" />, label: t.statClicks, value: fmtNum(liOk.clicks) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: t.statReactions, value: fmtNum(liOk.reactions) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: t.statComments, value: fmtNum(liOk.comments) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: t.statShares, value: fmtNum(liOk.shares) },
                 ] : []}
               />
             )}
@@ -2174,14 +2176,14 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
                 label="X"
                 bgClass="bg-black border border-foreground/10"
                 loading={isLoading}
-                error={isStatError(xd) ? "No se pudieron cargar las métricas" : undefined}
+                error={isStatError(xd) ? t.statErrorMsg : undefined}
                 unavailable={false}
                 rows={xdOk ? [
-                  { icon: <Eye className="w-3.5 h-3.5" />, label: "Impresiones", value: fmtNum(xdOk.impressions) },
-                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: "Me gusta", value: fmtNum(xdOk.likes) },
-                  { icon: <Repeat2 className="w-3.5 h-3.5" />, label: "Retweets", value: fmtNum(xdOk.retweets) },
-                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: "Respuestas", value: fmtNum(xdOk.replies) },
-                  { icon: <Share2 className="w-3.5 h-3.5" />, label: "Citas", value: fmtNum(xdOk.quotes) },
+                  { icon: <Eye className="w-3.5 h-3.5" />, label: t.statImpressions, value: fmtNum(xdOk.impressions) },
+                  { icon: <ThumbsUp className="w-3.5 h-3.5" />, label: t.statLikes, value: fmtNum(xdOk.likes) },
+                  { icon: <Repeat2 className="w-3.5 h-3.5" />, label: t.statRetweets, value: fmtNum(xdOk.retweets) },
+                  { icon: <MessageSquare className="w-3.5 h-3.5" />, label: t.statReplies, value: fmtNum(xdOk.replies) },
+                  { icon: <Share2 className="w-3.5 h-3.5" />, label: t.statQuotes, value: fmtNum(xdOk.quotes) },
                 ] : []}
               />
             )}
@@ -2638,7 +2640,7 @@ function VideoWizard({
 
   const handleSaveInfo = () => {
     if (!formData.title) {
-      toast({ title: "Completa el título del video", variant: "destructive" });
+      toast({ title: t.toastCompleteTitle, variant: "destructive" });
       return;
     }
     // Forward per-network description fields too — when the user applies a
@@ -3282,7 +3284,7 @@ function StepInfo({
     const validationError = validateVideoFile(file);
     if (validationError) {
       setResultMsg({ success: false, error: validationError });
-      toast({ title: "Archivo no válido", description: validationError, variant: "destructive" });
+      toast({ title: t.toastInvalidFile, description: validationError, variant: "destructive" });
       return;
     }
 
@@ -3308,17 +3310,17 @@ function StepInfo({
       } else {
         const msg = r.data?.error || `Error al subir (HTTP ${r.status})`;
         setResultMsg({ success: false, error: msg });
-        toast({ title: "Error al subir el video", description: msg, variant: "destructive" });
+        toast({ title: t.toastUploadError, description: msg, variant: "destructive" });
       }
     } catch (err: any) {
-      const msg = err?.message || "Error al subir el video";
-      // Subida cancelada por el usuario: no mostrar como error agresivo.
-      if (msg === "Subida cancelada") {
+      const msg = err?.message || t.toastUploadError;
+      // Upload cancelled by user: don't show as aggressive error.
+      if (msg === "Subida cancelada" || msg === "Upload cancelled") {
         setResultMsg(null);
-        toast({ title: "Subida cancelada" });
+        toast({ title: t.toastUploadCancelled });
       } else {
         setResultMsg({ success: false, error: msg });
-        toast({ title: "Error al subir el video", description: msg, variant: "destructive" });
+        toast({ title: t.toastUploadError, description: msg, variant: "destructive" });
       }
     } finally {
       uploadHandleRef.current = null;
@@ -3966,10 +3968,11 @@ function StepCover({
 }
 
 function AutoGeneratingPlaceholder({ label }: { label: string }) {
+  const { t } = useLang();
   return (
     <div className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 min-h-[180px] flex flex-col items-center justify-center gap-2 text-primary/60">
       <Loader2 className="w-5 h-5 animate-spin" />
-      <span className="text-xs">Generando {label} con IA...</span>
+      <span className="text-xs">{t.autoGenLabel(label)}</span>
     </div>
   );
 }
@@ -4060,7 +4063,7 @@ function StepTikTokInstagram({
           <div>
             <CardTitle className="text-xl flex items-center gap-2">
               <span className="text-2xl">📱</span>
-              TikTok e Instagram
+              {t.stepTikTokCardTitle}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {t.stepTikTokSubtitle}
@@ -4093,15 +4096,15 @@ function StepTikTokInstagram({
               )}
             </div>
             {showTikTokPlaceholder ? (
-              <AutoGeneratingPlaceholder label="descripción de TikTok" />
+              <AutoGeneratingPlaceholder label={t.descLabelTikTok} />
             ) : (
               <TruncatedTextarea
                 value={formData.tiktokDescription}
                 onChange={(e) => setFormData({ ...formData, tiktokDescription: e.target.value })}
                 truncateAt={150}
                 maxLength={2200}
-                placeholder={"✨ [Título atractivo]\n\n📌 [Descripción corta]\n\n#hashtag1 #hashtag2 #hashtag3"}
-                ariaLabel="Descripción para TikTok"
+                placeholder={"✨ [Catchy title]\n\n📌 [Short description]\n\n#hashtag1 #hashtag2 #hashtag3"}
+                ariaLabel={t.descLabelTikTok}
               />
             )}
             {!showTikTokPlaceholder && (
@@ -4132,15 +4135,15 @@ function StepTikTokInstagram({
               )}
             </div>
             {showInstagramPlaceholder ? (
-              <AutoGeneratingPlaceholder label="descripción de Instagram" />
+              <AutoGeneratingPlaceholder label={t.descLabelInstagram} />
             ) : (
               <TruncatedTextarea
                 value={formData.instagramDescription}
                 onChange={(e) => setFormData({ ...formData, instagramDescription: e.target.value })}
                 truncateAt={125}
                 maxLength={2200}
-                placeholder={"✨ [Título atractivo]\n\n📌 [Descripción para Instagram]\n\n💡 Síguenos para más tips\n\n#hashtag1 #hashtag2 #hashtag3"}
-                ariaLabel="Descripción para Instagram"
+                placeholder={"✨ [Catchy title]\n\n📌 [Instagram description]\n\n💡 Follow for more tips\n\n#hashtag1 #hashtag2 #hashtag3"}
+                ariaLabel={t.descLabelInstagram}
               />
             )}
             {!showInstagramPlaceholder && (
@@ -4267,7 +4270,7 @@ function StepYouTube({
               value={formData.youtubeTitle}
               onChange={(e) => setFormData({ ...formData, youtubeTitle: e.target.value })}
               className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-              placeholder="Título optimizado para YouTube (máx. 100 caracteres)"
+              placeholder={t.ytTitlePlaceholderFull}
               maxLength={100}
             />
           )}
@@ -4286,7 +4289,7 @@ function StepYouTube({
             )}
           </div>
           {showYoutubeDescPlaceholder ? (
-            <AutoGeneratingPlaceholder label="descripción de YouTube" />
+            <AutoGeneratingPlaceholder label={t.descLabelYouTube} />
           ) : (
             <TruncatedTextarea
               value={formData.youtubeDescription}
@@ -4294,8 +4297,8 @@ function StepYouTube({
               truncateAt={157}
               maxLength={5000}
               minHeightClass="min-h-[200px]"
-              placeholder={"📌 [Descripción del video]\n\n🔔 Suscríbete para más contenido\n💻 Visítanos: webmakerchile.com\n\n#shorts #webdev #programacion"}
-              ariaLabel="Descripción para YouTube"
+              placeholder={"📌 [Video description]\n\n🔔 Subscribe for more content\n💻 Visit us: webmakerchile.com\n\n#shorts #webdev"}
+              ariaLabel={t.descLabelYouTube}
             />
           )}
           {!showYoutubeDescPlaceholder && (
@@ -4384,10 +4387,10 @@ function StepLinkedInX({
           <div>
             <CardTitle className="text-xl flex items-center gap-2">
               <span className="text-2xl">💼</span>
-              LinkedIn, X y Facebook
+              {t.stepLinkedInXCardTitle}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Textos para LinkedIn (máx. 3000), X (máx. 280) y Facebook (máx. 500). Facebook es opcional.
+              {t.stepLinkedInXCardSubtitle}
             </p>
           </div>
           <button
@@ -4417,15 +4420,15 @@ function StepLinkedInX({
               )}
             </div>
             {showLinkedInPlaceholder ? (
-              <AutoGeneratingPlaceholder label="descripción de LinkedIn" />
+              <AutoGeneratingPlaceholder label={t.descLabelLinkedIn} />
             ) : (
               <TruncatedTextarea
                 value={formData.linkedinDescription}
                 onChange={(e) => setFormData({ ...formData, linkedinDescription: e.target.value })}
                 truncateAt={210}
                 maxLength={3000}
-                placeholder={"💡 [Insight profesional]\n\n📌 [Descripción extendida con contexto de negocio]\n\n#WebDev #ChileTech #DesarrolloWeb"}
-                ariaLabel="Descripción para LinkedIn"
+                placeholder={"💡 [Professional insight]\n\n📌 [Extended description with business context]\n\n#WebDev #Tech #Development"}
+                ariaLabel={t.descLabelLinkedIn}
               />
             )}
             {!showLinkedInPlaceholder && (
@@ -4456,13 +4459,13 @@ function StepLinkedInX({
               )}
             </div>
             {showXPlaceholder ? (
-              <AutoGeneratingPlaceholder label="tweet para X" />
+              <AutoGeneratingPlaceholder label={t.descLabelX} />
             ) : (
               <textarea
                 value={formData.xDescription}
                 onChange={(e) => setFormData({ ...formData, xDescription: e.target.value })}
                 className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[180px]"
-                placeholder={"🚀 [Tweet corto y directo]\n\n#WebDev #Chile"}
+                placeholder={"🚀 [Short and direct tweet]\n\n#WebDev #Tech"}
                 maxLength={280}
               />
             )}
@@ -4503,8 +4506,8 @@ function StepLinkedInX({
             truncateAt={480}
             maxLength={500}
             minHeightClass="min-h-[100px]"
-            placeholder={"¿Qué aprendes hoy? Comparte con tu comunidad 👇\n\n#WebDev #Chile"}
-            ariaLabel="Descripción para Facebook"
+            placeholder={"What are you learning today? Share with your community 👇\n\n#WebDev #Tech"}
+            ariaLabel="Facebook description"
           />
           <p className="text-[10px] text-muted-foreground">{t.fbCharHint((formData.facebookDescription || "").length)}</p>
           <LibraryControls
@@ -5558,6 +5561,7 @@ function useCurrentUser() {
 }
 
 function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: VideoData; onJumpToComments: () => void; onJumpToReview?: () => void }) {
+  const { t } = useLang();
   const { data: me } = useCurrentUser();
   const { data: members = [] } = useTeamMembers();
   const queryClient = useQueryClient();
@@ -5581,11 +5585,19 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
   const isAssignedReviewer = pending && me && pending.reviewerId === me.id;
   const status = (video.workflowStatus || "borrador") as keyof typeof WORKFLOW_LABEL;
   const wf = WORKFLOW_LABEL[status] || WORKFLOW_LABEL.borrador;
+  const wfTranslatedLabels: Record<string, string> = {
+    borrador: t.wfBorrador,
+    en_revision: t.wfEnRevision,
+    aprobado: t.wfAprobado,
+    programado: t.wfProgramado,
+    publicado: t.wfPublicado,
+  };
+  const wfLabel = wfTranslatedLabels[status] ?? wf.label;
   const reviewers = members.filter((m) => m.teamRole === "reviewer");
 
   const requestReview = async () => {
     if (!reviewerId) {
-      toast({ title: "Selecciona un revisor", variant: "destructive" });
+      toast({ title: t.toastSelectReviewer, variant: "destructive" });
       return;
     }
     setSubmitting(true);
@@ -5596,7 +5608,7 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
         body: JSON.stringify({ reviewerId: Number(reviewerId), note }),
       });
       if (!r.ok) throw new Error(await r.text());
-      toast({ title: "Revisión solicitada" });
+      toast({ title: t.toastReviewRequested });
       setOpen(false);
       setNote("");
       queryClient.invalidateQueries({ queryKey: ["video-reviews", video.id] });
@@ -5652,33 +5664,33 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
     <>
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl border border-foreground/10 bg-card/40">
         <span className={`text-[11px] uppercase tracking-wider px-2 py-1 rounded-md border ${wf.cls}`}>
-          {wf.label}
+          {wfLabel}
         </span>
         {pending && (
           <span className="text-xs text-muted-foreground">
-            Revisión asignada a <strong className="text-foreground/80">{pending.reviewerName || pending.reviewerEmail}</strong>
+            {t.reviewAssignedTo(pending.reviewerName || pending.reviewerEmail || "")}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={onJumpToComments} className="h-8 text-xs">
-            <MessageSquare className="w-3.5 h-3.5 mr-1" /> Comentarios
+            <MessageSquare className="w-3.5 h-3.5 mr-1" /> {t.btnComments}
           </Button>
           {!pending && status !== "aprobado" && status !== "publicado" && (
             <Button size="sm" variant="outline" onClick={() => setOpen(true)} className="h-8 text-xs">
-              <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Pedir revisión
+              <ShieldCheck className="w-3.5 h-3.5 mr-1" /> {t.btnRequestReview}
             </Button>
           )}
           {pending && (isReviewer || isAssignedReviewer) && (
             <>
               <Button size="sm" variant="outline" onClick={() => decide("changes_requested")} disabled={submitting} className="h-8 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/10">
-                Solicitar cambios
+                {t.btnRequestChanges}
               </Button>
               <Button size="sm" onClick={() => decide("approved")} disabled={submitting} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500">
-                <Check className="w-3.5 h-3.5 mr-1" /> Aprobar
+                <Check className="w-3.5 h-3.5 mr-1" /> {t.btnApprove}
               </Button>
               {onJumpToReview && (
                 <Button size="sm" onClick={() => decide("approved", true)} disabled={submitting} className="h-8 text-xs bg-emerald-700 hover:bg-emerald-600">
-                  <Send className="w-3.5 h-3.5 mr-1" /> Aprobar y programar
+                  <Send className="w-3.5 h-3.5 mr-1" /> {t.btnApproveSchedule}
                 </Button>
               )}
             </>
@@ -5686,11 +5698,11 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
           {!pending && isReviewer && status !== "aprobado" && status !== "publicado" && (
             <>
               <Button size="sm" onClick={() => decide("approved")} disabled={submitting} className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500">
-                <Check className="w-3.5 h-3.5 mr-1" /> Aprobar directamente
+                <Check className="w-3.5 h-3.5 mr-1" /> {t.btnApproveDirect}
               </Button>
               {onJumpToReview && (
                 <Button size="sm" onClick={() => decide("approved", true)} disabled={submitting} className="h-8 text-xs bg-emerald-700 hover:bg-emerald-600">
-                  <Send className="w-3.5 h-3.5 mr-1" /> Aprobar y programar
+                  <Send className="w-3.5 h-3.5 mr-1" /> {t.btnApproveSchedule}
                 </Button>
               )}
             </>
@@ -5701,40 +5713,40 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Pedir revisión</DialogTitle>
+            <DialogTitle>{t.btnRequestReview}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs text-muted-foreground">Revisor</label>
+              <label className="text-xs text-muted-foreground">{t.labelReviewer}</label>
               <select
                 value={reviewerId}
                 onChange={(e) => setReviewerId(e.target.value)}
                 className="w-full mt-1 px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm"
               >
-                <option value="">Selecciona un revisor…</option>
+                <option value="">{t.selectReviewer}</option>
                 {reviewers.map((r) => (
                   <option key={r.id} value={r.id}>{r.name || r.email}</option>
                 ))}
               </select>
               {reviewers.length === 0 && (
-                <p className="text-[11px] text-amber-400 mt-1">No hay revisores asignados. Ve a /equipo para asignar uno.</p>
+                <p className="text-[11px] text-amber-400 mt-1">No reviewers assigned. Go to /equipo to assign one.</p>
               )}
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Nota (opcional)</label>
+              <label className="text-xs text-muted-foreground">Note (optional)</label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
                 className="w-full mt-1 px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm"
-                placeholder="¿Qué quieres que revise?"
+                placeholder="What should the reviewer check?"
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button variant="ghost" onClick={() => setOpen(false)}>{t.btnCancel}</Button>
               <Button onClick={requestReview} disabled={submitting || !reviewerId}>
                 {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Send className="w-4 h-4 mr-1" />}
-                Enviar solicitud
+                {t.btnRequestReview}
               </Button>
             </div>
           </div>
@@ -5745,6 +5757,7 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
 }
 
 function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated: () => void }) {
+  const { t } = useLang();
   const { data: me } = useCurrentUser();
   const { data: members = [] } = useTeamMembers();
   const queryClient = useQueryClient();
@@ -5896,7 +5909,7 @@ function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated
               value={body}
               onChange={(e) => onBodyChange(e.target.value)}
               rows={3}
-              placeholder="Escribe un comentario… usa @email para mencionar a alguien"
+              placeholder={t.commentsPlaceholder}
               className="w-full px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm resize-y"
             />
             {showSuggest && suggestions.length > 0 && (
