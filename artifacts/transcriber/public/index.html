@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Transcriptor de Audios</title>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2e3d;
+    --text: #e8eaf0;
+    --muted: #8b90a0;
+    --accent: #f97316;
+    --ok: #22c55e;
+    --err: #ef4444;
+    --proc: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 100vh; padding: 2rem 1rem;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin-bottom: .3rem; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; }
+  #drop {
+    border: 2px dashed var(--border); border-radius: 14px;
+    padding: 3rem 1.5rem; text-align: center; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  #drop.over { border-color: var(--accent); background: rgba(249,115,22,.06); }
+  #drop p { color: var(--muted); }
+  #drop strong { color: var(--text); display: block; margin-bottom: .4rem; font-size: 1.05rem; }
+  #drop .formats { font-size: .8rem; margin-top: .6rem; }
+  .toolbar { display: flex; gap: .6rem; margin: 1.2rem 0; flex-wrap: wrap; }
+  button {
+    background: var(--card); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: .5rem .9rem; cursor: pointer; font-size: .85rem;
+    transition: background .15s;
+  }
+  button:hover:not(:disabled) { background: #232735; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #ea680c; }
+  .file-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1rem 1.2rem; margin-bottom: .8rem;
+  }
+  .file-head { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+  .fname { font-weight: 600; flex: 1; min-width: 200px; word-break: break-all; }
+  .fsize { color: var(--muted); font-size: .8rem; }
+  .badge {
+    font-size: .72rem; font-weight: 700; padding: .25rem .6rem; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .badge.pendiente { background: rgba(139,144,160,.15); color: var(--muted); }
+  .badge.procesando { background: rgba(59,130,246,.15); color: var(--proc); }
+  .badge.listo { background: rgba(34,197,94,.15); color: var(--ok); }
+  .badge.error { background: rgba(239,68,68,.15); color: var(--err); }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid var(--proc); border-top-color: transparent;
+    border-radius: 50%; animation: spin .7s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .transcript {
+    margin-top: .9rem; background: #12141c; border: 1px solid var(--border);
+    border-radius: 8px; padding: .9rem; font-size: .9rem; line-height: 1.55;
+    white-space: pre-wrap; max-height: 260px; overflow-y: auto;
+  }
+  .err-msg { margin-top: .7rem; color: var(--err); font-size: .85rem; }
+  .actions { display: flex; gap: .5rem; margin-top: .7rem; flex-wrap: wrap; }
+  .actions button { font-size: .8rem; padding: .4rem .75rem; }
+  .empty { text-align: center; color: var(--muted); padding: 2rem 0; font-size: .9rem; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Transcriptor de <span>Audios</span></h1>
+  <p class="sub">Whisper large-v3-turbo vía Groq · Español · Sin límite de archivos</p>
+
+  <div id="drop">
+    <strong>Arrastra tus audios aquí</strong>
+    <p>o haz clic para seleccionar archivos</p>
+    <p class="formats">MP3 · M4A · OGG · WAV · OPUS — los mayores a 24MB se convierten automáticamente</p>
+  </div>
+  <input type="file" id="fileInput" multiple accept=".mp3,.m4a,.ogg,.wav,.opus,audio/*" />
+
+  <div class="toolbar">
+    <button class="primary" id="btnStart" disabled>Transcribir todo</button>
+    <button id="btnZip" disabled>Descargar todas (.zip)</button>
+    <button id="btnClear" disabled>Limpiar lista</button>
+  </div>
+
+  <div id="list"><p class="empty">Aún no hay archivos.</p></div>
+</div>
+
+<script>
+const drop = document.getElementById("drop");
+const fileInput = document.getElementById("fileInput");
+const list = document.getElementById("list");
+const btnStart = document.getElementById("btnStart");
+const btnZip = document.getElementById("btnZip");
+const btnClear = document.getElementById("btnClear");
+
+const ALLOWED = [".mp3", ".m4a", ".ogg", ".wav", ".opus"];
+let files = []; // { id, file, status, text, error }
+let running = false;
+const CONCURRENCY = 2;
+
+drop.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => { addFiles(fileInput.files); fileInput.value = ""; });
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    const ext = "." + f.name.split(".").pop().toLowerCase();
+    if (!ALLOWED.includes(ext)) continue;
+    files.push({ id: crypto.randomUUID(), file: f, status: "pendiente", text: null, error: null });
+  }
+  render();
+}
+
+function fmtSize(b) {
+  if (b > 1048576) return (b / 1048576).toFixed(1) + " MB";
+  return Math.round(b / 1024) + " KB";
+}
+
+function baseName(name) { return name.replace(/\.[^.]+$/, ""); }
+
+function render() {
+  const hasFiles = files.length > 0;
+  btnStart.disabled = running || !files.some(f => f.status === "pendiente" || f.status === "error");
+  btnZip.disabled = !files.some(f => f.status === "listo");
+  btnClear.disabled = running || !hasFiles;
+
+  if (!hasFiles) { list.innerHTML = '<p class="empty">Aún no hay archivos.</p>'; return; }
+
+  list.innerHTML = files.map(f => `
+    <div class="file-card" data-id="${f.id}">
+      <div class="file-head">
+        <span class="fname">${escapeHtml(f.file.name)}</span>
+        <span class="fsize">${fmtSize(f.file.size)}</span>
+        ${f.status === "procesando" ? '<span class="spinner"></span>' : ""}
+        <span class="badge ${f.status}">${f.status}</span>
+        ${!running && (f.status === "pendiente" || f.status === "error") ? `<button onclick="removeFile('${f.id}')">✕</button>` : ""}
+      </div>
+      ${f.text != null ? `
+        <div class="transcript">${escapeHtml(f.text)}</div>
+        <div class="actions">
+          <button onclick="copyText('${f.id}', this)">Copiar</button>
+          <button onclick="downloadTxt('${f.id}')">Descargar .txt</button>
+        </div>` : ""}
+      ${f.error ? `<p class="err-msg">${escapeHtml(f.error)}</p>
+        <div class="actions"><button onclick="retryOne('${f.id}')">Reintentar</button></div>` : ""}
+    </div>
+  `).join("");
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+window.removeFile = (id) => { files = files.filter(f => f.id !== id); render(); };
+
+window.copyText = async (id, btn) => {
+  const f = files.find(x => x.id === id);
+  if (!f?.text) return;
+  await navigator.clipboard.writeText(f.text);
+  const orig = btn.textContent;
+  btn.textContent = "¡Copiado!";
+  setTimeout(() => { btn.textContent = orig; }, 1500);
+};
+
+window.downloadTxt = (id) => {
+  const f = files.find(x => x.id === id);
+  if (!f?.text) return;
+  const blob = new Blob([f.text], { type: "text/plain;charset=utf-8" });
+  triggerDownload(blob, baseName(f.file.name) + ".txt");
+};
+
+window.retryOne = (id) => {
+  const f = files.find(x => x.id === id);
+  if (!f) return;
+  f.status = "pendiente"; f.error = null;
+  render();
+};
+
+function triggerDownload(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+async function transcribeOne(f) {
+  f.status = "procesando"; f.error = null;
+  render();
+  try {
+    const fd = new FormData();
+    fd.append("audio", f.file);
+    const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    f.text = data.text;
+    f.status = "listo";
+  } catch (err) {
+    f.status = "error";
+    f.error = err.message;
+  }
+  render();
+}
+
+btnStart.addEventListener("click", async () => {
+  if (running) return;
+  running = true;
+  render();
+  const queue = files.filter(f => f.status === "pendiente" || f.status === "error");
+  let idx = 0;
+  async function worker() {
+    while (idx < queue.length) {
+      const f = queue[idx++];
+      await transcribeOne(f);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
+  running = false;
+  render();
+});
+
+btnZip.addEventListener("click", async () => {
+  const done = files.filter(f => f.status === "listo" && f.text != null);
+  if (!done.length) return;
+  const zip = new JSZip();
+  const used = new Set();
+  for (const f of done) {
+    let name = baseName(f.file.name) + ".txt";
+    let i = 2;
+    while (used.has(name)) name = baseName(f.file.name) + `-${i++}.txt`;
+    used.add(name);
+    zip.file(name, f.text);
+  }
+  const blob = await zip.generateAsync({ type: "blob" });
+  triggerDownload(blob, "transcripciones.zip");
+});
+
+btnClear.addEventListener("click", () => { files = []; render(); });
+</script>
+</body>
+</html>
