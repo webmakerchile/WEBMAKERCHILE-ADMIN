@@ -63,7 +63,7 @@ import { aiLimiter, publishLimiter, uploadLimiter } from "./lib/rate-limit";
 // keyGenerator switches to user id automatically.
 app.use(/^\/api\/(library\/templates\/ai-fill|content\/videos\/[^/]+\/(generate-descriptions|generate-cover)|content\/videos\/bulk-generate-descriptions|analytics\/insights|content\/hashtag-suggestions|gemini\/conversations\/[^/]+\/messages|gemini\/generate-image|gemini\/generate-cover|studio\/(ideas\/generate|ideas\/[^/]+\/generate-cover|generate-ideas|generate-descriptions|cover-generator))/, aiLimiter);
 app.use(/^\/api\/(youtube|tiktok|instagram|linkedin|x|facebook)\/(upload|publish|upload-from-drive)/, publishLimiter);
-app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-upload)|content\/videos\/import-csv|content\/videos\/[^/]+\/(upload-video|link-drive-video))/, uploadLimiter);
+app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-upload)|content\/videos\/import-csv|content\/videos\/[^/]+\/(upload-video|link-drive-video)|transcriber\/transcribe)/, uploadLimiter);
 
 app.use("/api", requireAuth, router);
 

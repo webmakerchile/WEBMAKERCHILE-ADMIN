@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   Users2,
   Library,
+  AudioLines,
   BarChart3,
   HelpCircle,
   LogOut,
@@ -42,6 +43,7 @@ const navItems = [
   { href: "/descripciones", icon: MessageSquareText, label: "Descripciones", tour: "nav-descripciones" },
   { href: "/drive", icon: FolderTree, label: "Drive", tour: "nav-drive" },
   { href: "/estudio", icon: Clapperboard, label: "Estudio", tour: "nav-estudio" },
+  { href: "/transcriptor", icon: AudioLines, label: "Transcriptor", tour: "nav-transcriptor" },
   { href: "/equipo", icon: Users2, label: "Equipo", tour: "nav-equipo" },
   { href: "/ayuda", icon: HelpCircle, label: "Ayuda", tour: "nav-help" },
 ];

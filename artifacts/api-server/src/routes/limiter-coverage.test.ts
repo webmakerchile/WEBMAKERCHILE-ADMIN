@@ -50,6 +50,7 @@ const MUST_UPLOAD = [
   "/api/content/videos/import-csv",
   "/api/content/videos/123/upload-video",
   "/api/content/videos/123/link-drive-video",
+  "/api/transcriber/transcribe",
 ];
 
 describe("Rate-limit regex coverage in app.ts", () => {
