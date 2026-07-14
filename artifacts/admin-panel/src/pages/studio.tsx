@@ -83,15 +83,7 @@ const SECTION_CONFIG: Record<string, { label: string; bgClass: string; progressC
   "CIERRE": { label: "CIERRE", bgClass: "text-orange-300", progressColor: "bg-orange-500" },
 };
 
-const MOTIVATIONAL = [
-  "Hoy es un gran dia para crear contenido",
-  "Tu audiencia espera tu proximo video",
-  "La constancia es la clave del exito",
-  "Cada video te acerca a mas clientes",
-  "El contenido que creas hoy, vende manana",
-  "Un video al dia mantiene el algoritmo feliz",
-  "Tu marca crece con cada video que grabas",
-];
+// Motivational strings now come from t.studioMotivational (see lang.tsx)
 
 function cleanText(text: string): string {
   return text.replace(/\*\*/g, "").replace(/=[\u00A8\u00B8\u00DD\u00C8\u00E3\u00AB\u00BB\u00AF\u00BF]/g, "").trim();
@@ -1420,7 +1412,7 @@ function CameraRecordingView({
         message: `Subiendo (${(mergedBlob.size / 1024 / 1024).toFixed(1)} MB)...`,
       });
 
-      toast({ title: "Subiendo en segundo plano", description: `"${autoFileName}" se sube. Elige otro video para grabar.` });
+      toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(autoFileName) });
 
       runBgUploadFn(mergedBlob, bgId, autoFileName, idea?.id || null, idea?.guion || "", mimeType, "", null, autoEdit, enableSubtitles);
       onBack();
@@ -1582,7 +1574,7 @@ function CameraRecordingView({
       message: `Subiendo (${(blobCopy.size / 1024 / 1024).toFixed(1)} MB)...`,
     });
 
-    toast({ title: "Subiendo en segundo plano", description: `"${uploadTitle}" se sube. Elige otro video para grabar.` });
+    toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(uploadTitle) });
 
     runBgUploadFn(blobCopy, bgId, uploadTitle, idea?.id || null, idea?.guion || "", mimeType, waMessage.trim(), segsToSend, autoEdit, enableSubtitles);
     onBack();
@@ -1712,12 +1704,12 @@ function CameraRecordingView({
     if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch {} recognitionRef.current = null; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraError(true);
-      toast({ title: "Camara no disponible en este navegador", variant: "destructive" });
+      toast({ title: t.studioCameraNotAvailable, variant: "destructive" });
     } else {
       const cameraTimeout = setTimeout(() => {
         if (mountedRef.current && !streamRef.current) {
           setCameraError(true);
-          toast({ title: "La camara tardo demasiado en responder", variant: "destructive" });
+          toast({ title: t.studioCameraTimeout, variant: "destructive" });
         }
       }, 15000);
       startCamera("user").finally(() => clearTimeout(cameraTimeout));
@@ -1984,11 +1976,11 @@ function CameraRecordingView({
         <div className="px-5 pb-8" style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom, 0px))" }}>
           <div className="max-w-md mx-auto flex gap-3">
             <button onClick={handleDiscard} className="flex-1 py-3.5 rounded-xl bg-white/5 border border-white/10 text-white/60 text-sm font-medium active:scale-95 transition-transform touch-manipulation">
-              Descartar
+              {t.studioDiscard}
             </button>
             <button onClick={handleUpload} className="flex-[2] py-3.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white text-sm font-medium flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-green-900/40 touch-manipulation" data-testid="button-confirm-upload">
               <Upload className="w-4 h-4" />
-              Subir a Drive
+              {t.studioUploadToDrive}
             </button>
           </div>
         </div>
@@ -2111,7 +2103,7 @@ function CameraRecordingView({
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-medium active:scale-95 transition-transform touch-manipulation ${
                     selectedSeg.enabled ? "bg-red-600/20 border border-red-500/30 text-red-400" : "bg-green-600/20 border border-green-500/30 text-green-400"
                   }`} data-testid="button-toggle-segment">
-                  {selectedSeg.enabled ? "Excluir" : "Incluir"}
+                  {selectedSeg.enabled ? t.studioExclude : t.studioInclude}
                 </button>
               </div>
             )}
@@ -2158,8 +2150,8 @@ function CameraRecordingView({
             <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-[2]">
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-orange-400 animate-spin" />
-                <p className="text-white/60 text-sm">Iniciando camara...</p>
-                <p className="text-white/30 text-xs">Acepta los permisos si aparece un mensaje</p>
+                <p className="text-white/60 text-sm">{t.studioInitializingCamera}</p>
+                <p className="text-white/30 text-xs">{t.studioInitializingCameraHint}</p>
               </div>
             </div>
           )}
@@ -2211,7 +2203,7 @@ function CameraRecordingView({
               <span className="text-5xl font-bold text-white font-mono">{voiceCountdown.count}</span>
             </div>
             <span className={`text-sm font-semibold uppercase tracking-widest ${voiceCountdown.type === "reset" ? "text-red-400" : "text-orange-400"}`}>
-              {voiceCountdown.type === "reset" ? "Reiniciando" : "Reintentando clip"}
+              {voiceCountdown.type === "reset" ? t.studioVoiceReset : t.studioVoiceRetry}
             </span>
           </div>
         </div>
@@ -2536,7 +2528,7 @@ export default function RecordingStudio() {
         safeUpdate({ progress: Math.round(((i + 1) / totalChunks) * 80), message: `Subiendo ${i + 1}/${totalChunks}...` });
       }
 
-      safeUpdate({ status: "processing", progress: 85, message: "Procesando en Drive..." });
+      safeUpdate({ status: "processing", progress: 85, message: t.studioProcessingDrive });
 
       const finalRes = await fetch("/api/studio/finalize-upload", {
         method: "POST",
@@ -2566,12 +2558,12 @@ export default function RecordingStudio() {
       safeUpdate({
         status: "done",
         progress: 100,
-        message: data.driveVerified ? `Subido a Drive${dayMsg}` : "Error Drive",
+        message: data.driveVerified ? t.studioUploadedToDrive(uploadTitle, dayMsg) : t.studioUploadErrorDrive(uploadTitle),
         driveVerified: !!data.driveVerified,
         driveLink: data.driveVerified ? (data.driveLink || "") : (data.backupLink || ""),
       });
       if (studioMountedRef.current) {
-        toast({ title: `"${uploadTitle}" ${data.driveVerified ? `subido${dayMsg}` : "ERROR subiendo"}`, variant: data.driveVerified ? "default" : "destructive" });
+        toast({ title: data.driveVerified ? t.studioUploadedToDrive(uploadTitle, dayMsg) : t.studioUploadErrorDrive(uploadTitle), variant: data.driveVerified ? "default" : "destructive" });
         queryClient.invalidateQueries({ queryKey: ["/api/studio/ideas"] });
         queryClient.invalidateQueries({ queryKey: ["/api/studio/recording-stats"] });
       }
@@ -2635,7 +2627,7 @@ export default function RecordingStudio() {
       queryClient.invalidateQueries({ queryKey: ["/api/studio/recording-stats"] });
       setTimeout(() => {
         setCelebrateId(null);
-        toast({ title: "Video marcado como grabado" });
+        toast({ title: t.studioVideoMarkedTitle });
       }, 2200);
     },
     onError: (_err, _id, ctx) => {
@@ -2663,7 +2655,7 @@ export default function RecordingStudio() {
     onSuccess: () => {
       setDeleteConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ["/api/studio/ideas"] });
-      toast({ title: "Idea eliminada" });
+      toast({ title: t.studioIdeaDeleted });
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
@@ -2711,7 +2703,8 @@ export default function RecordingStudio() {
   );
 
   const motivationalMsg = useMemo(
-    () => MOTIVATIONAL[Math.floor(Math.random() * MOTIVATIONAL.length)],
+    () => t.studioMotivational[Math.floor(Math.random() * t.studioMotivational.length)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -2719,7 +2712,7 @@ export default function RecordingStudio() {
     const text = `${cleanText(idea.titulo)}\n\n${cleanText(idea.guion)}\n\n${(idea.hashtags || []).join(" ")}`;
     await navigator.clipboard.writeText(text);
     setCopied(idea.id);
-    toast({ title: "Guion copiado al portapapeles" });
+    toast({ title: t.studioScriptCopied });
     setTimeout(() => setCopied(null), 2000);
   };
 
@@ -2734,13 +2727,13 @@ export default function RecordingStudio() {
             </div>
           </div>
           <div className="text-center space-y-3">
-            <h2 className="text-3xl font-bold text-white tracking-tight">Excelente</h2>
-            <p className="text-white/40 text-sm">Video marcado como grabado</p>
+            <h2 className="text-3xl font-bold text-white tracking-tight">{t.studioExcellent}</h2>
+            <p className="text-white/40 text-sm">{t.studioVideoMarkedMsg}</p>
           </div>
           {stats && (
             <div className="flex items-center gap-3 mt-2">
               <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/25 text-xs px-4 py-1">
-                Racha: {stats.streak + 1} dias
+                {t.studioStreak(stats.streak + 1)}
               </Badge>
               <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/25 text-xs px-4 py-1">
                 Total: {stats.totalCount + 1}
@@ -2898,8 +2891,8 @@ export default function RecordingStudio() {
             <Camera className="w-5 h-5 text-white" />
           </div>
           <div className="flex-1 text-left">
-            <p className="text-sm font-semibold text-foreground">Grabar libre</p>
-            <p className="text-[10px] text-muted-foreground/60">Sin guion, solo tu y la camara</p>
+            <p className="text-sm font-semibold text-foreground">{t.studioFreeRecord}</p>
+            <p className="text-[10px] text-muted-foreground/60">{t.studioNoScript}</p>
           </div>
           <Play className="w-4 h-4 text-blue-400/60" />
         </button>
@@ -2924,14 +2917,14 @@ export default function RecordingStudio() {
               onChange={(e) => setTargetDay(e.target.value)}
               className="flex-1 bg-background/60 border border-white/10 rounded-lg px-3 py-2 text-xs text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all cursor-pointer"
             >
-              <option value="auto">Dia: Automatico</option>
-              <option value="Lunes">Lunes</option>
-              <option value="Martes">Martes</option>
-              <option value="Miercoles">Miercoles</option>
-              <option value="Jueves">Jueves</option>
-              <option value="Viernes">Viernes</option>
-              <option value="Sabado">Sabado</option>
-              <option value="Domingo">Domingo</option>
+              <option value="auto">{t.studioDayAuto}</option>
+              <option value="Lunes">{t.studioDayLunes}</option>
+              <option value="Martes">{t.studioDayMartes}</option>
+              <option value="Miercoles">{t.studioDayMiercoles}</option>
+              <option value="Jueves">{t.studioDayJueves}</option>
+              <option value="Viernes">{t.studioDayViernes}</option>
+              <option value="Sabado">{t.studioDaySabado}</option>
+              <option value="Domingo">{t.studioDayDomingo}</option>
             </select>
             <select
               value={targetTime ? targetTime.split(":")[0] : ""}
@@ -2982,9 +2975,9 @@ export default function RecordingStudio() {
 
         {stats && (stats.totalCount > 0 || stats.streak > 0) && (
           <div className="flex items-center justify-around py-3 rounded-xl bg-card/30 border border-border/50">
-            <StatsRing value={stats.streak} max={7} label="Racha" color="#f97316" />
-            <StatsRing value={stats.weeklyCount} max={7} label="Semana" color="#3b82f6" />
-            <StatsRing value={stats.monthlyCount} max={30} label="Mes" color="#10b981" />
+            <StatsRing value={stats.streak} max={7} label={t.studioRacha} color="#f97316" />
+            <StatsRing value={stats.weeklyCount} max={7} label={t.studioSemana} color="#3b82f6" />
+            <StatsRing value={stats.monthlyCount} max={30} label={t.studioMes} color="#10b981" />
             <div className="flex flex-col items-center gap-1.5">
               <div className="w-[68px] h-[68px] rounded-full flex items-center justify-center bg-purple-500/5 border border-purple-500/15">
                 <span className="text-lg font-bold text-foreground">{stats.totalCount}</span>
@@ -3003,9 +2996,9 @@ export default function RecordingStudio() {
             <div className="w-16 h-16 rounded-2xl bg-muted/20 flex items-center justify-center mb-4">
               <Video className="w-8 h-8 text-muted-foreground/30" />
             </div>
-            <h3 className="text-base font-semibold text-foreground mb-1.5">Tu estudio esta vacio</h3>
+            <h3 className="text-base font-semibold text-foreground mb-1.5">{t.studioEmptyTitle}</h3>
             <p className="text-xs text-muted-foreground/60 max-w-xs leading-relaxed">
-              Ve a la pestaña "Ideas IA", genera ideas de video y guarda las que te gusten con el bookmark. Apareceran aqui listas para grabar.
+              {t.studioEmptyDesc}
             </p>
           </div>
         ) : (
@@ -3134,7 +3127,7 @@ export default function RecordingStudio() {
                   className="flex-1 h-9 rounded-xl bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
                   data-testid="button-confirm-delete"
                 >
-                  {deleteIdeaMutation.isPending ? "Eliminando..." : "Eliminar"}
+                  {deleteIdeaMutation.isPending ? t.studioDeleting : t.studioDelete}
                 </button>
               </div>
             </div>

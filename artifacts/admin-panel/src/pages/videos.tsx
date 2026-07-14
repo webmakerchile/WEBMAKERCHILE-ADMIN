@@ -1067,7 +1067,7 @@ export default function VideosPage() {
       queryClient.invalidateQueries({ queryKey: ["saved-views"] });
       setSavingView(false);
       setNewViewName("");
-      toast({ title: "Vista guardada" });
+      toast({ title: t.toastVistaSaved });
     },
     onError: () => toast({ title: "No se pudo guardar la vista", variant: "destructive" }),
   });
@@ -1080,7 +1080,7 @@ export default function VideosPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["saved-views"] });
-      toast({ title: "Vista eliminada" });
+      toast({ title: t.toastVistaDeleted });
     },
   });
 
@@ -1265,7 +1265,7 @@ export default function VideosPage() {
       setWizardStep("cover");
       // Auto-generate descriptions in the background for new videos
       autoGenerateMutation.mutate(data.id);
-      toast({ title: "Video creado", description: "Generando contenido con IA en segundo plano..." });
+      toast({ title: t.toastVideoCreated, description: t.toastVideoCreatedDesc });
     },
     onError: (err: Error) => {
       toast({ title: "Error al crear video", description: err.message, variant: "destructive" });
@@ -1337,7 +1337,7 @@ export default function VideosPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(null);
-      toast({ title: "Video eliminado" });
+      toast({ title: t.toastVideoDeleted });
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
@@ -1356,7 +1356,7 @@ export default function VideosPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(data);
-      toast({ title: "Portada generada" });
+      toast({ title: t.toastCoverGenerated });
     },
     onError: () => toast({ title: "Error al generar portada", variant: "destructive" }),
   });
@@ -1393,7 +1393,7 @@ export default function VideosPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["videos"] });
       setSelectedVideo(data);
-      toast({ title: "Portada subida" });
+      toast({ title: t.toastCoverUploaded });
     },
     onError: (err: Error) => toast({ title: "Error al subir portada", description: err.message, variant: "destructive" }),
   });
@@ -1565,7 +1565,7 @@ export default function VideosPage() {
                   className="w-full h-8 text-xs"
                 >
                   <BookmarkPlus className="w-3 h-3 mr-1" />
-                  Guardar vista actual
+                  {t.saveViewBtn}
                 </Button>
               )}
               {savingView && (
@@ -1702,10 +1702,10 @@ export default function VideosPage() {
             <CardContent className="p-2">
               <EmptyState
                 icon={Video}
-                title="Sin videos registrados"
-                description="Crea tu primer video. Te guiaremos paso a paso: información, portada, descripciones por red y revisión final."
+                title={t.noVideosTitle}
+                description={t.noVideosDesc}
                 action={{
-                  label: "Crear primer video",
+                  label: t.createFirstVideo,
                   onClick: () => { setIsCreating(true); setWizardStep("info"); },
                 }}
                 secondaryAction={{ label: "Ver ayuda", href: "/ayuda" }}
@@ -2580,7 +2580,7 @@ function VideoWizard({
             const detail = await r.json().catch(() => ({} as { error?: string }));
             throw new Error(detail?.error || `Error vinculando video (HTTP ${r.status})`);
           }
-          toast({ title: "Video vinculado", description: pendingVideoFile.fileName });
+          toast({ title: t.videoLinked, description: pendingVideoFile.fileName });
         } else if (pendingVideoFile.type === "upload") {
           // Progreso real durante la subida diferida (post-creación) usando XHR.
           const t = toast({ title: "Subiendo video...", description: `${pendingVideoFile.fileName} · 0%` });
@@ -2606,7 +2606,7 @@ function VideoWizard({
         console.error("Error linking pending video file:", err);
         toast({
           title: "No se pudo adjuntar el video",
-          description: err?.message || "Reintenta desde el paso de Información.",
+          description: err?.message || t.toastRetryFromInfo,
           variant: "destructive",
         });
       } finally {
@@ -3204,6 +3204,7 @@ function StepInfo({
   pendingVideoFile?: { type: "drive"; driveFileId: string; fileName: string } | { type: "upload"; file: File; fileName: string } | null;
   setPendingVideoFile?: (f: any) => void;
 }) {
+  const { t } = useLang();
   const { toast } = useToast();
   const [showDrivePicker, setShowDrivePicker] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -3336,10 +3337,10 @@ function StepInfo({
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <Video className="w-5 h-5 text-primary" />
-          Información Básica
+          {t.stepInfoTitle}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Ingresa los datos principales del video
+          {t.stepInfoSubtitle}
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -3386,7 +3387,7 @@ function StepInfo({
         />
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Título del Video</label>
+          <label className="text-sm font-medium">{t.videoTitleLabel}</label>
           <input
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -3396,7 +3397,7 @@ function StepInfo({
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Descripción General</label>
+          <label className="text-sm font-medium">{t.videoDescLabel}</label>
           <textarea
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -3572,7 +3573,7 @@ function StepInfo({
                 <div className="border-2 border-dashed border-primary/50 bg-primary/5 rounded-xl p-8 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Vinculando desde Drive...</p>
+                    <p className="text-sm text-muted-foreground">{t.linkingFromDrive}</p>
                   </div>
                 </div>
               ) : uploading ? (
@@ -3581,7 +3582,7 @@ function StepInfo({
                     <div className="flex items-center gap-2 min-w-0">
                       <Loader2 className="w-5 h-5 text-primary animate-spin shrink-0" />
                       <p className="text-sm font-medium text-foreground truncate">
-                        Subiendo a Google Drive...
+                        {t.uploadingToDrive}
                       </p>
                     </div>
                     <Button
@@ -3638,7 +3639,7 @@ function StepInfo({
                   >
                     <div className="flex flex-col items-center gap-2">
                       <Upload className="w-8 h-8 text-orange-400" />
-                      <p className="text-sm font-medium text-foreground">Subir o arrastrar archivo</p>
+                      <p className="text-sm font-medium text-foreground">{t.uploadOrDrag}</p>
                       <p className="text-xs text-muted-foreground/60">
                         MP4, MOV · Máx {MAX_VIDEO_SIZE_MB} MB
                       </p>
@@ -3681,7 +3682,7 @@ function StepInfo({
             ) : (
               <ChevronRight className="w-4 h-4 mr-2" />
             )}
-            {isCreating ? "Crear y Continuar" : "Guardar y Continuar"}
+            {isCreating ? t.btnCreateContinue : t.btnSaveContinue}
           </Button>
         </div>
       </CardContent>
@@ -3931,7 +3932,8 @@ function StepCover({
                   className="bg-primary"
                 >
                   {savingPrompt || isGenerating ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generando…</>
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t.btnGenerating}</>
+
                   ) : (
                     <><Sparkles className="w-4 h-4 mr-2" />Generar con este prompt</>
                   )}
@@ -5008,10 +5010,10 @@ function StepReview({
         <CardHeader>
           <CardTitle className="text-xl flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-primary" />
-            Revisar y Programar
+            {t.reviewTitle}
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Revisa todo antes de programar en las 6 plataformas
+            {t.reviewSubtitle}
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
