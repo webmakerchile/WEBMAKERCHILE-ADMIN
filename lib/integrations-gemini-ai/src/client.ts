@@ -62,7 +62,7 @@ async function generateContentImpl(
     const prompt = textParts.map((p) => p.text).join("\n");
 
     if (imageParts.length > 0) {
-      const refBuf = Buffer.from(imageParts[0].data, "base64");
+      const refBuf = Buffer.from(imageParts[0].inlineData.data, "base64");
       const imageFile = await toFile(refBuf, "reference.png", { type: "image/png" });
       const resp = await openai.images.edit({
         model: "gpt-image-1",
@@ -70,7 +70,7 @@ async function generateContentImpl(
         prompt,
         size: "1024x1536",
       });
-      const b64 = resp.data[0]?.b64_json ?? "";
+      const b64 = resp.data?.[0]?.b64_json ?? "";
       return {
         candidates: [{
           content: {
@@ -85,7 +85,7 @@ async function generateContentImpl(
         n: 1,
         size: "1024x1536",
       });
-      const b64 = resp.data[0]?.b64_json ?? "";
+      const b64 = resp.data?.[0]?.b64_json ?? "";
       return {
         candidates: [{
           content: {
