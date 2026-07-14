@@ -64,13 +64,13 @@ outputType = "webview"
 name = "Transcriber"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=3002 pnpm --filter @workspace/transcriber run dev"
 waitForPort = 3002
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
