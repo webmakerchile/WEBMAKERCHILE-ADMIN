@@ -757,6 +757,10 @@ function CameraRecordingView({
   const [autoEdit, setAutoEdit] = useState(false);
   const [enableSubtitles, setEnableSubtitles] = useState(false);
   const [publishToTiktok, setPublishToTiktok] = useState(false);
+  const { data: tiktokStatusData } = useQuery<{ connected: boolean }>({
+    queryKey: ["/api/tiktok/status"],
+    staleTime: 60_000,
+  });
 
   const [voiceCountdown, setVoiceCountdown] = useState<{ count: number; type: "reset" | "tryout" } | null>(null);
   const voiceCountdownRef = useRef(false);
@@ -1926,23 +1930,33 @@ function CameraRecordingView({
               </div>
             </div>
             <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <button
-                type="button"
-                onClick={() => setPublishToTiktok(!publishToTiktok)}
-                className="w-full flex items-center justify-between gap-3"
-                data-testid="button-tiktok-toggle"
-              >
-                <div className="flex items-center gap-3">
+              {tiktokStatusData?.connected ? (
+                <button
+                  type="button"
+                  onClick={() => setPublishToTiktok(!publishToTiktok)}
+                  className="w-full flex items-center justify-between gap-3"
+                  data-testid="button-tiktok-toggle"
+                >
+                  <div className="flex items-center gap-3">
+                    <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 fill-white" xmlns="http://www.w3.org/2000/svg"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.25 8.25 0 004.83 1.56V6.78a4.85 4.85 0 01-1.06-.09z"/></svg>
+                    <div className="text-left">
+                      <p className="text-sm text-white font-medium">{t.studioPublishTiktokLabel}</p>
+                      <p className="text-[10px] text-white/40 mt-0.5">{t.studioPublishTiktokDesc}</p>
+                    </div>
+                  </div>
+                  <div className={`w-11 h-6 rounded-full transition-colors relative ${publishToTiktok ? "bg-pink-500" : "bg-white/15"}`}>
+                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${publishToTiktok ? "translate-x-5" : "translate-x-0.5"}`} />
+                  </div>
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 opacity-50" data-testid="button-tiktok-toggle-disabled">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 fill-white" xmlns="http://www.w3.org/2000/svg"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.25 8.25 0 004.83 1.56V6.78a4.85 4.85 0 01-1.06-.09z"/></svg>
                   <div className="text-left">
                     <p className="text-sm text-white font-medium">{t.studioPublishTiktokLabel}</p>
-                    <p className="text-[10px] text-white/40 mt-0.5">{t.studioPublishTiktokDesc}</p>
+                    <p className="text-[10px] text-pink-400/80 mt-0.5">Conecta TikTok primero en Cuentas Sociales</p>
                   </div>
                 </div>
-                <div className={`w-11 h-6 rounded-full transition-colors relative ${publishToTiktok ? "bg-pink-500" : "bg-white/15"}`}>
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${publishToTiktok ? "translate-x-5" : "translate-x-0.5"}`} />
-                </div>
-              </button>
+              )}
             </div>
             <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
               <button
@@ -2575,6 +2589,14 @@ export default function RecordingStudio() {
       const ct = finalRes.headers.get("content-type") || "";
       if (!ct.includes("application/json")) throw new Error(t.studioServerError);
       const data = await finalRes.json();
+      if (finalRes.status === 403 && data.driveAuthRequired) {
+        safeUpdate({
+          status: "error",
+          progress: 0,
+          message: "Google Drive desconectado — ve a Cuentas Sociales para reconectar",
+        });
+        return;
+      }
       if (!finalRes.ok) throw new Error(data.error || "Upload failed");
 
       const dayMsg = data.dayName ? ` → ${data.dayName}` : "";

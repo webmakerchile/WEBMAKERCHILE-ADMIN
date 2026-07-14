@@ -861,6 +861,10 @@ router.post("/studio/finalize-upload", async (req, res) => {
       console.log(`[Studio] Video VERIFIED in Drive: ${webViewLink} (day: ${uploadedDayName})`);
     } catch (driveErr: any) {
       console.error(`[VideoUpload] Google Drive FAILED: ${driveErr.message}`);
+      if (driveErr.driveAuthRequired) {
+        res.status(403).json({ driveAuthRequired: true, error: "Reconecta tu cuenta de Google Drive para continuar." });
+        return;
+      }
       backupLink = finalVideoPath;
     }
 
