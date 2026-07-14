@@ -1718,10 +1718,10 @@ export default function VideosPage() {
           <Card className="bg-card/30 border-foreground/10">
             <CardContent className="p-8 text-center">
               <Search className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground mb-3">Ningún video coincide con tus filtros.</p>
+              <p className="text-sm text-muted-foreground mb-3">{t.noMatchFilters}</p>
               <Button variant="outline" onClick={clearFilters}>
                 <CircleSlash2 className="w-4 h-4 mr-2" />
-                Limpiar filtros
+                {t.btnClearFilters}
               </Button>
             </CardContent>
           </Card>
@@ -1735,13 +1735,13 @@ export default function VideosPage() {
                 />
                 <span>
                   {selectionCount > 0
-                    ? `${selectionCount} seleccionado${selectionCount === 1 ? "" : "s"}`
-                    : `${filteredVideos.length} video${filteredVideos.length === 1 ? "" : "s"}`}
+                    ? t.selectedCountLabel(selectionCount)
+                    : t.videosCountLabel(filteredVideos.length)}
                 </span>
               </label>
               {filtersActive && (
                 <span className="text-[10px] text-muted-foreground/60">
-                  Mostrando {filteredVideos.length} de {videos.length}
+                  {t.showingCount(filteredVideos.length, videos.length)}
                 </span>
               )}
             </div>
@@ -3221,11 +3221,11 @@ function StepInfo({
 
   const validateVideoFile = (file: File): string | null => {
     if (!file.type.startsWith(ACCEPTED_VIDEO_MIME_PREFIX)) {
-      return `El archivo no es un video válido (${file.type || "tipo desconocido"}).`;
+      return t.invalidVideoFile(file.type);
     }
     const sizeMB = file.size / 1024 / 1024;
     if (sizeMB > MAX_VIDEO_SIZE_MB) {
-      return `El video pesa ${sizeMB.toFixed(1)} MB. Máximo permitido: ${MAX_VIDEO_SIZE_MB} MB.`;
+      return t.videoFileTooLarge(sizeMB.toFixed(1), MAX_VIDEO_SIZE_MB);
     }
     return null;
   };
@@ -3274,7 +3274,7 @@ function StepInfo({
         setResultMsg({ success: true, fileName: data.fileName });
         if (onVideoUploaded) onVideoUploaded();
       } else {
-        setResultMsg({ success: false, error: data.error || "Error al vincular" });
+        setResultMsg({ success: false, error: data.error || t.errorLinkFallback });
       }
     } catch (err: any) {
       setResultMsg({ success: false, error: err.message });
@@ -3397,7 +3397,7 @@ function StepInfo({
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
             className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-            placeholder="Ej: Setup minimalista 2024"
+            placeholder={t.videoTitlePlaceholder}
           />
         </div>
 
@@ -3442,11 +3442,11 @@ function StepInfo({
               className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
               <option value="">--</option>
-              <option value="Semana 1">Sem 1</option>
-              <option value="Semana 2">Sem 2</option>
-              <option value="Semana 3">Sem 3</option>
-              <option value="Semana 4">Sem 4</option>
-              <option value="Semana 5">Sem 5</option>
+              <option value="Semana 1">{t.weekAbbrs[0]}</option>
+              <option value="Semana 2">{t.weekAbbrs[1]}</option>
+              <option value="Semana 3">{t.weekAbbrs[2]}</option>
+              <option value="Semana 4">{t.weekAbbrs[3]}</option>
+              <option value="Semana 5">{t.weekAbbrs[4]}</option>
             </select>
           </div>
           <div className="space-y-1.5">
@@ -3484,7 +3484,7 @@ function StepInfo({
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium text-muted-foreground">Hora</label>
+            <label className="text-[11px] font-medium text-muted-foreground">{t.labelHour}</label>
             <div className="flex items-center gap-1.5">
               <select
                 value={formData.scheduleHour ? formData.scheduleHour.split(":")[0] : ""}
@@ -4587,7 +4587,7 @@ function StepReview({
       });
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        setYtResult({ success: false, error: `Error del servidor (${res.status}).` });
+        setYtResult({ success: false, error: t.errorServer(res.status) });
         return;
       }
       const data = await res.json();
@@ -4595,10 +4595,10 @@ function StepReview({
         setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl, thumbnailSet: data.thumbnailSet, thumbnailError: data.thumbnailError });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
-        setYtResult({ success: false, error: data.error || "Error desconocido" });
+        setYtResult({ success: false, error: data.error || t.errorUnknown });
       }
     } catch (err: any) {
-      setYtResult({ success: false, error: err.message || "Error de red" });
+      setYtResult({ success: false, error: err.message || t.errorNetwork });
     } finally {
       setYtUploading(false);
     }
@@ -4619,7 +4619,7 @@ function StepReview({
       });
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        setTtResult({ success: false, error: `Error del servidor (${res.status}).` });
+        setTtResult({ success: false, error: t.errorServer(res.status) });
         return;
       }
       const data = await res.json();
@@ -4627,10 +4627,10 @@ function StepReview({
         setTtResult({ success: true, message: data.message, publishId: data.publishId });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
-        setTtResult({ success: false, error: data.error || "Error desconocido" });
+        setTtResult({ success: false, error: data.error || t.errorUnknown });
       }
     } catch (err: any) {
-      setTtResult({ success: false, error: err.message || "Error de red" });
+      setTtResult({ success: false, error: err.message || t.errorNetwork });
     } finally {
       setTtUploading(false);
     }
@@ -4659,7 +4659,7 @@ function StepReview({
       }
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        setYtResult({ success: false, error: `Error del servidor (${res.status}). Recarga la página e intenta de nuevo.` });
+        setYtResult({ success: false, error: t.errorServerReload(res.status) });
         setYtUploading(false);
         return;
       }
@@ -4669,10 +4669,10 @@ function StepReview({
         setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl, thumbnailSet: data.thumbnailSet, thumbnailError: data.thumbnailError });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
-        setYtResult({ success: false, error: data.error || "Error desconocido" });
+        setYtResult({ success: false, error: data.error || t.errorUnknown });
       }
     } catch (err: any) {
-      setYtResult({ success: false, error: err.message || "Error de red" });
+      setYtResult({ success: false, error: err.message || t.errorNetwork });
     } finally {
       setYtUploading(false);
     }
@@ -4693,7 +4693,7 @@ function StepReview({
       });
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        setIgResult({ success: false, error: `Error del servidor (${res.status}).` });
+        setIgResult({ success: false, error: t.errorServer(res.status) });
         return;
       }
       const data = await res.json();
@@ -4701,10 +4701,10 @@ function StepReview({
         setIgResult({ success: true, message: data.message, mediaId: data.mediaId });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
-        setIgResult({ success: false, error: data.error || "Error desconocido" });
+        setIgResult({ success: false, error: data.error || t.errorUnknown });
       }
     } catch (err: any) {
-      setIgResult({ success: false, error: err.message || "Error de red" });
+      setIgResult({ success: false, error: err.message || t.errorNetwork });
     } finally {
       setIgUploading(false);
     }
@@ -4723,7 +4723,7 @@ function StepReview({
       });
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        setIgResult({ success: false, error: `Error del servidor (${res.status}). Recarga la página e intenta de nuevo.` });
+        setIgResult({ success: false, error: t.errorServerReload(res.status) });
         setIgUploading(false);
         return;
       }
@@ -4732,10 +4732,10 @@ function StepReview({
         setIgResult({ success: true, message: data.message, mediaId: data.mediaId });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
-        setIgResult({ success: false, error: data.error || "Error desconocido" });
+        setIgResult({ success: false, error: data.error || t.errorUnknown });
       }
     } catch (err: any) {
-      setIgResult({ success: false, error: err.message || "Error de red" });
+      setIgResult({ success: false, error: err.message || t.errorNetwork });
     } finally {
       setIgUploading(false);
     }
@@ -4764,7 +4764,7 @@ function StepReview({
       }
       const contentType = res.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
-        setTtResult({ success: false, error: `Error del servidor (${res.status}). Recarga la página e intenta de nuevo.` });
+        setTtResult({ success: false, error: t.errorServerReload(res.status) });
         setTtUploading(false);
         return;
       }
@@ -4774,10 +4774,10 @@ function StepReview({
         setTtResult({ success: true, message: data.message, publishId: data.publishId });
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } else {
-        setTtResult({ success: false, error: data.error || "Error desconocido" });
+        setTtResult({ success: false, error: data.error || t.errorUnknown });
       }
     } catch (err: any) {
-      setTtResult({ success: false, error: err.message || "Error de red" });
+      setTtResult({ success: false, error: err.message || t.errorNetwork });
     } finally {
       setTtUploading(false);
     }
@@ -5880,22 +5880,22 @@ function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <MessageSquare className="w-4 h-4" /> Comentarios del equipo
+            <MessageSquare className="w-4 h-4" /> {t.commentsTitle}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Cargando…</div>
+            <div className="text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin inline mr-2" />{t.commentsLoading}</div>
           ) : comments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Aún no hay comentarios. Sé el primero en abrir la conversación.</p>
+            <p className="text-sm text-muted-foreground">{t.commentsEmpty}</p>
           ) : (
             <ul className="space-y-3">
               {comments.map((c) => (
                 <li key={c.id} className="rounded-xl border border-foreground/10 bg-card/40 px-3 py-2">
                   <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                    <span><strong className="text-foreground/80">{c.authorName || c.authorEmail || "Usuario"}</strong> · {new Date(c.createdAt).toLocaleString("es-ES")}</span>
+                    <span><strong className="text-foreground/80">{c.authorName || c.authorEmail || t.userFallback}</strong> · {new Date(c.createdAt).toLocaleString(t.dateLocale as string)}</span>
                     {me && c.authorId === me.id && (
-                      <button onClick={() => remove(c.id)} className="text-muted-foreground/60 hover:text-destructive" aria-label="Eliminar comentario">
+                      <button onClick={() => remove(c.id)} className="text-muted-foreground/60 hover:text-destructive" aria-label={t.ariaDeleteComment}>
                         <X className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -5933,7 +5933,7 @@ function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated
             )}
             <div className="flex justify-end mt-2">
               <Button size="sm" onClick={submit} disabled={!body.trim()}>
-                <Send className="w-3.5 h-3.5 mr-1" /> Comentar
+                <Send className="w-3.5 h-3.5 mr-1" /> {t.commentsSubmit}
               </Button>
             </div>
           </div>
@@ -5943,12 +5943,12 @@ function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="w-4 h-4" /> Historial de aprobación
+            <ShieldCheck className="w-4 h-4" /> {t.approvalHistoryTitle}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {reviews.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin solicitudes de revisión todavía.</p>
+            <p className="text-sm text-muted-foreground">{t.approvalEmpty}</p>
           ) : (
             <ul className="space-y-2">
               {reviews.map((r) => (
@@ -5960,11 +5960,11 @@ function CommentsAndApproval({ video, onUpdated }: { video: VideoData; onUpdated
                       r.status === "changes_requested" ? "bg-amber-500/15 text-amber-300" :
                       "bg-foreground/10 text-foreground/70"
                     }`}>
-                      {r.status === "approved" ? "Aprobado" : r.status === "changes_requested" ? "Cambios" : "Pendiente"}
+                      {r.status === "approved" ? t.statusApproved : r.status === "changes_requested" ? t.statusChanges : t.statusPending}
                     </span>
                   </div>
                   <div className="text-muted-foreground mt-0.5">
-                    Solicitada por {r.requesterName || "—"} · {new Date(r.createdAt).toLocaleString("es-ES")}
+                    {t.approvalRequestedBy(r.requesterName || "—")} · {new Date(r.createdAt).toLocaleString(t.dateLocale as string)}
                   </div>
                   {r.decisionNote && <p className="mt-1 italic text-foreground/80">"{r.decisionNote}"</p>}
                 </li>
