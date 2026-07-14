@@ -1833,7 +1833,7 @@ export default function VideosPage() {
                             </Badge>
                             {!video.tiktokDescription && !video.instagramDescription && !video.youtubeTitle && !video.youtubeDescription && !video.linkedinDescription && !video.xDescription && video.status !== "published" && (
                               <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px] sm:text-xs">
-                                Sin descripciones
+                                {t.badgeNoDescriptions}
                               </Badge>
                             )}
                             <div className="w-16 sm:w-24 h-1.5 bg-foreground/5 rounded-full overflow-hidden">
@@ -1915,7 +1915,7 @@ export default function VideosPage() {
                   {selectionCount}
                 </span>
                 <span className="text-sm font-medium truncate flex-1 min-w-0">
-                  {selectionCount === 1 ? "1 video seleccionado" : `${selectionCount} videos seleccionados`}
+                  {t.bulkBarLabel(selectionCount)}
                 </span>
                 <Button
                   variant="ghost"
@@ -2712,7 +2712,7 @@ function VideoWizard({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         autoSave.flush().then((didSave) => {
-          if (!didSave) toast({ title: "Sin cambios pendientes" });
+          if (!didSave) toast({ title: t.toastNoChanges });
         });
         return;
       }
@@ -4932,7 +4932,7 @@ function StepReview({
       console.error("[export pdf] failed:", e);
       // Surface to the user; there's no toast in scope here so use the parent's
       // copyText path-adjacent pattern instead.
-      alert(`No se pudo exportar el PDF: ${e?.message || "error desconocido"}`);
+      alert(t.alertPdfExportFailed(e?.message || t.errorUnknown));
     } finally {
       setExportingPdf(false);
     }
@@ -5029,7 +5029,7 @@ function StepReview({
                 <img
                   src={`data:${video.coverMimeType || "image/png"};base64,${video.coverImageBase64}`}
                   className="w-full aspect-[9/16] object-cover rounded-xl border border-foreground/10"
-                  alt="Portada"
+                  alt={t.altCover}
                 />
               </div>
             )}
@@ -5633,7 +5633,7 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
         body: JSON.stringify({ decision, note }),
       });
       if (!r.ok) throw new Error(await r.text());
-      let toastTitle = decision === "approved" ? "Video aprobado" : "Cambios solicitados";
+      let toastTitle: string = decision === "approved" ? t.toastVideoApproved : t.toastChangesRequested;
       if (thenSchedule && decision === "approved") {
         if (video.scheduledAt) {
           const sr = await apiFetch(`${API_BASE}/content/videos/${video.id}/schedule`, {
@@ -5642,12 +5642,12 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
             body: JSON.stringify({ scheduledAt: video.scheduledAt, driveFolderId: video.driveFolderId ?? null }),
           });
           if (!sr.ok) {
-            toast({ title: "Aprobado, pero no se pudo programar", description: await sr.text(), variant: "destructive" });
+            toast({ title: t.toastApprovedButNotScheduled, description: await sr.text(), variant: "destructive" });
           } else {
-            toastTitle = "Aprobado y programado";
+            toastTitle = t.toastApprovedAndScheduled;
           }
         } else if (onJumpToReview) {
-          toastTitle = "Aprobado · elige fecha para programar";
+          toastTitle = t.toastApprovedChooseDate;
           onJumpToReview();
         }
       }

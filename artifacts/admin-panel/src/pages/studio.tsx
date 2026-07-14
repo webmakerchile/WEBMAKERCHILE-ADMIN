@@ -1571,7 +1571,7 @@ function CameraRecordingView({
       title: uploadTitle,
       status: "uploading",
       progress: 0,
-      message: `Subiendo (${(blobCopy.size / 1024 / 1024).toFixed(1)} MB)...`,
+      message: t.studioUploading((blobCopy.size / 1024 / 1024).toFixed(1)),
     });
 
     toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(uploadTitle) });
@@ -2521,11 +2521,11 @@ export default function RecordingStudio() {
             break;
           } catch (e: any) {
             retries++;
-            if (retries >= 3) throw new Error(`Error parte ${i + 1}/${totalChunks}`);
+            if (retries >= 3) throw new Error(t.studioChunkError(i + 1, totalChunks));
             await new Promise(r => setTimeout(r, 1000 * retries));
           }
         }
-        safeUpdate({ progress: Math.round(((i + 1) / totalChunks) * 80), message: `Subiendo ${i + 1}/${totalChunks}...` });
+        safeUpdate({ progress: Math.round(((i + 1) / totalChunks) * 80), message: t.studioChunkProgress(i + 1, totalChunks) });
       }
 
       safeUpdate({ status: "processing", progress: 85, message: t.studioProcessingDrive });
@@ -2550,7 +2550,7 @@ export default function RecordingStudio() {
       });
 
       const ct = finalRes.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) throw new Error("Error del servidor");
+      if (!ct.includes("application/json")) throw new Error(t.studioServerError);
       const data = await finalRes.json();
       if (!finalRes.ok) throw new Error(data.error || "Upload failed");
 
@@ -2570,7 +2570,7 @@ export default function RecordingStudio() {
     } catch (err: any) {
       console.error("BG Upload error:", err);
       safeUpdate({ status: "error", progress: 0, message: err.message || "Error" });
-      if (studioMountedRef.current) toast({ title: `Error subiendo "${uploadTitle}"`, variant: "destructive" });
+      if (studioMountedRef.current) toast({ title: t.studioUploadErrorGeneric(uploadTitle), variant: "destructive" });
     }
   }, [toast, queryClient]);
 
@@ -2578,7 +2578,7 @@ export default function RecordingStudio() {
     queryKey: ["/api/studio/ideas"],
     queryFn: async () => {
       const res = await apiFetch("/api/studio/ideas");
-      if (!res.ok) throw new Error("Error al cargar ideas");
+      if (!res.ok) throw new Error(t.studioLoadIdeasError);
       return res.json();
     },
   });
@@ -2587,7 +2587,7 @@ export default function RecordingStudio() {
     queryKey: ["/api/studio/recording-stats"],
     queryFn: async () => {
       const res = await apiFetch("/api/studio/recording-stats");
-      if (!res.ok) throw new Error("Error al cargar stats");
+      if (!res.ok) throw new Error(t.studioLoadStatsError);
       return res.json();
     },
   });
@@ -2605,7 +2605,7 @@ export default function RecordingStudio() {
   const recordMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiFetch(`/api/studio/ideas/${id}/record`, { method: "PATCH" });
-      if (!res.ok) throw new Error("Error al marcar grabado");
+      if (!res.ok) throw new Error(t.studioMarkRecordedError);
       return res.json();
     },
     onMutate: async (id: number) => {

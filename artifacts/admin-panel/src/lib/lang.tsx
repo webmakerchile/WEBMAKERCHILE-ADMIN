@@ -595,6 +595,30 @@ const T = {
     statusChanges: "Cambios",
     statusPending: "Pendiente",
     approvalRequestedBy: (name: string) => `Solicitada por ${name}`,
+    // Bulk selection bar
+    bulkBarLabel: (n: number) => n === 1 ? "1 video seleccionado" : `${n} videos seleccionados`,
+    // Keyboard save toast
+    toastNoChanges: "Sin cambios pendientes",
+    // Card badge
+    badgeNoDescriptions: "Sin descripciones",
+    // Cover image alt
+    altCover: "Portada",
+    // PDF export
+    alertPdfExportFailed: (msg: string) => `No se pudo exportar el PDF: ${msg}`,
+    // Approval/review toasts
+    toastVideoApproved: "Video aprobado",
+    toastChangesRequested: "Cambios solicitados",
+    toastApprovedButNotScheduled: "Aprobado, pero no se pudo programar",
+    toastApprovedAndScheduled: "Aprobado y programado",
+    toastApprovedChooseDate: "Aprobado · elige fecha para programar",
+    // Studio upload internals
+    studioChunkError: (part: number, total: number) => `Error parte ${part}/${total}`,
+    studioChunkProgress: (part: number, total: number) => `Subiendo ${part}/${total}...`,
+    studioServerError: "Error del servidor",
+    studioUploadErrorGeneric: (title: string) => `Error subiendo "${title}"`,
+    studioLoadIdeasError: "Error al cargar ideas",
+    studioLoadStatsError: "Error al cargar stats",
+    studioMarkRecordedError: "Error al marcar grabado",
   },
 
   en: {
@@ -1189,6 +1213,30 @@ const T = {
     statusChanges: "Changes",
     statusPending: "Pending",
     approvalRequestedBy: (name: string) => `Requested by ${name}`,
+    // Bulk selection bar
+    bulkBarLabel: (n: number) => n === 1 ? "1 video selected" : `${n} videos selected`,
+    // Keyboard save toast
+    toastNoChanges: "No pending changes",
+    // Card badge
+    badgeNoDescriptions: "No descriptions",
+    // Cover image alt
+    altCover: "Cover",
+    // PDF export
+    alertPdfExportFailed: (msg: string) => `Could not export PDF: ${msg}`,
+    // Approval/review toasts
+    toastVideoApproved: "Video approved",
+    toastChangesRequested: "Changes requested",
+    toastApprovedButNotScheduled: "Approved, but could not schedule",
+    toastApprovedAndScheduled: "Approved and scheduled",
+    toastApprovedChooseDate: "Approved · choose a date to schedule",
+    // Studio upload internals
+    studioChunkError: (part: number, total: number) => `Error uploading chunk ${part}/${total}`,
+    studioChunkProgress: (part: number, total: number) => `Uploading ${part}/${total}...`,
+    studioServerError: "Server error",
+    studioUploadErrorGeneric: (title: string) => `Error uploading "${title}"`,
+    studioLoadIdeasError: "Error loading ideas",
+    studioLoadStatsError: "Error loading stats",
+    studioMarkRecordedError: "Error marking as recorded",
   },
 } as const;
 
