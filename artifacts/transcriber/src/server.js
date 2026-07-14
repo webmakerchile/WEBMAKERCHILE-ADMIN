@@ -20,27 +20,49 @@ const ALLOWED_EXT = new Set([".mp3", ".m4a", ".ogg", ".wav", ".opus", ".aac", ".
 
 const upload = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 150 * 1024 * 1024 },
 });
 
 app.use(express.static(path.join(__dirname, "../public")));
 
-function convertToWav16kMono(inputPath) {
+const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000;
+
+function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
-    const outPath = path.join(os.tmpdir(), `${randomUUID()}.wav`);
-    const proc = spawn("ffmpeg", [
-      "-y", "-i", inputPath,
-      "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
-      outPath,
-    ]);
+    const proc = spawn("ffmpeg", args);
     let stderr = "";
+    const timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      reject(new Error("La conversión con ffmpeg excedió el tiempo máximo (5 min)"));
+    }, FFMPEG_TIMEOUT_MS);
     proc.stderr.on("data", (d) => { stderr += d.toString(); });
     proc.on("close", (code) => {
-      if (code === 0) resolve(outPath);
+      clearTimeout(timer);
+      if (code === 0) resolve();
       else reject(new Error(`ffmpeg falló (código ${code}): ${stderr.slice(-400)}`));
     });
-    proc.on("error", reject);
+    proc.on("error", (err) => { clearTimeout(timer); reject(err); });
   });
+}
+
+/**
+ * Reduce the file below the 24MB API limit. First try WAV 16kHz mono (as per
+ * spec); if the WAV is still too big (uncompressed PCM grows for long audio),
+ * fall back to Opus 32kbps mono 16kHz which compresses ~40x vs PCM.
+ */
+async function shrinkForApi(inputPath) {
+  const wavPath = path.join(os.tmpdir(), `${randomUUID()}.wav`);
+  await runFfmpeg(["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wavPath]);
+  const wavSize = (await fs.promises.stat(wavPath)).size;
+  if (wavSize <= SIZE_LIMIT) return { path: wavPath, ext: ".wav", extra: [] };
+
+  const oggPath = path.join(os.tmpdir(), `${randomUUID()}.ogg`);
+  await runFfmpeg(["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-c:a", "libopus", "-b:a", "32k", oggPath]);
+  const oggSize = (await fs.promises.stat(oggPath)).size;
+  if (oggSize > SIZE_LIMIT) {
+    throw new Error("El audio es demasiado largo incluso después de comprimirlo (más de 24MB en Opus 32kbps). Divídelo en partes más cortas.");
+  }
+  return { path: oggPath, ext: ".ogg", extra: [wavPath] };
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -51,8 +73,9 @@ async function transcribeWithGroq(filePath, filename) {
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const form = new FormData();
-    const buf = await fs.promises.readFile(filePath);
-    form.append("file", new Blob([buf]), filename);
+    // openAsBlob streams from disk lazily instead of buffering the file in RAM
+    const blob = await fs.openAsBlob(filePath);
+    form.append("file", blob, filename);
     form.append("model", MODEL);
     form.append("language", "es");
     form.append("response_format", "json");
@@ -63,9 +86,10 @@ async function transcribeWithGroq(filePath, filename) {
         method: "POST",
         headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
         body: form,
+        signal: AbortSignal.timeout(5 * 60 * 1000),
       });
     } catch (err) {
-      lastErr = new Error(`Error de red: ${err.message}`);
+      lastErr = new Error(err.name === "TimeoutError" ? "Groq no respondió en 5 minutos" : `Error de red: ${err.message}`);
       await sleep(1000 * 2 ** attempt);
       continue;
     }
@@ -117,12 +141,13 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     let sendName = originalName;
 
     if (req.file.size > SIZE_LIMIT) {
-      console.log(`[transcriber] ${originalName} pesa ${(req.file.size / 1048576).toFixed(1)}MB > 24MB, convirtiendo a WAV 16kHz mono...`);
-      sendPath = await convertToWav16kMono(req.file.path);
-      cleanup.push(sendPath);
-      sendName = originalName.replace(/\.[^.]+$/, "") + ".wav";
+      console.log(`[transcriber] ${originalName} pesa ${(req.file.size / 1048576).toFixed(1)}MB > 24MB, convirtiendo...`);
+      const shrunk = await shrinkForApi(req.file.path);
+      cleanup.push(shrunk.path, ...shrunk.extra);
+      sendPath = shrunk.path;
+      sendName = originalName.replace(/\.[^.]+$/, "") + shrunk.ext;
       const newSize = (await fs.promises.stat(sendPath)).size;
-      console.log(`[transcriber] Convertido: ${(newSize / 1048576).toFixed(1)}MB`);
+      console.log(`[transcriber] Convertido a ${shrunk.ext}: ${(newSize / 1048576).toFixed(1)}MB`);
     }
 
     const text = await transcribeWithGroq(sendPath, sendName);
