@@ -999,7 +999,7 @@ export default function VideosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids }),
       });
-      if (!res.ok) throw new Error("Error al eliminar videos");
+      if (!res.ok) throw new Error(t.toastDeleteVideosError);
       return res.json() as Promise<{ deleted: number; ids: number[] }>;
     },
     onMutate: async (ids: number[]) => {
@@ -1018,7 +1018,7 @@ export default function VideosPage() {
     },
     onError: (_err, _ids, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
-      toast({ title: "No se pudieron eliminar los videos", variant: "destructive" });
+      toast({ title: t.toastDeleteVideosFailed, variant: "destructive" });
     },
   });
 
@@ -1269,7 +1269,7 @@ export default function VideosPage() {
       toast({ title: t.toastVideoCreated, description: t.toastVideoCreatedDesc });
     },
     onError: (err: Error) => {
-      toast({ title: "Error al crear video", description: err.message, variant: "destructive" });
+      toast({ title: t.toastCreateVideoError, description: err.message, variant: "destructive" });
     },
   });
 
@@ -1342,7 +1342,7 @@ export default function VideosPage() {
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
-      toast({ title: "No se pudo eliminar el video", variant: "destructive" });
+      toast({ title: t.toastDeleteVideoError, variant: "destructive" });
     },
   });
 
@@ -1446,7 +1446,7 @@ export default function VideosPage() {
           }}
           onAutoGenerate={(videoId) => autoGenerateMutation.mutate(videoId)}
           onDelete={() => {
-            if (selectedVideo && confirm("¿Eliminar este video?")) {
+            if (selectedVideo && confirm(t.confirmDeleteVideo)) {
               deleteMutation.mutate(selectedVideo.id);
             }
           }}
@@ -1589,7 +1589,7 @@ export default function VideosPage() {
                       disabled={createSavedViewMutation.isPending}
                       className="h-7 text-xs flex-1"
                     >
-                      {createSavedViewMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Guardar"}
+                      {createSavedViewMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : t.btnSave}
                     </Button>
                     <Button
                       size="sm"
@@ -1773,7 +1773,7 @@ export default function VideosPage() {
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={() => toggleId(video.id)}
-                            aria-label={isSelected ? `Deseleccionar "${video.title}"` : `Seleccionar "${video.title}"`}
+                            aria-label={isSelected ? t.ariaDeselect(video.title) : t.ariaSelect(video.title)}
                           />
                         </div>
                         <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-foreground/[0.05] border border-foreground/10 flex-shrink-0 flex items-center justify-center">
@@ -2002,7 +2002,7 @@ export default function VideosPage() {
                   className="h-8 text-xs"
                   disabled={bulkDeleteMutation.isPending}
                   onClick={() => {
-                    if (confirm(`¿Eliminar ${selectionCount} video${selectionCount === 1 ? "" : "s"}? Esta acción no se puede deshacer.`)) {
+                    if (confirm(t.confirmBulkDelete(selectionCount))) {
                       bulkDeleteMutation.mutate(Array.from(selectedIds));
                     }
                   }}
@@ -2012,7 +2012,7 @@ export default function VideosPage() {
                   ) : (
                     <>
                       <Trash2 className="w-3 h-3 mr-1" />
-                      Eliminar
+                      {t.btnDelete}
                     </>
                   )}
                 </Button>
@@ -2607,7 +2607,7 @@ function VideoWizard({
         if (cancelled || err?.message === "Subida cancelada") return;
         console.error("Error linking pending video file:", err);
         toast({
-          title: "No se pudo adjuntar el video",
+          title: t.toastAttachError,
           description: err?.message || t.toastRetryFromInfo,
           variant: "destructive",
         });
@@ -2997,7 +2997,7 @@ function VideoWizard({
                 });
                 if (!sr.ok) {
                   const msg = await sr.text();
-                  toast({ title: "No se pudo programar", description: msg, variant: "destructive" });
+                  toast({ title: t.toastScheduleError, description: msg, variant: "destructive" });
                   return;
                 }
                 queryClient.invalidateQueries({ queryKey: ["videos"] });
@@ -4650,7 +4650,7 @@ function StepReview({
           body: fd,
         });
       } else {
-        setYtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
+        setYtResult({ success: false, error: t.errorNoVideoFile });
         setYtUploading(false);
         return;
       }
@@ -4709,7 +4709,7 @@ function StepReview({
 
   const handleInstagramUpload = async () => {
     if (!hasVideoFile) {
-      setIgResult({ success: false, error: "No hay archivo de video en Drive. Sube uno primero." });
+      setIgResult({ success: false, error: t.errorNoVideoFileDrive });
       return;
     }
     setIgUploading(true);
@@ -4755,7 +4755,7 @@ function StepReview({
           body: fd,
         });
       } else {
-        setTtResult({ success: false, error: "No hay archivo de video. Sube uno en el paso 1." });
+        setTtResult({ success: false, error: t.errorNoVideoFile });
         setTtUploading(false);
         return;
       }
@@ -5729,17 +5729,17 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
                 ))}
               </select>
               {reviewers.length === 0 && (
-                <p className="text-[11px] text-amber-400 mt-1">No reviewers assigned. Go to /equipo to assign one.</p>
+                <p className="text-[11px] text-amber-400 mt-1">{t.reviewNoReviewers}</p>
               )}
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Note (optional)</label>
+              <label className="text-xs text-muted-foreground">{t.reviewNoteLabel}</label>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
                 className="w-full mt-1 px-3 py-2 rounded-lg bg-card/40 border border-foreground/10 text-sm"
-                placeholder="What should the reviewer check?"
+                placeholder={t.reviewNotePlaceholder}
               />
             </div>
             <div className="flex justify-end gap-2">

@@ -912,7 +912,7 @@ function CameraRecordingView({
       console.error("Camera error:", err);
       if (!mountedRef.current) return;
       setCameraError(true);
-      toast({ title: "No se pudo acceder a la camara", variant: "destructive" });
+      toast({ title: t.cameraError, variant: "destructive" });
     }
   }, [stopAllTracks, toast]);
 
@@ -1094,7 +1094,7 @@ function CameraRecordingView({
     recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) currentChunksRef.current.push(e.data); };
     recorder.onerror = () => {
       if (!mountedRef.current) return;
-      toast({ title: "Error durante la grabacion", variant: "destructive" });
+      toast({ title: t.recordingError, variant: "destructive" });
       setIsRecording(false);
       setIsPaused(false);
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -1110,7 +1110,7 @@ function CameraRecordingView({
     clipStartTimeRef.current = 0;
     try {
       const recorder = createRecorder();
-      if (!recorder) { toast({ title: "No se pudo iniciar la grabacion", variant: "destructive" }); return; }
+      if (!recorder) { toast({ title: t.recordingStartError, variant: "destructive" }); return; }
       mediaRecorderRef.current = recorder;
       recorder.start(250);
       setIsRecording(true);
@@ -1120,7 +1120,7 @@ function CameraRecordingView({
       voiceModeRef.current = true;
       startVoiceRecognition();
     } catch {
-      toast({ title: "Tu navegador no soporta grabacion de video", variant: "destructive" });
+      toast({ title: t.browserNoVideo, variant: "destructive" });
     }
   }, [toast, startVoiceRecognition, createRecorder]);
 
@@ -2632,7 +2632,7 @@ export default function RecordingStudio() {
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
-      toast({ title: "No se pudo marcar como grabado", variant: "destructive" });
+      toast({ title: t.toastMarkRecordedError, variant: "destructive" });
     },
   });
 
@@ -2659,7 +2659,7 @@ export default function RecordingStudio() {
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
-      toast({ title: "Error al eliminar", variant: "destructive" });
+      toast({ title: t.toastDeleteIdeaError, variant: "destructive" });
     },
   });
 
@@ -2686,7 +2686,7 @@ export default function RecordingStudio() {
     },
     onError: (_err, _id, ctx) => {
       if (ctx?.previous) queryClient.setQueryData(["/api/studio/ideas"], ctx.previous);
-      toast({ title: "No se pudo deshacer", variant: "destructive" });
+      toast({ title: t.toastUndoError, variant: "destructive" });
     },
   });
 
@@ -2704,8 +2704,7 @@ export default function RecordingStudio() {
 
   const motivationalMsg = useMemo(
     () => t.studioMotivational[Math.floor(Math.random() * t.studioMotivational.length)],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [t]
   );
 
   const copyScript = async (idea: AiVideoIdea) => {
