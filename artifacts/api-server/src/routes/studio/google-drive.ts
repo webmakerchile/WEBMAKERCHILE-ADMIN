@@ -1,20 +1,20 @@
-import { ReplitConnectors } from "@replit/connectors-sdk";
-import { randomUUID } from "crypto";
+import { google } from "googleapis";
 import { statSync } from "fs";
-import { readFile, writeFile, unlink } from "fs/promises";
+import { createReadStream } from "fs";
+import { writeFile, unlink } from "fs/promises";
 import path from "path";
+import { db } from "@workspace/db";
+import { users } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 
 const FOLDER_ID = "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
-const CHUNK_SIZE = 256 * 1024;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
 ];
-
-function getConnectors() {
-  return new ReplitConnectors();
-}
 
 function getChileDate(): Date {
   const now = new Date();
@@ -40,31 +40,52 @@ export function clearFolderCache() {
   console.log("[GoogleDrive] Folder cache cleared");
 }
 
+type DriveClient = ReturnType<typeof google.drive>;
+
+async function getDriveClient(userId: number): Promise<DriveClient> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user?.googleAccessToken) {
+    const err = new Error("driveAuthRequired");
+    (err as any).driveAuthRequired = true;
+    throw err;
+  }
+
+  const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+  oauth2Client.setCredentials({
+    access_token: user.googleAccessToken,
+    refresh_token: user.googleRefreshToken ?? undefined,
+  });
+
+  oauth2Client.on("tokens", async (tokens) => {
+    const updates: Record<string, string> = {};
+    if (tokens.access_token) updates.googleAccessToken = tokens.access_token;
+    if (tokens.refresh_token) updates.googleRefreshToken = tokens.refresh_token;
+    if (Object.keys(updates).length > 0) {
+      await db.update(users).set(updates).where(eq(users.id, userId)).catch(console.error);
+      console.log("[GoogleDrive] Tokens refreshed for user", userId);
+    }
+  });
+
+  return google.drive({ version: "v3", auth: oauth2Client });
+}
+
 async function listAllFoldersInParent(
-  connectors: ReplitConnectors,
+  drive: DriveClient,
   parentId: string
 ): Promise<Array<{ id: string; name: string; createdTime: string }>> {
   const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  const res = await connectors.proxy(
-    "google-drive",
-    `/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime)&orderBy=createdTime&pageSize=100`,
-    { method: "GET" }
-  );
-  const data = await res.json() as any;
-  return data.files || [];
+  const resp = await drive.files.list({
+    q: query,
+    fields: "files(id,name,createdTime)",
+    orderBy: "createdTime",
+    pageSize: 100,
+  });
+  return (resp.data.files || []) as Array<{ id: string; name: string; createdTime: string }>;
 }
 
-async function trashFolder(connectors: ReplitConnectors, folderId: string): Promise<void> {
+async function trashFolder(drive: DriveClient, folderId: string): Promise<void> {
   try {
-    await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${folderId}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trashed: true }),
-      }
-    );
+    await drive.files.update({ fileId: folderId, requestBody: { trashed: true } });
     console.log(`[GoogleDrive] Trashed duplicate folder: ${folderId}`);
   } catch (e: any) {
     console.warn(`[GoogleDrive] Could not trash folder ${folderId}: ${e.message}`);
@@ -72,11 +93,11 @@ async function trashFolder(connectors: ReplitConnectors, folderId: string): Prom
 }
 
 async function deduplicateFolders(
-  connectors: ReplitConnectors,
+  drive: DriveClient,
   parentId: string,
   folderName: string
 ): Promise<string | null> {
-  const allFolders = await listAllFoldersInParent(connectors, parentId);
+  const allFolders = await listAllFoldersInParent(drive, parentId);
   const matching = allFolders.filter(f => f.name === folderName);
 
   if (matching.length === 0) return null;
@@ -90,7 +111,7 @@ async function deduplicateFolders(
   if (sorted.length > 1) {
     console.log(`[GoogleDrive] Found ${sorted.length} folders named "${folderName}" - keeping oldest ${keeper.id}, trashing ${sorted.length - 1} duplicates`);
     for (let i = 1; i < sorted.length; i++) {
-      await trashFolder(connectors, sorted[i].id);
+      await trashFolder(drive, sorted[i].id);
     }
   }
 
@@ -98,27 +119,25 @@ async function deduplicateFolders(
 }
 
 async function findOrCreateFolder(
-  connectors: ReplitConnectors,
+  drive: DriveClient,
   parentId: string,
   folderName: string
 ): Promise<string> {
   const cacheKey = `${parentId}:${folderName}`;
 
   const cached = folderCache.get(cacheKey);
-  if (cached && (Date.now() - cached.ts) < CACHE_TTL) {
-    return cached.id;
-  }
+  if (cached && (Date.now() - cached.ts) < CACHE_TTL) return cached.id;
 
   if (folderCreateLock) await folderCreateLock;
 
   const cachedAfterWait = folderCache.get(cacheKey);
   if (cachedAfterWait && (Date.now() - cachedAfterWait.ts) < CACHE_TTL) return cachedAfterWait.id;
 
-  let resolvelock: () => void;
+  let resolvelock!: () => void;
   folderCreateLock = new Promise(r => { resolvelock = r; });
 
   try {
-    let foundId = await deduplicateFolders(connectors, parentId, folderName);
+    let foundId = await deduplicateFolders(drive, parentId, folderName);
 
     if (foundId) {
       console.log(`[GoogleDrive] Using existing folder "${folderName}": ${foundId}`);
@@ -126,37 +145,32 @@ async function findOrCreateFolder(
       return foundId;
     }
 
-    const createRes = await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: folderName,
-          mimeType: "application/vnd.google-apps.folder",
-          parents: [parentId],
-        }),
-      }
-    );
-    const createData = await createRes.json() as any;
+    const createResp = await drive.files.create({
+      requestBody: {
+        name: folderName,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: [parentId],
+      },
+      fields: "id",
+    });
 
-    if (!createData.id) {
-      console.error("[GoogleDrive] Failed to create folder:", JSON.stringify(createData));
+    const createdId = createResp.data.id;
+    if (!createdId) {
+      console.error("[GoogleDrive] Failed to create folder:", JSON.stringify(createResp.data));
       throw new Error(`Could not create folder "${folderName}"`);
     }
 
-    console.log(`[GoogleDrive] Created folder "${folderName}": ${createData.id}`);
+    console.log(`[GoogleDrive] Created folder "${folderName}": ${createdId}`);
 
     await new Promise(r => setTimeout(r, 1500));
-    const verifiedId = await deduplicateFolders(connectors, parentId, folderName);
-    const finalId = verifiedId || createData.id;
+    const verifiedId = await deduplicateFolders(drive, parentId, folderName);
+    const finalId = verifiedId || createdId;
 
     folderCache.set(cacheKey, { id: finalId, ts: Date.now() });
     return finalId;
   } finally {
     folderCreateLock = null;
-    resolvelock!();
+    resolvelock();
   }
 }
 
@@ -196,11 +210,8 @@ export function getSuggestedDay(): { suggestedDay: string; currentDay: string; h
   return { suggestedDay: smartStart, currentDay: currentDayName, hour, availableDays };
 }
 
-async function countSubfoldersInFolder(
-  connectors: ReplitConnectors,
-  folderId: string
-): Promise<number> {
-  const folders = await listAllFoldersInParent(connectors, folderId);
+async function countSubfoldersInFolder(drive: DriveClient, folderId: string): Promise<number> {
+  const folders = await listAllFoldersInParent(drive, folderId);
   if (folders.length === 0) return 0;
 
   let maxNum = 0;
@@ -212,7 +223,7 @@ async function countSubfoldersInFolder(
 }
 
 async function findAvailableDaySlot(
-  connectors: ReplitConnectors,
+  drive: DriveClient,
   weekFolderId: string,
   startFromDay?: string
 ): Promise<{ dayName: string; dayFolderId: string; slotNumber: number } | null> {
@@ -224,8 +235,8 @@ async function findAvailableDaySlot(
 
   for (let i = startIdx; i < DAY_ORDER.length; i++) {
     const dayName = DAY_ORDER[i];
-    const dayFolderId = await findOrCreateFolder(connectors, weekFolderId, dayName);
-    const usedSlots = await countSubfoldersInFolder(connectors, dayFolderId);
+    const dayFolderId = await findOrCreateFolder(drive, weekFolderId, dayName);
+    const usedSlots = await countSubfoldersInFolder(drive, dayFolderId);
     if (usedSlots < MAX_VIDEOS_PER_DAY) {
       const slotNumber = usedSlots + 1;
       console.log(`[GoogleDrive] Found slot: ${dayName}/${slotNumber} (${usedSlots}/${MAX_VIDEOS_PER_DAY} used)`);
@@ -236,11 +247,11 @@ async function findAvailableDaySlot(
   return null;
 }
 
-async function getTargetFolderId(connectors: ReplitConnectors, targetDay?: string): Promise<{ folderId: string; fileNumber: number; dayName: string }> {
+async function getTargetFolderId(drive: DriveClient, targetDay?: string): Promise<{ folderId: string; fileNumber: number; dayName: string }> {
   const chile = getChileDate();
-  let monthIndex = chile.getMonth();
+  const monthIndex = chile.getMonth();
   let year = chile.getFullYear();
-  let weekNum = getWeekOfMonth(chile);
+  const weekNum = getWeekOfMonth(chile);
 
   const startFromDay = targetDay && DAY_ORDER.includes(targetDay)
     ? targetDay
@@ -252,19 +263,19 @@ async function getTargetFolderId(connectors: ReplitConnectors, targetDay?: strin
     const actualMonthIndex = (monthIndex + monthAttempt) % 12;
     if (monthAttempt > 0 && actualMonthIndex === 0) year++;
     const monthName = MONTH_NAMES[actualMonthIndex];
-    const monthFolderId = await findOrCreateFolder(connectors, FOLDER_ID, monthName);
+    const monthFolderId = await findOrCreateFolder(drive, FOLDER_ID, monthName);
 
     const startWeek = monthAttempt === 0 ? weekNum : 1;
     for (let w = startWeek; w <= 5; w++) {
       const weekName = `Semana ${w}`;
       console.log(`[GoogleDrive] Checking: ${monthName} > ${weekName}`);
-      const weekFolderId = await findOrCreateFolder(connectors, monthFolderId, weekName);
+      const weekFolderId = await findOrCreateFolder(drive, monthFolderId, weekName);
 
       const dayFilter = (monthAttempt === 0 && w === weekNum) ? startFromDay : undefined;
-      const slot = await findAvailableDaySlot(connectors, weekFolderId, dayFilter);
+      const slot = await findAvailableDaySlot(drive, weekFolderId, dayFilter);
       if (slot) {
         const videoFolderName = String(slot.slotNumber);
-        const videoFolderId = await findOrCreateFolder(connectors, slot.dayFolderId, videoFolderName);
+        const videoFolderId = await findOrCreateFolder(drive, slot.dayFolderId, videoFolderName);
         const globalNumber = (w - 1) * MAX_VIDEOS_PER_DAY * 7 + DAY_ORDER.indexOf(slot.dayName) * MAX_VIDEOS_PER_DAY + slot.slotNumber;
 
         console.log(`[GoogleDrive] Target: ${monthName}/${weekName}/${slot.dayName}/${videoFolderName}`);
@@ -295,140 +306,59 @@ function buildFileName(fileNumber: number, ideaTitle: string, ext: string = "mp4
   return `${fileNumber}_${dateStr}${timeTag}_${cleanTitle}.${ext}`;
 }
 
-async function readFileChunk(filePath: string, start: number, length: number): Promise<Buffer> {
-  const { open } = await import("fs/promises");
-  const fh = await open(filePath, "r");
-  try {
-    const buf = Buffer.alloc(length);
-    const { bytesRead } = await fh.read(buf, 0, length, start);
-    return bytesRead < length ? buf.subarray(0, bytesRead) : buf;
-  } finally {
-    await fh.close();
-  }
-}
-
-async function uploadViaDriveResumableFromFile(
+async function uploadFileFromPath(
+  drive: DriveClient,
   filePath: string,
   fileName: string,
   targetFolderId: string,
   mimeType: string = "video/mp4"
 ): Promise<{ fileId: string; webViewLink: string }> {
-  const connectors = getConnectors();
   const stats = statSync(filePath);
   const totalSize = stats.size;
 
-  console.log(`[GoogleDrive] Initiating resumable upload: ${fileName} (${(totalSize / 1024 / 1024).toFixed(1)}MB)`);
+  console.log(`[GoogleDrive] Uploading: ${fileName} (${(totalSize / 1024 / 1024).toFixed(1)}MB)`);
 
-  const initResponse = await connectors.proxy(
-    "google-drive",
-    `/upload/drive/v3/files?uploadType=resumable`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=UTF-8",
-      },
-      body: JSON.stringify({
-        name: fileName,
-        parents: [targetFolderId],
-        mimeType,
-      }),
-    }
-  );
+  const resp = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      parents: [targetFolderId],
+      mimeType,
+    },
+    media: {
+      mimeType,
+      body: createReadStream(filePath),
+    },
+    fields: "id,name,webViewLink",
+  });
 
-  const uploadUrl = initResponse.headers.get("location") || initResponse.headers.get("Location");
-
-  if (!uploadUrl) {
-    const bodyText = await initResponse.text();
-    console.error("[GoogleDrive] Resumable init failed:", initResponse.status, bodyText.substring(0, 500));
-    throw new Error(`Drive resumable init failed (status ${initResponse.status})`);
-  }
-
-  console.log(`[GoogleDrive] Got resumable URI, uploading ${Math.ceil(totalSize / CHUNK_SIZE)} chunks...`);
-
-  let offset = 0;
-  let lastResponseData: any = null;
-
-  while (offset < totalSize) {
-    const end = Math.min(offset + CHUNK_SIZE, totalSize);
-    const chunkLength = end - offset;
-    const chunk = await readFileChunk(filePath, offset, chunkLength);
-    const contentRange = `bytes ${offset}-${end - 1}/${totalSize}`;
-
-    let chunkRes: Response | null = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        chunkRes = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Length": String(chunk.length),
-            "Content-Range": contentRange,
-            "Content-Type": mimeType,
-          },
-          body: chunk,
-        });
-        break;
-      } catch (err: any) {
-        console.warn(`[GoogleDrive] Chunk at ${offset} attempt ${attempt + 1} failed: ${err.message}`);
-        if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-        else throw err;
-      }
-    }
-
-    if (!chunkRes) throw new Error("Chunk upload failed");
-
-    const isLast = end >= totalSize;
-    if (isLast && (chunkRes.status === 200 || chunkRes.status === 201)) {
-      const text = await chunkRes.text();
-      try { lastResponseData = JSON.parse(text); } catch {
-        console.error("[GoogleDrive] Final chunk non-JSON:", text.substring(0, 300));
-        throw new Error("Invalid response on final chunk");
-      }
-    } else if (!isLast && chunkRes.status !== 308 && chunkRes.status !== 200) {
-      const errText = await chunkRes.text();
-      console.error(`[GoogleDrive] Chunk error at ${offset}: ${chunkRes.status}`, errText.substring(0, 300));
-      throw new Error(`Chunk upload failed (status ${chunkRes.status})`);
-    }
-
-    offset = end;
-  }
-
-  if (!lastResponseData?.id) {
+  const fileId = resp.data.id;
+  if (!fileId) {
     throw new Error("Drive upload completed but no file ID returned");
   }
 
-  console.log(`[GoogleDrive] Uploaded: ${lastResponseData.name} (${lastResponseData.id})`);
+  console.log(`[GoogleDrive] Uploaded: ${resp.data.name} (${fileId})`);
 
   try {
-    await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${lastResponseData.id}/permissions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: "reader", type: "anyone" }),
-      }
-    );
+    await drive.permissions.create({
+      fileId,
+      requestBody: { role: "reader", type: "anyone" },
+    });
   } catch (e) {
     console.warn("[GoogleDrive] Could not set permission:", e);
   }
 
   return {
-    fileId: lastResponseData.id,
-    webViewLink: lastResponseData.webViewLink || `https://drive.google.com/file/d/${lastResponseData.id}/view`,
+    fileId,
+    webViewLink: resp.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
   };
 }
 
-async function verifyDriveFile(fileId: string): Promise<{ exists: boolean; name?: string; size?: number }> {
+async function verifyDriveFile(drive: DriveClient, fileId: string): Promise<{ exists: boolean; name?: string; size?: number }> {
   try {
-    const connectors = getConnectors();
-    const res = await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${fileId}?fields=id,name,size,trashed`,
-      { method: "GET" }
-    );
-    const data = await res.json() as any;
-    if (data.error || data.trashed) {
-      console.error(`[GoogleDrive] Verify failed: ${JSON.stringify(data.error || "trashed")}`);
+    const resp = await drive.files.get({ fileId, fields: "id,name,size,trashed" });
+    const data = resp.data as any;
+    if (data.trashed) {
+      console.error("[GoogleDrive] Verify failed: file is trashed");
       return { exists: false };
     }
     return { exists: !!data.id, name: data.name, size: parseInt(data.size || "0") };
@@ -441,6 +371,7 @@ async function verifyDriveFile(fileId: string): Promise<{ exists: boolean; name?
 export async function uploadVideoToDriveFromFile(
   filePath: string,
   ideaTitle: string,
+  userId: number,
   actualMimeType: string = "video/mp4",
   targetDay?: string,
   targetTime?: string
@@ -456,16 +387,16 @@ export async function uploadVideoToDriveFromFile(
         await new Promise(r => setTimeout(r, 3000 * attempt));
       }
 
-      const connectors = getConnectors();
-      const { folderId, fileNumber, dayName } = await getTargetFolderId(connectors, targetDay);
+      const drive = await getDriveClient(userId);
+      const { folderId, fileNumber, dayName } = await getTargetFolderId(drive, targetDay);
       const fileName = buildFileName(fileNumber, ideaTitle, ext, targetTime);
 
       console.log(`[VideoUpload] Attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${fileName} (${actualMimeType})`);
 
-      const result = await uploadViaDriveResumableFromFile(filePath, fileName, folderId, actualMimeType);
+      const result = await uploadFileFromPath(drive, filePath, fileName, folderId, actualMimeType);
 
       console.log(`[VideoUpload] Upload returned fileId=${result.fileId}, verifying...`);
-      const verification = await verifyDriveFile(result.fileId);
+      const verification = await verifyDriveFile(drive, result.fileId);
 
       if (!verification.exists) {
         const msg = `File ${result.fileId} uploaded but NOT found in Drive verification`;
@@ -479,6 +410,7 @@ export async function uploadVideoToDriveFromFile(
     } catch (driveErr: any) {
       const msg = driveErr.message || "Unknown error";
       console.error(`[VideoUpload] Attempt ${attempt + 1} failed: ${msg}`);
+      if ((driveErr as any).driveAuthRequired) throw driveErr;
       errors.push(msg);
     }
   }
@@ -489,6 +421,7 @@ export async function uploadVideoToDriveFromFile(
 export async function uploadVideoToDrive(
   videoBuffer: Buffer,
   ideaTitle: string,
+  userId: number,
   actualMimeType: string = "video/mp4",
   targetDay?: string,
   targetTime?: string
@@ -496,7 +429,7 @@ export async function uploadVideoToDrive(
   const tmpPath = path.join("/tmp", `drive-upload-${Date.now()}.tmp`);
   await writeFile(tmpPath, videoBuffer);
   try {
-    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, actualMimeType, targetDay, targetTime);
+    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, userId, actualMimeType, targetDay, targetTime);
   } finally {
     await unlink(tmpPath).catch(() => {});
   }
@@ -505,6 +438,7 @@ export async function uploadVideoToDrive(
 export async function uploadCoverToDriveFromBuffer(
   imageBuffer: Buffer,
   videoFileName: string,
+  userId: number,
   mimeType: string = "image/png",
   targetFolderId?: string
 ): Promise<{ fileId: string; webViewLink: string }> {
@@ -513,96 +447,84 @@ export async function uploadCoverToDriveFromBuffer(
   const seqNum = numMatch ? numMatch[1] : "0";
   const coverName = `${seqNum}_${Date.now()}.${ext}`;
 
+  const drive = await getDriveClient(userId);
+
+  let folderId = targetFolderId;
+  if (!folderId) {
+    const target = await getTargetFolderId(drive);
+    folderId = target.folderId;
+  }
+
+  console.log(`[GoogleDrive] Uploading cover: ${coverName} to folder ${folderId}`);
+
+  const tmpPath = path.join("/tmp", `cover-upload-${Date.now()}.${ext}`);
+  await writeFile(tmpPath, imageBuffer);
+
   try {
-    let folderId = targetFolderId;
-    if (!folderId) {
-      const connectors = getConnectors();
-      const target = await getTargetFolderId(connectors);
-      folderId = target.folderId;
-    }
-
-    console.log(`[GoogleDrive] Uploading cover: ${coverName} to folder ${folderId}`);
-
-    const tmpPath = path.join("/tmp", `cover-upload-${Date.now()}.${ext}`);
-    await writeFile(tmpPath, imageBuffer);
-
-    try {
-      const result = await uploadViaDriveResumableFromFile(tmpPath, coverName, folderId, mimeType);
-      console.log(`[GoogleDrive] Cover uploaded: ${result.webViewLink}`);
-      return result;
-    } finally {
-      await unlink(tmpPath).catch(() => {});
-    }
-  } catch (err: any) {
-    console.warn(`[GoogleDrive] Cover upload to Drive failed: ${err.message}`);
-    throw err;
+    const result = await uploadFileFromPath(drive, tmpPath, coverName, folderId, mimeType);
+    console.log(`[GoogleDrive] Cover uploaded: ${result.webViewLink}`);
+    return result;
+  } finally {
+    await unlink(tmpPath).catch(() => {});
   }
 }
 
 export async function uploadDescriptionsToDrive(
   descriptionsText: string,
   videoFileName: string,
+  userId: number,
   targetFolderId?: string
 ): Promise<{ fileId: string; webViewLink: string }> {
   const numMatch = videoFileName.match(/^(\d+)[_\-]/);
   const seqNum = numMatch ? numMatch[1] : "0";
   const descName = `${seqNum}_${Date.now()}_DESCRIPCIONES.txt`;
 
+  const drive = await getDriveClient(userId);
+
+  let folderId = targetFolderId;
+  if (!folderId) {
+    const target = await getTargetFolderId(drive);
+    folderId = target.folderId;
+  }
+
+  console.log(`[GoogleDrive] Uploading descriptions: ${descName} to folder ${folderId}`);
+
+  const tmpPath = path.join("/tmp", `desc-upload-${Date.now()}.txt`);
+  await writeFile(tmpPath, descriptionsText, "utf-8");
+
   try {
-    let folderId = targetFolderId;
-    if (!folderId) {
-      const connectors = getConnectors();
-      const target = await getTargetFolderId(connectors);
-      folderId = target.folderId;
-    }
-
-    console.log(`[GoogleDrive] Uploading descriptions: ${descName} to folder ${folderId}`);
-
-    const tmpPath = path.join("/tmp", `desc-upload-${Date.now()}.txt`);
-    await writeFile(tmpPath, descriptionsText, "utf-8");
-
-    try {
-      const result = await uploadViaDriveResumableFromFile(tmpPath, descName, folderId, "text/plain");
-      console.log(`[GoogleDrive] Descriptions uploaded: ${result.webViewLink}`);
-      return result;
-    } finally {
-      await unlink(tmpPath).catch(() => {});
-    }
-  } catch (err: any) {
-    console.warn(`[GoogleDrive] Descriptions upload to Drive failed: ${err.message}`);
-    throw err;
+    const result = await uploadFileFromPath(drive, tmpPath, descName, folderId, "text/plain");
+    console.log(`[GoogleDrive] Descriptions uploaded: ${result.webViewLink}`);
+    return result;
+  } finally {
+    await unlink(tmpPath).catch(() => {});
   }
 }
 
-export async function testDriveConnection(): Promise<boolean> {
+export async function testDriveConnection(userId: number): Promise<boolean> {
   try {
-    const connectors = getConnectors();
-    const response = await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${FOLDER_ID}?fields=id,name`,
-      { method: "GET" }
-    );
-    const data = await response.json() as any;
-    return !!data.id;
+    const drive = await getDriveClient(userId);
+    const resp = await drive.files.get({ fileId: FOLDER_ID, fields: "id,name" });
+    return !!resp.data.id;
   } catch (e) {
     console.error("[GoogleDrive] Connection test failed:", e);
     return false;
   }
 }
 
-export async function listDriveStudioStructure(): Promise<any> {
-  const connectors = getConnectors();
+export async function listDriveStudioStructure(userId: number): Promise<any> {
+  const drive = await getDriveClient(userId);
   const result: any = { rootId: FOLDER_ID, months: [] };
 
-  const months = await listAllFoldersInParent(connectors, FOLDER_ID);
+  const months = await listAllFoldersInParent(drive, FOLDER_ID);
   for (const month of months) {
     const monthData: any = { name: month.name, id: month.id, weeks: [] };
-    const weeks = await listAllFoldersInParent(connectors, month.id);
+    const weeks = await listAllFoldersInParent(drive, month.id);
     for (const week of weeks) {
       const weekData: any = { name: week.name, id: week.id, days: [] };
-      const days = await listAllFoldersInParent(connectors, week.id);
+      const days = await listAllFoldersInParent(drive, week.id);
       for (const day of days) {
-        const slots = await listAllFoldersInParent(connectors, day.id);
+        const slots = await listAllFoldersInParent(drive, day.id);
         const dayData: any = { name: day.name, id: day.id, slots: slots.length, slotIds: slots.map(s => ({ name: s.name, id: s.id })) };
         weekData.days.push(dayData);
       }
@@ -613,26 +535,22 @@ export async function listDriveStudioStructure(): Promise<any> {
   return result;
 }
 
-export async function listFilesInDriveFolder(folderId: string): Promise<Array<{ id: string; name: string; mimeType: string; size: string; createdTime: string }>> {
-  const connectors = getConnectors();
+export async function listFilesInDriveFolder(folderId: string, userId: number): Promise<Array<{ id: string; name: string; mimeType: string; size: string; createdTime: string }>> {
+  const drive = await getDriveClient(userId);
   const query = `'${folderId}' in parents and trashed=false`;
-  const res = await connectors.proxy(
-    "google-drive",
-    `/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,size,createdTime)&orderBy=createdTime&pageSize=100`,
-    { method: "GET" }
-  );
-  const data = await res.json() as any;
-  return data.files || [];
+  const resp = await drive.files.list({
+    q: query,
+    fields: "files(id,name,mimeType,size,createdTime)",
+    orderBy: "createdTime",
+    pageSize: 100,
+  });
+  return (resp.data.files || []) as Array<{ id: string; name: string; mimeType: string; size: string; createdTime: string }>;
 }
 
-export async function deleteDriveFile(fileId: string): Promise<boolean> {
+export async function deleteDriveFile(fileId: string, userId: number): Promise<boolean> {
   try {
-    const connectors = getConnectors();
-    await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${fileId}`,
-      { method: "DELETE" }
-    );
+    const drive = await getDriveClient(userId);
+    await drive.files.delete({ fileId });
     console.log(`[GoogleDrive] Deleted file: ${fileId}`);
     return true;
   } catch (e: any) {
@@ -641,18 +559,10 @@ export async function deleteDriveFile(fileId: string): Promise<boolean> {
   }
 }
 
-export async function trashDriveFile(fileId: string): Promise<boolean> {
+export async function trashDriveFile(fileId: string, userId: number): Promise<boolean> {
   try {
-    const connectors = getConnectors();
-    await connectors.proxy(
-      "google-drive",
-      `/drive/v3/files/${fileId}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trashed: true }),
-      }
-    );
+    const drive = await getDriveClient(userId);
+    await drive.files.update({ fileId, requestBody: { trashed: true } });
     console.log(`[GoogleDrive] Trashed file: ${fileId}`);
     return true;
   } catch (e: any) {

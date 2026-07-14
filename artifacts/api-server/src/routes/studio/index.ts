@@ -680,8 +680,10 @@ router.post("/studio/upload-chunk", (req, res, next) => {
 router.post("/studio/finalize-upload", async (req, res) => {
   const allTempFiles: string[] = [];
   try {
-    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments, targetDay: rawTargetDay, targetTime: rawTargetTime } = req.body;
+    const { uploadId, ideaId: rawIdeaId, ideaTitle: rawTitle, ideaGuion: rawGuion, videoMimeType: clientMimeType, segments: rawSegments, targetDay: rawTargetDay, targetTime: rawTargetTime, publishToTiktok: rawPublishToTiktok } = req.body;
     if (!uploadId) { res.status(400).json({ error: "Missing uploadId" }); return; }
+    const userId = (req.user as any).id as number;
+    const publishToTiktok = rawPublishToTiktok === true || rawPublishToTiktok === "true";
 
     const safeId = uploadId.replace(/[^a-zA-Z0-9\-_]/g, "");
     const tempPath = path.join("/tmp", `studio-chunked-${safeId}`);
