@@ -1393,7 +1393,7 @@ function CameraRecordingView({
       stopAllTracks();
 
       if (!mergedBlob || mergedBlob.size === 0) {
-        toast({ title: "No hay video para subir", variant: "destructive" });
+        toast({ title: t.studioNoVideoToUpload, variant: "destructive" });
         return;
       }
 
@@ -1409,7 +1409,7 @@ function CameraRecordingView({
         title: autoFileName,
         status: "uploading" as const,
         progress: 0,
-        message: `Subiendo (${(mergedBlob.size / 1024 / 1024).toFixed(1)} MB)...`,
+        message: t.studioUploading((mergedBlob.size / 1024 / 1024).toFixed(1)),
       });
 
       toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(autoFileName) });
@@ -1511,7 +1511,7 @@ function CameraRecordingView({
 
     const blob = await stopRecording();
     if (!blob || blob.size === 0) {
-      toast({ title: "No se grabo ningun video", variant: "destructive" });
+      toast({ title: t.studioNoVideoRecorded, variant: "destructive" });
       return;
     }
     stopAllTracks();

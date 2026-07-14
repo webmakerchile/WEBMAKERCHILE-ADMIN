@@ -124,8 +124,8 @@ function uploadVideoWithProgress(
       try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { /* noop */ }
       resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
     };
-    xhr.onerror = () => reject(new Error("Error de red durante la subida"));
-    xhr.onabort = () => reject(new Error("Subida cancelada"));
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.onabort = () => reject(new Error("Upload cancelled"));
     xhr.send(fd);
   });
   return { promise, abort: () => xhr.abort() };
@@ -2604,7 +2604,7 @@ function VideoWizard({
         if (cancelled) return;
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } catch (err: any) {
-        if (cancelled || err?.message === "Subida cancelada") return;
+        if (cancelled || err?.message === "Upload cancelled" || err?.message === "Subida cancelada") return;
         console.error("Error linking pending video file:", err);
         toast({
           title: t.toastAttachError,
@@ -3520,7 +3520,7 @@ function StepInfo({
         <div className="space-y-3 pt-2">
           <label className="text-sm font-medium flex items-center gap-2">
             <FileVideo className="w-4 h-4 text-primary" />
-            Archivo de Video
+            {t.labelVideoFile}
           </label>
 
           {videoAttached ? (
@@ -3541,7 +3541,7 @@ function StepInfo({
                     playsInline
                     className="w-full max-h-[480px] bg-black object-contain"
                   >
-                    Tu navegador no soporta la reproducción de este video.
+                    {t.videoUnsupported}
                   </video>
                 </div>
               ) : null}
@@ -3549,13 +3549,13 @@ function StepInfo({
                 <FileVideo className="w-5 h-5 text-emerald-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-emerald-400">
-                    {hasVideoLinked ? "Video vinculado" : hasPending && pendingVideoFile?.type === "drive" ? "Video de Drive seleccionado" : "Video seleccionado"}
+                    {hasVideoLinked ? t.videoLinked : hasPending && pendingVideoFile?.type === "drive" ? t.videoDriveSelected : t.videoSelected}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">
-                    {displayFileName || "Archivo adjunto"}
+                    {displayFileName || t.videoAttachedFile}
                   </p>
                   {hasPending && !hasVideoLinked && (
-                    <p className="text-xs text-primary/70 mt-1">Se vinculará al guardar</p>
+                    <p className="text-xs text-primary/70 mt-1">{t.videoWillLinkOnSave}</p>
                   )}
                 </div>
                 <Button
@@ -3593,7 +3593,7 @@ function StepInfo({
                       onClick={cancelUpload}
                       className="text-xs text-muted-foreground hover:text-red-400 shrink-0"
                     >
-                      Cancelar
+                      {t.btnCancel}
                     </Button>
                   </div>
                   <div className="space-y-1.5">
@@ -3608,7 +3608,7 @@ function StepInfo({
                       <span>
                         {uploadProgress
                           ? `${formatBytes(uploadProgress.loaded)} / ${formatBytes(uploadProgress.total)}`
-                          : "Preparando..."}
+                          : t.uploadPreparing}
                         {uploadProgress && uploadProgress.bps > 0 && ` · ${formatBytes(uploadProgress.bps)}/s`}
                       </span>
                     </div>
@@ -3622,9 +3622,9 @@ function StepInfo({
                   >
                     <div className="flex flex-col items-center gap-2">
                       <HardDrive className="w-8 h-8 text-primary" />
-                      <p className="text-sm font-medium text-foreground">Desde Google Drive</p>
+                      <p className="text-sm font-medium text-foreground">{t.uploadFromDrive}</p>
                       <p className="text-xs text-muted-foreground/60">
-                        Selecciona un video de tu Drive
+                        {t.uploadFromDriveHint}
                       </p>
                     </div>
                   </div>
@@ -3643,7 +3643,7 @@ function StepInfo({
                       <Upload className="w-8 h-8 text-orange-400" />
                       <p className="text-sm font-medium text-foreground">{t.uploadOrDrag}</p>
                       <p className="text-xs text-muted-foreground/60">
-                        MP4, MOV · Máx {MAX_VIDEO_SIZE_MB} MB
+                        {t.uploadSizeHint(MAX_VIDEO_SIZE_MB)}
                       </p>
                     </div>
                   </div>
@@ -3904,10 +3904,10 @@ function StepCover({
           >
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">Prompt personalizado para la IA</span>
+              <span className="text-sm font-medium">{t.coverPromptTitle}</span>
               {video.coverPrompt ? (
                 <span className="text-[10px] uppercase tracking-wide bg-primary/15 text-primary px-2 py-0.5 rounded-full">
-                  Activo
+                  {t.coverPromptActive}
                 </span>
               ) : null}
             </div>
@@ -3916,13 +3916,13 @@ function StepCover({
           {promptOpen && (
             <div className="px-4 pb-4 space-y-2 border-t border-foreground/5 pt-3">
               <p className="text-xs text-muted-foreground">
-                Escribe instrucciones específicas (estilo, colores, texto en pantalla, escena). Se sobrescribe sobre el prompt por defecto. Déjalo vacío para volver al estilo automático.
+                {t.coverPromptDesc}
               </p>
               <textarea
                 value={customPrompt}
                 onChange={(e) => setCustomPrompt(e.target.value.slice(0, 4000))}
                 rows={6}
-                placeholder={`Ej: Portada vertical 9:16, estilo flat vector amarillo, zorro con lentes apuntando a un gráfico. Texto grande arriba: "${video.title || "TÍTULO"}".`}
+                placeholder={t.coverPromptPlaceholder(video.title)}
                 className="w-full bg-background border border-foreground/10 rounded-lg px-3 py-2 text-sm focus:border-primary outline-none font-mono resize-y leading-snug"
               />
               <div className="flex items-center justify-between gap-2">
@@ -3937,7 +3937,7 @@ function StepCover({
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t.btnGenerating}</>
 
                   ) : (
-                    <><Sparkles className="w-4 h-4 mr-2" />Generar con este prompt</>
+                    <><Sparkles className="w-4 h-4 mr-2" />{t.btnGenerateWithPrompt}</>
                   )}
                 </Button>
               </div>
