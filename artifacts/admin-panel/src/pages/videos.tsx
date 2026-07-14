@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, type ReactNode } from "react";
+import { useLang } from "@/lib/lang";
 import { Link } from "wouter";
 import { Virtuoso } from "react-virtuoso";
 import { Layout } from "@/components/layout";
@@ -218,15 +219,17 @@ type VideoReview = {
 
 type WizardStep = "info" | "cover" | "tiktok-instagram" | "youtube" | "linkedin-x" | "review" | "comments";
 
-const STEPS: { key: WizardStep; label: string; shortLabel: string }[] = [
-  { key: "info", label: "Información Básica", shortLabel: "Info" },
-  { key: "cover", label: "Portada", shortLabel: "Portada" },
-  { key: "tiktok-instagram", label: "TikTok e Instagram", shortLabel: "TikTok/IG" },
-  { key: "youtube", label: "YouTube", shortLabel: "YouTube" },
-  { key: "linkedin-x", label: "LinkedIn y X", shortLabel: "LinkedIn/X" },
-  { key: "review", label: "Revisar y Programar", shortLabel: "Programar" },
-  { key: "comments", label: "Comentarios y Aprobación", shortLabel: "Comentarios" },
-];
+function getSteps(t: ReturnType<typeof useLang>["t"]): { key: WizardStep; label: string; shortLabel: string }[] {
+  return [
+    { key: "info", label: t.stepInfo, shortLabel: t.stepInfoShort },
+    { key: "cover", label: t.stepCover, shortLabel: t.stepCoverShort },
+    { key: "tiktok-instagram", label: t.stepTikTokInstagram, shortLabel: t.stepTikTokShort },
+    { key: "youtube", label: t.stepYouTube, shortLabel: t.stepYouTubeShort },
+    { key: "linkedin-x", label: t.stepLinkedInX, shortLabel: t.stepLinkedInXShort },
+    { key: "review", label: t.stepReview, shortLabel: t.stepReviewShort },
+    { key: "comments", label: t.stepComments, shortLabel: t.stepCommentsShort },
+  ];
+}
 
 function isStepComplete(video: VideoData | null, step: WizardStep): boolean {
   if (!video) return false;
@@ -263,15 +266,15 @@ function getVideoProgress(video: VideoData): number {
   return Math.round((done / 6) * 100);
 }
 
-function getStatusBadge(video: VideoData) {
+function getStatusBadge(video: VideoData, t: ReturnType<typeof useLang>["t"]) {
   const progress = getVideoProgress(video);
-  if (video.status === "published") return { label: "Publicado", className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" };
-  if (video.status === "partial") return { label: "Parcial", className: "bg-amber-500/10 text-amber-400 border-amber-500/20" };
-  if (video.status === "error") return { label: "Error", className: "bg-rose-500/10 text-rose-400 border-rose-500/20" };
-  if (video.status === "scheduled") return { label: "Programado", className: "bg-orange-500/10 text-orange-400 border-orange-500/20" };
-  if (progress === 100) return { label: "Listo", className: "bg-blue-500/10 text-blue-400 border-blue-500/20" };
-  if (progress > 0) return { label: `${progress}% completo`, className: "bg-purple-500/10 text-purple-400 border-purple-500/20" };
-  return { label: "Borrador", className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" };
+  if (video.status === "published") return { label: t.statusPublished, className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" };
+  if (video.status === "partial") return { label: t.statusPartial, className: "bg-amber-500/10 text-amber-400 border-amber-500/20" };
+  if (video.status === "error") return { label: t.statusError, className: "bg-rose-500/10 text-rose-400 border-rose-500/20" };
+  if (video.status === "scheduled") return { label: t.statusScheduled, className: "bg-orange-500/10 text-orange-400 border-orange-500/20" };
+  if (progress === 100) return { label: t.statusReady, className: "bg-blue-500/10 text-blue-400 border-blue-500/20" };
+  if (progress > 0) return { label: t.statusComplete(progress), className: "bg-purple-500/10 text-purple-400 border-purple-500/20" };
+  return { label: t.statusDraft, className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" };
 }
 
 type SavedView = {
@@ -284,25 +287,29 @@ type SavedView = {
   updatedAt: string;
 };
 
-const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "all", label: "Todos los estados" },
-  { value: "draft", label: "Borrador" },
-  { value: "cover_generated", label: "Portada lista" },
-  { value: "scheduled", label: "Programado" },
-  { value: "published", label: "Publicado" },
-  { value: "partial", label: "Parcial" },
-  { value: "error", label: "Con error" },
-];
+function getStatusOptions(t: ReturnType<typeof useLang>["t"]): { value: string; label: string }[] {
+  return [
+    { value: "all", label: t.filterAllStatuses },
+    { value: "draft", label: t.filterDraft },
+    { value: "cover_generated", label: t.filterCoverReady },
+    { value: "scheduled", label: t.filterScheduled },
+    { value: "published", label: t.filterPublished },
+    { value: "partial", label: t.filterPartial },
+    { value: "error", label: t.filterError },
+  ];
+}
 
-const NETWORK_OPTIONS: { value: string; label: string }[] = [
-  { value: "all", label: "Todas las redes" },
-  { value: "youtube", label: "YouTube" },
-  { value: "instagram", label: "Instagram" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "linkedin", label: "LinkedIn" },
-  { value: "x", label: "X / Twitter" },
-  { value: "facebook", label: "Facebook" },
-];
+function getNetworkOptions(t: ReturnType<typeof useLang>["t"]): { value: string; label: string }[] {
+  return [
+    { value: "all", label: t.filterAllNetworks },
+    { value: "youtube", label: "YouTube" },
+    { value: "instagram", label: "Instagram" },
+    { value: "tiktok", label: "TikTok" },
+    { value: "linkedin", label: "LinkedIn" },
+    { value: "x", label: "X / Twitter" },
+    { value: "facebook", label: "Facebook" },
+  ];
+}
 
 // A video "belongs to" a network if it has a description prepared OR has been
 // posted to it (postId/mediaId/videoId). This matches how the editor signals
@@ -734,6 +741,9 @@ export default function VideosPage() {
   const [pendingReviewsActive, setPendingReviewsActive] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useLang();
+  const statusOptions = useMemo(() => getStatusOptions(t), [t]);
+  const networkOptions = useMemo(() => getNetworkOptions(t), [t]);
 
   const { data: videos = [], isLoading } = useQuery<VideoData[]>({
     queryKey: ["videos"],
@@ -1602,7 +1612,7 @@ export default function VideosPage() {
                   <Input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Buscar por título, descripción o red..."
+                    placeholder={t.searchPlaceholder}
                     className="pl-9 bg-card/40 border-foreground/10"
                   />
                   {q && (
@@ -1622,7 +1632,7 @@ export default function VideosPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {STATUS_OPTIONS.map((opt) => (
+                    {statusOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1632,7 +1642,7 @@ export default function VideosPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {NETWORK_OPTIONS.map((opt) => (
+                    {networkOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1738,7 +1748,7 @@ export default function VideosPage() {
             {(() => {
               const renderVideoCard = (video: VideoData) => {
                 const progress = getVideoProgress(video);
-                const statusBadge = getStatusBadge(video);
+                const statusBadge = getStatusBadge(video, t);
                 const isSelected = selectedIds.has(video.id);
                 return (
                   <Card
@@ -1929,7 +1939,7 @@ export default function VideosPage() {
                     <SelectValue placeholder="Cambiar estado..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {STATUS_OPTIONS.filter((o) => o.value !== "all").map((opt) => (
+                    {statusOptions.filter((o) => o.value !== "all").map((opt) => (
                       <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -2506,6 +2516,8 @@ function VideoWizard({
   toast: any;
 }) {
   const queryClient = useQueryClient();
+  const { t } = useLang();
+  const steps = useMemo(() => getSteps(t), [t]);
   const [pendingVideoFile, setPendingVideoFile] = useState<
     { type: "drive"; driveFileId: string; fileName: string } | { type: "upload"; file: File; fileName: string } | null
   >(null);
@@ -2608,19 +2620,19 @@ function VideoWizard({
     };
   }, [video?.id, isCreating]);
 
-  const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
+  const currentStepIndex = steps.findIndex((s) => s.key === currentStep);
 
   const goNext = () => {
     const nextIndex = currentStepIndex + 1;
-    if (nextIndex < STEPS.length) {
-      onStepChange(STEPS[nextIndex].key);
+    if (nextIndex < steps.length) {
+      onStepChange(steps[nextIndex].key);
     }
   };
 
   const goPrev = () => {
     const prevIndex = currentStepIndex - 1;
     if (prevIndex >= 0) {
-      onStepChange(STEPS[prevIndex].key);
+      onStepChange(steps[prevIndex].key);
     }
   };
 
@@ -2702,7 +2714,7 @@ function VideoWizard({
       }
       if (isEditable) return;
       if (e.key === "ArrowRight") {
-        if (currentStepIndex < STEPS.length - 1) {
+        if (currentStepIndex < steps.length - 1) {
           e.preventDefault();
           goNext();
         }
@@ -2723,8 +2735,8 @@ function VideoWizard({
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
             <ArrowLeft className="w-4 h-4 mr-1 sm:mr-2" />
-            <span className="hidden sm:inline">Volver al listado</span>
-            <span className="sm:hidden">Volver</span>
+            <span className="hidden sm:inline">{t.wizardBack}</span>
+            <span className="sm:hidden">{t.wizardBackShort}</span>
           </Button>
           {video && (
             <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 sm:hidden shrink-0 ml-auto">
@@ -2734,12 +2746,12 @@ function VideoWizard({
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg sm:text-2xl font-display font-bold truncate">
-            {isCreating ? "Nuevo Video" : video?.title}
+            {isCreating ? t.wizardNewVideo : video?.title}
           </h1>
           <div className="flex items-center gap-3 mt-0.5">
             {video && (
               <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">
-                Completa todos los pasos para programar en las 6 plataformas
+                {t.wizardCompleteAll}
               </p>
             )}
             {!isCreating && video && (
@@ -2750,14 +2762,14 @@ function VideoWizard({
         {video && (
           <Button variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 hidden sm:flex shrink-0">
             <Trash2 className="w-4 h-4 mr-1" />
-            Eliminar
+            {t.wizardDelete}
           </Button>
         )}
       </div>
 
       <div className="sticky top-0 z-20 -mx-4 px-4 sm:mx-0 sm:px-0 bg-background/85 backdrop-blur-md py-2 sm:py-0 sm:bg-transparent sm:backdrop-blur-none">
         <div className="flex items-center gap-1 bg-card/40 rounded-2xl p-1.5 sm:p-2 border border-foreground/10 overflow-x-auto scrollbar-none">
-          {STEPS.map((step, i) => {
+          {steps.map((step, i) => {
             const isActive = step.key === currentStep;
             const isComplete = isStepComplete(video, step.key);
             const isClickable = !isCreating || step.key === "info";
@@ -2787,7 +2799,7 @@ function VideoWizard({
                 <span className={isActive ? "inline" : "hidden sm:inline"}>{step.shortLabel}</span>
                 {isActive && (autoSave.status === "dirty" || autoSave.status === "saving") && (
                   <span
-                    title={autoSave.status === "saving" ? "Guardando..." : "Hay cambios sin guardar"}
+                    title={autoSave.status === "saving" ? t.wizardSavingTooltip : t.wizardUnsavedTooltip}
                     className={`hidden sm:inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
                       autoSave.status === "saving"
                         ? "bg-white/15 text-white/90"
@@ -2799,7 +2811,7 @@ function VideoWizard({
                     ) : (
                       <CloudOff className="w-2.5 h-2.5" />
                     )}
-                    {autoSave.status === "saving" ? "Guardando" : "Sin guardar"}
+                    {autoSave.status === "saving" ? t.wizardSaving : t.wizardUnsaved}
                   </span>
                 )}
               </button>
@@ -2819,7 +2831,7 @@ function VideoWizard({
       {isAutoGenerating && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm">
           <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-          <span>Generando contenido con IA para todas las plataformas...</span>
+          <span>{t.wizardAutoGenerating}</span>
         </div>
       )}
 
@@ -3738,6 +3750,7 @@ function StepCover({
   onNext: () => void;
   onPrev: () => void;
 }) {
+  const { t } = useLang();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasCover = !!video.coverImageBase64;
   const coverSrc = hasCover
@@ -3782,10 +3795,10 @@ function StepCover({
       <CardHeader>
         <CardTitle className="text-xl flex items-center gap-2">
           <ImageIcon className="w-5 h-5 text-primary" />
-          Portada del Video <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+          {t.coverTitle} <span className="text-xs font-normal text-muted-foreground">{t.coverOptional}</span>
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Sube tu propia portada o genérala con IA. Si no quieres definirla ahora, puedes continuar y volver más tarde.
+          {t.coverSubtitle}
         </p>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -3802,7 +3815,7 @@ function StepCover({
             <div className="flex items-center justify-between flex-wrap gap-2">
               <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
                 <Check className="w-3 h-3 mr-1" />
-                Portada lista
+                {t.coverReady}
               </Badge>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -3813,7 +3826,7 @@ function StepCover({
                   className="border-foreground/10"
                 >
                   {isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                  Reemplazar
+                  {t.btnReplace}
                 </Button>
                 <Button
                   variant="outline"
@@ -3823,7 +3836,7 @@ function StepCover({
                   className="border-foreground/10"
                 >
                   {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  Regenerar con IA
+                  {t.btnRegenerate}
                 </Button>
                 <Button
                   variant="ghost"
@@ -3832,14 +3845,14 @@ function StepCover({
                   disabled={isUploading || isGenerating}
                   className="text-muted-foreground hover:text-foreground"
                 >
-                  Quitar
+                  {t.btnRemove}
                 </Button>
               </div>
             </div>
 
             <div>
               <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
-                Cómo se verá en cada red
+                {t.coverHowItLooks}
               </p>
               <CoverNetworkGrid src={coverSrc} />
             </div>
@@ -3857,9 +3870,9 @@ function StepCover({
                 className="border-foreground/15"
               >
                 {isUploading ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Subiendo...</>
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t.btnUploading}</>
                 ) : (
-                  <><Upload className="w-4 h-4 mr-2" />Subir portada</>
+                  <><Upload className="w-4 h-4 mr-2" />{t.btnUpload}</>
                 )}
               </Button>
               <Button
@@ -3868,14 +3881,14 @@ function StepCover({
                 className="bg-gradient-to-r from-primary to-orange-400"
               >
                 {isGenerating ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generando...</>
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t.btnGenerating}</>
                 ) : (
-                  <><Sparkles className="w-4 h-4 mr-2" />Generar con IA</>
+                  <><Sparkles className="w-4 h-4 mr-2" />{t.btnGenerate}</>
                 )}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              PNG, JPG o WEBP · La portada es opcional, puedes continuar sin ella.
+              {t.coverFileHint}
             </p>
           </div>
         )}
@@ -3931,17 +3944,17 @@ function StepCover({
         <div className="pt-4 flex flex-col sm:flex-row sm:justify-between gap-2">
           <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Anterior
+            {t.btnPrev}
           </Button>
           <div className="flex gap-2 sm:ml-auto">
             {!hasCover ? (
               <Button variant="ghost" onClick={onNext} className="text-muted-foreground hover:text-foreground">
-                Continuar sin portada
+                {t.btnContinueWithoutCover}
               </Button>
             ) : null}
             <Button onClick={onNext} className="bg-primary">
               <ChevronRight className="w-4 h-4 mr-2" />
-              Continuar
+              {t.btnSaveContinue}
             </Button>
           </div>
         </div>
@@ -4012,6 +4025,7 @@ function StepTikTokInstagram({
   copyText: (text: string) => void;
 }) {
   const [aiBusy, setAiBusy] = useState(false);
+  const { t } = useLang();
   const showTikTokPlaceholder = (isAutoGenerating || aiBusy) && !formData.tiktokDescription;
   const showInstagramPlaceholder = (isAutoGenerating || aiBusy) && !formData.instagramDescription;
   const generateAi = async () => {
@@ -4047,7 +4061,7 @@ function StepTikTokInstagram({
               TikTok e Instagram
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Escribe las descripciones para TikTok e Instagram. Incluye hashtags y emojis.
+              {t.stepTikTokSubtitle}
             </p>
           </div>
           <button
@@ -4056,7 +4070,7 @@ function StepTikTokInstagram({
             disabled={aiBusy || isAutoGenerating}
             className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
           >
-            {(aiBusy || isAutoGenerating) ? "Generando..." : "✨ Generar con IA"}
+            {(aiBusy || isAutoGenerating) ? t.btnGenerating : t.btnGenerateAI}
           </button>
         </div>
       </CardHeader>
@@ -4072,7 +4086,7 @@ function StepTikTokInstagram({
               </label>
               {formData.tiktokDescription && (
                 <button onClick={() => copyText(formData.tiktokDescription)} className="text-xs text-primary hover:text-primary/80">
-                  <Copy className="w-3 h-3 inline mr-1" />Copiar
+                  <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
                 </button>
               )}
             </div>
@@ -4089,7 +4103,7 @@ function StepTikTokInstagram({
               />
             )}
             {!showTikTokPlaceholder && (
-              <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.tiktokDescription.length}/2200</p>
+              <p className="text-[10px] text-muted-foreground">{t.tiktokCharHint(formData.tiktokDescription.length)}</p>
             )}
             <LibraryControls
               network="tiktok"
@@ -4097,7 +4111,7 @@ function StepTikTokInstagram({
               title={formData.title}
               description={formData.description}
               currentText={formData.tiktokDescription || ""}
-              onAppend={(t) => setFormData({ ...formData, tiktokDescription: t })}
+              onAppend={(txt) => setFormData({ ...formData, tiktokDescription: txt })}
             />
           </div>
 
@@ -4111,7 +4125,7 @@ function StepTikTokInstagram({
               </label>
               {formData.instagramDescription && (
                 <button onClick={() => copyText(formData.instagramDescription)} className="text-xs text-primary hover:text-primary/80">
-                  <Copy className="w-3 h-3 inline mr-1" />Copiar
+                  <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
                 </button>
               )}
             </div>
@@ -4128,7 +4142,7 @@ function StepTikTokInstagram({
               />
             )}
             {!showInstagramPlaceholder && (
-              <p className="text-[10px] text-muted-foreground">Máximo 2200 caracteres · {formData.instagramDescription.length}/2200</p>
+              <p className="text-[10px] text-muted-foreground">{t.instagramCharHint(formData.instagramDescription.length)}</p>
             )}
             <LibraryControls
               network="instagram"
@@ -4136,7 +4150,7 @@ function StepTikTokInstagram({
               title={formData.title}
               description={formData.description}
               currentText={formData.instagramDescription || ""}
-              onAppend={(t) => setFormData({ ...formData, instagramDescription: t })}
+              onAppend={(txt) => setFormData({ ...formData, instagramDescription: txt })}
             />
           </div>
         </div>
@@ -4144,7 +4158,7 @@ function StepTikTokInstagram({
         <div className="pt-4 flex justify-between">
           <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Anterior
+            {t.btnPrev}
           </Button>
           <Button
             onClick={onSave}
@@ -4152,7 +4166,7 @@ function StepTikTokInstagram({
             className="bg-primary"
           >
             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
-            Guardar y Continuar
+            {t.btnSaveContinue}
           </Button>
         </div>
       </CardContent>
@@ -4180,6 +4194,7 @@ function StepYouTube({
   copyText: (text: string) => void;
 }) {
   const [aiBusy, setAiBusy] = useState(false);
+  const { t } = useLang();
   const showYoutubeTitlePlaceholder = (isAutoGenerating || aiBusy) && !formData.youtubeTitle;
   const showYoutubeDescPlaceholder = (isAutoGenerating || aiBusy) && !formData.youtubeDescription;
   const generateAi = async () => {
@@ -4217,7 +4232,7 @@ function StepYouTube({
               YouTube
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Título y descripción para YouTube Shorts. El título es diferente al de TikTok/Instagram.
+              {t.stepYouTubeSubtitle}
             </p>
           </div>
           <button
@@ -4226,24 +4241,24 @@ function StepYouTube({
             disabled={aiBusy || isAutoGenerating}
             className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
           >
-            {(aiBusy || isAutoGenerating) ? "Generando..." : "✨ Generar con IA"}
+            {(aiBusy || isAutoGenerating) ? t.btnGenerating : t.btnGenerateAI}
           </button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold">Título para YouTube</label>
+            <label className="text-sm font-semibold">{t.ytTitleLabel}</label>
             {formData.youtubeTitle && (
               <button onClick={() => copyText(formData.youtubeTitle)} className="text-xs text-primary hover:text-primary/80">
-                <Copy className="w-3 h-3 inline mr-1" />Copiar
+                <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
               </button>
             )}
           </div>
           {showYoutubeTitlePlaceholder ? (
             <div className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 h-12 flex items-center gap-2 text-primary/60">
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-              <span className="text-xs">Generando título de YouTube con IA...</span>
+              <span className="text-xs">{t.btnGenerating}</span>
             </div>
           ) : (
             <input
@@ -4255,16 +4270,16 @@ function StepYouTube({
             />
           )}
           {!showYoutubeTitlePlaceholder && (
-            <p className="text-[10px] text-muted-foreground">{formData.youtubeTitle.length}/100 caracteres</p>
+            <p className="text-[10px] text-muted-foreground">{t.ytTitleHint(formData.youtubeTitle.length)}</p>
           )}
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold">Descripción para YouTube</label>
+            <label className="text-sm font-semibold">{t.ytDescLabel}</label>
             {formData.youtubeDescription && (
               <button onClick={() => copyText(formData.youtubeDescription)} className="text-xs text-primary hover:text-primary/80">
-                <Copy className="w-3 h-3 inline mr-1" />Copiar
+                <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
               </button>
             )}
           </div>
@@ -4282,7 +4297,7 @@ function StepYouTube({
             />
           )}
           {!showYoutubeDescPlaceholder && (
-            <p className="text-[10px] text-muted-foreground">{formData.youtubeDescription.length}/5000 caracteres</p>
+            <p className="text-[10px] text-muted-foreground">{t.ytDescHint(formData.youtubeDescription.length)}</p>
           )}
           <LibraryControls
             network="youtube"
@@ -4290,14 +4305,14 @@ function StepYouTube({
             title={formData.youtubeTitle || formData.title}
             description={formData.description}
             currentText={formData.youtubeDescription || ""}
-            onAppend={(t) => setFormData({ ...formData, youtubeDescription: t })}
+            onAppend={(txt) => setFormData({ ...formData, youtubeDescription: txt })}
           />
         </div>
 
         <div className="pt-4 flex justify-between">
           <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Anterior
+            {t.btnPrev}
           </Button>
           <Button
             onClick={onSave}
@@ -4305,7 +4320,7 @@ function StepYouTube({
             className="bg-primary"
           >
             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
-            Guardar y Continuar
+            {t.btnSaveContinue}
           </Button>
         </div>
       </CardContent>
@@ -4332,6 +4347,7 @@ function StepLinkedInX({
   isAutoGenerating: boolean;
   copyText: (text: string) => void;
 }) {
+  const { t } = useLang();
   const xLen = (formData.xDescription || "").length;
   const [aiBusy, setAiBusy] = useState(false);
   const showLinkedInPlaceholder = (isAutoGenerating || aiBusy) && !formData.linkedinDescription;
@@ -4378,7 +4394,7 @@ function StepLinkedInX({
             disabled={aiBusy || isAutoGenerating}
             className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded-lg border border-primary/30 disabled:opacity-50 whitespace-nowrap"
           >
-            {(aiBusy || isAutoGenerating) ? "Generando..." : "✨ Generar con IA"}
+            {(aiBusy || isAutoGenerating) ? t.btnGenerating : t.btnGenerateAI}
           </button>
         </div>
       </CardHeader>
@@ -4394,7 +4410,7 @@ function StepLinkedInX({
               </label>
               {formData.linkedinDescription && (
                 <button onClick={() => copyText(formData.linkedinDescription)} className="text-xs text-primary hover:text-primary/80">
-                  <Copy className="w-3 h-3 inline mr-1" />Copiar
+                  <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
                 </button>
               )}
             </div>
@@ -4411,7 +4427,7 @@ function StepLinkedInX({
               />
             )}
             {!showLinkedInPlaceholder && (
-              <p className="text-[10px] text-muted-foreground">Máximo 3000 caracteres · {(formData.linkedinDescription || "").length}/3000</p>
+              <p className="text-[10px] text-muted-foreground">{t.linkedinCharHint((formData.linkedinDescription || "").length)}</p>
             )}
             <LibraryControls
               network="linkedin"
@@ -4419,7 +4435,7 @@ function StepLinkedInX({
               title={formData.title}
               description={formData.description}
               currentText={formData.linkedinDescription || ""}
-              onAppend={(t) => setFormData({ ...formData, linkedinDescription: t })}
+              onAppend={(txt) => setFormData({ ...formData, linkedinDescription: txt })}
             />
           </div>
 
@@ -4433,7 +4449,7 @@ function StepLinkedInX({
               </label>
               {formData.xDescription && (
                 <button onClick={() => copyText(formData.xDescription)} className="text-xs text-primary hover:text-primary/80">
-                  <Copy className="w-3 h-3 inline mr-1" />Copiar
+                  <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
                 </button>
               )}
             </div>
@@ -4450,7 +4466,7 @@ function StepLinkedInX({
             )}
             {!showXPlaceholder && (
               <p className={`text-[10px] ${xLen > 280 ? "text-red-400" : "text-muted-foreground"}`}>
-                Máximo 280 caracteres · {xLen}/280
+                {t.xCharHint(xLen)}
               </p>
             )}
             <LibraryControls
@@ -4459,7 +4475,7 @@ function StepLinkedInX({
               title={formData.title}
               description={formData.description}
               currentText={formData.xDescription || ""}
-              onAppend={(t) => setFormData({ ...formData, xDescription: t.slice(0, 280) })}
+              onAppend={(txt) => setFormData({ ...formData, xDescription: txt.slice(0, 280) })}
             />
           </div>
         </div>
@@ -4475,7 +4491,7 @@ function StepLinkedInX({
             </label>
             {formData.facebookDescription && (
               <button onClick={() => copyText(formData.facebookDescription)} className="text-xs text-primary hover:text-primary/80">
-                <Copy className="w-3 h-3 inline mr-1" />Copiar
+                <Copy className="w-3 h-3 inline mr-1" />{t.btnCopy}
               </button>
             )}
           </div>
@@ -4488,21 +4504,21 @@ function StepLinkedInX({
             placeholder={"¿Qué aprendes hoy? Comparte con tu comunidad 👇\n\n#WebDev #Chile"}
             ariaLabel="Descripción para Facebook"
           />
-          <p className="text-[10px] text-muted-foreground">Máximo 500 caracteres · {(formData.facebookDescription || "").length}/500</p>
+          <p className="text-[10px] text-muted-foreground">{t.fbCharHint((formData.facebookDescription || "").length)}</p>
           <LibraryControls
             network="facebook"
             videoId={video?.id}
             title={formData.title}
             description={formData.description}
             currentText={formData.facebookDescription || ""}
-            onAppend={(t) => setFormData({ ...formData, facebookDescription: t.slice(0, 500) })}
+            onAppend={(txt) => setFormData({ ...formData, facebookDescription: txt.slice(0, 500) })}
           />
         </div>
 
         <div className="pt-4 flex justify-between">
           <Button variant="outline" onClick={onPrev} className="border-foreground/10">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Anterior
+            {t.btnPrev}
           </Button>
           <Button
             onClick={onSave}
@@ -4510,7 +4526,7 @@ function StepLinkedInX({
             className="bg-primary"
           >
             {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ChevronRight className="w-4 h-4 mr-2" />}
-            Guardar y Continuar
+            {t.btnSaveContinue}
           </Button>
         </div>
       </CardContent>
@@ -4531,6 +4547,7 @@ function StepReview({
   isPending: boolean;
   copyText: (text: string) => void;
 }) {
+  const { t } = useLang();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ttFileInputRef = useRef<HTMLInputElement>(null);
   const [ytUploading, setYtUploading] = useState(false);
@@ -5025,11 +5042,11 @@ function StepReview({
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={handleCopyAll} className="border-foreground/10">
               <Copy className="w-4 h-4 mr-2" />
-              Copiar todo
+              {t.btnCopyAll}
             </Button>
             <Button variant="outline" size="sm" onClick={handleDownloadTxt} className="border-foreground/10">
               <FileText className="w-4 h-4 mr-2" />
-              Descargar .txt
+              {t.btnDownloadTxt}
             </Button>
             <Button
               variant="outline"
@@ -5043,7 +5060,7 @@ function StepReview({
               ) : (
                 <FileDown className="w-4 h-4 mr-2" />
               )}
-              Exportar .pdf
+              {exportingPdf ? t.btnExportingPdf : t.btnExportPdf}
             </Button>
           </div>
 
@@ -5064,18 +5081,18 @@ function StepReview({
                     {platform.ready ? (
                       <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">
                         <Check className="w-3 h-3 mr-1" />
-                        Listo
+                        {t.reviewReady}
                       </Badge>
                     ) : (
                       <Badge className="bg-red-500/10 text-red-400 border-red-500/20 text-[10px]">
                         <AlertCircle className="w-3 h-3 mr-1" />
-                        Pendiente
+                        {t.reviewPending}
                       </Badge>
                     )}
                     {isScheduled && platform.status === "scheduled" && (
                       <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/20 text-[10px]">
                         <Clock className="w-3 h-3 mr-1" />
-                        Programado
+                        {t.reviewScheduled}
                       </Badge>
                     )}
                   </div>
@@ -5101,9 +5118,9 @@ function StepReview({
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-amber-400">Faltan datos por completar</p>
+                <p className="text-sm font-medium text-amber-400">{t.reviewIncomplete}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Completa todos los pasos anteriores antes de programar
+                  {t.reviewIncompleteDesc}
                 </p>
               </div>
             </div>
@@ -5119,7 +5136,7 @@ function StepReview({
                 <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${video.status === "partial" ? "text-amber-400" : "text-rose-400"}`} />
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-semibold ${video.status === "partial" ? "text-amber-300" : "text-rose-300"}`}>
-                    {video.status === "partial" ? "Publicado parcialmente" : "Hubo errores al publicar"}
+                    {video.status === "partial" ? t.reviewPartiallyPublished : t.reviewPublishErrors}
                   </p>
                   <div className="mt-2 space-y-1">
                     {video.linkedinError && (
@@ -5143,11 +5160,11 @@ function StepReview({
               <div className="flex items-start gap-3">
                 <Check className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-emerald-400">Programado en las plataformas configuradas</p>
+                  <p className="text-sm font-medium text-emerald-400">{t.reviewScheduledSuccess}</p>
                   {video.scheduleHour && (
                     <div className="flex items-center gap-2 mt-2 bg-foreground/5 rounded-lg px-3 py-2">
                       <Clock className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium">Hora programada: <span className="text-primary">{video.scheduleHour}</span></span>
+                      <span className="text-sm font-medium">{t.reviewScheduledTime} <span className="text-primary">{video.scheduleHour}</span></span>
                       <span className="text-xs text-muted-foreground ml-2">
                         ({video.month} / {video.week} / {video.day})
                       </span>
@@ -5164,7 +5181,7 @@ function StepReview({
                 <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
               </span>
               <div className="flex-1">
-                <p className="text-sm font-medium text-red-400">Subido a YouTube</p>
+                <p className="text-sm font-medium text-red-400">{t.reviewUploadedToYT}</p>
                 <p className="text-xs text-muted-foreground">ID: {video.youtubeVideoId}</p>
               </div>
               <a
@@ -5173,15 +5190,15 @@ function StepReview({
                 rel="noopener noreferrer"
                 className="text-xs text-red-400 hover:text-red-300 underline"
               >
-                Ver en YouTube
+                {t.reviewViewOnYT}
               </a>
             </div>
           ) : isScheduled && video.youtubeTitle && (
             <div className="bg-foreground/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
-                <span className="text-[10px] text-muted-foreground">· Se sube ahora, no en la hora programada</span>
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">{t.reviewImmediateUpload}</span>
+                <span className="text-[10px] text-muted-foreground">{t.reviewImmediateSubtitle}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -5189,11 +5206,11 @@ function StepReview({
                     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">Subir a YouTube ahora</p>
+                    <p className="text-sm font-medium text-foreground">{t.reviewUploadYTNow}</p>
                     <p className="text-xs text-muted-foreground line-clamp-2">
                       {hasVideoFile
-                        ? `Subir "${video.videoFileName || "video"}" como Short privado`
-                        : "Selecciona un video desde Drive"}
+                        ? t.reviewUploadPrivateYT(video.videoFileName || "video")
+                        : t.reviewSelectFromDrive}
                     </p>
                   </div>
                 </div>
@@ -5210,7 +5227,7 @@ function StepReview({
                       ) : (
                         <Upload className="w-4 h-4 mr-2" />
                       )}
-                      {ytUploading ? "Subiendo..." : "Subir desde Drive"}
+                      {ytUploading ? t.reviewUploading : t.reviewUploadFromDrive}
                     </Button>
                   ) : (
                     <Button
@@ -5224,7 +5241,7 @@ function StepReview({
                       ) : (
                         <FolderOpen className="w-4 h-4 mr-2" />
                       )}
-                      {ytUploading ? "Subiendo..." : "Desde Drive"}
+                      {ytUploading ? t.reviewUploading : t.reviewFromDrive}
                     </Button>
                   )}
                 </div>
@@ -5273,19 +5290,19 @@ function StepReview({
                 <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
               </span>
               <div className="flex-1">
-                <p className="text-sm font-medium text-foreground">Subido a TikTok</p>
+                <p className="text-sm font-medium text-foreground">{t.reviewUploadedToTT}</p>
                 <p className="text-xs text-muted-foreground">Publish ID: {video.tiktokPublishId}</p>
               </div>
               <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
-                Enviado
+                {t.reviewSentToTT}
               </span>
             </div>
           ) : isScheduled && video.tiktokDescription && (
             <div className="bg-foreground/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
-                <span className="text-[10px] text-muted-foreground">· Se sube ahora, no en la hora programada</span>
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">{t.reviewImmediateUpload}</span>
+                <span className="text-[10px] text-muted-foreground">{t.reviewImmediateSubtitle}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -5293,11 +5310,11 @@ function StepReview({
                     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V8.98a8.18 8.18 0 004.76 1.52V7.05a4.84 4.84 0 01-1-.36z"/></svg>
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">Subir a TikTok ahora</p>
+                    <p className="text-sm font-medium text-foreground">{t.reviewUploadTTNow}</p>
                     <p className="text-xs text-muted-foreground line-clamp-2">
                       {hasVideoFile
-                        ? `Subir "${video.videoFileName || "video"}" como privado`
-                        : "Selecciona un video desde Drive"}
+                        ? t.reviewUploadPrivateTT(video.videoFileName || "video")
+                        : t.reviewSelectFromDrive}
                     </p>
                   </div>
                 </div>
@@ -5314,7 +5331,7 @@ function StepReview({
                       ) : (
                         <Upload className="w-4 h-4 mr-2" />
                       )}
-                      {ttUploading ? "Subiendo..." : "Subir desde Drive"}
+                      {ttUploading ? t.reviewUploading : t.reviewUploadFromDrive}
                     </Button>
                   ) : (
                     <Button
@@ -5328,7 +5345,7 @@ function StepReview({
                       ) : (
                         <FolderOpen className="w-4 h-4 mr-2" />
                       )}
-                      {ttUploading ? "Subiendo..." : "Desde Drive"}
+                      {ttUploading ? t.reviewUploading : t.reviewFromDrive}
                     </Button>
                   )}
                 </div>
@@ -5350,7 +5367,7 @@ function StepReview({
                     <>
                       <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-bold">Subida exitosa a TikTok</p>
+                        <p className="font-bold">{t.reviewTTSuccessTitle}</p>
                         <p className="text-xs text-muted-foreground mt-1">{ttResult.message}</p>
                       </div>
                     </>
@@ -5371,19 +5388,19 @@ function StepReview({
                 <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
               </span>
               <div className="flex-1">
-                <p className="text-sm font-medium text-pink-400">Subido a Instagram</p>
+                <p className="text-sm font-medium text-pink-400">{t.reviewUploadedToIG}</p>
                 <p className="text-xs text-muted-foreground">Media ID: {video.instagramMediaId}</p>
               </div>
               <span className="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full font-medium">
-                Publicado
+                {t.reviewPublishedIG}
               </span>
             </div>
           ) : isScheduled && video.instagramDescription && (
             <div className="bg-foreground/5 border border-amber-500/20 rounded-xl p-4 space-y-3">
               <div className="flex items-center gap-2 mb-2">
                 <AlertCircle className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Subida Inmediata</span>
-                <span className="text-[10px] text-muted-foreground">· Se sube ahora como Reel público</span>
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wide">{t.reviewImmediateUpload}</span>
+                <span className="text-[10px] text-muted-foreground">{t.reviewImmediateSubtitleIG}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
@@ -5391,11 +5408,11 @@ function StepReview({
                     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">Subir a Instagram ahora</p>
+                    <p className="text-sm font-medium text-foreground">{t.reviewUploadIGNow}</p>
                     <p className="text-xs text-muted-foreground line-clamp-2">
                       {hasVideoFile
-                        ? `Subir "${video.videoFileName || "video"}" como Reel`
-                        : "Selecciona un video desde Drive"}
+                        ? t.reviewUploadReel(video.videoFileName || "video")
+                        : t.reviewSelectFromDrive}
                     </p>
                   </div>
                 </div>
@@ -5412,7 +5429,7 @@ function StepReview({
                       ) : (
                         <Upload className="w-4 h-4 mr-2" />
                       )}
-                      {igUploading ? "Subiendo..." : "Subir desde Drive"}
+                      {igUploading ? t.reviewUploading : t.reviewUploadFromDrive}
                     </Button>
                   ) : (
                     <Button
@@ -5426,7 +5443,7 @@ function StepReview({
                       ) : (
                         <FolderOpen className="w-4 h-4 mr-2" />
                       )}
-                      {igUploading ? "Subiendo..." : "Desde Drive"}
+                      {igUploading ? t.reviewUploading : t.reviewFromDrive}
                     </Button>
                   )}
                 </div>
@@ -5448,7 +5465,7 @@ function StepReview({
                     <>
                       <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="font-bold">Subida exitosa a Instagram</p>
+                        <p className="font-bold">{t.reviewIGSuccessTitle}</p>
                         <p className="text-xs text-muted-foreground mt-1">{igResult.message}</p>
                       </div>
                     </>
@@ -5466,7 +5483,7 @@ function StepReview({
           <div className="pt-4 flex justify-between">
             <Button variant="outline" onClick={onPrev} className="border-foreground/10">
               <ArrowLeft className="w-4 h-4 mr-2" />
-              Anterior
+              {t.btnPrev}
             </Button>
             {!isScheduled && (
               <div className="flex items-center gap-3 flex-wrap justify-end">
@@ -5481,7 +5498,7 @@ function StepReview({
                     <span className="w-5 h-5 rounded bg-[#1877F2] flex items-center justify-center flex-shrink-0">
                       <svg viewBox="0 0 24 24" className="w-3 h-3 fill-white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
                     </span>
-                    <span>Incluir Facebook</span>
+                    <span>{t.reviewIncludeFacebook}</span>
                   </label>
                 )}
                 <Button
@@ -5494,7 +5511,7 @@ function StepReview({
                   ) : (
                     <Send className="w-4 h-4 mr-2" />
                   )}
-                  Programar
+                  {t.btnSchedule}
                 </Button>
               </div>
             )}

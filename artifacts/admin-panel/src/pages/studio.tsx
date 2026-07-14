@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
+import { useLang } from "@/lib/lang";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -180,6 +181,7 @@ function TeleprompterView({
   const isPlayingRef = useRef(false);
   const speedRef = useRef(35);
 
+  const { t } = useLang();
   const [voiceMode, setVoiceMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [highlightUpTo, setHighlightUpTo] = useState(-1);
@@ -502,7 +504,7 @@ function TeleprompterView({
             {voiceMode && isListening && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30">
                 <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-[10px] text-red-400 font-medium">Escuchando</span>
+                <span className="text-[10px] text-red-400 font-medium">{t.studioListening}</span>
               </div>
             )}
             <Badge className={`text-[10px] border ${PLATFORM_COLORS[idea.plataforma] || "bg-gray-500/20 text-gray-400"}`}>
@@ -620,15 +622,15 @@ function TeleprompterView({
 
             {!voiceMode && (
               <div className="flex items-center gap-3 px-1">
-                <span className="text-[9px] text-white/30 w-8">Lento</span>
+                <span className="text-[9px] text-white/30 w-8">{t.studioSlow}</span>
                 <Slider value={[speed]} onValueChange={([v]) => { setSpeed(v); speedRef.current = v; }} min={8} max={100} step={4} className="flex-1" data-testid="slider-speed" />
-                <span className="text-[9px] text-white/30 w-10 text-right">Rapido</span>
+                <span className="text-[9px] text-white/30 w-10 text-right">{t.studioFast}</span>
               </div>
             )}
 
             {voiceMode && (
               <p className="text-center text-[10px] text-white/30">
-                {isListening ? "Habla y el guion te sigue" : "Activando microfono..."}
+                {isListening ? t.studioSpeakFollow : t.studioActivatingMic}
               </p>
             )}
           </div>
@@ -638,8 +640,9 @@ function TeleprompterView({
   );
 }
 
-class CameraErrorBoundary extends Component<{ onBack: () => void; children: ReactNode }, { hasError: boolean; error: string }> {
-  constructor(props: { onBack: () => void; children: ReactNode }) {
+type CameraErrorBoundaryProps = { onBack: () => void; children: ReactNode; errorTitle: string; retryLabel: string; backLabel: string };
+class CameraErrorBoundary extends Component<CameraErrorBoundaryProps, { hasError: boolean; error: string }> {
+  constructor(props: CameraErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: "" };
   }
@@ -655,13 +658,13 @@ class CameraErrorBoundary extends Component<{ onBack: () => void; children: Reac
         <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
           <div className="text-center space-y-4 px-8">
             <VideoOff className="w-16 h-16 text-red-400/50 mx-auto" />
-            <p className="text-white/70 text-sm font-medium">Error al iniciar la camara</p>
+            <p className="text-white/70 text-sm font-medium">{this.props.errorTitle}</p>
             <p className="text-white/30 text-xs max-w-xs">{this.state.error}</p>
             <Button onClick={() => { this.setState({ hasError: false, error: "" }); }} variant="outline" className="text-white border-white/20 touch-manipulation">
-              Reintentar
+              {this.props.retryLabel}
             </Button>
             <Button onClick={this.props.onBack} variant="ghost" className="text-white/40 touch-manipulation block mx-auto">
-              Volver
+              {this.props.backLabel}
             </Button>
           </div>
         </div>
@@ -688,6 +691,7 @@ function CameraRecordingView({
 }) {
   const hasScript = !!idea?.guion;
   type Phase = "recording" | "loading-video" | "editing" | "review" | "uploading" | "done";
+  const { t } = useLang();
   const { toast } = useToast();
   const mountedRef = useRef(true);
 
@@ -2135,13 +2139,13 @@ function CameraRecordingView({
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center space-y-4 px-8">
             <VideoOff className="w-16 h-16 text-white/30 mx-auto" />
-            <p className="text-white/50 text-sm">No se pudo acceder a la camara</p>
-            <p className="text-white/30 text-xs">Verifica los permisos de camara en la configuracion de tu navegador o app</p>
+            <p className="text-white/50 text-sm">{t.studioCameraError}</p>
+            <p className="text-white/30 text-xs">{t.studioCameraPermission}</p>
             <Button onClick={() => startCamera(facingModeRef.current)} variant="outline" className="text-white border-white/20 touch-manipulation">
-              Reintentar
+              {t.studioCameraRetry}
             </Button>
             <Button onClick={handleBack} variant="ghost" className="text-white/40 touch-manipulation">
-              Volver
+              {t.studioCameraBack}
             </Button>
           </div>
         </div>
@@ -2459,6 +2463,7 @@ function CameraRecordingView({
 type RecordingStats = { weeklyCount: number; monthlyCount: number; totalCount: number; streak: number };
 
 export default function RecordingStudio() {
+  const { t } = useLang();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedIdea, setSelectedIdea] = useState<AiVideoIdea | null>(null);
@@ -2750,7 +2755,7 @@ export default function RecordingStudio() {
 
   if (freeRecording) {
     return (
-      <CameraErrorBoundary onBack={() => setFreeRecording(false)}>
+      <CameraErrorBoundary onBack={() => setFreeRecording(false)} errorTitle={t.studioCameraError} retryLabel={t.studioCameraRetry} backLabel={t.studioCameraBack}>
         <CameraRecordingView
           idea={null}
           onBack={() => setFreeRecording(false)}
@@ -2768,7 +2773,7 @@ export default function RecordingStudio() {
 
   if (cameraIdea) {
     return (
-      <CameraErrorBoundary onBack={() => setCameraIdea(null)}>
+      <CameraErrorBoundary onBack={() => setCameraIdea(null)} errorTitle={t.studioCameraError} retryLabel={t.studioCameraRetry} backLabel={t.studioCameraBack}>
         <CameraRecordingView
           idea={cameraIdea}
           onBack={() => setCameraIdea(null)}
