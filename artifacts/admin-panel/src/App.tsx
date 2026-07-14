@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, useContext, Component, lazy, Suspense, type ReactNode } from "react";
+import { LangProvider } from "@/lib/lang";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle } from "lucide-react";
@@ -224,17 +225,19 @@ function PublicRoutes() {
 
 function App() {
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <ConnectionBanner />
-            <PublicRoutes />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+    <LangProvider>
+      <ErrorBoundary>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <ConnectionBanner />
+              <PublicRoutes />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </ErrorBoundary>
+    </LangProvider>
   );
 }
 

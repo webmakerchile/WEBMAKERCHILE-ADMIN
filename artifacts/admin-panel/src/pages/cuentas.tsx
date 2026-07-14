@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { HelpHint } from "@/components/help-hint";
 import { EmptyState } from "@/components/empty-state";
+import { useLang } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -36,14 +37,7 @@ type HealthPayload = {
   }>;
 };
 
-const STATE_BADGE: Record<ConnectionState, { label: string; cls: string } | null> = {
-  connected: { label: "Activo", cls: "text-emerald-400 bg-emerald-500/10" },
-  expiring: { label: "Por expirar", cls: "text-amber-300 bg-amber-500/15" },
-  expired: { label: "Expirada", cls: "text-rose-300 bg-rose-500/15" },
-  revoked: { label: "Revocada", cls: "text-rose-300 bg-rose-500/15" },
-  disconnected: null,
-  unknown: { label: "Sin datos", cls: "text-muted-foreground bg-foreground/5" },
-};
+type StateBadgeMap = Record<ConnectionState, { label: string; cls: string } | null>;
 
 type Endpoints = {
   status: string;
@@ -59,43 +53,15 @@ type NetworkConfig = {
   serverManagedNote?: string;
 };
 
-const NETWORKS: NetworkConfig[] = [
-  {
-    network: "facebook",
-    endpoints: { status: "/facebook/status", authUrl: "", disconnect: null },
-    description: "Página de Facebook conectada a nivel servidor",
-    serverManaged: true,
-    serverManagedNote: "Facebook usa credenciales de System User permanentes configuradas en el servidor.",
-  },
-  {
-    network: "instagram",
-    endpoints: { status: "/instagram/status", authUrl: "", disconnect: null },
-    description: "Cuenta de Instagram Business vinculada a la Página",
-    serverManaged: true,
-    serverManagedNote:
-      "Instagram requiere credenciales de Meta a nivel de servidor (INSTAGRAM_ACCESS_TOKEN). Pídele al administrador que las configure en los secretos del proyecto.",
-  },
-  {
-    network: "linkedin",
-    endpoints: { status: "/linkedin/status", authUrl: "/linkedin/auth", disconnect: "/linkedin/disconnect" },
-    description: "Personal o Página de empresa",
-  },
-  {
-    network: "x",
-    endpoints: { status: "/x/status", authUrl: "/x/auth", disconnect: "/x/disconnect" },
-    description: "Cuenta de X (Twitter)",
-  },
-  {
-    network: "tiktok",
-    endpoints: { status: "/tiktok/status", authUrl: "/tiktok/auth", disconnect: "/tiktok/disconnect" },
-    description: "Modo sandbox: el video llega como borrador",
-  },
-  {
-    network: "youtube",
-    endpoints: { status: "/youtube/channel", authUrl: "/auth/google", disconnect: "/youtube/disconnect" },
-    description: "Canal vinculado a tu cuenta de Google",
-  },
-];
+const NETWORK_ENDPOINTS: Record<Network, { status: string; authUrl: string; disconnect: string | null; serverManaged?: boolean }> = {
+  facebook: { status: "/facebook/status", authUrl: "", disconnect: null, serverManaged: true },
+  instagram: { status: "/instagram/status", authUrl: "", disconnect: null, serverManaged: true },
+  linkedin: { status: "/linkedin/status", authUrl: "/linkedin/auth", disconnect: "/linkedin/disconnect" },
+  x: { status: "/x/status", authUrl: "/x/auth", disconnect: "/x/disconnect" },
+  tiktok: { status: "/tiktok/status", authUrl: "/tiktok/auth", disconnect: "/tiktok/disconnect" },
+  youtube: { status: "/youtube/channel", authUrl: "/auth/google", disconnect: "/youtube/disconnect" },
+};
+const NETWORK_ORDER: Network[] = ["facebook", "instagram", "linkedin", "x", "tiktok", "youtube"];
 
 type BrandToneState = {
   voice: string;
@@ -346,7 +312,9 @@ type StatusPayload = {
   pagePicture?: string;
 };
 
-function normalizeStatus(network: Network, raw: StatusPayload | null | undefined): AccountInfo {
+type TT = ReturnType<typeof import("@/lib/lang").useLang>["t"];
+
+function normalizeStatus(network: Network, raw: StatusPayload | null | undefined, t: TT): AccountInfo {
   const base: AccountInfo = { loading: false, connected: !!raw?.connected, message: raw?.message };
   if (!raw || !base.connected) return base;
   if (network === "youtube" && raw.channel) {
@@ -362,7 +330,7 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
       ...base,
       displayName: raw.user.displayName,
       picture: raw.user.avatar,
-      meta: "Conectado (sandbox)",
+      meta: t.tiktokSandbox,
     };
   }
   if (network === "instagram" && raw.account) {
@@ -371,7 +339,7 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
       displayName: raw.account.name || raw.account.username,
       handle: raw.account.username ? `@${raw.account.username}` : undefined,
       picture: raw.account.profilePicture,
-      meta: `${raw.account.followersCount ?? 0} seguidores · ${raw.account.mediaCount ?? 0} posts`,
+      meta: `${raw.account.followersCount ?? 0} ${t.followers} · ${raw.account.mediaCount ?? 0} ${t.posts}`,
     };
   }
   if (network === "linkedin" && raw.user) {
@@ -380,8 +348,8 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
       displayName: raw.user.name,
       picture: raw.user.picture,
       meta: raw.user.orgUrn
-        ? `Página de empresa${raw.user.orgName ? ": " + raw.user.orgName : ""}`
-        : "Perfil personal",
+        ? `${t.linkedinCompanyPageMeta}${raw.user.orgName ? ": " + raw.user.orgName : ""}`
+        : t.linkedinPersonalMeta,
     };
   }
   if (network === "x" && raw.user) {
@@ -389,7 +357,7 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
       ...base,
       displayName: raw.user.username ? `@${raw.user.username}` : raw.user.name,
       picture: raw.user.picture,
-      meta: "Cuenta de X conectada",
+      meta: t.xConnected,
     };
   }
   if (network === "facebook") {
@@ -397,7 +365,7 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
       ...base,
       displayName: raw.pageName,
       picture: raw.pagePicture,
-      meta: "Página de Facebook conectada",
+      meta: t.fbConnected,
     };
   }
   return base;
@@ -406,9 +374,38 @@ function normalizeStatus(network: Network, raw: StatusPayload | null | undefined
 type LinkedInOrg = { urn: string; name: string; vanity?: string };
 
 export default function CuentasPage() {
+  const { t } = useLang();
+
+  const STATE_BADGE: StateBadgeMap = {
+    connected: { label: t.badgeActive, cls: "text-emerald-400 bg-emerald-500/10" },
+    expiring: { label: t.badgeExpiring, cls: "text-amber-300 bg-amber-500/15" },
+    expired: { label: t.badgeExpired, cls: "text-rose-300 bg-rose-500/15" },
+    revoked: { label: t.badgeRevoked, cls: "text-rose-300 bg-rose-500/15" },
+    disconnected: null,
+    unknown: { label: t.badgeUnknown, cls: "text-muted-foreground bg-foreground/5" },
+  };
+
+  const NETWORKS_CONFIG = NETWORK_ORDER.map((network) => ({
+    network,
+    endpoints: NETWORK_ENDPOINTS[network],
+    description: {
+      facebook: t.descFacebook,
+      instagram: t.descInstagram,
+      linkedin: t.descLinkedin,
+      x: t.descX,
+      tiktok: t.descTiktok,
+      youtube: t.descYoutube,
+    }[network],
+    serverManaged: NETWORK_ENDPOINTS[network].serverManaged,
+    serverManagedNote: {
+      facebook: t.noteFacebook,
+      instagram: t.noteInstagram,
+    }[network as "facebook" | "instagram"],
+  }));
+
   const [accounts, setAccounts] = useState<Record<Network, AccountInfo>>(() => {
     const init: Record<string, AccountInfo> = {};
-    for (const n of NETWORKS) init[n.network] = { loading: true, connected: false };
+    for (const n of NETWORK_ORDER) init[n] = { loading: true, connected: false };
     return init as Record<Network, AccountInfo>;
   });
 
@@ -418,10 +415,7 @@ export default function CuentasPage() {
       const res = await fetch(`${API_BASE}${endpoint}`, { credentials: "include" });
       const data = (await res.json()) as StatusPayload;
       if (network === "linkedin") setLinkedinRawStatus(data);
-      const normalized = normalizeStatus(network, data);
-      // Merge over the previous record so health-only fields (state,
-      // expiresAt, daysUntilExpiry) populated by fetchHealth survive a
-      // subsequent fetchOne response.
+      const normalized = normalizeStatus(network, data, t);
       setAccounts((prev) => ({
         ...prev,
         [network]: {
@@ -466,7 +460,7 @@ export default function CuentasPage() {
   };
 
   useEffect(() => {
-    NETWORKS.forEach((n) => fetchOne(n.network, n.endpoints.status));
+    NETWORK_ORDER.forEach((network) => fetchOne(network, NETWORK_ENDPOINTS[network].status));
     fetchHealth();
     const params = new URLSearchParams(window.location.search);
     if (
@@ -530,18 +524,18 @@ export default function CuentasPage() {
 
   const handleDisconnect = async (network: Network, endpoint: string | null, statusEndpoint: string) => {
     if (!endpoint) return;
-    if (!confirm(`¿Desconectar ${NETWORK_LABELS[network]}?`)) return;
+    if (!confirm(`${t.cuentasDisconnect} ${NETWORK_LABELS[network]}?`)) return;
     try {
       const res = await fetch(`${API_BASE}${endpoint}`, { method: "POST", credentials: "include" });
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         console.error(`[cuentas] ${network} disconnect failed:`, res.status, txt);
-        alert(`No se pudo desconectar ${NETWORK_LABELS[network]}`);
+        alert(`${t.cuentasDisconnect} ${NETWORK_LABELS[network]} failed`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Error desconocido";
       console.error(`[cuentas] ${network} disconnect error:`, message);
-      alert(`Error desconectando ${NETWORK_LABELS[network]}: ${message}`);
+      alert(`${NETWORK_LABELS[network]}: ${message}`);
     }
     fetchOne(network, statusEndpoint);
   };
@@ -557,14 +551,14 @@ export default function CuentasPage() {
       <div className="space-y-8">
         <header>
           <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
-            Cuentas Sociales
+            {t.cuentasTitle}
             <HelpHint
-              text="Conecta cada red para publicar y traer estadísticas. Algunas redes (Facebook, Instagram) usan credenciales de servidor: aparecen como conectadas si el administrador configuró las llaves correspondientes."
+              text={t.cuentasHint}
               side="bottom"
             />
           </h1>
           <p className="text-muted-foreground text-sm sm:text-lg">
-            Conecta tus redes sociales para publicar y traer estadísticas a tu Inicio.
+            {t.cuentasSubtitle}
           </p>
         </header>
 
@@ -573,14 +567,14 @@ export default function CuentasPage() {
         {noNetworksConnected && (
           <EmptyState
             icon={Link2}
-            title="Aún no has conectado ninguna red social"
-            description="Comienza por conectar al menos una red abajo. Cada red habilita publicar videos, descripciones e historias en su plataforma."
+            title={t.cuentasNoConnected}
+            description={t.cuentasNoConnectedDesc}
             size="sm"
           />
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {NETWORKS.map(({ network, endpoints, description, serverManaged, serverManagedNote }, idx) => {
+          {NETWORKS_CONFIG.map(({ network, endpoints, description, serverManaged, serverManagedNote }, idx) => {
             const info = accounts[network];
             const authHref = endpoints.authUrl ? `${API_BASE}${endpoints.authUrl}` : "";
             return (
@@ -656,17 +650,17 @@ export default function CuentasPage() {
                         {info.meta && <p className="text-xs text-muted-foreground truncate">{info.meta}</p>}
                         {info.expiresAt && (state === "connected" || state === "expiring" || state === "expired") && (
                           <p className="text-[11px] text-muted-foreground mt-1">
-                            Vence el {new Date(info.expiresAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}
+                            {t.expiresOn} {new Date(info.expiresAt).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" })}
                           </p>
                         )}
                         {state === "expiring" && info.daysUntilExpiry != null && (
                           <p className="text-[11px] text-amber-300/90 mt-1">
-                            La sesión caduca en {info.daysUntilExpiry} día{info.daysUntilExpiry === 1 ? "" : "s"}. Reconecta pronto para evitar fallas.
+                            {t.expiringSoon(info.daysUntilExpiry)}
                           </p>
                         )}
                         {(state === "expired" || state === "revoked") && (
                           <p className="text-[11px] text-rose-300/90 mt-1">
-                            La sesión ya no es válida. Reconecta tu cuenta para volver a publicar.
+                            {t.sessionInvalid}
                           </p>
                         )}
                       </div>
@@ -682,7 +676,7 @@ export default function CuentasPage() {
                           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10 text-sm transition mb-2"
                         >
                           <Building2 className="w-4 h-4" />
-                          Cambiar identidad de publicación
+                          {t.linkedinChangeIdentity}
                           <ChevronDown className={`w-3 h-3 ml-auto transition-transform ${linkedinOrgOpen ? "rotate-180" : ""}`} />
                         </button>
 
@@ -691,11 +685,11 @@ export default function CuentasPage() {
                             {linkedinOrgLoading ? (
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Loader2 className="w-3 h-3 animate-spin" />
-                                Buscando páginas...
+                                {t.linkedinSearching}
                               </div>
                             ) : (
                               <>
-                                <p className="text-[11px] text-muted-foreground mb-2">Elige cómo publicar en LinkedIn:</p>
+                                <p className="text-[11px] text-muted-foreground mb-2">{t.linkedinChooseHow}</p>
                                 <button
                                   onClick={() => selectLinkedInOrg(null)}
                                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition border ${
@@ -705,7 +699,7 @@ export default function CuentasPage() {
                                   }`}
                                 >
                                   <User className="w-4 h-4 flex-shrink-0" />
-                                  <span className="truncate">{linkedinRawStatus?.user?.personalName || "Perfil personal"}</span>
+                                  <span className="truncate">{linkedinRawStatus?.user?.personalName || t.linkedinPersonal}</span>
                                   {!linkedinRawStatus?.user?.orgUrn && <CheckCircle2 className="w-3 h-3 ml-auto text-emerald-400" />}
                                 </button>
 
@@ -728,7 +722,7 @@ export default function CuentasPage() {
                                 ) : linkedinOrgs !== null ? (
                                   <div className="space-y-2 pt-1">
                                     <p className="text-[11px] text-muted-foreground px-1 leading-relaxed">
-                                      Ingresa la URL o nombre de tu Página de empresa en LinkedIn:
+                                      {t.linkedinEnterPage}
                                     </p>
                                     <div className="flex gap-2">
                                       <input
@@ -756,11 +750,11 @@ export default function CuentasPage() {
                                         >
                                           <Building2 className="w-4 h-4 flex-shrink-0" />
                                           <span className="truncate">{linkedinSearchResult.name}</span>
-                                          <span className="ml-auto text-[10px] text-emerald-400">Seleccionar →</span>
+                                          <span className="ml-auto text-[10px] text-emerald-400">{t.linkedinSelect}</span>
                                         </button>
                                       ) : (
                                         <p className="text-[11px] text-amber-400/80 px-1">
-                                          No se encontró esa página. Verifica el nombre exacto en linkedin.com/company/...
+                                          {t.linkedinNotFound}
                                         </p>
                                       )
                                     )}
@@ -779,7 +773,7 @@ export default function CuentasPage() {
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-sm transition"
                       >
                         <Link2 className="w-4 h-4" />
-                        Reconectar ahora
+                        {t.cuentasReconnect}
                       </a>
                     )}
 
@@ -789,7 +783,7 @@ export default function CuentasPage() {
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 text-sm transition"
                       >
                         <Unlink className="w-4 h-4" />
-                        Desconectar
+                        {t.cuentasDisconnect}
                       </button>
                     ) : (
                       <button
@@ -797,7 +791,7 @@ export default function CuentasPage() {
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-foreground/10 text-muted-foreground hover:bg-foreground/5 text-sm transition"
                       >
                         <Loader2 className="w-4 h-4" />
-                        Refrescar estado
+                        {t.cuentasRefresh}
                       </button>
                     )}
                   </div>
@@ -810,9 +804,9 @@ export default function CuentasPage() {
                         <Link2 className="w-5 h-5 text-amber-400" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm text-amber-400">No conectado</h3>
+                        <h3 className="font-semibold text-sm text-amber-400">{t.cuentasNotConnected}</h3>
                         <p className="text-xs text-muted-foreground line-clamp-2">
-                          {info.message || "Sin sesión activa"}
+                          {info.message || t.cuentasNoSession}
                         </p>
                       </div>
                     </div>
@@ -823,16 +817,16 @@ export default function CuentasPage() {
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-sm transition"
                       >
                         <Link2 className="w-4 h-4" />
-                        Conectar
+                        {t.cuentasConnect}
                       </a>
                     ) : serverManaged ? (
                       <p className="text-[11px] text-muted-foreground/70 leading-relaxed flex items-start gap-1.5 px-2">
                         <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                        <span>{serverManagedNote || "Configurar credenciales en los secretos del servidor."}</span>
+                        <span>{serverManagedNote || t.cuentasServerManaged}</span>
                       </p>
                     ) : (
                       <p className="text-[11px] text-muted-foreground/70 text-center px-2">
-                        Sin método de conexión disponible.
+                        {t.cuentasNoMethod}
                       </p>
                     )}
                   </div>

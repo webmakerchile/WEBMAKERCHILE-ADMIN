@@ -20,6 +20,7 @@ import {
   LogOut,
   Menu,
   X,
+  Languages,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -28,31 +29,33 @@ import { GlobalShortcutsProvider } from "@/components/global-shortcuts-provider"
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { InstallBanner } from "@/components/install-banner";
+import { useLang } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
-
-const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "Inicio", tour: "nav-inicio" },
-  { href: "/schedule", icon: CalendarClock, label: "Publicaciones", tour: "nav-schedule" },
-  { href: "/cuentas", icon: Users2, label: "Cuentas Sociales", tour: "nav-cuentas" },
-  { href: "/videos", icon: Video, label: "Gestor de Videos", tour: "nav-videos" },
-  { href: "/insights", icon: BarChart3, label: "Insights", tour: "nav-insights" },
-  { href: "/biblioteca", icon: Library, label: "Biblioteca", tour: "nav-biblioteca" },
-  { href: "/cover", icon: ImageIcon, label: "Portadas", tour: "nav-cover" },
-  { href: "/historias", icon: Sparkles, label: "Historias", tour: "nav-historias" },
-  { href: "/descripciones", icon: MessageSquareText, label: "Descripciones", tour: "nav-descripciones" },
-  { href: "/drive", icon: FolderTree, label: "Drive", tour: "nav-drive" },
-  { href: "/estudio", icon: Clapperboard, label: "Estudio", tour: "nav-estudio" },
-  { href: "/transcriptor", icon: AudioLines, label: "Transcriptor", tour: "nav-transcriptor" },
-  { href: "/equipo", icon: Users2, label: "Equipo", tour: "nav-equipo" },
-  { href: "/ayuda", icon: HelpCircle, label: "Ayuda", tour: "nav-help" },
-];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const user = useAuth();
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { t, toggleLang, lang } = useLang();
+
+  const navItems = [
+    { href: "/", icon: LayoutDashboard, label: t.navHome, tour: "nav-inicio" },
+    { href: "/schedule", icon: CalendarClock, label: t.navPosts, tour: "nav-schedule" },
+    { href: "/cuentas", icon: Users2, label: t.navAccounts, tour: "nav-cuentas" },
+    { href: "/videos", icon: Video, label: t.navVideos, tour: "nav-videos" },
+    { href: "/insights", icon: BarChart3, label: t.navInsights, tour: "nav-insights" },
+    { href: "/biblioteca", icon: Library, label: t.navLibrary, tour: "nav-biblioteca" },
+    { href: "/cover", icon: ImageIcon, label: t.navCovers, tour: "nav-cover" },
+    { href: "/historias", icon: Sparkles, label: t.navStories, tour: "nav-historias" },
+    { href: "/descripciones", icon: MessageSquareText, label: t.navDescriptions, tour: "nav-descripciones" },
+    { href: "/drive", icon: FolderTree, label: t.navDrive, tour: "nav-drive" },
+    { href: "/estudio", icon: Clapperboard, label: t.navStudio, tour: "nav-estudio" },
+    { href: "/transcriptor", icon: AudioLines, label: t.navTranscriber, tour: "nav-transcriptor" },
+    { href: "/equipo", icon: Users2, label: t.navTeam, tour: "nav-equipo" },
+    { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
+  ];
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -78,6 +81,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
     window.location.reload();
   };
 
+  const LangToggle = ({ full }: { full?: boolean }) => (
+    <button
+      onClick={toggleLang}
+      title={lang === "es" ? "Switch to English" : "Cambiar a Español"}
+      className={cn(
+        "flex items-center gap-1.5 rounded-lg text-xs font-semibold border border-foreground/15 transition-base hover:bg-foreground/10",
+        full ? "px-3 py-2.5 w-full justify-center" : "px-2 py-1.5",
+      )}
+    >
+      <Languages className="w-3.5 h-3.5 text-muted-foreground" />
+      <span className="text-muted-foreground">{t.langLabel}</span>
+    </button>
+  );
+
   return (
     <div className="flex h-[100dvh] bg-background text-foreground overflow-hidden">
       <OnboardingTour />
@@ -96,7 +113,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => window.dispatchEvent(new CustomEvent("open-command-palette"))}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-foreground/[0.04] hover:bg-foreground/[0.08] border border-foreground/10 text-muted-foreground hover:text-foreground transition-base text-sm"
           >
-            <span className="flex-1 text-left">Buscar o ejecutar...</span>
+            <span className="flex-1 text-left">{t.navSearch}</span>
             <KbdGroup>
               <Kbd>⌘</Kbd>
               <Kbd>K</Kbd>
@@ -153,13 +170,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <ThemeToggle />
             </div>
           )}
-          <button
-            onClick={handleLogout}
-            className="flex items-center w-full px-3 py-3 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-base"
-          >
-            <LogOut className="w-4 h-4 mr-3" />
-            Cerrar Sesión
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleLogout}
+              className="flex items-center flex-1 px-3 py-3 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-base"
+            >
+              <LogOut className="w-4 h-4 mr-3" />
+              {t.navLogout}
+            </button>
+            <LangToggle />
+          </div>
         </div>
       </aside>
 
@@ -172,12 +192,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <div className="flex items-center gap-1">
+            <LangToggle />
             <NotificationsBell />
             <ThemeToggle />
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-lg hover:bg-foreground/10 transition-base"
-              aria-label={mobileMenuOpen ? "Cerrar menú" : "Abrir menú"}
+              aria-label={mobileMenuOpen ? t.navCloseMenu : t.navOpenMenu}
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -202,8 +223,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 className="lg:hidden fixed top-0 right-0 bottom-0 w-72 bg-card border-l border-foreground/10 z-50 flex flex-col"
               >
                 <div className="h-14 flex items-center justify-between px-4 border-b border-foreground/10">
-                  <span className="font-display font-bold text-lg">Menú</span>
-                  <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg hover:bg-foreground/10 transition-base" aria-label="Cerrar menú">
+                  <span className="font-display font-bold text-lg">{t.navMenu}</span>
+                  <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg hover:bg-foreground/10 transition-base" aria-label={t.navCloseMenu}>
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -248,12 +269,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     </div>
                   )}
                   <ThemeToggle variant="full" />
+                  <LangToggle full />
                   <button
                     onClick={handleLogout}
                     className="flex items-center w-full px-3 py-3 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-base"
                   >
                     <LogOut className="w-4 h-4 mr-3" />
-                    Cerrar Sesión
+                    {t.navLogout}
                   </button>
                 </div>
               </motion.div>
@@ -300,7 +322,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className="flex flex-col items-center justify-center gap-0.5 py-1 px-2 rounded-lg text-muted-foreground min-w-0 flex-1 transition-base"
             >
               <Menu className="w-5 h-5" />
-              <span className="text-[10px] leading-tight">Más</span>
+              <span className="text-[10px] leading-tight">{t.navMore}</span>
             </button>
           </div>
         </nav>
