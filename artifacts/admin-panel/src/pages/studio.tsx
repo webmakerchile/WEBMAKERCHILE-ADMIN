@@ -1874,7 +1874,7 @@ function CameraRecordingView({
           <button onClick={handleDiscard} className="p-3 rounded-full bg-white/10 text-white active:scale-90 transition-transform touch-manipulation" data-testid="button-back-to-edit">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h3 className="text-white font-medium text-sm">Enviar video</h3>
+          <h3 className="text-white font-medium text-sm">{t.studioSendVideoTitle}</h3>
           <div className="w-11" />
         </div>
         <div className="flex-1 overflow-y-auto px-5 pb-6">
@@ -1904,10 +1904,10 @@ function CameraRecordingView({
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-orange-400 shrink-0" />
                 <div className="flex-1">
-                  <label className="text-[11px] text-white/50 block mb-1.5">Nombre en Google Drive</label>
+                  <label className="text-[11px] text-white/50 block mb-1.5">{t.studioDriveNameLabel}</label>
                   <input type="text" value={fileName} onChange={(e) => setFileName(e.target.value)}
                     className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-orange-500/50"
-                    placeholder="Nombre del video..." data-testid="input-file-name" />
+                    placeholder={t.studioDriveNamePlaceholder} data-testid="input-file-name" />
                 </div>
               </div>
             </div>
@@ -1915,10 +1915,10 @@ function CameraRecordingView({
               <div className="flex items-center gap-3">
                 <Send className="w-5 h-5 text-green-400 shrink-0" />
                 <div className="flex-1">
-                  <label className="text-[11px] text-white/50 block mb-1.5">Mensaje de WhatsApp (opcional)</label>
+                  <label className="text-[11px] text-white/50 block mb-1.5">{t.studioWaMessageLabel}</label>
                   <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)} rows={3}
                     className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-green-500/50 resize-none"
-                    placeholder="Mensaje adicional para WhatsApp..." data-testid="input-wa-message" />
+                    placeholder={t.studioWaMessagePlaceholder} data-testid="input-wa-message" />
                 </div>
               </div>
             </div>
@@ -1932,8 +1932,8 @@ function CameraRecordingView({
                 <div className="flex items-center gap-3">
                   <Wand2 className="w-5 h-5 text-cyan-400 shrink-0" />
                   <div className="text-left">
-                    <p className="text-sm text-white font-medium">Auto-Editar</p>
-                    <p className="text-[10px] text-white/40 mt-0.5">Recorte automatico + portada</p>
+                    <p className="text-sm text-white font-medium">{t.studioAutoEditLabel}</p>
+                    <p className="text-[10px] text-white/40 mt-0.5">{t.studioAutoEditDesc}</p>
                   </div>
                 </div>
                 <div className={`w-11 h-6 rounded-full transition-colors relative ${autoEdit ? "bg-cyan-500" : "bg-white/15"}`}>
@@ -1950,8 +1950,8 @@ function CameraRecordingView({
                   <div className="flex items-center gap-3">
                     <Type className="w-4 h-4 text-orange-400 shrink-0" />
                     <div className="text-left">
-                      <p className="text-sm text-white font-medium">Subtitulos</p>
-                      <p className="text-[10px] text-white/40 mt-0.5">Texto animado sobre el video</p>
+                      <p className="text-sm text-white font-medium">{t.studioSubtitlesLabel}</p>
+                      <p className="text-[10px] text-white/40 mt-0.5">{t.studioSubtitlesDesc}</p>
                     </div>
                   </div>
                   <div className={`w-11 h-6 rounded-full transition-colors relative ${enableSubtitles ? "bg-orange-500" : "bg-white/15"}`}>
@@ -2002,10 +2002,10 @@ function CameraRecordingView({
           </button>
           <div className="flex items-center gap-2">
             <Scissors className="w-4 h-4 text-orange-400" />
-            <h3 className="text-white font-medium text-sm">Editar video</h3>
+            <h3 className="text-white font-medium text-sm">{t.studioEditVideoTitle}</h3>
           </div>
           <button onClick={handleTrimDone} disabled={enabledSegs.length === 0} className="px-4 py-2 rounded-full bg-green-600 text-white text-xs font-medium active:scale-90 transition-transform touch-manipulation disabled:opacity-40" data-testid="button-trim-done">
-            Siguiente
+            {t.studioNext}
           </button>
         </div>
 
@@ -2033,7 +2033,7 @@ function CameraRecordingView({
                   <div className="w-16 h-16 rounded-full bg-orange-600/60 backdrop-blur-sm flex items-center justify-center">
                     <Loader2 className="w-8 h-8 text-white animate-spin" />
                   </div>
-                  <span className="text-[11px] text-white/60 font-medium">Preparando video...</span>
+                  <span className="text-[11px] text-white/60 font-medium">{t.studioPreparingVideo}</span>
                 </div>
               </div>
             )}

@@ -124,8 +124,8 @@ function uploadVideoWithProgress(
       try { data = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { /* noop */ }
       resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
     };
-    xhr.onerror = () => reject(new Error("Network error during upload"));
-    xhr.onabort = () => reject(new Error("Upload cancelled"));
+    xhr.onerror = () => reject(new Error("UPLOAD_NETWORK_ERROR"));
+    xhr.onabort = () => reject(new Error("UPLOAD_CANCELLED"));
     xhr.send(fd);
   });
   return { promise, abort: () => xhr.abort() };
@@ -2606,7 +2606,7 @@ function VideoWizard({
         if (cancelled) return;
         queryClient.invalidateQueries({ queryKey: ["videos"] });
       } catch (err: any) {
-        if (cancelled || err?.message === "Upload cancelled" || err?.message === "Subida cancelada") return;
+        if (cancelled || err?.message === "UPLOAD_CANCELLED") return;
         console.error("Error linking pending video file:", err);
         toast({
           title: t.toastAttachError,
@@ -3316,12 +3316,13 @@ function StepInfo({
         toast({ title: t.toastUploadError, description: msg, variant: "destructive" });
       }
     } catch (err: any) {
-      const msg = err?.message || t.toastUploadError;
+      const rawMsg = err?.message || "";
       // Upload cancelled by user: don't show as aggressive error.
-      if (msg === "Subida cancelada" || msg === "Upload cancelled") {
+      if (rawMsg === "UPLOAD_CANCELLED") {
         setResultMsg(null);
         toast({ title: t.toastUploadCancelled });
       } else {
+        const msg = rawMsg === "UPLOAD_NETWORK_ERROR" ? t.uploadNetworkError : (rawMsg || t.toastUploadError);
         setResultMsg({ success: false, error: msg });
         toast({ title: t.toastUploadError, description: msg, variant: "destructive" });
       }
@@ -4045,7 +4046,7 @@ function StepTikTokInstagram({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platforms: ["tiktok", "instagram"], force: true }),
       });
-      if (!res.ok) throw new Error("Error generando descripciones");
+      if (!res.ok) throw new Error(t.errorGeneratingDescriptions);
       const data = await res.json();
       setFormData((prev: any) => ({
         ...prev,
@@ -4214,7 +4215,7 @@ function StepYouTube({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platforms: ["youtube"], force: true }),
       });
-      if (!res.ok) throw new Error("Error generando descripciones");
+      if (!res.ok) throw new Error(t.errorGeneratingDescriptions);
       const data = await res.json();
       setFormData((prev: any) => ({
         ...prev,
@@ -4369,7 +4370,7 @@ function StepLinkedInX({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ platforms: ["linkedin", "x", "facebook"], force: true }),
       });
-      if (!res.ok) throw new Error("Error generando descripciones");
+      if (!res.ok) throw new Error(t.errorGeneratingDescriptions);
       const data = await res.json();
       setFormData((prev: any) => ({
         ...prev,

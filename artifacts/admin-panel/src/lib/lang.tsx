@@ -619,6 +619,23 @@ const T = {
     studioLoadIdeasError: "Error al cargar ideas",
     studioLoadStatsError: "Error al cargar stats",
     studioMarkRecordedError: "Error al marcar grabado",
+    // Studio review/upload screen
+    studioSendVideoTitle: "Enviar video",
+    studioDriveNameLabel: "Nombre en Google Drive",
+    studioDriveNamePlaceholder: "Nombre del video...",
+    studioWaMessageLabel: "Mensaje de WhatsApp (opcional)",
+    studioWaMessagePlaceholder: "Mensaje adicional para WhatsApp...",
+    studioAutoEditLabel: "Auto-Editar",
+    studioAutoEditDesc: "Recorte automático + portada",
+    studioSubtitlesLabel: "Subtítulos",
+    studioSubtitlesDesc: "Texto animado sobre el video",
+    studioEditVideoTitle: "Editar video",
+    studioNext: "Siguiente",
+    studioPreparingVideo: "Preparando video...",
+    // Wizard AI generation
+    errorGeneratingDescriptions: "Error generando descripciones",
+    // Upload cancel sentinel
+    uploadCancelledMsg: "Subida cancelada",
   },
 
   en: {
@@ -1237,6 +1254,23 @@ const T = {
     studioLoadIdeasError: "Error loading ideas",
     studioLoadStatsError: "Error loading stats",
     studioMarkRecordedError: "Error marking as recorded",
+    // Studio review/upload screen
+    studioSendVideoTitle: "Send video",
+    studioDriveNameLabel: "Google Drive name",
+    studioDriveNamePlaceholder: "Video name...",
+    studioWaMessageLabel: "WhatsApp message (optional)",
+    studioWaMessagePlaceholder: "Additional WhatsApp message...",
+    studioAutoEditLabel: "Auto-Edit",
+    studioAutoEditDesc: "Auto crop + cover",
+    studioSubtitlesLabel: "Subtitles",
+    studioSubtitlesDesc: "Animated text on the video",
+    studioEditVideoTitle: "Edit video",
+    studioNext: "Next",
+    studioPreparingVideo: "Preparing video...",
+    // Wizard AI generation
+    errorGeneratingDescriptions: "Error generating descriptions",
+    // Upload cancel sentinel
+    uploadCancelledMsg: "Upload cancelled",
   },
 } as const;
 
