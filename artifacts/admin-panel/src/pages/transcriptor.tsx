@@ -91,6 +91,18 @@ export default function TranscriptorPage() {
     }
   };
 
+  const [copiedAll, setCopiedAll] = useState(false);
+  const copyAll = async () => {
+    const listos = items.filter((it) => it.status === "listo");
+    if (listos.length === 0) return;
+    const texto = listos
+      .map((it) => `--- ${it.file.name} ---\n\n${(it.text || "").trim()}`)
+      .join("\n\n\n");
+    await navigator.clipboard.writeText(texto);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 1500);
+  };
+
   const copyText = async (item: QueueItem) => {
     await navigator.clipboard.writeText(item.text || "");
     setCopiedId(item.id);
@@ -200,6 +212,15 @@ export default function TranscriptorPage() {
         >
           {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <AudioLines className="w-4 h-4" />}
           Transcribir todo {pendientes > 0 && `(${pendientes})`}
+        </button>
+        <button
+          onClick={copyAll}
+          disabled={listos === 0}
+          className="px-4 py-2 rounded-lg border border-border font-medium disabled:opacity-50 hover:bg-muted flex items-center gap-2"
+          data-testid="button-copiar-todo"
+        >
+          {copiedAll ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+          {copiedAll ? "¡Copiado!" : "Copiar todo"}
         </button>
         <button
           onClick={downloadZip}
