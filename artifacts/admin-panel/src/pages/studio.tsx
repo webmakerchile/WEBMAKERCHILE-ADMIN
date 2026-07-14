@@ -558,12 +558,12 @@ function TeleprompterView({
               <div className="w-14 h-14 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center animate-pulse">
                 <Check className="w-7 h-7 text-white" />
               </div>
-              <p className="text-white/40 text-xs tracking-wide">FIN DEL GUION</p>
+              <p className="text-white/40 text-xs tracking-wide">{t.teleprompterEnd}</p>
               <Button onClick={() => onMarkRecorded(idea.id)} disabled={isRecording}
                 className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white px-10 py-6 text-base rounded-2xl shadow-lg shadow-green-900/40 active:scale-95 transition-transform touch-manipulation"
                 data-testid="button-mark-recorded">
                 {isRecording ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Trophy className="w-5 h-5 mr-2" />}
-                Listo, grabado
+                {t.btnMarkRecorded}
               </Button>
             </div>
           </div>
@@ -1894,7 +1894,7 @@ function CameraRecordingView({
             {!thumbnailUrl && (
               <div className="rounded-xl border border-white/10 bg-white/5 p-6 flex flex-col items-center gap-2">
                 <Video className="w-8 h-8 text-green-400" />
-                <p className="text-white/60 text-xs">Video grabado</p>
+                <p className="text-white/60 text-xs">{t.videoRecordedLabel}</p>
                 <p className="text-white/30 text-[10px]">
                   {recordedBlob ? (recordedBlob.size / 1024 / 1024).toFixed(1) + " MB" : ""} - {formatTime(Math.round(videoDuration))}
                 </p>

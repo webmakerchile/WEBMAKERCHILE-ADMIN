@@ -434,7 +434,7 @@ function ImportCsvDialog({
       try {
         const text = String(reader.result || "");
         const grid = parseCsv(text);
-        if (grid.length < 2) { setParseError("El CSV está vacío o sólo tiene encabezados."); setRows([]); return; }
+        if (grid.length < 2) { setParseError(t.csvEmptyError); setRows([]); return; }
         const header = grid[0].map(normalizeHeader);
         const colIdx: Partial<Record<keyof ParsedCsvRow, number>> = {};
         header.forEach((h, i) => { const k = HEADER_ALIASES[h]; if (k) colIdx[k] = i; });
@@ -1070,7 +1070,7 @@ export default function VideosPage() {
       setNewViewName("");
       toast({ title: t.toastVistaSaved });
     },
-    onError: () => toast({ title: "No se pudo guardar la vista", variant: "destructive" }),
+    onError: () => toast({ title: t.toastSaveViewError, variant: "destructive" }),
   });
 
   const deleteSavedViewMutation = useMutation({
@@ -1282,7 +1282,7 @@ export default function VideosPage() {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({} as { error?: string }));
-        throw new Error(detail?.error || `No se pudo guardar (HTTP ${res.status})`);
+        throw new Error(detail?.error || t.toastSaveError(res.status));
       }
       return res.json();
     },
@@ -1351,7 +1351,7 @@ export default function VideosPage() {
       const res = await apiFetch(`${API_BASE}/content/videos/${id}/generate-cover`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error("Error al generar portada");
+      if (!res.ok) throw new Error(t.toastCoverError);
       return res.json();
     },
     onSuccess: (data) => {
@@ -1359,7 +1359,7 @@ export default function VideosPage() {
       setSelectedVideo(data);
       toast({ title: t.toastCoverGenerated });
     },
-    onError: () => toast({ title: "Error al generar portada", variant: "destructive" }),
+    onError: () => toast({ title: t.toastCoverError, variant: "destructive" }),
   });
 
   // Upload a custom cover from the user's device. We read the file in the
@@ -1379,7 +1379,7 @@ export default function VideosPage() {
       });
       const comma = dataUrl.indexOf(",");
       const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : "";
-      if (!base64) throw new Error("Archivo de portada vacío o inválido");
+      if (!base64) throw new Error(t.toastCoverEmptyError);
       const res = await apiFetch(`${API_BASE}/content/videos/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -2058,7 +2058,7 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
     queryKey: ["video-stats", video?.id],
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/content/videos/${video!.id}/stats`);
-      if (!res.ok) throw new Error("Error al cargar estadísticas");
+      if (!res.ok) throw new Error(t.toastLoadStatsError);
       return res.json();
     },
     enabled: !!video,
@@ -2097,14 +2097,14 @@ function VideoStatsModal({ video, onClose }: { video: VideoData | null; onClose:
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <BarChart2 className="w-4 h-4 text-primary" />
-            Estadísticas — {video?.title}
+            {t.statDialogTitle(video?.title || "")}
           </DialogTitle>
         </DialogHeader>
 
         {error && (
           <div className="flex items-center gap-2 text-rose-400 text-sm py-4">
             <AlertCircle className="w-4 h-4" />
-            Error al cargar estadísticas
+            {t.toastLoadStatsError}
           </div>
         )}
 
@@ -2309,6 +2309,7 @@ function useWizardAutoSave({
   formData: Record<string, any>;
   toast: any;
 }) {
+  const { t } = useLang();
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const lastSavedRef = useRef<Record<string, any> | null>(null);
@@ -2381,7 +2382,7 @@ function useWizardAutoSave({
       if (e?.name === "AbortError") return false;
       console.error("[wizard auto-save]", e);
       setStatus("error");
-      toast?.({ title: "No se pudo auto-guardar", description: e?.message || "Reintenta", variant: "destructive" });
+      toast?.({ title: t.toastAutoSaveError, description: e?.message || t.toastRetry, variant: "destructive" });
       return false;
     }
   }, [videoId, isCreating, computeDiff, toast]);
@@ -3001,12 +3002,12 @@ function VideoWizard({
                   return;
                 }
                 queryClient.invalidateQueries({ queryKey: ["videos"] });
-                const platforms = includeFacebook ? "6 plataformas" : "5 plataformas";
+                const platforms = includeFacebook ? t.platforms6 : t.platforms5;
                 toast({
-                  title: `¡Programado en las ${platforms}!`,
+                  title: t.toastScheduled(platforms),
                   description: hour
-                    ? `Se subirá automáticamente a las ${hour} hrs`
-                    : "Se subirá automáticamente ahora",
+                    ? t.toastAutoUpload(hour)
+                    : t.toastAutoUploadNow,
                 });
               }}
               onPrev={goPrev}
@@ -3308,7 +3309,7 @@ function StepInfo({
         setResultMsg({ success: true, fileName: r.data.fileName });
         if (onVideoUploaded) onVideoUploaded();
       } else {
-        const msg = r.data?.error || `Error al subir (HTTP ${r.status})`;
+        const msg = r.data?.error || t.uploadHttpError(r.status);
         setResultMsg({ success: false, error: msg });
         toast({ title: t.toastUploadError, description: msg, variant: "destructive" });
       }
@@ -3404,35 +3405,35 @@ function StepInfo({
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             className="w-full bg-background border border-border rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[100px]"
-            placeholder="¿De qué trata el video?"
+            placeholder={t.videoDescPlaceholder}
           />
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium text-muted-foreground">Mes</label>
+            <label className="text-[11px] font-medium text-muted-foreground">{t.labelMonth}</label>
             <select
               value={formData.month}
               onChange={(e) => setFormData({ ...formData, month: e.target.value })}
               className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
               <option value="">--</option>
-              <option value="Enero">Ene</option>
-              <option value="Febrero">Feb</option>
-              <option value="Marzo">Mar</option>
-              <option value="Abril">Abr</option>
-              <option value="Mayo">May</option>
-              <option value="Junio">Jun</option>
-              <option value="Julio">Jul</option>
-              <option value="Agosto">Ago</option>
-              <option value="Septiembre">Sep</option>
-              <option value="Octubre">Oct</option>
-              <option value="Noviembre">Nov</option>
-              <option value="Diciembre">Dic</option>
+              <option value="Enero">{t.monthAbbrs[0]}</option>
+              <option value="Febrero">{t.monthAbbrs[1]}</option>
+              <option value="Marzo">{t.monthAbbrs[2]}</option>
+              <option value="Abril">{t.monthAbbrs[3]}</option>
+              <option value="Mayo">{t.monthAbbrs[4]}</option>
+              <option value="Junio">{t.monthAbbrs[5]}</option>
+              <option value="Julio">{t.monthAbbrs[6]}</option>
+              <option value="Agosto">{t.monthAbbrs[7]}</option>
+              <option value="Septiembre">{t.monthAbbrs[8]}</option>
+              <option value="Octubre">{t.monthAbbrs[9]}</option>
+              <option value="Noviembre">{t.monthAbbrs[10]}</option>
+              <option value="Diciembre">{t.monthAbbrs[11]}</option>
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium text-muted-foreground">Semana</label>
+            <label className="text-[11px] font-medium text-muted-foreground">{t.labelWeek}</label>
             <select
               value={formData.week}
               onChange={(e) => setFormData({ ...formData, week: e.target.value })}
@@ -3447,20 +3448,20 @@ function StepInfo({
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium text-muted-foreground">Dia</label>
+            <label className="text-[11px] font-medium text-muted-foreground">{t.labelDay}</label>
             <select
               value={formData.day}
               onChange={(e) => setFormData({ ...formData, day: e.target.value })}
               className="w-full bg-background border border-border rounded-lg px-2.5 py-2 text-sm focus:border-primary outline-none appearance-none cursor-pointer"
             >
               <option value="">--</option>
-              <option value="Lunes">Lun</option>
-              <option value="Martes">Mar</option>
-              <option value="Miércoles">Mie</option>
-              <option value="Jueves">Jue</option>
-              <option value="Viernes">Vie</option>
-              <option value="Sábado">Sab</option>
-              <option value="Domingo">Dom</option>
+              <option value="Lunes">{t.dayAbbrs[0]}</option>
+              <option value="Martes">{t.dayAbbrs[1]}</option>
+              <option value="Miércoles">{t.dayAbbrs[2]}</option>
+              <option value="Jueves">{t.dayAbbrs[3]}</option>
+              <option value="Viernes">{t.dayAbbrs[4]}</option>
+              <option value="Sábado">{t.dayAbbrs[5]}</option>
+              <option value="Domingo">{t.dayAbbrs[6]}</option>
             </select>
           </div>
         </div>
@@ -3777,10 +3778,10 @@ function StepCover({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ coverPrompt: trimmed ? trimmed : null }),
       });
-      if (!res.ok) throw new Error("No se pudo guardar el prompt");
+      if (!res.ok) throw new Error(t.toastSavePromptError);
       onGenerate();
     } catch (err) {
-      toast({ title: "Error guardando prompt", description: String(err), variant: "destructive" });
+      toast({ title: t.toastSavePromptErrorTitle, description: String(err), variant: "destructive" });
     } finally {
       setSavingPrompt(false);
     }
