@@ -498,4 +498,81 @@ router.post("/tiktok/publish-status/:videoId", async (req: Request, res: Respons
   }
 });
 
+export async function publishVideoFileToTikTok(
+  filePath: string,
+  user: any,
+  caption: string
+): Promise<{ success: boolean; publishId?: string; error?: string }> {
+  const token = await getValidTikTokToken(user);
+  if (!token) {
+    return { success: false, error: "TikTok no conectado o token expirado" };
+  }
+
+  try {
+    const { createReadStream: createRS } = await import("fs");
+    const { stat } = await import("fs/promises");
+    const stats = await stat(filePath);
+    const videoSize = stats.size;
+    const chunkSize = Math.min(64 * 1024 * 1024, videoSize);
+    const totalChunkCount = Math.ceil(videoSize / chunkSize);
+
+    console.log(`[TikTok] publishVideoFileToTikTok: size=${videoSize}, chunks=${totalChunkCount}`);
+
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        source_info: {
+          source: "FILE_UPLOAD",
+          video_size: videoSize,
+          chunk_size: chunkSize,
+          total_chunk_count: totalChunkCount,
+        },
+      }),
+    });
+
+    const initData = (await initRes.json()) as TikTokInitResponse;
+    if (initData.error?.code !== "ok") {
+      return { success: false, error: `Init failed: ${initData.error?.message || JSON.stringify(initData.error)}` };
+    }
+
+    const uploadUrl = initData.data?.upload_url;
+    const publishId = initData.data?.publish_id;
+    if (!uploadUrl) {
+      return { success: false, error: "No upload URL from TikTok" };
+    }
+
+    const { readFileSync } = await import("fs");
+    const videoBuffer = readFileSync(filePath);
+
+    for (let i = 0; i < totalChunkCount; i++) {
+      const start = i * chunkSize;
+      const end = Math.min(start + chunkSize, videoSize);
+      const chunk = videoBuffer.slice(start, end);
+
+      const chunkRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Range": `bytes ${start}-${end - 1}/${videoSize}`,
+          "Content-Type": "video/mp4",
+        },
+        body: chunk,
+      });
+
+      if (!chunkRes.ok) {
+        const errText = await chunkRes.text();
+        return { success: false, error: `Chunk ${i + 1}/${totalChunkCount} failed: ${errText}` };
+      }
+    }
+
+    console.log(`[TikTok] publishVideoFileToTikTok succeeded: publishId=${publishId}`);
+    return { success: true, publishId };
+  } catch (err: any) {
+    return { success: false, error: err.message || "TikTok upload error" };
+  }
+}
+
 export default router;

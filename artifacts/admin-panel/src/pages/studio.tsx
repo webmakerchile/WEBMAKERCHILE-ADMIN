@@ -103,6 +103,8 @@ type BgUpload = {
   message: string;
   driveVerified?: boolean;
   driveLink?: string;
+  tiktokPublished?: boolean;
+  tiktokError?: string;
 };
 
 function parseGuion(guion: string): ParsedSection[] {
@@ -679,7 +681,7 @@ function CameraRecordingView({
   onComplete: () => void;
   bgUploads: BgUpload[];
   addBgUpload: (upload: BgUpload) => void;
-  runBgUploadFn: (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean) => void;
+  runBgUploadFn: (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean, uploadPublishTiktok?: boolean) => void;
 }) {
   const hasScript = !!idea?.guion;
   type Phase = "recording" | "loading-video" | "editing" | "review" | "uploading" | "done";
@@ -754,6 +756,7 @@ function CameraRecordingView({
   const [waMessage, setWaMessage] = useState("");
   const [autoEdit, setAutoEdit] = useState(false);
   const [enableSubtitles, setEnableSubtitles] = useState(false);
+  const [publishToTiktok, setPublishToTiktok] = useState(false);
 
   const [voiceCountdown, setVoiceCountdown] = useState<{ count: number; type: "reset" | "tryout" } | null>(null);
   const voiceCountdownRef = useRef(false);
@@ -1576,9 +1579,9 @@ function CameraRecordingView({
 
     toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(uploadTitle) });
 
-    runBgUploadFn(blobCopy, bgId, uploadTitle, idea?.id || null, idea?.guion || "", mimeType, waMessage.trim(), segsToSend, autoEdit, enableSubtitles);
+    runBgUploadFn(blobCopy, bgId, uploadTitle, idea?.id || null, idea?.guion || "", mimeType, waMessage.trim(), segsToSend, autoEdit, enableSubtitles, publishToTiktok);
     onBack();
-  }, [recordedBlob, fileName, waMessage, idea, segments, videoDuration, toast, addBgUpload, runBgUploadFn, onBack]);
+  }, [recordedBlob, fileName, waMessage, idea, segments, videoDuration, toast, addBgUpload, runBgUploadFn, onBack, publishToTiktok]);
 
   const cleanupTempPreview = useCallback(() => {
     if (previewBlobUrlRef.current) {
@@ -1921,6 +1924,25 @@ function CameraRecordingView({
                     placeholder={t.studioWaMessagePlaceholder} data-testid="input-wa-message" />
                 </div>
               </div>
+            </div>
+            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+              <button
+                type="button"
+                onClick={() => setPublishToTiktok(!publishToTiktok)}
+                className="w-full flex items-center justify-between gap-3"
+                data-testid="button-tiktok-toggle"
+              >
+                <div className="flex items-center gap-3">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 fill-white" xmlns="http://www.w3.org/2000/svg"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.27 6.27 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.25 8.25 0 004.83 1.56V6.78a4.85 4.85 0 01-1.06-.09z"/></svg>
+                  <div className="text-left">
+                    <p className="text-sm text-white font-medium">{t.studioPublishTiktokLabel}</p>
+                    <p className="text-[10px] text-white/40 mt-0.5">{t.studioPublishTiktokDesc}</p>
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full transition-colors relative ${publishToTiktok ? "bg-pink-500" : "bg-white/15"}`}>
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${publishToTiktok ? "translate-x-5" : "translate-x-0.5"}`} />
+                </div>
+              </button>
             </div>
             <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
               <button
@@ -2491,7 +2513,7 @@ export default function RecordingStudio() {
   const targetTimeRef = useRef(targetTime);
   targetTimeRef.current = targetTime;
 
-  const runBgUploadFn = useCallback(async (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean = true) => {
+  const runBgUploadFn = useCallback(async (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean = true, uploadPublishTiktok: boolean = false) => {
     const resolvedDay = targetDayRef.current === "auto" ? undefined : targetDayRef.current;
     const resolvedTime = targetTimeRef.current || undefined;
     const safeUpdate = (updates: Partial<BgUpload>) => {
@@ -2546,6 +2568,7 @@ export default function RecordingStudio() {
           enableSubtitles: uploadEnableSubtitles,
           targetDay: resolvedDay,
           targetTime: resolvedTime,
+          publishToTiktok: uploadPublishTiktok,
         }),
       });
 
@@ -2561,6 +2584,8 @@ export default function RecordingStudio() {
         message: data.driveVerified ? t.studioUploadedToDrive(uploadTitle, dayMsg) : t.studioUploadErrorDrive(uploadTitle),
         driveVerified: !!data.driveVerified,
         driveLink: data.driveVerified ? (data.driveLink || "") : (data.backupLink || ""),
+        tiktokPublished: !!data.tiktokPublished,
+        tiktokError: data.tiktokError || undefined,
       });
       if (studioMountedRef.current) {
         toast({ title: data.driveVerified ? t.studioUploadedToDrive(uploadTitle, dayMsg) : t.studioUploadErrorDrive(uploadTitle), variant: data.driveVerified ? "default" : "destructive" });
@@ -2839,6 +2864,12 @@ export default function RecordingStudio() {
                   <a href={bg.driveLink} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-400 underline shrink-0" onClick={e => e.stopPropagation()} data-testid={`link-bg-drive-${bg.id}`}>
                     Drive
                   </a>
+                )}
+                {bg.status === "done" && bg.tiktokPublished && (
+                  <span className="text-[10px] text-pink-400 font-medium shrink-0">TikTok ✓</span>
+                )}
+                {bg.status === "done" && bg.tiktokError && (
+                  <span className="text-[10px] text-pink-600 shrink-0" title={bg.tiktokError}>TikTok ✗</span>
                 )}
                 {(bg.status === "done" || bg.status === "error") && (
                   <button onClick={() => removeBgUpload(bg.id)} className="text-muted-foreground/30 hover:text-muted-foreground/60 touch-manipulation shrink-0" data-testid={`button-dismiss-bg-${bg.id}`}>

@@ -852,7 +852,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
     try {
       const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
       clearFolderCache();
-      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay, targetTime);
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, userId, actualMimeType, targetDay, targetTime);
       fileId = driveResult.fileId;
       webViewLink = driveResult.webViewLink;
       driveFolderId = driveResult.driveFolderId;
@@ -883,7 +883,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
           }
           try {
             const { uploadCoverToDriveFromBuffer } = await import("./google-drive");
-            const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, coverResult.mimeType, driveFolderId);
+            const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, userId, coverResult.mimeType, driveFolderId);
             coverDriveLink = coverUpload.webViewLink;
             console.log(`[Studio] Cover uploaded to Drive: ${coverDriveLink}`);
           } catch (coverDriveErr: any) {
@@ -945,12 +945,38 @@ REGLAS:
         if (descRaw.trim()) {
           const cleanDescTxt = descRaw.replace(/\*\*/g, "").trim();
           const { uploadDescriptionsToDrive } = await import("./google-drive");
-          const descUploadResult = await uploadDescriptionsToDrive(cleanDescTxt, ideaTitle, driveFolderId);
+          const descUploadResult = await uploadDescriptionsToDrive(cleanDescTxt, ideaTitle, userId, driveFolderId);
           descDriveLink = descUploadResult.webViewLink;
           console.log(`[Studio] Descriptions uploaded to Drive: ${descDriveLink}`);
         }
       } catch (descGenErr: any) {
         console.warn(`[Studio] Description generation/upload failed (non-blocking): ${descGenErr.message}`);
+      }
+    }
+
+    let tiktokPublished = false;
+    let tiktokError: string | undefined;
+    if (driveVerified && publishToTiktok) {
+      try {
+        console.log(`[Studio] Publishing to TikTok for user ${userId}...`);
+        const user = req.user as any;
+        if (!user.tiktokAccessToken || !user.tiktokOpenId) {
+          tiktokError = "TikTok no conectado";
+          console.warn("[Studio] TikTok publish skipped: not connected");
+        } else {
+          const { publishVideoFileToTikTok } = await import("../tiktok/index");
+          const tiktokResult = await publishVideoFileToTikTok(finalVideoPath, user, ideaTitle);
+          if (tiktokResult.success) {
+            tiktokPublished = true;
+            console.log(`[Studio] TikTok published: publishId=${tiktokResult.publishId}`);
+          } else {
+            tiktokError = tiktokResult.error || "Error al publicar en TikTok";
+            console.error(`[Studio] TikTok publish failed: ${tiktokError}`);
+          }
+        }
+      } catch (tiktokErr: any) {
+        tiktokError = tiktokErr.message || "Error TikTok";
+        console.error(`[Studio] TikTok publish error: ${tiktokError}`);
       }
     }
 
@@ -965,6 +991,8 @@ REGLAS:
         coverDriveLink: coverDriveLink || undefined,
         descriptionsDriveLink: descDriveLink || undefined,
         message: `Video subido a carpeta ${uploadedDayName || "Drive"}${timeLabel}` + (coverDriveLink ? " con portada" : ""),
+        tiktokPublished,
+        tiktokError: tiktokError || undefined,
       });
     } else {
       res.json({
@@ -972,6 +1000,8 @@ REGLAS:
         driveVerified: false,
         backupLink: backupLink || undefined,
         message: backupLink ? "Drive fallo - video guardado en respaldo" : "ERROR: Drive fallo y no se pudo guardar el video.",
+        tiktokPublished: false,
+        tiktokError: tiktokError || undefined,
       });
     }
   } catch (error: any) {
@@ -983,10 +1013,11 @@ REGLAS:
   }
 });
 
-router.get("/studio/drive-structure", async (_req, res) => {
+router.get("/studio/drive-structure", async (req, res) => {
   try {
+    const userId = (req.user as any).id as number;
     const { listDriveStudioStructure } = await import("./google-drive");
-    const structure = await listDriveStudioStructure();
+    const structure = await listDriveStudioStructure(userId);
     res.json(structure);
   } catch (err: any) {
     console.error("[Studio] Drive structure error:", err.message);
@@ -996,8 +1027,9 @@ router.get("/studio/drive-structure", async (_req, res) => {
 
 router.get("/studio/drive-folder/:folderId", async (req, res) => {
   try {
+    const userId = (req.user as any).id as number;
     const { listFilesInDriveFolder } = await import("./google-drive");
-    const files = await listFilesInDriveFolder(req.params.folderId);
+    const files = await listFilesInDriveFolder(req.params.folderId, userId);
     res.json({ folderId: req.params.folderId, files });
   } catch (err: any) {
     console.error("[Studio] Drive list error:", err.message);
@@ -1007,8 +1039,9 @@ router.get("/studio/drive-folder/:folderId", async (req, res) => {
 
 router.delete("/studio/drive-file/:fileId", async (req, res) => {
   try {
+    const userId = (req.user as any).id as number;
     const { trashDriveFile } = await import("./google-drive");
-    const ok = await trashDriveFile(req.params.fileId);
+    const ok = await trashDriveFile(req.params.fileId, userId);
     res.json({ success: ok, fileId: req.params.fileId });
   } catch (err: any) {
     console.error("[Studio] Drive delete error:", err.message);
@@ -1117,7 +1150,8 @@ router.post("/studio/upload-video", (req, res, next) => {
     try {
       const { uploadVideoToDriveFromFile, clearFolderCache } = await import("./google-drive");
       clearFolderCache();
-      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, actualMimeType, targetDay, targetTime);
+      const uploadUserId = (req.user as any).id as number;
+      const driveResult = await uploadVideoToDriveFromFile(finalVideoPath, ideaTitle, uploadUserId, actualMimeType, targetDay, targetTime);
       fileId = driveResult.fileId;
       webViewLink = driveResult.webViewLink;
       driveFolderId = driveResult.driveFolderId;
@@ -1148,7 +1182,8 @@ router.post("/studio/upload-video", (req, res, next) => {
           }
           try {
             const { uploadCoverToDriveFromBuffer } = await import("./google-drive");
-            const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, coverResult.mimeType, driveFolderId);
+            const coverUpload2UserId = (req.user as any).id as number;
+            const coverUpload = await uploadCoverToDriveFromBuffer(coverResult.imageBuffer, ideaTitle, coverUpload2UserId, coverResult.mimeType, driveFolderId);
             coverDriveLink = coverUpload.webViewLink;
             console.log(`[Studio] Cover uploaded to Drive: ${coverDriveLink}`);
           } catch (coverDriveErr: any) {
