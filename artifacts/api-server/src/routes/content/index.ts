@@ -296,12 +296,13 @@ router.post("/content/videos/bulk-schedule", async (req, res) => {
     return;
   }
   // Enforce approval workflow: only videos that are aprobado/programado/publicado
-  // can be (re)scheduled. Reviewers can bypass this guard.
+  // can be (re)scheduled. Only users with an explicit "editor" role are restricted —
+  // admins without a role and reviewers can schedule freely.
   const meRow = (req.user as any)?.id
     ? (await db.select({ teamRole: users.teamRole }).from(users).where(eq(users.id, (req.user as any).id)).limit(1))[0]
     : null;
-  const isReviewer = meRow?.teamRole === "reviewer";
-  if (!isReviewer) {
+  const isEditor = meRow?.teamRole === "editor";
+  if (isEditor) {
     const rows = await db
       .select({ id: videos.id, workflowStatus: videos.workflowStatus })
       .from(videos)
@@ -1038,11 +1039,12 @@ router.post("/content/videos/:id/schedule", async (req, res) => {
   const body = parseResult.data;
 
   // Enforce approval workflow on single-video schedule too.
+  // Only "editor" role is restricted — admins without a role and reviewers schedule freely.
   const meRow = (req.user as any)?.id
     ? (await db.select({ teamRole: users.teamRole }).from(users).where(eq(users.id, (req.user as any).id)).limit(1))[0]
     : null;
-  const isReviewer = meRow?.teamRole === "reviewer";
-  if (!isReviewer) {
+  const isEditor = meRow?.teamRole === "editor";
+  if (isEditor) {
     const [current] = await db.select({ workflowStatus: videos.workflowStatus }).from(videos).where(eq(videos.id, id)).limit(1);
     if (current && !["aprobado", "programado", "publicado"].includes(current.workflowStatus || "borrador")) {
       res.status(403).json({ error: "Este video requiere aprobación antes de programarse" });
