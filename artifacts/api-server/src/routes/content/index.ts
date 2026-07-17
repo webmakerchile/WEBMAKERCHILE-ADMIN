@@ -38,8 +38,8 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import {
   CreateVideoBody,
-  ScheduleVideoBody,
 } from "@workspace/api-zod";
+import * as z from "zod/v4";
 import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
@@ -1023,9 +1023,19 @@ router.post("/content/videos/from-studio", async (req, res) => {
   }
 });
 
+const ScheduleVideoBodyLenient = z.object({
+  scheduledAt: z.coerce.date(),
+  driveFolderId: z.string().nullish().transform(v => v ?? null),
+});
+
 router.post("/content/videos/:id/schedule", async (req, res) => {
   const id = Number(req.params.id);
-  const body = ScheduleVideoBody.parse(req.body);
+  const parseResult = ScheduleVideoBodyLenient.safeParse(req.body);
+  if (!parseResult.success) {
+    res.status(400).json({ error: parseResult.error.issues.map(i => i.message).join(", ") });
+    return;
+  }
+  const body = parseResult.data;
 
   // Enforce approval workflow on single-video schedule too.
   const meRow = (req.user as any)?.id
