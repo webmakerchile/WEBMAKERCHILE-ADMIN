@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { getCredential } from "./credentials";
 import { createNotification } from "./notifications";
 
 /** Parse the comma-separated `users.revokedNetworks` flag column. */
@@ -248,8 +249,10 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
 
   // Facebook (server-managed System User token preferred, fallback to user OAuth)
   {
-    const serverPage = (process.env.FACEBOOK_PAGE_ID || "").trim();
-    const serverToken = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
+    const [serverPage, serverToken] = await Promise.all([
+      getCredential("FACEBOOK_PAGE_ID"),
+      getCredential("FACEBOOK_PAGE_ACCESS_TOKEN"),
+    ]);
     if (serverPage && serverToken) {
       out.push({
         network: "facebook",
@@ -282,8 +285,10 @@ export async function getConnectionsHealth(user: any): Promise<ConnectionHealth[
 
   // Instagram (server-managed via INSTAGRAM_ACCESS_TOKEN)
   {
-    const igToken = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
-    const igUser = (process.env.INSTAGRAM_USER_ID || "").trim();
+    const [igToken, igUser] = await Promise.all([
+      getCredential("INSTAGRAM_ACCESS_TOKEN"),
+      getCredential("INSTAGRAM_USER_ID"),
+    ]);
     const present = !!(igToken && igUser);
     out.push({
       network: "instagram",

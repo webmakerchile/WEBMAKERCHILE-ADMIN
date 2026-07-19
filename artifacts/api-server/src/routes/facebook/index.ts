@@ -8,16 +8,21 @@ import { google } from "googleapis";
 
 const router: IRouter = Router();
 
-const FACEBOOK_APP_ID = (process.env.FACEBOOK_APP_ID || "").trim();
-const FACEBOOK_APP_SECRET = (process.env.FACEBOOK_APP_SECRET || "").trim();
+import { getCredential } from "../../lib/credentials";
+
 const FACEBOOK_GRAPH_VERSION = "v21.0";
 const FB_GRAPH_BASE = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}`;
 const FB_VIDEO_BASE = `https://graph-video.facebook.com/${FACEBOOK_GRAPH_VERSION}`;
 const FB_AUTH_BASE = `https://www.facebook.com/${FACEBOOK_GRAPH_VERSION}/dialog/oauth`;
 
-// Server-side System User tokens (permanent, no OAuth needed)
-const SERVER_FB_PAGE_ID = (process.env.FACEBOOK_PAGE_ID || "").trim();
-const SERVER_FB_PAGE_TOKEN = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
+async function getFbServerCreds() {
+  return {
+    appId: await getCredential("FACEBOOK_APP_ID"),
+    appSecret: await getCredential("FACEBOOK_APP_SECRET"),
+    pageId: await getCredential("FACEBOOK_PAGE_ID"),
+    pageToken: await getCredential("FACEBOOK_PAGE_ACCESS_TOKEN"),
+  };
+}
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -52,8 +57,9 @@ function guessIsImageFromName(name?: string | null): boolean {
   return /\.(jpe?g|png|webp|gif)$/i.test(name);
 }
 
-router.get("/facebook/auth", (req: Request, res: Response) => {
-  if (!FACEBOOK_APP_ID) {
+router.get("/facebook/auth", async (req: Request, res: Response) => {
+  const appId = await getCredential("FACEBOOK_APP_ID");
+  if (!appId) {
     res.status(500).json({ error: "Facebook no está configurado en el servidor" });
     return;
   }
@@ -67,7 +73,7 @@ router.get("/facebook/auth", (req: Request, res: Response) => {
 
   const redirectUri = getFacebookRedirectUri();
   const params = new URLSearchParams({
-    client_id: FACEBOOK_APP_ID,
+    client_id: appId,
     redirect_uri: redirectUri,
     state: csrfState,
     response_type: "code",
@@ -104,10 +110,15 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
   try {
     const redirectUri = getFacebookRedirectUri();
 
+    const [appId, appSecret] = await Promise.all([
+      getCredential("FACEBOOK_APP_ID"),
+      getCredential("FACEBOOK_APP_SECRET"),
+    ]);
+
     // 1. Exchange code for short-lived user token
     const tokenParams = new URLSearchParams({
-      client_id: FACEBOOK_APP_ID,
-      client_secret: FACEBOOK_APP_SECRET,
+      client_id: appId,
+      client_secret: appSecret,
       redirect_uri: redirectUri,
       code,
     });
@@ -123,8 +134,8 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
     // 2. Exchange short-lived for long-lived user token
     const longParams = new URLSearchParams({
       grant_type: "fb_exchange_token",
-      client_id: FACEBOOK_APP_ID,
-      client_secret: FACEBOOK_APP_SECRET,
+      client_id: appId,
+      client_secret: appSecret,
       fb_exchange_token: tokenData.access_token,
     });
     const longRes = await fetch(`${FB_GRAPH_BASE}/oauth/access_token?${longParams.toString()}`);
@@ -181,10 +192,11 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
 
 router.get("/facebook/status", async (_req: Request, res: Response) => {
   // Prefer server-side System User tokens
-  if (SERVER_FB_PAGE_ID && SERVER_FB_PAGE_TOKEN) {
+  const { pageId: serverPageId, pageToken: serverPageToken } = await getFbServerCreds();
+  if (serverPageId && serverPageToken) {
     try {
       const r = await fetch(
-        `${FB_GRAPH_BASE}/${SERVER_FB_PAGE_ID}?fields=id,name,picture&access_token=${SERVER_FB_PAGE_TOKEN}`
+        `${FB_GRAPH_BASE}/${serverPageId}?fields=id,name,picture&access_token=${serverPageToken}`
       );
       const data: any = await r.json();
       if (!data.error) {
@@ -344,8 +356,9 @@ export async function publishToFacebook(
   video: any,
 ): Promise<{ success: boolean; postId?: string; error?: string }> {
   // Prefer server-side System User tokens; fall back to user OAuth tokens
-  const pageId = SERVER_FB_PAGE_ID || user.facebookPageId;
-  const pageToken = SERVER_FB_PAGE_TOKEN || user.facebookPageAccessToken;
+  const { pageId: serverPageId, pageToken: serverPageToken } = await getFbServerCreds();
+  const pageId = serverPageId || user.facebookPageId;
+  const pageToken = serverPageToken || user.facebookPageAccessToken;
 
   if (!pageId || !pageToken) {
     return { success: false, error: "Facebook no conectado" };

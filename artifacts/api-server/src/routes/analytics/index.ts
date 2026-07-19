@@ -12,11 +12,9 @@ const router: IRouter = Router();
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-const TIKTOK_CLIENT_KEY = (process.env.TIKTOK_CLIENT_KEY || "").trim();
-const TIKTOK_CLIENT_SECRET = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
+import { getCredential } from "../../lib/credentials";
+
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
-const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN || "";
-const INSTAGRAM_USER_ID = process.env.INSTAGRAM_USER_ID || "";
 const IG_API_BASE = "https://graph.instagram.com/v21.0";
 const FB_GRAPH_BASE = "https://graph.facebook.com/v21.0";
 
@@ -156,9 +154,13 @@ async function getValidTikTokToken(user: AuthedUser): Promise<string | null> {
   }
   if (!user.tiktokRefreshToken) return null;
   try {
+    const [clientKey, clientSecret] = await Promise.all([
+      getCredential("TIKTOK_CLIENT_KEY"),
+      getCredential("TIKTOK_CLIENT_SECRET"),
+    ]);
     const params = new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
-      client_secret: TIKTOK_CLIENT_SECRET,
+      client_key: clientKey,
+      client_secret: clientSecret,
       grant_type: "refresh_token",
       refresh_token: user.tiktokRefreshToken,
     });
@@ -268,7 +270,11 @@ async function fetchYouTube(user: AuthedUser, days: number): Promise<{
 async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
   followers: MetricBlock; reach: MetricBlock; interactions: MetricBlock;
 } | null> {
-  if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) return null;
+  const [igToken, igUserId] = await Promise.all([
+    getCredential("INSTAGRAM_ACCESS_TOKEN"),
+    getCredential("INSTAGRAM_USER_ID"),
+  ]);
+  if (!igToken || !igUserId) return null;
   try {
     // UTC-midnight axis so the requested window matches the day axis returned
     // to the frontend (Task #12 / #14). `endMs` is the start of "tomorrow" in
@@ -283,7 +289,7 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
     const untilPrev = sinceCurr;
 
     const buildUrl = (since: number, until: number) =>
-      `${IG_API_BASE}/${INSTAGRAM_USER_ID}/insights?metric=reach,follower_count&period=day&since=${since}&until=${until}&access_token=${encodeURIComponent(INSTAGRAM_ACCESS_TOKEN)}`;
+      `${IG_API_BASE}/${igUserId}/insights?metric=reach,follower_count&period=day&since=${since}&until=${until}&access_token=${encodeURIComponent(igToken)}`;
 
     type IgInsightValue = { end_time: string; value?: number };
     type IgInsightItem = { name: string; values?: IgInsightValue[] };
@@ -1158,11 +1164,12 @@ router.get("/analytics/top", async (req: Request, res: Response) => {
 
   // IG per-media (limited to keep request bounded)
   const igStats = new Map<string, TopMetric>();
-  if (INSTAGRAM_ACCESS_TOKEN && wants("instagram")) {
+  const igTopToken = await getCredential("INSTAGRAM_ACCESS_TOKEN");
+  if (igTopToken && wants("instagram")) {
     const igIds = (rows.map((r) => r.instagramMediaId).filter(Boolean) as string[]).slice(0, 50);
     await Promise.all(igIds.map(async (id) => {
       try {
-        const r = await fetch(`${IG_API_BASE}/${id}?fields=like_count,comments_count,insights.metric(reach,plays,shares)&access_token=${encodeURIComponent(INSTAGRAM_ACCESS_TOKEN)}`);
+        const r = await fetch(`${IG_API_BASE}/${id}?fields=like_count,comments_count,insights.metric(reach,plays,shares)&access_token=${encodeURIComponent(igTopToken)}`);
         if (!r.ok) return;
         const d = (await r.json()) as { like_count?: number; comments_count?: number; insights?: { data?: { name: string; values?: { value?: number }[] }[] } };
         const insights: Record<string, number> = {};

@@ -7,8 +7,7 @@ import crypto from "crypto";
 
 const router: IRouter = Router();
 
-const LINKEDIN_CLIENT_ID = (process.env.LINKEDIN_CLIENT_ID || "").trim();
-const LINKEDIN_CLIENT_SECRET = (process.env.LINKEDIN_CLIENT_SECRET || "").trim();
+import { getCredential } from "../../lib/credentials";
 const LINKEDIN_AUTH_BASE = "https://www.linkedin.com/oauth/v2";
 const LINKEDIN_API_BASE = "https://api.linkedin.com";
 const LINKEDIN_REST_VERSION = "202509";
@@ -31,11 +30,15 @@ function getLinkedInRedirectUri(): string {
 async function refreshLinkedInToken(user: any): Promise<string | null> {
   if (!user.linkedinRefreshToken) return null;
   try {
+    const [clientId, clientSecret] = await Promise.all([
+      getCredential("LINKEDIN_CLIENT_ID"),
+      getCredential("LINKEDIN_CLIENT_SECRET"),
+    ]);
     const params = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: user.linkedinRefreshToken,
-      client_id: LINKEDIN_CLIENT_ID,
-      client_secret: LINKEDIN_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
     });
     const res = await fetch(`${LINKEDIN_AUTH_BASE}/accessToken`, {
       method: "POST",
@@ -67,8 +70,9 @@ export async function getValidLinkedInToken(user: any): Promise<string | null> {
   return refreshLinkedInToken(user);
 }
 
-router.get("/linkedin/auth", (req: Request, res: Response) => {
-  if (!LINKEDIN_CLIENT_ID) {
+router.get("/linkedin/auth", async (req: Request, res: Response) => {
+  const clientId = await getCredential("LINKEDIN_CLIENT_ID");
+  if (!clientId) {
     res.status(500).json({ error: "LinkedIn no está configurado en el servidor" });
     return;
   }
@@ -82,7 +86,7 @@ router.get("/linkedin/auth", (req: Request, res: Response) => {
   const redirectUri = getLinkedInRedirectUri();
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: LINKEDIN_CLIENT_ID,
+    client_id: clientId,
     redirect_uri: redirectUri,
     state: csrfState,
     scope: "openid profile email w_member_social",
@@ -116,12 +120,16 @@ router.get("/linkedin/callback", async (req: Request, res: Response) => {
 
   try {
     const redirectUri = getLinkedInRedirectUri();
+    const [clientId, clientSecret] = await Promise.all([
+      getCredential("LINKEDIN_CLIENT_ID"),
+      getCredential("LINKEDIN_CLIENT_SECRET"),
+    ]);
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
-      client_id: LINKEDIN_CLIENT_ID,
-      client_secret: LINKEDIN_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
     });
 
     const tokenRes = await fetch(`${LINKEDIN_AUTH_BASE}/accessToken`, {

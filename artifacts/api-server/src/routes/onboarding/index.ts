@@ -5,8 +5,7 @@ import { eq, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
-const SERVER_FB_PAGE_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "";
-const SERVER_IG_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN || "";
+import { getCredential } from "../../lib/credentials";
 
 router.get("/onboarding/checklist", async (req: Request, res: Response) => {
   const sessionUser = req.user as any;
@@ -33,8 +32,8 @@ router.get("/onboarding/checklist", async (req: Request, res: Response) => {
     tiktok: Boolean(user.tiktokAccessToken),
     linkedin: Boolean(user.linkedinAccessToken),
     x: Boolean(user.xAccessToken),
-    facebook: Boolean(SERVER_FB_PAGE_TOKEN || user.facebookPageAccessToken || user.facebookUserAccessToken),
-    instagram: Boolean(SERVER_IG_TOKEN),
+    facebook: Boolean(await getCredential("FACEBOOK_PAGE_ACCESS_TOKEN") || user.facebookPageAccessToken || user.facebookUserAccessToken),
+    instagram: Boolean(await getCredential("INSTAGRAM_ACCESS_TOKEN")),
   };
 
   const networksConnectedCount = Object.values(networkFlags).filter(Boolean).length;

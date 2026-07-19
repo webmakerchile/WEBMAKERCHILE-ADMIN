@@ -10,9 +10,7 @@ import { registerTempFile, unregisterTempFile } from "./temp-serve";
 
 const router: IRouter = Router();
 
-const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN || "";
-const INSTAGRAM_USER_ID = process.env.INSTAGRAM_USER_ID || "";
-const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || "";
+import { getCredential } from "../../lib/credentials";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
@@ -64,10 +62,10 @@ async function cleanupTempVideo(token: string) {
   } catch { }
 }
 
-async function waitForContainer(containerId: string, maxAttempts = 60): Promise<string> {
+async function waitForContainer(containerId: string, accessToken: string, maxAttempts = 60): Promise<string> {
   for (let i = 0; i < maxAttempts; i++) {
     const res = await fetch(
-      `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${INSTAGRAM_ACCESS_TOKEN}`
+      `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${accessToken}`
     );
 
     if (!res.ok) {
@@ -96,7 +94,11 @@ async function waitForContainer(containerId: string, maxAttempts = 60): Promise<
 }
 
 router.get("/instagram/status", async (_req: Request, res: Response) => {
-  if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) {
+  const [igToken, igUserId] = await Promise.all([
+    getCredential("INSTAGRAM_ACCESS_TOKEN"),
+    getCredential("INSTAGRAM_USER_ID"),
+  ]);
+  if (!igToken || !igUserId) {
     res.json({
       connected: false,
       message: "Credenciales de Instagram no configuradas",
@@ -106,7 +108,7 @@ router.get("/instagram/status", async (_req: Request, res: Response) => {
 
   try {
     const response = await fetch(
-      `${IG_API_BASE}/${INSTAGRAM_USER_ID}?fields=id,username,name,profile_picture_url,followers_count,media_count&access_token=${INSTAGRAM_ACCESS_TOKEN}`
+      `${IG_API_BASE}/${igUserId}?fields=id,username,name,profile_picture_url,followers_count,media_count&access_token=${igToken}`
     );
     const data = await response.json() as any;
 
@@ -144,7 +146,11 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
     return;
   }
 
-  if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) {
+  const [igToken, igUserId] = await Promise.all([
+    getCredential("INSTAGRAM_ACCESS_TOKEN"),
+    getCredential("INSTAGRAM_USER_ID"),
+  ]);
+  if (!igToken || !igUserId) {
     res.status(400).json({ error: "Credenciales de Instagram no configuradas" });
     return;
   }
@@ -192,15 +198,15 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
 
     const caption = video.instagramDescription || video.description || "";
 
-    console.log(`[Instagram] Creating Reel container for user ${INSTAGRAM_USER_ID}...`);
-    const containerRes = await fetch(`${IG_API_BASE}/${INSTAGRAM_USER_ID}/media`, {
+    console.log(`[Instagram] Creating Reel container for user ${igUserId}...`);
+    const containerRes = await fetch(`${IG_API_BASE}/${igUserId}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         media_type: "REELS",
         video_url: publicVideoUrl,
         caption,
-        access_token: INSTAGRAM_ACCESS_TOKEN,
+        access_token: igToken,
       }),
     });
 
@@ -213,15 +219,15 @@ router.post("/instagram/upload-from-drive/:videoId", async (req: Request, res: R
     const containerId = containerData.id;
     console.log(`[Instagram] Container created: ${containerId}. Waiting for processing...`);
 
-    await waitForContainer(containerId);
+    await waitForContainer(containerId, igToken);
 
     console.log(`[Instagram] Container ready. Publishing...`);
-    const publishRes = await fetch(`${IG_API_BASE}/${INSTAGRAM_USER_ID}/media_publish`, {
+    const publishRes = await fetch(`${IG_API_BASE}/${igUserId}/media_publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         creation_id: containerId,
-        access_token: INSTAGRAM_ACCESS_TOKEN,
+        access_token: igToken,
       }),
     });
 
@@ -276,8 +282,9 @@ router.get("/instagram/media-status/:videoId", async (req: Request, res: Respons
   }
 
   try {
+    const igToken = await getCredential("INSTAGRAM_ACCESS_TOKEN");
     const response = await fetch(
-      `${IG_API_BASE}/${video.instagramMediaId}?fields=id,caption,media_type,media_url,permalink,timestamp&access_token=${INSTAGRAM_ACCESS_TOKEN}`
+      `${IG_API_BASE}/${video.instagramMediaId}?fields=id,caption,media_type,media_url,permalink,timestamp&access_token=${igToken}`
     );
     const data = await response.json() as any;
 

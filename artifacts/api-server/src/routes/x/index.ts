@@ -7,8 +7,7 @@ import crypto from "crypto";
 
 const router: IRouter = Router();
 
-const X_CLIENT_ID = (process.env.X_CLIENT_ID || "").trim();
-const X_CLIENT_SECRET = (process.env.X_CLIENT_SECRET || "").trim();
+import { getCredential } from "../../lib/credentials";
 const X_AUTH_BASE = "https://twitter.com/i/oauth2";
 const X_API_BASE = "https://api.twitter.com/2";
 
@@ -24,23 +23,28 @@ function generatePkce() {
   return { verifier, challenge };
 }
 
-function basicAuthHeader() {
-  return "Basic " + Buffer.from(`${X_CLIENT_ID}:${X_CLIENT_SECRET}`).toString("base64");
+async function basicAuthHeader(): Promise<string> {
+  const [id, secret] = await Promise.all([
+    getCredential("X_CLIENT_ID"),
+    getCredential("X_CLIENT_SECRET"),
+  ]);
+  return "Basic " + Buffer.from(`${id}:${secret}`).toString("base64");
 }
 
 async function refreshXToken(user: any): Promise<string | null> {
   if (!user.xRefreshToken) return null;
   try {
+    const clientId = await getCredential("X_CLIENT_ID");
     const params = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: user.xRefreshToken,
-      client_id: X_CLIENT_ID,
+      client_id: clientId,
     });
     const res = await fetch(`${X_API_BASE}/oauth2/token`, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: basicAuthHeader(),
+        Authorization: await basicAuthHeader(),
       },
       body: params.toString(),
     });
@@ -69,8 +73,9 @@ export async function getValidXToken(user: any): Promise<string | null> {
   return refreshXToken(user);
 }
 
-router.get("/x/auth", (req: Request, res: Response) => {
-  if (!X_CLIENT_ID) {
+router.get("/x/auth", async (req: Request, res: Response) => {
+  const clientId = await getCredential("X_CLIENT_ID");
+  if (!clientId) {
     res.status(500).json({ error: "X no está configurado en el servidor" });
     return;
   }
@@ -93,7 +98,7 @@ router.get("/x/auth", (req: Request, res: Response) => {
   const redirectUri = getXRedirectUri();
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: X_CLIENT_ID,
+    client_id: clientId,
     redirect_uri: redirectUri,
     scope: "tweet.read tweet.write users.read media.write offline.access",
     state: csrfState,
@@ -139,11 +144,12 @@ router.get("/x/callback", async (req: Request, res: Response) => {
 
   try {
     const redirectUri = getXRedirectUri();
+    const clientId = await getCredential("X_CLIENT_ID");
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
-      client_id: X_CLIENT_ID,
+      client_id: clientId,
       code_verifier: verifier,
     });
 
@@ -151,7 +157,7 @@ router.get("/x/callback", async (req: Request, res: Response) => {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: basicAuthHeader(),
+        Authorization: await basicAuthHeader(),
       },
       body: params.toString(),
     });

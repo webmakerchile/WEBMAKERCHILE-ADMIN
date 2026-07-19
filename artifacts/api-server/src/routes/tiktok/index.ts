@@ -11,8 +11,8 @@ import { google } from "googleapis";
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 256 * 1024 * 1024 } });
 
-const TIKTOK_CLIENT_KEY = (process.env.TIKTOK_CLIENT_KEY || "").trim();
-const TIKTOK_CLIENT_SECRET = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
+import { getCredential } from "../../lib/credentials";
+
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -36,9 +36,13 @@ async function refreshTikTokToken(user: any): Promise<string | null> {
   if (!user.tiktokRefreshToken) return null;
 
   try {
+    const [clientKey, clientSecret] = await Promise.all([
+      getCredential("TIKTOK_CLIENT_KEY"),
+      getCredential("TIKTOK_CLIENT_SECRET"),
+    ]);
     const params = new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
-      client_secret: TIKTOK_CLIENT_SECRET,
+      client_key: clientKey,
+      client_secret: clientSecret,
       grant_type: "refresh_token",
       refresh_token: user.tiktokRefreshToken,
     });
@@ -80,7 +84,8 @@ async function getValidTikTokToken(user: any): Promise<string | null> {
   return refreshTikTokToken(user);
 }
 
-router.get("/tiktok/auth", (req: Request, res: Response) => {
+router.get("/tiktok/auth", async (req: Request, res: Response) => {
+  const clientKey = await getCredential("TIKTOK_CLIENT_KEY");
   const csrfState = crypto.randomBytes(16).toString("hex");
 
   res.cookie("tiktok_csrf", csrfState, {
@@ -92,10 +97,10 @@ router.get("/tiktok/auth", (req: Request, res: Response) => {
 
   const redirectUri = getTikTokRedirectUri();
 
-  console.log(`[TikTok] Auth: client_key="${TIKTOK_CLIENT_KEY}" (len=${TIKTOK_CLIENT_KEY.length}), redirect_uri="${redirectUri}"`);
+  console.log(`[TikTok] Auth: client_key="${clientKey}" (len=${clientKey.length}), redirect_uri="${redirectUri}"`);
 
   const params = new URLSearchParams({
-    client_key: TIKTOK_CLIENT_KEY,
+    client_key: clientKey,
     scope: "user.info.basic,video.upload",
     response_type: "code",
     redirect_uri: redirectUri,
@@ -133,9 +138,13 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
   try {
     const redirectUri = getTikTokRedirectUri();
 
+    const [clientKey, clientSecret] = await Promise.all([
+      getCredential("TIKTOK_CLIENT_KEY"),
+      getCredential("TIKTOK_CLIENT_SECRET"),
+    ]);
     const params = new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
-      client_secret: TIKTOK_CLIENT_SECRET,
+      client_key: clientKey,
+      client_secret: clientSecret,
       code,
       grant_type: "authorization_code",
       redirect_uri: redirectUri,

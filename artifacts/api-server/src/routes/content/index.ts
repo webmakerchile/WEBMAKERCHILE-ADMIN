@@ -1133,7 +1133,7 @@ router.post("/content/schedule/check", async (_req, res) => {
 });
 
 const IG_API_BASE_CONTENT = "https://graph.instagram.com/v21.0";
-const INSTAGRAM_ACCESS_TOKEN_STATS = process.env.INSTAGRAM_ACCESS_TOKEN || "";
+import { getCredential as _getCredential } from "../../lib/credentials";
 const LINKEDIN_API_BASE_STATS = "https://api.linkedin.com";
 
 router.get("/content/videos/:id/stats", async (req, res) => {
@@ -1194,12 +1194,13 @@ router.get("/content/videos/:id/stats", async (req, res) => {
   // ── Instagram ─────────────────────────────────────────────────────────────
   if (video.instagramMediaId) {
     tasks.push((async () => {
-      if (!INSTAGRAM_ACCESS_TOKEN_STATS) {
+      const igStatToken = await _getCredential("INSTAGRAM_ACCESS_TOKEN");
+      if (!igStatToken) {
         stats.instagram = { error: "no_token" };
         return;
       }
       try {
-        const token = encodeURIComponent(INSTAGRAM_ACCESS_TOKEN_STATS);
+        const token = encodeURIComponent(igStatToken);
         const [mediaRes, insightsRes] = await Promise.all([
           fetch(`${IG_API_BASE_CONTENT}/${video.instagramMediaId}?fields=like_count,comments_count&access_token=${token}`)
             .then((r) => r.json() as Promise<any>).catch(() => null),

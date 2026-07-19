@@ -23,6 +23,7 @@ import collaborationRouter from "./collaboration";
 import connectionsRouter from "./connections";
 import settingsRouter from "./settings";
 import transcriberRouter from "./transcriber";
+import credentialsRouter from "./credentials";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(collaborationRouter);
 router.use(connectionsRouter);
 router.use(settingsRouter);
 router.use(transcriberRouter);
+router.use(credentialsRouter);
 
 export default router;

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
-import { CheckCircle2, Loader2, Link2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Link2, Pencil, Trash2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { HelpHint } from "@/components/help-hint";
@@ -277,6 +277,271 @@ function BrandToneField({
         className="w-full bg-background border border-foreground/10 rounded-lg px-3 py-2 text-sm focus:border-primary outline-none resize-y leading-snug"
       />
     </label>
+  );
+}
+
+const NETWORK_COLOR: Record<string, string> = {
+  tiktok: "text-sky-400",
+  instagram: "text-pink-400",
+  facebook: "text-blue-400",
+  linkedin: "text-blue-500",
+  x: "text-foreground",
+};
+
+type CredStatus = {
+  key: string;
+  label: string;
+  network: string;
+  secret: boolean;
+  hasValue: boolean;
+  isFromDb: boolean;
+  source: "db" | "env" | "none";
+  updatedAt: string | null;
+  updatedBy: string | null;
+};
+
+function CredentialRow({ cred, onSaved }: { cred: CredStatus; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [showValue, setShowValue] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [editing]);
+
+  const save = useCallback(async () => {
+    if (!value.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/credentials/${cred.key}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value }),
+      });
+      if (!res.ok) { const d = await res.json() as any; throw new Error(d.error || "Error al guardar"); }
+      setEditing(false);
+      setValue("");
+      onSaved();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }, [cred.key, value, onSaved]);
+
+  const del = useCallback(async () => {
+    if (!confirm(`¿Eliminar ${cred.key} de la BD? El valor del env var seguirá siendo el fallback.`)) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/credentials/${cred.key}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) { const d = await res.json() as any; throw new Error(d.error || "Error al eliminar"); }
+      onSaved();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setDeleting(false);
+    }
+  }, [cred.key, onSaved]);
+
+  const sourceLabel = cred.source === "db" ? "BD" : cred.source === "env" ? "Env" : null;
+  const sourceCls = cred.source === "db"
+    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+    : cred.source === "env"
+    ? "bg-sky-500/10 text-sky-400 border-sky-500/20"
+    : "bg-foreground/5 text-muted-foreground/60 border-foreground/10";
+
+  return (
+    <div className="py-2 px-3 rounded-lg bg-foreground/3 border border-foreground/8 space-y-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-xs font-mono text-muted-foreground/70 truncate flex-1">{cred.label}</span>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {cred.hasValue ? (
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${sourceCls}`}>
+              {sourceLabel}
+            </span>
+          ) : (
+            <span className="text-[10px] text-rose-400/80 px-1.5 py-0.5 rounded border border-rose-500/20 bg-rose-500/5">
+              Sin valor
+            </span>
+          )}
+          {!editing && (
+            <button
+              onClick={() => { setEditing(true); setError(null); }}
+              className="p-1 rounded hover:bg-foreground/8 text-muted-foreground/60 hover:text-foreground transition"
+              title="Editar"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
+          {cred.isFromDb && !editing && (
+            <button
+              onClick={del}
+              disabled={deleting}
+              className="p-1 rounded hover:bg-rose-500/10 text-muted-foreground/50 hover:text-rose-400 transition"
+              title="Eliminar de BD (usa env var como fallback)"
+            >
+              {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {cred.source === "db" && cred.updatedAt && !editing && (
+        <p className="text-[10px] text-muted-foreground/40 leading-none">
+          Actualizado {new Date(cred.updatedAt).toLocaleDateString("es-CL")}
+          {cred.updatedBy ? ` por ${cred.updatedBy}` : ""}
+        </p>
+      )}
+
+      {editing && (
+        <div className="space-y-1.5">
+          <div className="flex gap-1.5">
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type={cred.secret && !showValue ? "password" : "text"}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { setEditing(false); setValue(""); } }}
+                placeholder={cred.isFromDb ? "Nuevo valor (vacío = no cambiar)" : "Nuevo valor"}
+                className="w-full text-xs bg-background border border-foreground/15 rounded-md px-2.5 py-1.5 pr-8 font-mono focus:outline-none focus:border-primary/50"
+              />
+              {cred.secret && (
+                <button
+                  type="button"
+                  onClick={() => setShowValue((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground"
+                >
+                  {showValue ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                </button>
+              )}
+            </div>
+            <button
+              onClick={save}
+              disabled={saving || !value.trim()}
+              className="px-2.5 py-1.5 rounded-md bg-primary/90 hover:bg-primary text-primary-foreground text-xs font-medium transition disabled:opacity-40 flex items-center gap-1"
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              Guardar
+            </button>
+            <button
+              onClick={() => { setEditing(false); setValue(""); setError(null); }}
+              className="px-2 py-1.5 rounded-md border border-foreground/10 text-muted-foreground hover:bg-foreground/5 text-xs transition"
+            >
+              Cancelar
+            </button>
+          </div>
+          {error && <p className="text-[10px] text-rose-400">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type CredentialsByNetwork = Record<string, CredStatus[]>;
+
+function CredencialesSection() {
+  const [creds, setCreds] = useState<CredStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+
+  const fetchCreds = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/credentials`, { credentials: "include" });
+      const data = await res.json() as CredStatus[];
+      setCreds(data);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchCreds(); }, [fetchCreds]);
+
+  const byNetwork = useMemo<CredentialsByNetwork>(() => {
+    const map: CredentialsByNetwork = {};
+    for (const c of creds) {
+      if (!map[c.network]) map[c.network] = [];
+      map[c.network].push(c);
+    }
+    return map;
+  }, [creds]);
+
+  const totalConfigured = creds.filter((c) => c.hasValue).length;
+  const totalMissing = creds.filter((c) => !c.hasValue).length;
+
+  const networkOrder = ["tiktok", "instagram", "facebook", "linkedin", "x"];
+
+  return (
+    <section className="rounded-2xl border border-foreground/10 bg-card/50 overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-5 py-4 hover:bg-foreground/3 transition text-left"
+      >
+        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-foreground/8 flex-shrink-0">
+          <KeyRound className="w-4 h-4 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="font-semibold text-sm">Credenciales de API</h2>
+          <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+            {loading ? "Cargando..." : `${totalConfigured} configuradas · ${totalMissing} sin valor`}
+          </p>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground/50 transition-transform flex-shrink-0 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5 space-y-4 border-t border-foreground/8 pt-4">
+          <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
+            Guarda las claves de cada red social en la BD (cifradas con AES-256-GCM). Toman precedencia sobre las variables de entorno. El valor del env var sigue funcionando como fallback.
+          </p>
+
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground/60 py-4">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Cargando credenciales...
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {networkOrder.map((network) => {
+                const items = byNetwork[network];
+                if (!items?.length) return null;
+                const allSet = items.every((c) => c.hasValue);
+                const someSet = items.some((c) => c.hasValue);
+                const dotCls = allSet
+                  ? "bg-emerald-500"
+                  : someSet
+                  ? "bg-amber-500"
+                  : "bg-foreground/20";
+                return (
+                  <div key={network}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotCls}`} />
+                      <span className={`text-xs font-semibold uppercase tracking-wide ${NETWORK_COLOR[network] || "text-foreground/60"}`}>
+                        {network}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 pl-4">
+                      {items.map((cred) => (
+                        <CredentialRow key={cred.key} cred={cred} onSaved={fetchCreds} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -835,6 +1100,8 @@ export default function CuentasPage() {
             );
           })}
         </div>
+
+        <CredencialesSection />
       </div>
     </Layout>
   );

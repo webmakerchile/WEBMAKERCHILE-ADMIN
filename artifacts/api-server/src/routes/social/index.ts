@@ -6,14 +6,12 @@ import { google } from "googleapis";
 
 const router: IRouter = Router();
 
-const INSTAGRAM_ACCESS_TOKEN = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
-const INSTAGRAM_USER_ID = (process.env.INSTAGRAM_USER_ID || "").trim();
+import { getCredential } from "../../lib/credentials";
+
 const IG_API_BASE = "https://graph.facebook.com/v21.0";
 
 const FACEBOOK_GRAPH_VERSION = "v21.0";
 const FB_GRAPH_BASE = `https://graph.facebook.com/${FACEBOOK_GRAPH_VERSION}`;
-const SERVER_FB_PAGE_ID = (process.env.FACEBOOK_PAGE_ID || "").trim();
-const SERVER_FB_PAGE_TOKEN = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
 
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
 const LINKEDIN_API_BASE = "https://api.linkedin.com";
@@ -120,10 +118,14 @@ async function safeJson<T>(r: Response | globalThis.Response): Promise<T | null>
 }
 
 async function getInstagramProfile(): Promise<NetworkProfile> {
-  if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) return EMPTY;
+  const [igToken, igUserId] = await Promise.all([
+    getCredential("INSTAGRAM_ACCESS_TOKEN"),
+    getCredential("INSTAGRAM_USER_ID"),
+  ]);
+  if (!igToken || !igUserId) return EMPTY;
   try {
     const r = await fetch(
-      `${IG_API_BASE}/${INSTAGRAM_USER_ID}?fields=id,username,name,profile_picture_url,followers_count&access_token=${INSTAGRAM_ACCESS_TOKEN}`,
+      `${IG_API_BASE}/${igUserId}?fields=id,username,name,profile_picture_url,followers_count&access_token=${igToken}`,
     );
     if (!r.ok) return EMPTY;
     const data = await safeJson<IGResponse>(r);
@@ -141,10 +143,14 @@ async function getInstagramProfile(): Promise<NetworkProfile> {
 }
 
 async function getFacebookProfile(user: SocialUser | null): Promise<NetworkProfile> {
-  if (SERVER_FB_PAGE_ID && SERVER_FB_PAGE_TOKEN) {
+  const [serverPageId, serverPageToken] = await Promise.all([
+    getCredential("FACEBOOK_PAGE_ID"),
+    getCredential("FACEBOOK_PAGE_ACCESS_TOKEN"),
+  ]);
+  if (serverPageId && serverPageToken) {
     try {
       const r = await fetch(
-        `${FB_GRAPH_BASE}/${SERVER_FB_PAGE_ID}?fields=id,name,picture,fan_count&access_token=${SERVER_FB_PAGE_TOKEN}`,
+        `${FB_GRAPH_BASE}/${serverPageId}?fields=id,name,picture,fan_count&access_token=${serverPageToken}`,
       );
       if (r.ok) {
         const data = await safeJson<FBPageResponse>(r);

@@ -13,6 +13,7 @@ import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 import { publishToFacebook } from "./routes/facebook";
 import { createNotification } from "./lib/notifications";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
+import { getCredential } from "./lib/credentials";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -190,11 +191,7 @@ function isRetryCooldown(video: typeof videos.$inferSelect, platform: PublishPla
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-const TIKTOK_CLIENT_KEY = (process.env.TIKTOK_CLIENT_KEY || "").trim();
-const TIKTOK_CLIENT_SECRET = (process.env.TIKTOK_CLIENT_SECRET || "").trim();
 const TIKTOK_API_BASE = "https://open.tiktokapis.com";
-const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN || "";
-const INSTAGRAM_USER_ID = process.env.INSTAGRAM_USER_ID || "";
 const IG_API_BASE = "https://graph.instagram.com/v21.0";
 const TEMP_DIR = path.join(process.cwd(), "tmp-ig-videos");
 
@@ -229,9 +226,13 @@ async function getValidTikTokToken(user: any): Promise<string | null> {
   }
   if (!user.tiktokRefreshToken) return null;
   try {
+    const [clientKey, clientSecret] = await Promise.all([
+      getCredential("TIKTOK_CLIENT_KEY"),
+      getCredential("TIKTOK_CLIENT_SECRET"),
+    ]);
     const params = new URLSearchParams({
-      client_key: TIKTOK_CLIENT_KEY,
-      client_secret: TIKTOK_CLIENT_SECRET,
+      client_key: clientKey,
+      client_secret: clientSecret,
       grant_type: "refresh_token",
       refresh_token: user.tiktokRefreshToken,
     });
@@ -539,15 +540,16 @@ async function publishToX(video: any, user: any): Promise<{ success: boolean; er
   return result;
 }
 
-const SERVER_FB_PAGE_ID = (process.env.FACEBOOK_PAGE_ID || "").trim();
-const SERVER_FB_PAGE_TOKEN = (process.env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
-
 async function publishToFacebookStep(video: any, user: any): Promise<{ success: boolean; error?: string }> {
   if (video.facebookPostId) return { success: true };
   if (isTerminalError(video, "facebook")) return { success: false, error: video.facebookError || "previously failed" };
 
   // Accept either server-side permanent tokens or user OAuth tokens
-  const hasServerTokens = !!(SERVER_FB_PAGE_ID && SERVER_FB_PAGE_TOKEN);
+  const [serverPageId, serverPageToken] = await Promise.all([
+    getCredential("FACEBOOK_PAGE_ID"),
+    getCredential("FACEBOOK_PAGE_ACCESS_TOKEN"),
+  ]);
+  const hasServerTokens = !!(serverPageId && serverPageToken);
   const hasUserTokens = !!(user.facebookPageId && user.facebookPageAccessToken);
   if (!hasServerTokens && !hasUserTokens) {
     const error = "Facebook not connected";
@@ -576,7 +578,11 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
     return { success: true };
   }
   if (isTerminalError(video, "instagram")) return { success: false, error: video.instagramError || "previously failed" };
-  if (!INSTAGRAM_ACCESS_TOKEN || !INSTAGRAM_USER_ID) {
+  const [igToken, igUserId] = await Promise.all([
+    getCredential("INSTAGRAM_ACCESS_TOKEN"),
+    getCredential("INSTAGRAM_USER_ID"),
+  ]);
+  if (!igToken || !igUserId) {
     const error = "Instagram not configured";
     await persistPlatformError(video.id, "instagram", error);
     return { success: false, error };
@@ -614,14 +620,14 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
 
     const caption = video.instagramDescription || video.description || "";
 
-    const containerRes = await fetch(`${IG_API_BASE}/${INSTAGRAM_USER_ID}/media`, {
+    const containerRes = await fetch(`${IG_API_BASE}/${igUserId}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         media_type: "REELS",
         video_url: publicVideoUrl,
         caption,
-        access_token: INSTAGRAM_ACCESS_TOKEN,
+        access_token: igToken,
       }),
     });
 
@@ -635,7 +641,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
 
     for (let i = 0; i < 60; i++) {
       const statusRes = await fetch(
-        `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${INSTAGRAM_ACCESS_TOKEN}`
+        `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${igToken}`
       );
       const statusData = (await statusRes.json()) as IgStatusJson;
       if (statusData.status_code === "FINISHED") break;
@@ -645,12 +651,12 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
       await new Promise((r) => setTimeout(r, 5000));
     }
 
-    const publishRes = await fetch(`${IG_API_BASE}/${INSTAGRAM_USER_ID}/media_publish`, {
+    const publishRes = await fetch(`${IG_API_BASE}/${igUserId}/media_publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         creation_id: containerId,
-        access_token: INSTAGRAM_ACCESS_TOKEN,
+        access_token: igToken,
       }),
     });
 
