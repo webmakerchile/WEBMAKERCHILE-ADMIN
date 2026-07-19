@@ -1,7 +1,7 @@
 import type { TikTokTokenJson, TikTokInitJson, IgContainerJson, IgStatusJson, IgPublishJson } from "./lib/platform-types";
 import { db } from "@workspace/db";
 import { videos, users, publishAttempts } from "@workspace/db/schema";
-import { eq, and, lte, or, isNull, sql } from "drizzle-orm";
+import { eq, and, lte, or, isNull, isNotNull, sql } from "drizzle-orm";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { randomBytes } from "crypto";
@@ -439,6 +439,81 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
     console.error(`[Scheduler] TikTok upload error: ${err.message}`);
     await recordFailure(video.id, "tiktok", err.message);
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Poll TikTok's publish-status endpoint for every video that is stuck in
+ * tiktokStatus = "uploaded" (i.e. the file was accepted by TikTok but we
+ * haven't yet confirmed PUBLISH_COMPLETE). Runs on every scheduler tick so
+ * scheduler-initiated uploads don't stay in "uploaded" forever.
+ */
+async function pollTikTokPendingVideos(): Promise<void> {
+  const pendingVideos = await db
+    .select()
+    .from(videos)
+    .where(and(eq(videos.tiktokStatus, "uploaded"), isNotNull(videos.tiktokPublishId)));
+
+  if (pendingVideos.length === 0) return;
+
+  console.log(`[Scheduler] Polling TikTok status for ${pendingVideos.length} pending video(s)`);
+
+  const [adminUser] = await db.select().from(users).limit(1);
+  if (!adminUser) {
+    console.error("[Scheduler] TikTok poll: no admin user found");
+    return;
+  }
+
+  const token = await getValidTikTokToken(adminUser);
+  if (!token) {
+    console.warn("[Scheduler] TikTok poll: no valid token, skipping");
+    return;
+  }
+
+  for (const video of pendingVideos) {
+    if (!video.tiktokPublishId) continue;
+    try {
+      const statusRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/status/fetch/`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json; charset=UTF-8",
+        },
+        body: JSON.stringify({ publish_id: video.tiktokPublishId }),
+      });
+
+      const statusData = (await statusRes.json()) as {
+        data?: { status?: string; fail_reason?: string; publicaly_available_post_id?: string[] };
+        error?: { code?: string; message?: string };
+      };
+
+      const tikTokStatus = statusData.data?.status;
+      console.log(`[Scheduler] TikTok poll video #${video.id} (${video.tiktokPublishId}): ${tikTokStatus ?? "no status"}`);
+
+      if (tikTokStatus === "PUBLISH_COMPLETE") {
+        await db.update(videos).set({
+          tiktokStatus: "published",
+          tiktokError: null,
+          updatedAt: new Date(),
+        }).where(eq(videos.id, video.id));
+        console.log(`[Scheduler] TikTok video #${video.id} confirmed published`);
+        await logAttempt({
+          videoId: video.id,
+          platform: "tiktok",
+          attemptNumber: (video.tiktokRetries ?? 0) + 1,
+          outcome: "success",
+        });
+      } else if (tikTokStatus === "FAILED") {
+        const failReason = statusData.data?.fail_reason || "TikTok processing failed";
+        await recordFailure(video.id, "tiktok", failReason);
+        console.warn(`[Scheduler] TikTok video #${video.id} processing failed: ${failReason}`);
+      } else if (statusData.error && statusData.error.code !== "ok") {
+        const apiError = `TikTok status API error: ${statusData.error.message || statusData.error.code}`;
+        console.warn(`[Scheduler] TikTok poll video #${video.id}: ${apiError}`);
+      }
+    } catch (err: any) {
+      console.error(`[Scheduler] TikTok poll video #${video.id} error: ${err.message}`);
+    }
   }
 }
 
@@ -1056,6 +1131,12 @@ export async function retryPlatformForVideo(
 
 async function tick() {
   await processScheduledVideos();
+  // Poll TikTok for any videos stuck in "uploaded" — runs every tick (60s).
+  try {
+    await pollTikTokPendingVideos();
+  } catch (err: any) {
+    console.error("[Scheduler] pollTikTokPendingVideos failed:", err?.message || err);
+  }
   // Daily-debounced inside checkConnectionsForAdmin, safe to call every minute.
   try {
     await checkConnectionsForAdmin();
