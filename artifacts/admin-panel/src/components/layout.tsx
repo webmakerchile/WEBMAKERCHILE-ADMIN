@@ -17,6 +17,7 @@ import {
   AudioLines,
   BarChart3,
   HelpCircle,
+  Settings,
   LogOut,
   Menu,
   X,
@@ -54,6 +55,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/estudio", icon: Clapperboard, label: t.navStudio, tour: "nav-estudio" },
     { href: "/transcriptor", icon: AudioLines, label: t.navTranscriber, tour: "nav-transcriptor" },
     { href: "/equipo", icon: Users2, label: t.navTeam, tour: "nav-equipo" },
+    { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
     { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
   ];
 

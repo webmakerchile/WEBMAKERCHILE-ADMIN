@@ -34,12 +34,19 @@ const T = {
     navTranscriber: "Transcriptor",
     navTeam: "Equipo",
     navHelp: "Ayuda",
+    navSettings: "Ajustes",
     navLogout: "Cerrar Sesión",
     navSearch: "Buscar o ejecutar...",
     navMenu: "Menú",
     navMore: "Más",
     navCloseMenu: "Cerrar menú",
     navOpenMenu: "Abrir menú",
+
+    // Ajustes
+    ajustesTitle: "Ajustes",
+    ajustesSubtitle: "Gestiona las credenciales de API de cada red social. Los valores se encriptan con AES-256-GCM antes de guardarse en la base de datos.",
+    ajustesSecurity: "Almacenamiento seguro",
+    ajustesSecurityDesc: "Los valores ingresados se encriptan antes de guardarse. Nunca se muestran en claro: solo puedes sobreescribirlos o eliminarlos. Las credenciales marcadas como 'Entorno' están configuradas en el servidor y no son editables desde aquí.",
 
     // Cuentas
     cuentasTitle: "Cuentas Sociales",
@@ -675,12 +682,19 @@ const T = {
     navTranscriber: "Transcriber",
     navTeam: "Team",
     navHelp: "Help",
+    navSettings: "Settings",
     navLogout: "Sign Out",
     navSearch: "Search or run...",
     navMenu: "Menu",
     navMore: "More",
     navCloseMenu: "Close menu",
     navOpenMenu: "Open menu",
+
+    // Ajustes
+    ajustesTitle: "Settings",
+    ajustesSubtitle: "Manage API credentials for each social network. Values are encrypted with AES-256-GCM before being saved to the database.",
+    ajustesSecurity: "Secure storage",
+    ajustesSecurityDesc: "Values are encrypted before being saved. They are never shown in plaintext — you can only overwrite or delete them. Credentials marked as 'Environment' are set on the server and cannot be edited here.",
 
     // Cuentas
     cuentasTitle: "Social Accounts",

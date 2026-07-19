@@ -33,6 +33,7 @@ const CampanaPage = lazy(() => import("./pages/campana"));
 const InsightsPage = lazy(() => import("./pages/insights"));
 const EquipoPage = lazy(() => import("./pages/equipo"));
 const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
+const AjustesPage = lazy(() => import("./pages/ajustes"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -203,6 +204,9 @@ function Router() {
       </Route>
       <Route path="/ayuda">
         <RouteShell name="ayuda"><AyudaPage /></RouteShell>
+      </Route>
+      <Route path="/ajustes">
+        <RouteShell name="ajustes"><AjustesPage /></RouteShell>
       </Route>
       <Route component={NotFound} />
     </Switch>
