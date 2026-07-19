@@ -165,7 +165,7 @@ router.get("/tiktok/auth", async (req: Request, res: Response) => {
 
   const params = new URLSearchParams({
     client_key: clientKey,
-    scope: "user.info.basic,video.upload",
+    scope: "user.info.basic,video.publish",
     response_type: "code",
     redirect_uri: redirectUri,
     state: csrfState,
