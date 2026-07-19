@@ -101,20 +101,20 @@ router.get("/linkedin/callback", async (req: Request, res: Response) => {
 
   if (error) {
     console.error("[LinkedIn] Auth error:", error, error_description);
-    res.redirect("/?linkedin=error&msg=" + encodeURIComponent(error));
+    res.redirect("/cuentas?linkedin=error&msg=" + encodeURIComponent(error));
     return;
   }
 
   const csrfCookie = req.cookies?.linkedin_csrf;
   if (!state || state !== csrfCookie) {
-    console.error("[LinkedIn] CSRF mismatch");
-    res.redirect("/?linkedin=error&msg=csrf_mismatch");
+    console.error("[LinkedIn] CSRF mismatch - state:", state, "cookie:", csrfCookie ? "present" : "missing");
+    res.redirect("/cuentas?linkedin=error&msg=csrf_mismatch");
     return;
   }
   res.clearCookie("linkedin_csrf");
 
   if (!code) {
-    res.redirect("/?linkedin=error&msg=no_code");
+    res.redirect("/cuentas?linkedin=error&msg=no_code");
     return;
   }
 
@@ -142,13 +142,13 @@ router.get("/linkedin/callback", async (req: Request, res: Response) => {
 
     if (!tokenData.access_token) {
       console.error("[LinkedIn] Token exchange failed:", tokenData);
-      res.redirect("/?linkedin=error&msg=token_failed");
+      res.redirect("/cuentas?linkedin=error&msg=token_failed");
       return;
     }
 
     const currentUser = req.user as any;
     if (!currentUser) {
-      res.redirect("/?linkedin=error&msg=not_logged_in");
+      res.redirect("/cuentas?linkedin=error&msg=not_logged_in");
       return;
     }
 
@@ -210,7 +210,7 @@ router.get("/linkedin/callback", async (req: Request, res: Response) => {
     res.redirect("/?linkedin=connected");
   } catch (err: any) {
     console.error("[LinkedIn] Callback error:", err.message);
-    res.redirect("/?linkedin=error&msg=" + encodeURIComponent(err.message));
+    res.redirect("/cuentas?linkedin=error&msg=" + encodeURIComponent(err.message));
   }
 });
 

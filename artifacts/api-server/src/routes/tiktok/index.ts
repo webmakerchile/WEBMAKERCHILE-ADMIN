@@ -181,21 +181,21 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
 
   if (error) {
     console.error("[TikTok] Auth error:", error);
-    res.redirect("/?tiktok=error&msg=" + encodeURIComponent(error));
+    res.redirect("/cuentas?tiktok=error&msg=" + encodeURIComponent(error));
     return;
   }
 
   const csrfCookie = req.cookies?.tiktok_csrf;
   if (!state || state !== csrfCookie) {
-    console.error("[TikTok] CSRF mismatch");
-    res.redirect("/?tiktok=error&msg=csrf_mismatch");
+    console.error("[TikTok] CSRF mismatch - state:", state, "cookie:", csrfCookie ? "present" : "missing");
+    res.redirect("/cuentas?tiktok=error&msg=csrf_mismatch");
     return;
   }
 
   res.clearCookie("tiktok_csrf");
 
   if (!code) {
-    res.redirect("/?tiktok=error&msg=no_code");
+    res.redirect("/cuentas?tiktok=error&msg=no_code");
     return;
   }
 
@@ -227,13 +227,13 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
 
     if (!tokenData.access_token) {
       console.error("[TikTok] Token exchange failed:", tokenData);
-      res.redirect("/?tiktok=error&msg=token_failed");
+      res.redirect("/cuentas?tiktok=error&msg=token_failed");
       return;
     }
 
     const currentUser = req.user as any;
     if (!currentUser) {
-      res.redirect("/?tiktok=error&msg=not_logged_in");
+      res.redirect("/cuentas?tiktok=error&msg=not_logged_in");
       return;
     }
 
@@ -250,7 +250,7 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
     res.redirect("/?tiktok=connected");
   } catch (err: any) {
     console.error("[TikTok] Callback error:", err.message);
-    res.redirect("/?tiktok=error&msg=" + encodeURIComponent(err.message));
+    res.redirect("/cuentas?tiktok=error&msg=" + encodeURIComponent(err.message));
   }
 });
 

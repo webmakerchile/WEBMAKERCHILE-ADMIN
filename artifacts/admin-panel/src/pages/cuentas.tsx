@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
-import { CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Link2, Pencil, Trash2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Link2, Pencil, Trash2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { HelpHint } from "@/components/help-hint";
@@ -668,6 +668,8 @@ export default function CuentasPage() {
     }[network as "facebook" | "instagram"],
   }));
 
+  const [oauthError, setOauthError] = useState<{ network: string; msg: string } | null>(null);
+
   const [accounts, setAccounts] = useState<Record<Network, AccountInfo>>(() => {
     const init: Record<string, AccountInfo> = {};
     for (const n of NETWORK_ORDER) init[n] = { loading: true, connected: false };
@@ -728,13 +730,21 @@ export default function CuentasPage() {
     NETWORK_ORDER.forEach((network) => fetchOne(network, NETWORK_ENDPOINTS[network].status));
     fetchHealth();
     const params = new URLSearchParams(window.location.search);
-    if (
-      params.get("facebook") === "connected" ||
-      params.get("linkedin") === "connected" ||
-      params.get("tiktok") === "connected" ||
-      params.get("x") === "connected"
-    ) {
+    const connected = ["facebook", "linkedin", "tiktok", "x"].find(n => params.get(n) === "connected");
+    const errNetwork = ["facebook", "linkedin", "tiktok", "x"].find(n => params.get(n) === "error");
+    if (connected || errNetwork) {
       window.history.replaceState({}, "", window.location.pathname);
+      if (errNetwork) {
+        const msg = params.get("msg") || "error_desconocido";
+        const label: Record<string, string> = {
+          csrf_mismatch: "La sesión de autorización expiró o hubo un problema de seguridad. Intenta conectar de nuevo.",
+          token_failed: "No se pudo obtener el token de acceso. Verifica las credenciales en Ajustes.",
+          not_logged_in: "Tu sesión expiró. Recarga la página e intenta de nuevo.",
+          missing_pkce: "Error interno de seguridad. Intenta conectar de nuevo.",
+          no_code: "La plataforma no devolvió un código de autorización.",
+        };
+        setOauthError({ network: errNetwork, msg: label[msg] || msg });
+      }
     }
   }, []);
 
@@ -828,6 +838,19 @@ export default function CuentasPage() {
         </header>
 
         <BrandToneSection />
+
+        {oauthError && (
+          <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-rose-300 capitalize">{oauthError.network}: Error al conectar</p>
+              <p className="text-xs text-muted-foreground mt-1">{oauthError.msg}</p>
+            </div>
+            <button onClick={() => setOauthError(null)} className="text-muted-foreground hover:text-foreground flex-shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {noNetworksConnected && (
           <EmptyState

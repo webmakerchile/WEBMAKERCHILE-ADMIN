@@ -116,7 +116,7 @@ router.get("/x/callback", async (req: Request, res: Response) => {
 
   if (error) {
     console.error("[X] Auth error:", error, error_description);
-    res.redirect("/?x=error&msg=" + encodeURIComponent(error));
+    res.redirect("/cuentas?x=error&msg=" + encodeURIComponent(error));
     return;
   }
 
@@ -124,13 +124,13 @@ router.get("/x/callback", async (req: Request, res: Response) => {
   const verifier = req.cookies?.x_pkce;
 
   if (!state || state !== csrfCookie) {
-    console.error("[X] CSRF mismatch");
-    res.redirect("/?x=error&msg=csrf_mismatch");
+    console.error("[X] CSRF mismatch - state:", state, "cookie:", csrfCookie ? "present" : "missing");
+    res.redirect("/cuentas?x=error&msg=csrf_mismatch");
     return;
   }
   if (!verifier) {
     console.error("[X] Missing PKCE verifier");
-    res.redirect("/?x=error&msg=missing_pkce");
+    res.redirect("/cuentas?x=error&msg=missing_pkce");
     return;
   }
 
@@ -138,7 +138,7 @@ router.get("/x/callback", async (req: Request, res: Response) => {
   res.clearCookie("x_pkce");
 
   if (!code) {
-    res.redirect("/?x=error&msg=no_code");
+    res.redirect("/cuentas?x=error&msg=no_code");
     return;
   }
 
@@ -166,13 +166,13 @@ router.get("/x/callback", async (req: Request, res: Response) => {
 
     if (!tokenData.access_token) {
       console.error("[X] Token exchange failed:", tokenData);
-      res.redirect("/?x=error&msg=token_failed");
+      res.redirect("/cuentas?x=error&msg=token_failed");
       return;
     }
 
     const currentUser = req.user as any;
     if (!currentUser) {
-      res.redirect("/?x=error&msg=not_logged_in");
+      res.redirect("/cuentas?x=error&msg=not_logged_in");
       return;
     }
 
@@ -205,7 +205,7 @@ router.get("/x/callback", async (req: Request, res: Response) => {
     res.redirect("/?x=connected");
   } catch (err: any) {
     console.error("[X] Callback error:", err.message);
-    res.redirect("/?x=error&msg=" + encodeURIComponent(err.message));
+    res.redirect("/cuentas?x=error&msg=" + encodeURIComponent(err.message));
   }
 });
 
