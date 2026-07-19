@@ -17,6 +17,20 @@ const TIKTOK_API_BASE = "https://open.tiktokapis.com";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
+function tiktokInitErrorMessage(err: { code?: string; message?: string } | undefined): string {
+  const msg = err?.message || "";
+  const code = err?.code || "";
+  if (
+    msg.toLowerCase().includes("did not authorize the scope") ||
+    msg.toLowerCase().includes("scope") ||
+    code === "scope_permission_missed" ||
+    code === "access_token_invalid"
+  ) {
+    return "Tu conexión de TikTok no tiene permiso para subir videos. Ve a Cuentas Sociales → Desconectar TikTok → vuelve a conectar para otorgar los permisos necesarios.";
+  }
+  return `Error al iniciar subida: ${msg || JSON.stringify(err)}`;
+}
+
 function getGoogleOAuth2Client(user: any) {
   const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
   oauth2Client.setCredentials({
@@ -360,9 +374,7 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
 
     if (initData.error?.code !== "ok") {
       console.error("[TikTok] Init upload failed:", initData);
-      res.status(500).json({
-        error: `Error al iniciar subida: ${initData.error?.message || JSON.stringify(initData.error)}`,
-      });
+      res.status(500).json({ error: tiktokInitErrorMessage(initData.error) });
       return;
     }
 
@@ -495,9 +507,7 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
 
     if (initData.error?.code !== "ok") {
       console.error("[TikTok] Init upload failed:", initData);
-      res.status(500).json({
-        error: `Error al iniciar subida: ${initData.error?.message || JSON.stringify(initData.error)}`,
-      });
+      res.status(500).json({ error: tiktokInitErrorMessage(initData.error) });
       return;
     }
 
@@ -646,7 +656,8 @@ export async function publishVideoFileToTikTok(
 
     const initData = (await initRes.json()) as TikTokInitResponse;
     if (initData.error?.code !== "ok") {
-      return { success: false, error: `Init failed: ${initData.error?.message || JSON.stringify(initData.error)}` };
+      const isScopeErr = tiktokInitErrorMessage(initData.error).includes("Cuentas Sociales");
+      return { success: false, error: isScopeErr ? tiktokInitErrorMessage(initData.error) : `Init failed: ${initData.error?.message || JSON.stringify(initData.error)}` };
     }
 
     const uploadUrl = initData.data?.upload_url;
