@@ -92,8 +92,8 @@ async function uploadDriveStreamInChunks(
 
 function getTikTokRedirectUri(): string {
   if (process.env.TIKTOK_REDIRECT_URI) return process.env.TIKTOK_REDIRECT_URI;
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/tiktok/callback`;
-  return "https://admin.webmakerlatam.com/api/tiktok/callback";
+  const base = process.env.APP_BASE_URL || "https://admin.webmakerlatam.com";
+  return `${base}/api/tiktok/callback`;
 }
 
 async function refreshTikTokToken(user: any): Promise<string | null> {
@@ -247,7 +247,7 @@ router.get("/tiktok/callback", async (req: Request, res: Response) => {
     try { await clearNetworkRevoked(currentUser.id, "tiktok"); } catch {}
 
     console.log(`[TikTok] Connected for user ${currentUser.id}, open_id: ${tokenData.open_id}`);
-    res.redirect("/?tiktok=connected");
+    res.redirect("/cuentas?tiktok=connected");
   } catch (err: any) {
     console.error("[TikTok] Callback error:", err.message);
     res.redirect("/cuentas?tiktok=error&msg=" + encodeURIComponent(err.message));

@@ -23,8 +23,8 @@ function restHeaders(token: string): Record<string, string> {
 
 function getLinkedInRedirectUri(): string {
   if (process.env.LINKEDIN_REDIRECT_URI) return process.env.LINKEDIN_REDIRECT_URI;
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/linkedin/callback`;
-  return "https://admin.webmakerlatam.com/api/linkedin/callback";
+  const base = process.env.APP_BASE_URL || "https://admin.webmakerlatam.com";
+  return `${base}/api/linkedin/callback`;
 }
 
 async function refreshLinkedInToken(user: any): Promise<string | null> {
@@ -84,6 +84,7 @@ router.get("/linkedin/auth", async (req: Request, res: Response) => {
     sameSite: "lax",
   });
   const redirectUri = getLinkedInRedirectUri();
+  console.log(`[LinkedIn] Auth: client_id="${clientId}" (len=${clientId.length}), redirect_uri="${redirectUri}"`);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -207,7 +208,7 @@ router.get("/linkedin/callback", async (req: Request, res: Response) => {
     try { await clearNetworkRevoked(currentUser.id, "linkedin"); } catch {}
 
     console.log(`[LinkedIn] Connected for user ${currentUser.id}, urn: ${personUrn}, org: ${orgUrn}`);
-    res.redirect("/?linkedin=connected");
+    res.redirect("/cuentas?linkedin=connected");
   } catch (err: any) {
     console.error("[LinkedIn] Callback error:", err.message);
     res.redirect("/cuentas?linkedin=error&msg=" + encodeURIComponent(err.message));

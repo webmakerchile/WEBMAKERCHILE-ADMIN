@@ -13,8 +13,8 @@ const X_API_BASE = "https://api.twitter.com/2";
 
 function getXRedirectUri(): string {
   if (process.env.X_REDIRECT_URI) return process.env.X_REDIRECT_URI;
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/x/callback`;
-  return "https://admin.webmakerlatam.com/api/x/callback";
+  const base = process.env.APP_BASE_URL || "https://admin.webmakerlatam.com";
+  return `${base}/api/x/callback`;
 }
 
 function generatePkce() {
@@ -88,6 +88,8 @@ router.get("/x/auth", async (req: Request, res: Response) => {
     secure: true,
     sameSite: "lax",
   });
+  const redirectUri = getXRedirectUri();
+  console.log(`[X] Auth: client_id set=${!!clientId}, redirect_uri="${redirectUri}"`);
   res.cookie("x_pkce", verifier, {
     maxAge: 5 * 60 * 1000,
     httpOnly: true,
@@ -95,7 +97,6 @@ router.get("/x/auth", async (req: Request, res: Response) => {
     sameSite: "lax",
   });
 
-  const redirectUri = getXRedirectUri();
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -202,7 +203,7 @@ router.get("/x/callback", async (req: Request, res: Response) => {
     try { await clearNetworkRevoked(currentUser.id, "x"); } catch {}
 
     console.log(`[X] Connected for user ${currentUser.id}, x user: @${xUsername}`);
-    res.redirect("/?x=connected");
+    res.redirect("/cuentas?x=connected");
   } catch (err: any) {
     console.error("[X] Callback error:", err.message);
     res.redirect("/cuentas?x=error&msg=" + encodeURIComponent(err.message));
