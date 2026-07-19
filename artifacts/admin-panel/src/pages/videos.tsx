@@ -166,6 +166,7 @@ type VideoData = {
   facebookDescription?: string | null;
   tiktokPublishId?: string | null;
   tiktokStatus?: string | null;
+  tiktokError?: string | null;
   instagramMediaId?: string | null;
   instagramStatus?: string | null;
   youtubeVideoId?: string | null;
@@ -5180,7 +5181,7 @@ function StepReview({
             </div>
           )}
 
-          {(video.linkedinError || video.xError || video.status === "partial" || video.status === "error") && (
+          {(video.tiktokError || video.linkedinError || video.xError || video.tiktokStatus === "error" || video.status === "partial" || video.status === "error") && (
             <div className={`rounded-xl p-4 space-y-2 border ${
               video.status === "partial"
                 ? "bg-amber-500/10 border-amber-500/30"
@@ -5193,6 +5194,11 @@ function StepReview({
                     {video.status === "partial" ? t.reviewPartiallyPublished : t.reviewPublishErrors}
                   </p>
                   <div className="mt-2 space-y-1">
+                    {(video.tiktokError || video.tiktokStatus === "error") && (
+                      <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
+                        <span className="font-semibold">TikTok:</span> {video.tiktokError || t.reviewPublishErrors}
+                      </div>
+                    )}
                     {video.linkedinError && (
                       <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
                         <span className="font-semibold">LinkedIn:</span> {video.linkedinError}

@@ -129,6 +129,7 @@ type VideoSummary = {
   facebookDescription?: string | null;
   youtubeStatus?: string | null;
   tiktokStatus?: string | null;
+  tiktokError?: string | null;
   instagramStatus?: string | null;
   linkedinStatus?: string | null;
   linkedinError?: string | null;
@@ -145,7 +146,7 @@ type VideoSummary = {
 function videoNetworks(v: VideoSummary): { network: Network; status?: string; error?: string }[] {
   return [
     { network: "youtube" as const, status: v.youtubeStatus ?? undefined },
-    { network: "tiktok" as const, status: v.tiktokStatus ?? undefined },
+    { network: "tiktok" as const, status: v.tiktokStatus ?? undefined, error: v.tiktokError ?? undefined },
     { network: "instagram" as const, status: v.instagramStatus ?? undefined },
     { network: "linkedin" as const, status: v.linkedinStatus ?? undefined, error: v.linkedinError ?? undefined },
     { network: "x" as const, status: v.xStatus ?? undefined, error: v.xError ?? undefined },
