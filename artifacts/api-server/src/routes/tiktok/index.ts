@@ -272,19 +272,30 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
   }
 
   try {
-    const caption = video.tiktokDescription || `${video.title} #webmakerchile`;
+    const caption = (video.tiktokDescription || `${video.title} #webmakerchile`).slice(0, 2200);
     const videoSize = videoFile.size;
 
-    const chunkSize = Math.min(64 * 1024 * 1024, videoSize);
+    const MIN_CHUNK = 5 * 1024 * 1024;
+    const MAX_CHUNK = 64 * 1024 * 1024;
+    const chunkSize = videoSize <= MAX_CHUNK ? videoSize : MIN_CHUNK;
     const totalChunkCount = Math.ceil(videoSize / chunkSize);
 
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
+    console.log(`[TikTok] upload: size=${videoSize}, chunkSize=${chunkSize}, chunks=${totalChunkCount}`);
+
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
+        post_info: {
+          title: caption,
+          privacy_level: "SELF_ONLY",
+          disable_duet: false,
+          disable_comment: false,
+          disable_stitch: false,
+        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,
@@ -344,7 +355,7 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
     res.json({
       success: true,
       publishId,
-      message: `Video enviado a TikTok como borrador. Ábrelo en TikTok para editarlo y publicarlo. Publish ID: ${publishId}`,
+      message: `Video subido a TikTok como privado. Ábrelo en TikTok para publicarlo. Publish ID: ${publishId}`,
     });
   } catch (err: any) {
     console.error("[TikTok] Upload error:", err.message);
@@ -388,18 +399,29 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
     const videoBuffer = Buffer.from(driveResponse.data as ArrayBuffer);
 
     const videoSize = videoBuffer.length;
-    const chunkSize = Math.min(64 * 1024 * 1024, videoSize);
+    const MIN_CHUNK = 5 * 1024 * 1024;
+    const MAX_CHUNK = 64 * 1024 * 1024;
+    const chunkSize = videoSize <= MAX_CHUNK ? videoSize : MIN_CHUNK;
     const totalChunkCount = Math.ceil(videoSize / chunkSize);
 
-    console.log(`[TikTok] Upload from Drive: video size=${videoSize}, chunks=${totalChunkCount}`);
+    console.log(`[TikTok] upload-from-drive: size=${videoSize}, chunkSize=${chunkSize}, chunks=${totalChunkCount}`);
 
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
+    const caption = (video.tiktokDescription || `${video.title} #webmakerchile`).slice(0, 2200);
+
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
+        post_info: {
+          title: caption,
+          privacy_level: "SELF_ONLY",
+          disable_duet: false,
+          disable_comment: false,
+          disable_stitch: false,
+        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,
@@ -459,7 +481,7 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
     res.json({
       success: true,
       publishId,
-      message: `Video enviado a TikTok como borrador. Ábrelo en TikTok para editarlo y publicarlo. Publish ID: ${publishId}`,
+      message: `Video subido a TikTok como privado. Ábrelo en TikTok para publicarlo. Publish ID: ${publishId}`,
     });
   } catch (err: any) {
     console.error("[TikTok] Upload from Drive error:", err.message);
@@ -522,18 +544,29 @@ export async function publishVideoFileToTikTok(
     const { stat } = await import("fs/promises");
     const stats = await stat(filePath);
     const videoSize = stats.size;
-    const chunkSize = Math.min(64 * 1024 * 1024, videoSize);
+    const MIN_CHUNK = 5 * 1024 * 1024;
+    const MAX_CHUNK = 64 * 1024 * 1024;
+    const chunkSize = videoSize <= MAX_CHUNK ? videoSize : MIN_CHUNK;
     const totalChunkCount = Math.ceil(videoSize / chunkSize);
 
-    console.log(`[TikTok] publishVideoFileToTikTok: size=${videoSize}, chunks=${totalChunkCount}`);
+    console.log(`[TikTok] publishVideoFileToTikTok: size=${videoSize}, chunkSize=${chunkSize}, chunks=${totalChunkCount}`);
 
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
+    const captionTrimmed = caption.slice(0, 2200);
+
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
+        post_info: {
+          title: captionTrimmed,
+          privacy_level: "SELF_ONLY",
+          disable_duet: false,
+          disable_comment: false,
+          disable_stitch: false,
+        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,
