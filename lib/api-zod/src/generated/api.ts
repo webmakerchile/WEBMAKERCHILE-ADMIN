@@ -389,8 +389,10 @@ export const ScheduleVideoParams = zod.object({
 });
 
 export const ScheduleVideoBody = zod.object({
-  scheduledAt: zod.date(),
-  driveFolderId: zod.string(),
+  scheduledAt: zod
+    .string()
+    .describe("ISO 8601 date-time string (e.g. 2026-07-19T15:00:00.000Z)"),
+  driveFolderId: zod.string().nullish(),
 });
 
 export const ScheduleVideoResponse = zod.object({

@@ -178,8 +178,9 @@ export interface UpdateVideoBody {
 }
 
 export interface ScheduleVideoBody {
+  /** ISO 8601 date-time string (e.g. 2026-07-19T15:00:00.000Z) */
   scheduledAt: string;
-  driveFolderId: string;
+  driveFolderId?: string | null;
 }
 
 export type ScheduleCheckResultDetailsItem = {

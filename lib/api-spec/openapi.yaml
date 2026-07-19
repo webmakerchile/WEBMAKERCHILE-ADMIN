@@ -679,12 +679,12 @@ components:
       properties:
         scheduledAt:
           type: string
-          format: date-time
+          description: ISO 8601 date-time string (e.g. 2026-07-19T15:00:00.000Z)
         driveFolderId:
           type: string
+          nullable: true
       required:
         - scheduledAt
-        - driveFolderId
     ScheduleCheckResult:
       type: object
       properties:

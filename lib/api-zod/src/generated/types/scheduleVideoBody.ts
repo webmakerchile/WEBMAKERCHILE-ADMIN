@@ -7,6 +7,7 @@
  */
 
 export interface ScheduleVideoBody {
-  scheduledAt: Date;
-  driveFolderId: string;
+  /** ISO 8601 date-time string (e.g. 2026-07-19T15:00:00.000Z) */
+  scheduledAt: string;
+  driveFolderId?: string | null;
 }

@@ -38,6 +38,7 @@ import { google } from "googleapis";
 import { Readable } from "stream";
 import {
   CreateVideoBody,
+  ScheduleVideoBody,
 } from "@workspace/api-zod";
 import * as z from "zod/v4";
 import * as fs from "fs";
@@ -1006,14 +1007,9 @@ router.post("/content/videos/from-studio", async (req, res) => {
   }
 });
 
-const ScheduleVideoBodyLenient = z.object({
-  scheduledAt: z.coerce.date(),
-  driveFolderId: z.string().nullish().transform(v => v ?? null),
-});
-
 router.post("/content/videos/:id/schedule", async (req, res) => {
   const id = Number(req.params.id);
-  const parseResult = ScheduleVideoBodyLenient.safeParse(req.body);
+  const parseResult = ScheduleVideoBody.safeParse(req.body);
   if (!parseResult.success) {
     res.status(400).json({ error: parseResult.error.issues.map(i => i.message).join(", ") });
     return;
@@ -1025,7 +1021,7 @@ router.post("/content/videos/:id/schedule", async (req, res) => {
     .update(videos)
     .set({
       scheduledAt: new Date(body.scheduledAt),
-      driveFolderId: body.driveFolderId,
+      driveFolderId: body.driveFolderId ?? null,
       status: "scheduled",
       workflowStatus: "programado",
       updatedAt: new Date(),
