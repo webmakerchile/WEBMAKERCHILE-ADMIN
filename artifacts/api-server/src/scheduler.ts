@@ -373,20 +373,13 @@ async function uploadToTikTok(video: any, user: any): Promise<{ success: boolean
     const chunkSize = Math.min(64 * 1024 * 1024, videoSize);
     const totalChunkCount = Math.ceil(videoSize / chunkSize);
 
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
-        post_info: {
-          title: (video.tiktokDescription || `${video.title} #webmakerchile`).slice(0, 2200),
-          privacy_level: "SELF_ONLY",
-          disable_duet: false,
-          disable_comment: false,
-          disable_stitch: false,
-        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,

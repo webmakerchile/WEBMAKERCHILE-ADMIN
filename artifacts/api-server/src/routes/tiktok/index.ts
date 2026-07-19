@@ -165,7 +165,7 @@ router.get("/tiktok/auth", async (req: Request, res: Response) => {
 
   const params = new URLSearchParams({
     client_key: clientKey,
-    scope: "user.info.basic,video.publish",
+    scope: "user.info.basic,video.upload",
     response_type: "code",
     redirect_uri: redirectUri,
     state: csrfState,
@@ -346,20 +346,13 @@ router.post("/tiktok/upload/:videoId", upload.single("video"), async (req: Reque
 
     console.log(`[TikTok] upload: size=${videoSize}, chunkSize=${chunkSize}, chunks=${totalChunkCount}`);
 
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
-        post_info: {
-          title: caption,
-          privacy_level: "SELF_ONLY",
-          disable_duet: false,
-          disable_comment: false,
-          disable_stitch: false,
-        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,
@@ -478,21 +471,14 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
 
     const caption = (video.tiktokDescription || `${video.title} #webmakerchile`).slice(0, 2200);
 
-    // Step 3: init TikTok upload
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
+    // Step 3: init TikTok upload (inbox/draft mode — compatible with sandbox credentials)
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
-        post_info: {
-          title: caption,
-          privacy_level: "SELF_ONLY",
-          disable_duet: false,
-          disable_comment: false,
-          disable_stitch: false,
-        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,
@@ -631,20 +617,13 @@ export async function publishVideoFileToTikTok(
 
     const captionTrimmed = caption.slice(0, 2200);
 
-    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
+    const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/inbox/video/init/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
-        post_info: {
-          title: captionTrimmed,
-          privacy_level: "SELF_ONLY",
-          disable_duet: false,
-          disable_comment: false,
-          disable_stitch: false,
-        },
         source_info: {
           source: "FILE_UPLOAD",
           video_size: videoSize,
