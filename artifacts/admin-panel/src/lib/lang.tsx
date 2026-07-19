@@ -285,6 +285,10 @@ const T = {
     reviewThumbnailError: (e: string) => `⚠ Portada no aplicada: ${e}`,
     reviewViewOnYT: "Ver en YouTube",
     reviewTTSuccessTitle: "Subida exitosa a TikTok",
+    reviewTTProcessing: "Procesando en TikTok…",
+    reviewTTPublished: "Publicado en TikTok",
+    reviewTTFailed: "Error al procesar en TikTok",
+    reviewTTPollingStatus: "Verificando estado",
     reviewIGSuccessTitle: "Subida exitosa a Instagram",
     reviewIncludeFacebook: "Incluir Facebook",
 
@@ -922,6 +926,10 @@ const T = {
     reviewThumbnailError: (e: string) => `⚠ Cover not applied: ${e}`,
     reviewViewOnYT: "View on YouTube",
     reviewTTSuccessTitle: "Successfully uploaded to TikTok",
+    reviewTTProcessing: "Processing on TikTok…",
+    reviewTTPublished: "Published on TikTok",
+    reviewTTFailed: "TikTok processing failed",
+    reviewTTPollingStatus: "Checking status",
     reviewIGSuccessTitle: "Successfully uploaded to Instagram",
     reviewIncludeFacebook: "Include Facebook",
 

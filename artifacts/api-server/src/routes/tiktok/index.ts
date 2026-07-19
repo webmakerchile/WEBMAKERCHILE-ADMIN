@@ -539,7 +539,7 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
   }
 });
 
-router.post("/tiktok/publish-status/:videoId", async (req: Request, res: Response) => {
+router.get("/tiktok/publish-status/:videoId", async (req: Request, res: Response) => {
   const user = req.user as any;
   const videoId = Number(req.params.videoId);
 
@@ -572,7 +572,25 @@ router.post("/tiktok/publish-status/:videoId", async (req: Request, res: Respons
       }),
     });
 
-    const statusData = await statusRes.json();
+    const statusData = (await statusRes.json()) as {
+      data?: { status?: string; fail_reason?: string; publicaly_available_post_id?: string[] };
+      error?: { code?: string; message?: string };
+    };
+
+    const tikTokStatus = statusData.data?.status;
+
+    if (tikTokStatus === "PUBLISH_COMPLETE") {
+      await db.update(videos).set({
+        tiktokStatus: "published",
+        updatedAt: new Date(),
+      }).where(eq(videos.id, videoId));
+    } else if (tikTokStatus === "FAILED") {
+      await db.update(videos).set({
+        tiktokStatus: "error",
+        updatedAt: new Date(),
+      }).where(eq(videos.id, videoId));
+    }
+
     res.json(statusData);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

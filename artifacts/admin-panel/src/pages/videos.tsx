@@ -4563,6 +4563,8 @@ function StepReview({
   const [ytResult, setYtResult] = useState<{ success?: boolean; message?: string; youtubeUrl?: string; error?: string; thumbnailSet?: boolean; thumbnailError?: string } | null>(null);
   const [ttUploading, setTtUploading] = useState(false);
   const [ttResult, setTtResult] = useState<{ success?: boolean; message?: string; publishId?: string; error?: string } | null>(null);
+  const [ttPollStatus, setTtPollStatus] = useState<string | null>(null);
+  const [ttPolling, setTtPolling] = useState(false);
   const [igUploading, setIgUploading] = useState(false);
   const [igResult, setIgResult] = useState<{ success?: boolean; message?: string; mediaId?: string; error?: string } | null>(null);
   const [showYtDrivePicker, setShowYtDrivePicker] = useState(false);
@@ -4572,6 +4574,49 @@ function StepReview({
   const queryClient = useQueryClient();
 
   const hasVideoFile = !!video.videoFileDriveId;
+
+  useEffect(() => {
+    if (!ttResult?.success || !ttResult.publishId) return;
+    const POLL_INTERVAL_MS = 5000;
+    const MAX_POLLS = 24;
+    let count = 0;
+    let stopped = false;
+
+    setTtPolling(true);
+    setTtPollStatus(null);
+
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const res = await apiFetch(`${API_BASE}/tiktok/publish-status/${video.id}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          data?: { status?: string; fail_reason?: string };
+          error?: { code?: string; message?: string };
+        };
+        const status = data.data?.status ?? null;
+        setTtPollStatus(status);
+        if (status === "PUBLISH_COMPLETE" || status === "FAILED") {
+          stopped = true;
+          setTtPolling(false);
+          queryClient.invalidateQueries({ queryKey: ["videos"] });
+          return;
+        }
+      } catch {
+        // transient errors are silently ignored; polling continues
+      }
+      count++;
+      if (count >= MAX_POLLS) {
+        stopped = true;
+        setTtPolling(false);
+        return;
+      }
+      setTimeout(poll, POLL_INTERVAL_MS);
+    };
+
+    setTimeout(poll, POLL_INTERVAL_MS);
+    return () => { stopped = true; setTtPolling(false); };
+  }, [ttResult?.success, ttResult?.publishId, video.id]);
 
   const handleYtDriveSelect = async (file: { id: string; name: string }) => {
     setShowYtDrivePicker(false);
@@ -5369,15 +5414,37 @@ function StepReview({
               {ttResult && (
                 <div className={`rounded-xl p-4 text-sm flex items-start gap-3 ${
                   ttResult.success
-                    ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                    ? ttPollStatus === "FAILED"
+                      ? "bg-red-500/10 border border-red-500/20 text-red-400"
+                      : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
                     : "bg-red-500/10 border border-red-500/20 text-red-400"
                 }`}>
                   {ttResult.success ? (
                     <>
-                      <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      {ttPolling ? (
+                        <Loader2 className="w-5 h-5 flex-shrink-0 mt-0.5 animate-spin" />
+                      ) : ttPollStatus === "PUBLISH_COMPLETE" ? (
+                        <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      ) : ttPollStatus === "FAILED" ? (
+                        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                      )}
                       <div>
-                        <p className="font-bold">{t.reviewTTSuccessTitle}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{ttResult.message}</p>
+                        <p className="font-bold">
+                          {ttPollStatus === "PUBLISH_COMPLETE"
+                            ? t.reviewTTPublished
+                            : ttPollStatus === "FAILED"
+                            ? t.reviewTTFailed
+                            : ttPolling
+                            ? t.reviewTTProcessing
+                            : t.reviewTTSuccessTitle}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {ttPolling
+                            ? `${t.reviewTTPollingStatus}${ttPollStatus ? ` (${ttPollStatus})` : "…"}`
+                            : ttResult.message}
+                        </p>
                       </div>
                     </>
                   ) : (
