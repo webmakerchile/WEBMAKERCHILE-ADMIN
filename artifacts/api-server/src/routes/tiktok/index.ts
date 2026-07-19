@@ -26,6 +26,56 @@ function getGoogleOAuth2Client(user: any) {
   return oauth2Client;
 }
 
+/**
+ * Streams a Node.js readable (Drive response) into TikTok FILE_UPLOAD chunks.
+ * Accumulates incoming data into a pending buffer; once the buffer reaches
+ * chunkSize it is flushed to TikTok via PUT with Content-Range.
+ * At most one chunk of data is held in memory at a time.
+ */
+async function uploadDriveStreamInChunks(
+  stream: NodeJS.ReadableStream,
+  totalSize: number,
+  chunkSize: number,
+  totalChunks: number,
+  uploadUrl: string,
+): Promise<void> {
+  let byteOffset = 0;
+  let chunkIdx = 0;
+  let pending = Buffer.alloc(0);
+
+  const flush = async (buf: Buffer): Promise<void> => {
+    const start = byteOffset;
+    const end = start + buf.length - 1;
+    byteOffset += buf.length;
+    chunkIdx++;
+    const chunkRes = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Range": `bytes ${start}-${end}/${totalSize}`,
+        "Content-Type": "video/mp4",
+      },
+      body: buf,
+    });
+    if (!chunkRes.ok) {
+      throw new Error(`Error subiendo chunk ${chunkIdx}/${totalChunks}: ${await chunkRes.text()}`);
+    }
+    console.log(`[TikTok] Chunk ${chunkIdx}/${totalChunks} OK (${buf.length} bytes, offset=${start})`);
+  };
+
+  for await (const data of stream as AsyncIterable<Buffer | string>) {
+    pending = Buffer.concat([pending, Buffer.isBuffer(data) ? data : Buffer.from(data as string)]);
+    // Flush complete chunks; keep the last incomplete chunk in pending
+    while (pending.length >= chunkSize && chunkIdx < totalChunks - 1) {
+      await flush(pending.slice(0, chunkSize));
+      pending = pending.slice(chunkSize);
+    }
+  }
+  // Flush remaining bytes as the last (possibly partial) chunk
+  if (pending.length > 0) {
+    await flush(pending);
+  }
+}
+
 function getTikTokRedirectUri(): string {
   if (process.env.TIKTOK_REDIRECT_URI) return process.env.TIKTOK_REDIRECT_URI;
   if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/tiktok/callback`;
@@ -392,22 +442,31 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
   try {
     const gAuth = getGoogleOAuth2Client(user);
     const drive = google.drive({ version: "v3", auth: gAuth });
-    const driveResponse = await drive.files.get(
-      { fileId: video.videoFileDriveId, alt: "media" },
-      { responseType: "arraybuffer" }
-    );
-    const videoBuffer = Buffer.from(driveResponse.data as ArrayBuffer);
 
-    const videoSize = videoBuffer.length;
+    // Step 1: get file size from metadata — no download yet
+    const TIKTOK_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024; // 4GB TikTok limit
+    const metaRes = await drive.files.get({ fileId: video.videoFileDriveId, fields: "id,size,name" });
+    const videoSize = Number(metaRes.data.size ?? 0);
+    if (!videoSize) {
+      res.status(400).json({ error: "No se pudo obtener el tamaño del archivo de Drive" });
+      return;
+    }
+    if (videoSize > TIKTOK_MAX_FILE_SIZE) {
+      res.status(400).json({ error: `El archivo (${(videoSize / 1e9).toFixed(1)} GB) supera el límite de 4 GB de TikTok` });
+      return;
+    }
+
+    // Step 2: compute chunk params
     const MIN_CHUNK = 5 * 1024 * 1024;
     const MAX_CHUNK = 64 * 1024 * 1024;
     const chunkSize = videoSize <= MAX_CHUNK ? videoSize : MIN_CHUNK;
     const totalChunkCount = Math.ceil(videoSize / chunkSize);
 
-    console.log(`[TikTok] upload-from-drive: size=${videoSize}, chunkSize=${chunkSize}, chunks=${totalChunkCount}`);
+    console.log(`[TikTok] upload-from-drive: "${metaRes.data.name}" size=${videoSize}, chunkSize=${chunkSize}, chunks=${totalChunkCount}`);
 
     const caption = (video.tiktokDescription || `${video.title} #webmakerchile`).slice(0, 2200);
 
+    // Step 3: init TikTok upload
     const initRes = await fetch(`${TIKTOK_API_BASE}/v2/post/publish/video/init/`, {
       method: "POST",
       headers: {
@@ -450,27 +509,18 @@ router.post("/tiktok/upload-from-drive/:videoId", async (req: Request, res: Resp
       return;
     }
 
-    for (let i = 0; i < totalChunkCount; i++) {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, videoSize);
-      const chunk = videoBuffer.slice(start, end);
-
-      const chunkRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Range": `bytes ${start}-${end - 1}/${videoSize}`,
-          "Content-Type": "video/mp4",
-        },
-        body: chunk,
-      });
-
-      if (!chunkRes.ok) {
-        const errText = await chunkRes.text();
-        console.error(`[TikTok] Chunk ${i} upload failed:`, errText);
-        res.status(500).json({ error: `Error subiendo chunk ${i + 1}/${totalChunkCount}` });
-        return;
-      }
-    }
+    // Step 4: stream Drive file → upload chunks to TikTok (no full buffer in memory)
+    const streamResponse = await drive.files.get(
+      { fileId: video.videoFileDriveId, alt: "media" },
+      { responseType: "stream" }
+    );
+    await uploadDriveStreamInChunks(
+      streamResponse.data as NodeJS.ReadableStream,
+      videoSize,
+      chunkSize,
+      totalChunkCount,
+      uploadUrl,
+    );
 
     await db.update(videos).set({
       tiktokPublishId: publishId,
@@ -587,27 +637,35 @@ export async function publishVideoFileToTikTok(
       return { success: false, error: "No upload URL from TikTok" };
     }
 
-    const { readFileSync } = await import("fs");
-    const videoBuffer = readFileSync(filePath);
+    // Read each chunk directly from disk via file handle — no full-file buffer
+    const { open: openFile } = await import("fs/promises");
+    const fh = await openFile(filePath, "r");
+    try {
+      for (let i = 0; i < totalChunkCount; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(start + chunkSize, videoSize);
+        const chunkLen = end - start;
+        const buf = Buffer.allocUnsafe(chunkLen);
+        const { bytesRead } = await fh.read(buf, 0, chunkLen, start);
+        const chunk = buf.slice(0, bytesRead);
 
-    for (let i = 0; i < totalChunkCount; i++) {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, videoSize);
-      const chunk = videoBuffer.slice(start, end);
+        const chunkRes = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Range": `bytes ${start}-${end - 1}/${videoSize}`,
+            "Content-Type": "video/mp4",
+          },
+          body: chunk,
+        });
 
-      const chunkRes = await fetch(uploadUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Range": `bytes ${start}-${end - 1}/${videoSize}`,
-          "Content-Type": "video/mp4",
-        },
-        body: chunk,
-      });
-
-      if (!chunkRes.ok) {
-        const errText = await chunkRes.text();
-        return { success: false, error: `Chunk ${i + 1}/${totalChunkCount} failed: ${errText}` };
+        if (!chunkRes.ok) {
+          const errText = await chunkRes.text();
+          return { success: false, error: `Chunk ${i + 1}/${totalChunkCount} failed: ${errText}` };
+        }
+        console.log(`[TikTok] publishVideoFileToTikTok chunk ${i + 1}/${totalChunkCount} OK`);
       }
+    } finally {
+      await fh.close();
     }
 
     console.log(`[TikTok] publishVideoFileToTikTok succeeded: publishId=${publishId}`);
