@@ -255,3 +255,22 @@
   .hub-root .topbar{padding:11px 16px;}
   .hub-root .ptitle small{display:none;}
 }
+
+/* PDF upload field */
+.hub-root .pdf-upload-area{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;}
+.hub-root .pdf-select-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:var(--card);border:1px solid var(--line);border-radius:9px;color:var(--text);font-size:12.5px;font-family:'Oswald',sans-serif;font-weight:500;letter-spacing:.5px;cursor:pointer;transition:background .15s,border-color .15s;}
+.hub-root .pdf-select-btn:hover:not(:disabled){background:var(--bg2);border-color:var(--orange);}
+.hub-root .pdf-select-btn:disabled{opacity:.5;cursor:not-allowed;}
+.hub-root .pdf-hint{font-size:11px;color:var(--faint);}
+.hub-root .pdf-chip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:10px;}
+.hub-root .pdf-icon{font-size:16px;flex:none;}
+.hub-root .pdf-title-btn{flex:1;min-width:0;background:none;border:0;color:var(--text);font-size:12.5px;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0;}
+.hub-root .pdf-title-btn:hover{color:var(--orange2);text-decoration:underline;}
+.hub-root .pdf-title-input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--orange);border-radius:6px;padding:3px 7px;color:var(--text);font-size:12.5px;}
+.hub-root .pdf-date{font-size:11px;color:var(--faint);white-space:nowrap;flex:none;}
+.hub-root .pdf-open{font-size:11.5px;color:var(--orange2);font-weight:600;white-space:nowrap;flex:none;}
+.hub-root .pdf-open:hover{text-decoration:underline;}
+.hub-root .pdf-remove{flex:none;background:none;border:0;color:var(--faint);font-size:13px;cursor:pointer;padding:0 2px;line-height:1;}
+.hub-root .pdf-remove:hover{color:var(--orange);}
+.hub-root .pdf-badge{text-decoration:none;cursor:pointer;}
+.hub-root .pdf-badge:hover{color:var(--orange2);border-color:var(--orange2)!important;}

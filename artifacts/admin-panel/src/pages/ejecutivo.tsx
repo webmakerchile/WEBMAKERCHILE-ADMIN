@@ -28,7 +28,7 @@ interface Meeting { id: string; client: string; date: string; summary: string; n
 interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
 type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
-interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; }
+interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; }
 interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
 type SheetKind =
   | null
@@ -569,6 +569,67 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
 }
 
 /* ============================================================
+   PDF UPLOAD FIELD
+   ============================================================ */
+interface PdfData { url: string; title: string; uploadedAt: number; }
+function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; onChange: (d: PdfData | null) => void; onToast: (m: string) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+
+  const handleFile = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
+      onToast("Solo se aceptan archivos PDF"); return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); onToast((e as any).error || "Error al subir PDF"); return; }
+      const data = await res.json() as { name: string; webViewLink: string; uploadedAt: number };
+      onChange({ url: data.webViewLink, title: data.name, uploadedAt: data.uploadedAt });
+      onToast("PDF subido a Drive");
+    } catch { onToast("Error de conexión al subir PDF"); }
+    finally { setUploading(false); }
+  };
+
+  if (value) {
+    return (
+      <div className="pdf-chip">
+        <span className="pdf-icon">📄</span>
+        {editingTitle ? (
+          <input
+            className="pdf-title-input"
+            autoFocus
+            value={titleDraft}
+            onChange={e => setTitleDraft(e.target.value)}
+            onBlur={() => { onChange({ ...value, title: titleDraft.trim() || value.title }); setEditingTitle(false); }}
+            onKeyDown={e => { if (e.key === "Enter") { onChange({ ...value, title: titleDraft.trim() || value.title }); setEditingTitle(false); } }}
+          />
+        ) : (
+          <button className="pdf-title-btn" onClick={() => { setTitleDraft(value.title); setEditingTitle(true); }} title="Editar título">{value.title}</button>
+        )}
+        <span className="pdf-date">{new Date(value.uploadedAt).toLocaleDateString("es-CL")}</span>
+        <a className="pdf-open" href={value.url} target="_blank" rel="noopener noreferrer">Abrir</a>
+        <button className="pdf-remove" onClick={() => onChange(null)} title="Quitar PDF">✕</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pdf-upload-area">
+      <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
+      <button className="pdf-select-btn" disabled={uploading} onClick={() => fileRef.current?.click()}>
+        {uploading ? "Subiendo…" : "📎 Adjuntar PDF"}
+      </button>
+      <span className="pdf-hint">Solo PDF · máx 50 MB · se guarda en Google Drive</span>
+    </div>
+  );
+}
+
+/* ============================================================
    SHEET CONTENT
    ============================================================ */
 interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; }
@@ -580,6 +641,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
   const [progVal, setProgVal] = useState(0);
   const [driveFolderLink, setDriveFolderLink] = useState("");
   const [projNameDraft, setProjNameDraft] = useState("");
+  const [pdfData, setPdfData] = useState<PdfData | null>(null);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -589,7 +651,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
     if (sheet?.kind === "new-proj") {
       setDriveFolderLink(""); setProjNameDraft("");
     }
-  }, [sheet, state.projects]);
+    if (sheet?.kind === "contract") {
+      const c = state.contracts.find(x => x.id === (sheet as { id: string }).id);
+      if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
+      else setPdfData(null);
+    }
+    if (sheet?.kind === "new-contract") { setPdfData(null); }
+  }, [sheet, state.projects, state.contracts]);
 
   if (!sheet) return null;
 
@@ -833,10 +901,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
       <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} /></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} placeholder="Términos, detalles, observaciones…" /></div>
+      <div className="field"><label>Documento PDF (opcional)</label>
+        <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
+      </div>
       <button className="add-btn" onClick={() => {
         const title = V("ti").trim(); if (!title) { onToast("Ponle un título al contrato"); return; }
         const now = Date.now();
-        onSave({ ...state, contracts: [...state.contracts, { id: uid(), title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), createdAt: now, updatedAt: now }] });
+        onSave({ ...state, contracts: [...state.contracts, { id: uid(), title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, createdAt: now, updatedAt: now }] });
         onClose(); onNavigate("contracts"); onToast("Contrato creado");
       }}>Crear contrato</button>
     </>);
@@ -861,8 +932,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
       <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} defaultValue={c.expiresAt} /></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={c.notes || ""} /></div>
+      <div className="field"><label>Documento PDF</label>
+        <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
+      </div>
       <button className="save" onClick={() => {
-        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), updatedAt: Date.now() }) });
+        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
       }}>Guardar cambios</button>
       <button className="del-link" onClick={() => {
@@ -1227,6 +1301,11 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
                 <span className="chip" style={{ color: s.color, borderColor: s.color + "55", background: s.color + "18" }}>{s.label}</span>
                 {c.value && <span className="chip">{c.value}</span>}
                 {c.expiresAt && <span className="chip">Vence: {c.expiresAt}</span>}
+                {c.pdfUrl && (
+                  <a className="chip pdf-badge" href={c.pdfUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                    📄 {c.pdfTitle || "PDF"}{c.pdfUploadedAt ? ` · ${new Date(c.pdfUploadedAt).toLocaleDateString("es-CL")}` : ""}
+                  </a>
+                )}
               </div>
               <div className="gbody" style={{ marginTop: "6px" }}>{c.notes || ""}</div>
               <div className="gfoot"><span className="gdate">{fmtDate(c.createdAt)}</span></div>

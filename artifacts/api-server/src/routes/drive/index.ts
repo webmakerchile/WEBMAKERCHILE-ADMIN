@@ -1,7 +1,10 @@
 import { Router, type IRouter } from "express";
 import { google } from "googleapis";
+import multer from "multer";
+import { Readable } from "stream";
 
 const router: IRouter = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -95,6 +98,45 @@ router.get("/drive/search", async (req, res) => {
   } catch (error: any) {
     console.error("[Drive] Error searching:", error.message);
     res.status(500).json({ error: error.message || "Failed to search" });
+  }
+});
+
+router.post("/drive/upload-pdf", upload.single("file"), async (req, res) => {
+  if (!req.file) { res.status(400).json({ error: "No file provided" }); return; }
+  if (req.file.mimetype !== "application/pdf") { res.status(400).json({ error: "Solo se aceptan archivos PDF" }); return; }
+
+  const { parentId } = req.body as { parentId?: string };
+
+  try {
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
+
+    const bufferStream = new Readable();
+    bufferStream.push(req.file.buffer);
+    bufferStream.push(null);
+
+    const fileMetadata: { name: string; mimeType: string; parents?: string[] } = {
+      name: req.file.originalname,
+      mimeType: "application/pdf",
+    };
+    if (parentId) fileMetadata.parents = [parentId];
+
+    const response = await drive.files.create({
+      requestBody: fileMetadata,
+      media: { mimeType: "application/pdf", body: bufferStream },
+      fields: "id,name,webViewLink",
+    });
+
+    res.json({
+      id: response.data.id,
+      name: response.data.name,
+      webViewLink: response.data.webViewLink,
+      uploadedAt: Date.now(),
+    });
+  } catch (error: any) {
+    console.error("[Drive] Error uploading PDF:", error.message);
+    res.status(500).json({ error: error.message || "Failed to upload PDF" });
   }
 });
 
