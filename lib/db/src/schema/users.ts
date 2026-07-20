@@ -39,7 +39,9 @@ export const users = pgTable("users", {
    * Cleared on successful re-auth in the OAuth callback.
    */
   revokedNetworks: text("revoked_networks").notNull().default(""),
-  calendarEnabled: text("calendar_enabled").notNull().default("true"),
+  googleCalendarAccessToken: text("google_calendar_access_token"),
+  googleCalendarRefreshToken: text("google_calendar_refresh_token"),
+  googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
 });

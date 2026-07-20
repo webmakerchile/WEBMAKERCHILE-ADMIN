@@ -52,9 +52,13 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               name: profile.displayName || existing.name,
               picture: profile.photos?.[0]?.value || existing.picture,
               googleAccessToken: accessToken,
+              // Copy tokens to calendar-specific fields so the Calendar
+              // integration can be disconnected independently of YouTube/Drive.
+              googleCalendarAccessToken: accessToken,
             };
             if (refreshToken) {
               updateData.googleRefreshToken = refreshToken;
+              updateData.googleCalendarRefreshToken = refreshToken;
             }
 
             await db
@@ -75,6 +79,9 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               picture: profile.photos?.[0]?.value || null,
               googleAccessToken: accessToken,
               googleRefreshToken: refreshToken || null,
+              // Populate calendar-specific tokens on first sign-in too.
+              googleCalendarAccessToken: accessToken,
+              googleCalendarRefreshToken: refreshToken || null,
             })
             .returning();
 
