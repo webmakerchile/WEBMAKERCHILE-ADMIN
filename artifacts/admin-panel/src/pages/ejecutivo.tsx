@@ -260,6 +260,108 @@ function DriveIcon() {
   );
 }
 
+/** Extract a Google Drive folder ID from a Drive URL, or null if not a folder link. */
+function extractDriveFolderId(url: string): string | null {
+  if (!url) return null;
+  const m = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+/** Compact, browsable Drive folder panel rendered inside the project detail sheet. */
+function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { folderId: string; rootName?: string }) {
+  const [currentId, setCurrentId] = useState<string>(folderId);
+  const [history, setHistory] = useState<{ id: string; name: string }[]>([{ id: folderId, name: rootName }]);
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentId });
+  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentId });
+
+  const isLoading = filesLoading || foldersLoading;
+  const folders = foldersData || [];
+  const files = filesData?.files || [];
+  const empty = !isLoading && folders.length === 0 && files.length === 0;
+
+  const goInto = (id: string, name: string) => {
+    setHistory(prev => [...prev, { id, name }]);
+    setCurrentId(id);
+  };
+  const goBack = () => {
+    if (history.length <= 1) return;
+    const next = history.slice(0, -1);
+    setHistory(next);
+    setCurrentId(next[next.length - 1].id);
+  };
+
+  return (
+    <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+      {/* Header / toggle */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--card2)", border: "none", cursor: "pointer", textAlign: "left" }}
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width={16} height={16} style={{ color: "var(--orange2)", flexShrink: 0 }}><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", flex: 1 }}>Archivos en Drive</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={14} height={14} style={{ color: "var(--dim)", transform: expanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .2s" }}><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+
+      {expanded && (
+        <div style={{ background: "var(--card)" }}>
+          {/* Breadcrumb */}
+          {history.length > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--line)", background: "var(--card2)" }}>
+              <button onClick={goBack} style={{ padding: "3px 8px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, color: "var(--dim)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={12} height={12}><path d="M15 18l-6-6 6-6"/></svg>
+                Atrás
+              </button>
+              <div style={{ fontSize: 12, color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                {history.map((h, i) => (
+                  <span key={h.id}>
+                    <span style={{ color: i === history.length - 1 ? "var(--text)" : "var(--faint)" }}>{h.name}</span>
+                    {i < history.length - 1 && <span style={{ margin: "0 4px" }}>/</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Contents */}
+          <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
+            {isLoading && (
+              <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--faint)" }}>Cargando…</div>
+            )}
+            {empty && (
+              <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--faint)" }}>La carpeta está vacía.</div>
+            )}
+            {folders.map(folder => (
+              <button key={folder.id} onClick={() => goInto(folder.id, folder.name)}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", textAlign: "left" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "var(--card2)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "none")}
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width={16} height={16} style={{ color: "var(--orange2)", flexShrink: 0 }}><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>
+                <span style={{ fontSize: 12.5, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={12} height={12} style={{ color: "var(--faint)", flexShrink: 0 }}><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            ))}
+            {files.map(file => (
+              <div key={file.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid var(--line)" }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={16} height={16} style={{ color: "#6aa0c0", flexShrink: 0 }}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span style={{ fontSize: 12.5, color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={file.name}>{file.name}</span>
+                {file.webViewLink && (
+                  <a href={file.webViewLink} target="_blank" rel="noopener noreferrer"
+                    style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, color: "var(--orange2)", textDecoration: "none", padding: "2px 6px", border: "1px solid var(--orange-line)", borderRadius: 5, background: "var(--orange-soft)" }}>
+                    ↗
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProjCard({ p, onClick, onDragStart, onDragEnd }: { p: Project; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
   return (
     <div className="pcard" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -433,6 +535,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
           <input type="url" ref={R("lk")} defaultValue={p.link || ""} placeholder="https://drive.google.com/…" style={{ flex: 1 }} />
           {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0, background: "var(--orange-soft)", border: "1px solid var(--orange-line)", color: "var(--orange2)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>↗ Abrir</a>}
         </div>
+        {(() => { const fid = extractDriveFolderId(p.link || ""); return fid ? <ProjectDriveInline key={fid} folderId={fid} rootName={p.name} /> : null; })()}
       </div>
       <button className="save" onClick={() => {
         const newStatus = V("st") as ProjStatus;
