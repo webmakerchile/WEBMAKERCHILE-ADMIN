@@ -145,14 +145,28 @@ async function generateCoverForVideo(videoId: number, network?: string) {
     size,
   });
 
+  type VideoUpdate = Parameters<ReturnType<typeof db.update<typeof videos>>["set"]>[0];
+
+  let setData: VideoUpdate;
+  if (network === "tiktok") {
+    setData = { tiktokCover: b64_json, updatedAt: new Date() };
+  } else if (network === "instagram") {
+    setData = { instagramCover: b64_json, updatedAt: new Date() };
+  } else if (network === "youtube") {
+    setData = { youtubeCover: b64_json, updatedAt: new Date() };
+  } else if (network === "linkedin") {
+    setData = { linkedinCover: b64_json, updatedAt: new Date() };
+  } else if (network === "x") {
+    setData = { xCover: b64_json, updatedAt: new Date() };
+  } else if (network === "facebook") {
+    setData = { facebookCover: b64_json, updatedAt: new Date() };
+  } else {
+    setData = { coverImageBase64: b64_json, coverMimeType: mimeType, status: "cover_generated", updatedAt: new Date() };
+  }
+
   const [updated] = await db
     .update(videos)
-    .set({
-      coverImageBase64: b64_json,
-      coverMimeType: mimeType,
-      status: "cover_generated",
-      updatedAt: new Date(),
-    })
+    .set(setData)
     .where(eq(videos.id, videoId))
     .returning();
 

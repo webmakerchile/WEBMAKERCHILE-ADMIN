@@ -145,6 +145,12 @@ type VideoData = {
   coverPrompt?: string | null;
   coverImageBase64?: string | null;
   coverMimeType?: string | null;
+  tiktokCover?: string | null;
+  instagramCover?: string | null;
+  youtubeCover?: string | null;
+  linkedinCover?: string | null;
+  xCover?: string | null;
+  facebookCover?: string | null;
   videoFileDriveId?: string | null;
   videoFileName?: string | null;
   driveFileId?: string | null;
@@ -3713,13 +3719,24 @@ const COVER_NETWORK_PREVIEWS: { network: Network; label: string; ratio: string }
   { network: "facebook", label: "Facebook", ratio: "1.91/1" },
 ];
 
+const NETWORK_COVER_KEY: Record<Network, keyof Pick<VideoData, "tiktokCover" | "instagramCover" | "youtubeCover" | "linkedinCover" | "xCover" | "facebookCover">> = {
+  tiktok: "tiktokCover",
+  instagram: "instagramCover",
+  youtube: "youtubeCover",
+  linkedin: "linkedinCover",
+  x: "xCover",
+  facebook: "facebookCover",
+};
+
 function CoverNetworkGrid({
-  src,
+  globalSrc,
+  video,
   onGenerate,
   generatingNetwork,
   isGenerating,
 }: {
-  src: string;
+  globalSrc: string | null;
+  video: VideoData;
   onGenerate?: (network: string) => void;
   generatingNetwork?: string | null;
   isGenerating?: boolean;
@@ -3729,6 +3746,11 @@ function CoverNetworkGrid({
       {COVER_NETWORK_PREVIEWS.map(({ network, label, ratio }) => {
         const isThisGenerating = isGenerating && generatingNetwork === network;
         const isOtherGenerating = isGenerating && generatingNetwork !== network && generatingNetwork != null;
+        const networkCoverBase64 = video[NETWORK_COVER_KEY[network]];
+        const src = networkCoverBase64
+          ? `data:image/png;base64,${networkCoverBase64}`
+          : (globalSrc ?? undefined);
+        const hasCustomCover = !!networkCoverBase64;
         return (
           <div
             key={network}
@@ -3739,6 +3761,9 @@ function CoverNetworkGrid({
                 <NetworkIcon network={network} className="w-2.5 h-2.5" />
               </span>
               <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+              {hasCustomCover && (
+                <span className="ml-auto text-[9px] font-semibold text-emerald-400 uppercase tracking-wide">custom</span>
+              )}
             </div>
             <div className="bg-black/40 flex items-center justify-center relative">
               <img
@@ -3921,7 +3946,8 @@ function StepCover({
                 {t.coverHowItLooks}
               </p>
               <CoverNetworkGrid
-                src={coverSrc}
+                globalSrc={coverSrc}
+                video={video}
                 onGenerate={handleGenerateForNetwork}
                 generatingNetwork={generatingNetwork}
                 isGenerating={isGenerating}
