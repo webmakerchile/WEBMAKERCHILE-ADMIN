@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useLocation } from "wouter";
-import { ChevronRight } from "lucide-react";
+import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
+import { Layout } from "@/components/layout";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -11,7 +11,7 @@ type Prio = "alta" | "media" | "baja";
 type ProjStatus = "lead" | "disc" | "dev" | "rev" | "done";
 type TaskStage = "backlog" | "sprint" | "doing" | "qa_sent" | "qa_rev" | "done";
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc";
+type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
@@ -62,6 +62,7 @@ const TAB_TITLES: Record<Tab, [string, string]> = {
   notes: ["Notas", "Ideas, acuerdos y estrategia"],
   contracts: ["Contratos", "Acuerdos, términos y vencimientos"],
   svc: ["Servicios", "Catálogo de referencia"],
+  drive: ["Drive", "Explorador de archivos del proyecto"],
 };
 const SERVICES: Array<{ cat: string; items: Array<{ n: string; d: string; incl?: string; note?: string; t: string[][] }> }> = [
   { cat: "🌐 Sitios Web", items: [
@@ -251,6 +252,14 @@ function StageTimer({ since }: { since: number }) {
   return <div className={`stage-timer ${timerClass(ms)}`}><span className="clk">⏱</span> {fmtDur(ms)}</div>;
 }
 
+function DriveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={12} height={12} style={{ flexShrink: 0 }}>
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+  );
+}
+
 function ProjCard({ p, onClick, onDragStart, onDragEnd }: { p: Project; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
   return (
     <div className="pcard" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -261,6 +270,12 @@ function ProjCard({ p, onClick, onDragStart, onDragEnd }: { p: Project; onClick:
         <span className="chip">{p.type}</span>
         {p.owner && p.owner.trim() !== "—" && <span className="chip">{p.owner}</span>}
         <DueChip p={p} />
+        {p.link && (
+          <a href={p.link} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+            className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--orange2)", borderColor: "var(--orange-line)", textDecoration: "none" }}>
+            <DriveIcon /> Drive
+          </a>
+        )}
       </div>
       <div className="bar-prog"><i style={{ width: p.prog + "%" }} /></div>
       <StageTimer since={p.stageSince || p.updatedAt || p.createdAt || Date.now()} />
@@ -385,11 +400,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
         <div><label>Dueño</label><input type="text" ref={R("ow")} /></div>
       </div>
       <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} /></div>
+      <div className="field"><label>Link de Drive (opcional)</label><input type="url" ref={R("lk")} placeholder="https://drive.google.com/…" /></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
       <button className="add-btn" onClick={() => {
         const name = V("n").trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
-        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: "", createdAt: now, updatedAt: now }] });
+        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: V("lk").trim(), createdAt: now, updatedAt: now }] });
         onClose(); onNavigate("proj"); onToast("Proyecto creado");
       }}>Crear proyecto</button>
     </>);
@@ -411,7 +427,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       <div className="field"><label>Fecha límite</label><input type="date" ref={R("due")} defaultValue={p.due || ""} /></div>
       <div className="field"><label>Avance <b>{progVal}%</b></label><div className="rangewrap"><input type="range" min={0} max={100} value={progVal} onChange={e => setProgVal(Number(e.target.value))} /></div></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
-      <div className="field"><label>Link (Replit / repo / sitio)</label><input type="url" ref={R("lk")} defaultValue={p.link || ""} placeholder="https://…" /></div>
+      <div className="field">
+        <label>Link de Drive</label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="url" ref={R("lk")} defaultValue={p.link || ""} placeholder="https://drive.google.com/…" style={{ flex: 1 }} />
+          {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0, background: "var(--orange-soft)", border: "1px solid var(--orange-line)", color: "var(--orange2)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>↗ Abrir</a>}
+        </div>
+      </div>
       <button className="save" onClick={() => {
         const newStatus = V("st") as ProjStatus;
         const projects = state.projects.map(x => {
@@ -1032,6 +1054,97 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
 }
 
 /* ============================================================
+   HUB DRIVE VIEW
+   ============================================================ */
+const HUB_DRIVE_ROOT = "15cBDWdrC2IIN6OlD4rP0fBCImGOh39--";
+
+function HubDriveView() {
+  const [currentFolderId, setCurrentFolderId] = useState<string>(HUB_DRIVE_ROOT);
+  const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([{ id: HUB_DRIVE_ROOT, name: "Raíz" }]);
+
+  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentFolderId });
+  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentFolderId });
+
+  const navigateToFolder = (id: string, name: string) => {
+    setFolderHistory(prev => [...prev, { id, name }]);
+    setCurrentFolderId(id);
+  };
+
+  const navigateBack = () => {
+    if (folderHistory.length > 1) {
+      const newHistory = [...folderHistory];
+      newHistory.pop();
+      const prev = newHistory[newHistory.length - 1];
+      setFolderHistory(newHistory);
+      setCurrentFolderId(prev.id);
+    }
+  };
+
+  const isLoading = filesLoading || foldersLoading;
+
+  return (
+    <div className="wrap">
+      <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden", marginTop: 20 }}>
+        {/* Breadcrumbs & back */}
+        <div style={{ padding: "12px 16px", background: "var(--card2)", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={navigateBack} disabled={folderHistory.length <= 1}
+            style={{ padding: "6px 10px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, color: "var(--dim)", cursor: folderHistory.length <= 1 ? "not-allowed" : "pointer", opacity: folderHistory.length <= 1 ? 0.35 : 1, display: "flex", alignItems: "center" }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={16} height={16}><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, overflowX: "auto", whiteSpace: "nowrap" }}>
+            {folderHistory.map((f, i) => (
+              <span key={f.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ color: i === folderHistory.length - 1 ? "var(--orange2)" : "var(--dim)", fontWeight: i === folderHistory.length - 1 ? 600 : 400 }}>{f.name}</span>
+                {i < folderHistory.length - 1 && <span style={{ color: "var(--faint)" }}>/</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* File grid */}
+        <div style={{ padding: 20, minHeight: 300 }}>
+          {isLoading ? (
+            <div style={{ display: "flex", justifyContent: "center", padding: "60px 0", color: "var(--faint)", fontSize: 13 }}>Cargando…</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+              {foldersData?.map(folder => (
+                <button key={folder.id} onClick={() => navigateToFolder(folder.id, folder.name)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", background: "var(--card2)", border: "1px solid var(--line)", borderRadius: 10, cursor: "pointer", textAlign: "left", transition: "border-color .15s" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--orange-line)")}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--line)")}>
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width={20} height={20} style={{ color: "var(--orange2)", flexShrink: 0 }}><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folder.name}</span>
+                </button>
+              ))}
+              {filesData?.files.map(file => (
+                <div key={file.id} style={{ display: "flex", flexDirection: "column", padding: "14px 16px", background: "var(--card2)", border: "1px solid var(--line)", borderRadius: 10, gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={18} height={18} style={{ color: "#6aa0c0", flexShrink: 0, marginTop: 1 }}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={file.name}>{file.name}</div>
+                      <div style={{ fontSize: 10.5, color: "var(--faint)", marginTop: 2 }}>{file.mimeType.split("/").pop()}</div>
+                    </div>
+                  </div>
+                  {file.webViewLink && (
+                    <a href={file.webViewLink} target="_blank" rel="noopener noreferrer"
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 0", background: "var(--card)", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "var(--dim)", textDecoration: "none", border: "1px solid var(--line)", transition: "color .15s" }}>
+                      Abrir en Drive ↗
+                    </a>
+                  )}
+                </div>
+              ))}
+              {!foldersData?.length && !filesData?.files?.length && (
+                <div style={{ gridColumn: "1/-1", padding: "60px 0", textAlign: "center", color: "var(--faint)", fontSize: 13 }}>Esta carpeta está vacía.</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    TAB ICONS
    ============================================================ */
 const TabIcons: Record<Tab, React.ReactNode> = {
@@ -1042,6 +1155,7 @@ const TabIcons: Record<Tab, React.ReactNode> = {
   notes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
   contracts: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
   svc: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
+  drive: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
 };
 
 /* ============================================================
@@ -1050,7 +1164,6 @@ const TabIcons: Record<Tab, React.ReactNode> = {
 const ADMIN_EMAIL = "webmakerchile@gmail.com";
 
 export default function EjecutivoPage() {
-  const [, setLocation] = useLocation();
   const authUser = useAuth();
   const isAdmin = authUser?.email === ADMIN_EMAIL;
 
@@ -1061,7 +1174,7 @@ export default function EjecutivoPage() {
   const setState = useCallback((next: HubState) => { setStateRaw(next); saveState(next); }, []);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
-    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc"].includes(s)) return s as Tab; } catch { /* ignore */ }
+    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive"].includes(s)) return s as Tab; } catch { /* ignore */ }
     return "dash";
   });
 
@@ -1138,92 +1251,89 @@ export default function EjecutivoPage() {
     { id: "meet", cnt: state.meetings.length },
     { id: "notes", cnt: state.notes.length },
     { id: "contracts", cnt: state.contracts.length },
+    { id: "drive" },
     ...(isAdmin ? [{ id: "svc" as Tab }] : []),
   ];
-  const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios" };
+  const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, overflow: "hidden" }}>
+    <Layout>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@300;400;500&family=Oswald:wght@500;600&display=swap" rel="stylesheet" />
 
-      <div className="hub-root">
-        <div className="layout">
-          {/* ---- MAIN ---- */}
-          <div className="main">
-            <div className="topbar">
-              <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
-              <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
+      <div className="hub-layout-break">
+        <div className="hub-root">
+          <div className="layout">
+            {/* ---- MAIN ---- */}
+            <div className="main">
+              <div className="topbar">
+                <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
+                <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
+              </div>
+              {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}
+              {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} />}
+              {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
+              {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
+              {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
+              {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
+              {tab === "drive" && <HubDriveView />}
+              {tab === "svc" && isAdmin && <SvcView />}
             </div>
-            {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}
-            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} />}
-            {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
-            {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
-            {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
-            {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
-            {tab === "svc" && isAdmin && <SvcView />}
+
+            {/* ---- SIDENAV ---- */}
+            <aside className="sidenav">
+              <div className="side-brand">
+                <div className="logo"><img src="/icon-192.png" alt="WebMaker" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} /></div>
+                <div className="brand">WebMaker<small>Hub Ejecutivo · Latam</small></div>
+              </div>
+              <button className="side-new" onClick={handleNew}>+ Nuevo</button>
+              <nav className="tabs">
+                {TABS.map(({ id, cnt }) => (
+                  <button key={id} className={tab === id ? "on" : ""} onClick={() => navigate(id)}>
+                    {TabIcons[id]}<span className="tl">{TAB_LABELS[id]}</span>
+                    {cnt !== undefined && <span className="cnt">{cnt}</span>}
+                  </button>
+                ))}
+              </nav>
+              <div className="side-foot">
+                <button className="side-act" onClick={handleExport}>↓ Exportar</button>
+                <button className="side-act" onClick={() => importRef.current?.click()}>↑ Importar</button>
+                <input ref={importRef} type="file" accept=".json" style={{ display:"none" }} onChange={handleImportFile} />
+              </div>
+            </aside>
           </div>
 
-          {/* ---- SIDENAV ---- */}
-          <aside className="sidenav">
-            <div className="side-brand">
-              <div className="logo"><img src="/icon-192.png" alt="WebMaker" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} /></div>
-              <div className="brand">WebMaker<small>Hub Ejecutivo · Latam</small></div>
+          {/* ---- SHEET ---- */}
+          {sheet && <>
+            <div className="overlay" onClick={() => setSheet(null)} />
+            <div className="sheet">
+              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} />
             </div>
-            <button className="side-new" onClick={handleNew}>+ Nuevo</button>
-            <nav className="tabs">
-              {TABS.map(({ id, cnt }) => (
-                <button key={id} className={tab === id ? "on" : ""} onClick={() => navigate(id)}>
-                  {TabIcons[id]}<span className="tl">{TAB_LABELS[id]}</span>
-                  {cnt !== undefined && <span className="cnt">{cnt}</span>}
-                </button>
-              ))}
-            </nav>
-            <div className="side-foot">
-              <button className="side-act" onClick={handleExport}>↓ Exportar</button>
-              <button className="side-act" onClick={() => importRef.current?.click()}>↑ Importar</button>
-              <input ref={importRef} type="file" accept=".json" style={{ display:"none" }} onChange={handleImportFile} />
+          </>}
+
+          {/* ---- TOAST ---- */}
+          {toast && (
+            <div className={`toast ${toast.undo ? "action" : ""}`}>
+              {toast.msg}
+              {toast.undo && <button className="undo" onClick={() => { toast.undo!(); setToast(null); setTimeout(() => showToast("Elemento restaurado"), 200); }}>Deshacer</button>}
             </div>
-          </aside>
-        </div>
+          )}
 
-        {/* ---- SHEET ---- */}
-        {sheet && <>
-          <div className="overlay" onClick={() => setSheet(null)} />
-          <div className="sheet">
-            <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} />
-          </div>
-        </>}
-
-        {/* ---- TOAST ---- */}
-        {toast && (
-          <div className={`toast ${toast.undo ? "action" : ""}`}>
-            {toast.msg}
-            {toast.undo && <button className="undo" onClick={() => { toast.undo!(); setToast(null); setTimeout(() => showToast("Elemento restaurado"), 200); }}>Deshacer</button>}
-          </div>
-        )}
-
-        {/* ---- CONFIRM MODAL ---- */}
-        {confirm && (
-          <div className="cmodal" onClick={e => { if (e.target === e.currentTarget) setConfirm(null); }}>
-            <div className="cbox">
-              <p>{confirm.msg}</p>
-              <div className="crow">
-                <button onClick={() => setConfirm(null)}>Cancelar</button>
-                <button className="yes" onClick={() => { confirm.onYes(); setConfirm(null); }}>Confirmar</button>
+          {/* ---- CONFIRM MODAL ---- */}
+          {confirm && (
+            <div className="cmodal" onClick={e => { if (e.target === e.currentTarget) setConfirm(null); }}>
+              <div className="cbox">
+                <p>{confirm.msg}</p>
+                <div className="crow">
+                  <button onClick={() => setConfirm(null)}>Cancelar</button>
+                  <button className="yes" onClick={() => { confirm.onYes(); setConfirm(null); }}>Confirmar</button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-
-      {/* ---- BACK BUTTON ---- */}
-      <button onClick={() => setLocation("/")} title="Volver al panel" className="back-btn">
-        <img src="/icon-192.png" alt="" style={{ width:20, height:20, borderRadius:5, flexShrink:0 }} />
-        <ChevronRight style={{ width:14, height:14, transform:"rotate(180deg)", opacity:0.5, flexShrink:0 }} />
-        <span>Panel Admin</span>
-      </button>
-    </div>
+    </Layout>
   );
 }

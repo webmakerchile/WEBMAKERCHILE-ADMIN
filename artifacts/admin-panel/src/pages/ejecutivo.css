@@ -259,26 +259,14 @@
 .hub-root .sr-empty{padding:12px;color:var(--faint);font-size:12px;text-align:center;}
 .hub-root .kpi[data-go]{cursor:pointer;}
 
-/* "Panel Admin" back button — rendered outside .hub-root so selector is unscoped */
-.back-btn{
-  position:fixed;bottom:1.5rem;left:1.5rem;z-index:200;
-  display:flex;align-items:center;gap:0.5rem;
-  padding:0.5rem 0.875rem;
-  border-radius:12px;
-  background:hsl(var(--card));
-  border:1px solid hsl(var(--border));
-  color:hsl(var(--muted-foreground));
-  font-size:0.8125rem;font-weight:500;
-  font-family:inherit;
-  backdrop-filter:blur(12px);
-  box-shadow:0 8px 24px hsl(0 0% 0%/.35);
-  cursor:pointer;
-  transition:border-color .15s,color .15s,background .15s;
+/* Break out of Layout's inner padding so the hub fills the full content area */
+.hub-layout-break {
+  margin: -1.5rem -1rem;
 }
-.back-btn:hover{
-  border-color:hsl(var(--primary)/.35);
-  color:hsl(var(--foreground));
-  background:hsl(var(--card)/.8);
+@media (min-width: 1024px) {
+  .hub-layout-break {
+    margin: -2rem;
+  }
 }
 
 /* media queries */
