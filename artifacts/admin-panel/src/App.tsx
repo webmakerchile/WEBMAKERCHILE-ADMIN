@@ -39,7 +39,7 @@ function HubPage() {
   return (
     <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", zIndex: 50 }}>
       <iframe
-        src="/hub.html"
+        src="/hub-app"
         style={{ width: "100%", height: "100%", border: "none", display: "block" }}
         title="Hub Ejecutivo"
       />

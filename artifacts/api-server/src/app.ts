@@ -67,6 +67,10 @@ app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-uploa
 
 app.use("/api", requireAuth, router);
 
+app.get("/hub-app", requireAuth, (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "assets", "hub.html"));
+});
+
 import { Sentry, isSentryEnabled } from "./lib/sentry";
 import type { Request, Response, NextFunction } from "express";
 app.use((err: Error & { status?: number }, req: Request, res: Response, next: NextFunction) => {
