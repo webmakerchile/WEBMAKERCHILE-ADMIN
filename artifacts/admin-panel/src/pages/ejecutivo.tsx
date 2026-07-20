@@ -579,14 +579,15 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
   const [progVal, setProgVal] = useState(0);
   const [driveFolderLink, setDriveFolderLink] = useState("");
+  const [projNameDraft, setProjNameDraft] = useState("");
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) { setProgVal(p.prog); setDriveFolderLink(p.link || ""); }
+      if (p) { setProgVal(p.prog); setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
     }
     if (sheet?.kind === "new-proj") {
-      setDriveFolderLink("");
+      setDriveFolderLink(""); setProjNameDraft("");
     }
   }, [sheet, state.projects]);
 
@@ -648,7 +649,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
   if (sheet.kind === "new-proj") {
     return (<>
       <div className="sheet-head"><h2>Nuevo proyecto</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="field"><label>Nombre</label><input type="text" ref={R("n")} placeholder="Ej: Landing Page Corporativa" /></div>
+      <div className="field"><label>Nombre</label><input type="text" ref={R("n")} placeholder="Ej: Landing Page Corporativa" value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} placeholder="E-commerce, Landing…" /></div></div>
       <div className="three field">
         <div><label>Prioridad</label><select ref={R("prio")}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
@@ -657,11 +658,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       </div>
       <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} /></div>
       <div className="field"><label>Carpeta de Drive</label>
-        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={r.current["n"] ? (r.current["n"] as HTMLInputElement).value.trim() : ""} onToast={onToast} />
+        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} onToast={onToast} />
       </div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
       <button className="add-btn" onClick={() => {
-        const name = V("n").trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
+        const name = projNameDraft.trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
         onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, createdAt: now, updatedAt: now }] });
         onClose(); onNavigate("proj"); onToast("Proyecto creado");
@@ -675,7 +676,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
     return (<>
       <div className="sheet-head"><h2>Proyecto</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="detail-meta"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span></div>
-      <div className="field"><label>Nombre</label><input type="text" ref={R("n")} defaultValue={p.name} /></div>
+      <div className="field"><label>Nombre</label><input type="text" ref={R("n")} value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} defaultValue={p.client} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} defaultValue={p.type} /></div></div>
       <div className="three field">
         <div><label>Prioridad</label><select ref={R("prio")} defaultValue={p.prio}>{["alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
