@@ -11,7 +11,7 @@ type Prio = "alta" | "media" | "baja";
 type ProjStatus = "lead" | "disc" | "dev" | "rev" | "done";
 type TaskStage = "backlog" | "sprint" | "doing" | "qa_sent" | "qa_rev" | "done";
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "svc";
+type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
@@ -19,14 +19,17 @@ interface Client { id: string; name: string; contact: string; segment: string; n
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
-interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; }
+type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
+interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; }
+interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
 type SheetKind =
   | null
   | { kind: "new-proj" } | { kind: "proj"; id: string }
   | { kind: "new-task" } | { kind: "task"; id: string }
   | { kind: "new-client" } | { kind: "client"; id: string }
   | { kind: "new-meet" } | { kind: "meet"; id: string }
-  | { kind: "new-note" } | { kind: "note"; id: string };
+  | { kind: "new-note" } | { kind: "note"; id: string }
+  | { kind: "new-contract" } | { kind: "contract"; id: string };
 
 /* ============================================================
    CONSTANTES
@@ -57,6 +60,7 @@ const TAB_TITLES: Record<Tab, [string, string]> = {
   clients: ["Clientes", "Cartera y contactos"],
   meet: ["Reuniones", "Notas, resúmenes y seguimiento"],
   notes: ["Notas", "Ideas, acuerdos y estrategia"],
+  contracts: ["Contratos", "Acuerdos, términos y vencimientos"],
   svc: ["Servicios", "Catálogo de referencia"],
 };
 const SERVICES: Array<{ cat: string; items: Array<{ n: string; d: string; incl?: string; note?: string; t: string[][] }> }> = [
@@ -105,7 +109,7 @@ function dueInfo(p: Project) {
   const days = Math.ceil(ms / 86400000);
   return { days, label: fmtDate(new Date(p.due + "T12:00:00").getTime()), cls: days < 0 ? "overdue" : days <= 7 ? "soon" : "" };
 }
-function blankState(): HubState { return { projects: [], clients: [], notes: [], meetings: [], tasks: [] }; }
+function blankState(): HubState { return { projects: [], clients: [], notes: [], meetings: [], tasks: [], contracts: [] }; }
 
 /* ============================================================
    SEED DATA
@@ -178,6 +182,7 @@ function migrate(st: HubState): HubState {
   const now = Date.now();
   st.projects.forEach(p => { if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now; });
   if (!Array.isArray(st.tasks)) st.tasks = [];
+  if (!Array.isArray(st.contracts)) st.contracts = [];
   return st;
 }
 
@@ -532,6 +537,64 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
     </>);
   }
 
+  /* ---- Nuevo contrato ---- */
+  if (sheet.kind === "new-contract") {
+    return (<>
+      <div className="sheet-head"><h2>Nuevo contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} placeholder="Ej: Servicio de Marketing Digital" /></div>
+      <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} placeholder="Nombre del cliente" /></div>
+      <div className="field"><label>Valor</label><input type="text" ref={R("va")} placeholder="Ej: $290.000 / mes" /></div>
+      <div className="field"><label>Estado</label>
+        <select ref={R("st")}>
+          <option value="borrador">Borrador</option>
+          <option value="activo">Activo</option>
+          <option value="vencido">Vencido</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+      </div>
+      <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
+      <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} /></div>
+      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} placeholder="Términos, detalles, observaciones…" /></div>
+      <button className="add-btn" onClick={() => {
+        const title = V("ti").trim(); if (!title) { onToast("Ponle un título al contrato"); return; }
+        const now = Date.now();
+        onSave({ ...state, contracts: [...state.contracts, { id: uid(), title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), createdAt: now, updatedAt: now }] });
+        onClose(); onNavigate("contracts"); onToast("Contrato creado");
+      }}>Crear contrato</button>
+    </>);
+  }
+
+  /* ---- Detalle contrato ---- */
+  if (sheet.kind === "contract") {
+    const c = state.contracts.find(x => x.id === sheet.id); if (!c) return null;
+    return (<>
+      <div className="sheet-head"><h2>Contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} defaultValue={c.title} /></div>
+      <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={c.client} /></div>
+      <div className="field"><label>Valor</label><input type="text" ref={R("va")} defaultValue={c.value} /></div>
+      <div className="field"><label>Estado</label>
+        <select ref={R("st")} defaultValue={c.status}>
+          <option value="borrador">Borrador</option>
+          <option value="activo">Activo</option>
+          <option value="vencido">Vencido</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+      </div>
+      <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
+      <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} defaultValue={c.expiresAt} /></div>
+      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={c.notes || ""} /></div>
+      <button className="save" onClick={() => {
+        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), updatedAt: Date.now() }) });
+        onClose(); onToast("Contrato actualizado");
+      }}>Guardar cambios</button>
+      <button className="del-link" onClick={() => {
+        const snap = [...state.contracts];
+        onSave({ ...state, contracts: state.contracts.filter(x => x.id !== c.id) });
+        onClose(); onToast("Contrato eliminado", () => onSave({ ...state, contracts: snap }));
+      }}>Eliminar contrato</button>
+    </>);
+  }
+
   return null;
 }
 
@@ -705,10 +768,122 @@ function ClientsView({ state, onOpen, searchQ, setSearchQ }: { state: HubState; 
   );
 }
 
+/* ---- Google Calendar integration ---- */
+interface GCalEvent { id: string; title: string; start: string; end: string; allDay: boolean; meetLink: string | null; location: string | null; }
+
+function GoogleCalendarSection() {
+  const [status, setStatus] = useState<"loading" | "connected" | "no_scope" | "disabled" | "error">("loading");
+  const [events, setEvents] = useState<GCalEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/calendar/status", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        if (d.connected) {
+          setStatus("connected");
+          setEventsLoading(true);
+          fetch("/api/calendar/events", { credentials: "include" })
+            .then(r => r.json())
+            .then(ev => { setEvents(ev.events || []); setEventsLoading(false); })
+            .catch(() => setEventsLoading(false));
+        } else {
+          setStatus(d.reason === "disabled" ? "disabled" : d.reason === "no_scope" ? "no_scope" : "error");
+        }
+      })
+      .catch(() => setStatus("error"));
+  }, []);
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    await fetch("/api/calendar/disconnect", { method: "POST", credentials: "include" });
+    setStatus("disabled");
+    setDisconnecting(false);
+  };
+
+  const fmtEvDate = (iso: string, allDay: boolean) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (allDay) return d.toLocaleDateString("es-CL", { weekday: "short", day: "numeric", month: "short" });
+    return d.toLocaleDateString("es-CL", { weekday: "short", day: "numeric", month: "short" }) + " · " + d.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <div style={{ marginBottom: "1.5rem" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+        <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} style={{ color: "var(--orange)", flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span style={{ fontFamily: "var(--font-mono,monospace)", fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--orange)" }}>Google Calendar</span>
+        {status === "connected" && (
+          <button onClick={handleDisconnect} disabled={disconnecting}
+            style={{ marginLeft: "auto", fontSize: "11px", background: "none", border: "1px solid var(--line)", borderRadius: "6px", color: "var(--faint)", padding: "2px 8px", cursor: "pointer" }}>
+            {disconnecting ? "…" : "Desconectar"}
+          </button>
+        )}
+      </div>
+
+      {status === "loading" && (
+        <div style={{ padding: "12px", color: "var(--faint)", fontSize: "12px" }}>Cargando…</div>
+      )}
+
+      {(status === "no_scope" || status === "disabled" || status === "error") && (
+        <div style={{ background: "var(--card2)", border: "1px solid var(--line)", borderRadius: "11px", padding: "16px", display: "flex", alignItems: "center", gap: "14px" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text)", marginBottom: "4px" }}>
+              {status === "disabled" ? "Google Calendar desconectado" : "Conecta tu Google Calendar"}
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--faint)", lineHeight: 1.5 }}>
+              {status === "disabled"
+                ? "Vuelve a iniciar sesión con Google para sincronizar tus eventos."
+                : "Ve tus próximas reuniones directamente desde el hub. Se necesita re-autenticar con Google para autorizar el acceso al calendario."}
+            </div>
+          </div>
+          <a href="/api/auth/google" style={{ background: "var(--orange)", color: "#fff", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+            Conectar Calendar
+          </a>
+        </div>
+      )}
+
+      {status === "connected" && (
+        <>
+          {eventsLoading && <div style={{ padding: "8px 0", color: "var(--faint)", fontSize: "12px" }}>Cargando eventos…</div>}
+          {!eventsLoading && events.length === 0 && (
+            <div style={{ padding: "8px 0", color: "var(--faint)", fontSize: "12px" }}>Sin eventos en los próximos 30 días.</div>
+          )}
+          {!eventsLoading && events.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {events.map(ev => (
+                <div key={ev.id} style={{ background: "var(--card2)", border: "1px solid var(--line)", borderRadius: "9px", padding: "10px 12px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--text)", marginBottom: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
+                    <div style={{ fontSize: "11px", color: "var(--dim)" }}>{fmtEvDate(ev.start, ev.allDay)}</div>
+                    {ev.location && <div style={{ fontSize: "11px", color: "var(--faint)", marginTop: "2px" }}>📍 {ev.location}</div>}
+                  </div>
+                  {ev.meetLink && (
+                    <a href={ev.meetLink} target="_blank" rel="noopener noreferrer"
+                      style={{ flexShrink: 0, background: "var(--orange-soft)", border: "1px solid var(--orange-line)", color: "var(--orange2)", borderRadius: "6px", padding: "4px 10px", fontSize: "11px", fontWeight: 600, textDecoration: "none" }}>
+                      Meet
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
   const list = [...state.meetings].sort((a, b) => b.createdAt - a.createdAt);
   return (
     <div className="wrap">
+      <GoogleCalendarSection />
+      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--dim)", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Reuniones manuales
+      </div>
       {state.meetings.length === 0 && <div className="empty-all">Sin reuniones aún. <strong>+ Nuevo</strong> para comenzar.</div>}
       <div className="cardlist">
         {list.map(m => (
@@ -743,6 +918,43 @@ function NotesView({ state, onOpen, filterCat, setFilterCat }: { state: HubState
             <div className="gfoot"><span className="gdate">{fmtDate(n.createdAt)}</span></div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   CONTRATOS
+   ============================================================ */
+const CONTRACT_STATUSES: Record<ContractStatus, { label: string; color: string }> = {
+  borrador: { label: "Borrador", color: "var(--faint)" },
+  activo:   { label: "Activo",   color: "var(--done)" },
+  vencido:  { label: "Vencido",  color: "#e0795a" },
+  cancelado:{ label: "Cancelado",color: "var(--disc)" },
+};
+
+function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
+  const list = [...state.contracts].sort((a, b) => b.createdAt - a.createdAt);
+  return (
+    <div className="wrap">
+      {state.contracts.length === 0 && <div className="empty-all">Sin contratos aún. <strong>+ Nuevo</strong> para agregar uno.</div>}
+      <div className="cardlist">
+        {list.map(c => {
+          const s = CONTRACT_STATUSES[c.status] || CONTRACT_STATUSES.borrador;
+          return (
+            <div key={c.id} className="gcard" onClick={() => onOpen(c.id)}>
+              <div className="gt">{c.title}</div>
+              <div className="gsub">{c.client || "—"}</div>
+              <div className="meta" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
+                <span className="chip" style={{ color: s.color, borderColor: s.color + "55", background: s.color + "18" }}>{s.label}</span>
+                {c.value && <span className="chip">{c.value}</span>}
+                {c.expiresAt && <span className="chip">Vence: {c.expiresAt}</span>}
+              </div>
+              <div className="gbody" style={{ marginTop: "6px" }}>{c.notes || ""}</div>
+              <div className="gfoot"><span className="gdate">{fmtDate(c.createdAt)}</span></div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -828,6 +1040,7 @@ const TabIcons: Record<Tab, React.ReactNode> = {
   clients: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg>,
   meet: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   notes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
+  contracts: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
   svc: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
 };
 
@@ -848,7 +1061,7 @@ export default function EjecutivoPage() {
   const setState = useCallback((next: HubState) => { setStateRaw(next); saveState(next); }, []);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
-    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","svc"].includes(s)) return s as Tab; } catch { /* ignore */ }
+    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc"].includes(s)) return s as Tab; } catch { /* ignore */ }
     return "dash";
   });
 
@@ -884,6 +1097,7 @@ export default function EjecutivoPage() {
     if (tab === "clients") openSheet({ kind: "new-client" });
     else if (tab === "meet") openSheet({ kind: "new-meet" });
     else if (tab === "notes") openSheet({ kind: "new-note" });
+    else if (tab === "contracts") openSheet({ kind: "new-contract" });
     else if (tab === "proj" && projView === "scrum") openSheet({ kind: "new-task" });
     else openSheet({ kind: "new-proj" });
   };
@@ -923,9 +1137,10 @@ export default function EjecutivoPage() {
     { id: "clients", cnt: state.clients.length },
     { id: "meet", cnt: state.meetings.length },
     { id: "notes", cnt: state.notes.length },
+    { id: "contracts", cnt: state.contracts.length },
     ...(isAdmin ? [{ id: "svc" as Tab }] : []),
   ];
-  const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", svc: "Servicios" };
+  const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios" };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 50, overflow: "hidden" }}>
@@ -946,6 +1161,7 @@ export default function EjecutivoPage() {
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
+            {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "svc" && isAdmin && <SvcView />}
           </div>
 

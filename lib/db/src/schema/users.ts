@@ -39,6 +39,7 @@ export const users = pgTable("users", {
    * Cleared on successful re-auth in the OAuth callback.
    */
   revokedNetworks: text("revoked_networks").notNull().default(""),
+  calendarEnabled: text("calendar_enabled").notNull().default("true"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
 });

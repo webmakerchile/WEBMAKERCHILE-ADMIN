@@ -24,6 +24,7 @@ import connectionsRouter from "./connections";
 import settingsRouter from "./settings";
 import transcriberRouter from "./transcriber";
 import credentialsRouter from "./credentials";
+import calendarRouter from "./calendar";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(connectionsRouter);
 router.use(settingsRouter);
 router.use(transcriberRouter);
 router.use(credentialsRouter);
+router.use(calendarRouter);
 
 export default router;
