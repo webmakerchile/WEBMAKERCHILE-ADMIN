@@ -78,7 +78,12 @@ router.post("/hub/contracts/extract-pdf", async (req: Request, res: Response) =>
       const result = await parser.getText();
       pdfText = result.text;
     } catch {
-      pdfText = "[No se pudo extraer texto del PDF]";
+      pdfText = "";
+    }
+
+    if (pdfText.trim().length < 50) {
+      res.status(422).json({ error: "El PDF no contiene texto extraíble (puede ser un PDF escaneado). Por favor rellena los campos manualmente." });
+      return;
     }
 
     // Call OpenAI to extract structured fields
