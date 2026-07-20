@@ -35,6 +35,18 @@ const EquipoPage = lazy(() => import("./pages/equipo"));
 const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
 const AjustesPage = lazy(() => import("./pages/ajustes"));
 
+function HubPage() {
+  return (
+    <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", zIndex: 50 }}>
+      <iframe
+        src="/hub.html"
+        style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+        title="Hub Ejecutivo"
+      />
+    </div>
+  );
+}
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
     super(props);
@@ -207,6 +219,9 @@ function Router() {
       </Route>
       <Route path="/ajustes">
         <RouteShell name="ajustes"><AjustesPage /></RouteShell>
+      </Route>
+      <Route path="/hub">
+        <HubPage />
       </Route>
       <Route component={NotFound} />
     </Switch>

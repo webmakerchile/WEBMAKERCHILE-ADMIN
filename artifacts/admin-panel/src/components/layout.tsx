@@ -22,6 +22,7 @@ import {
   Menu,
   X,
   Languages,
+  LayoutGrid,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -57,6 +58,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/equipo", icon: Users2, label: t.navTeam, tour: "nav-equipo" },
     { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
     { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
+    { href: "/hub", icon: LayoutGrid, label: t.navHub, tour: "nav-hub" },
   ];
 
   useEffect(() => {
