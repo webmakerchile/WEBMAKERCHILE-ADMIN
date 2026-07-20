@@ -98,4 +98,40 @@ router.get("/drive/search", async (req, res) => {
   }
 });
 
+router.post("/drive/mkdir", async (req, res) => {
+  const { name, parentId } = req.body as { name?: string; parentId?: string };
+  if (!name || !name.trim()) {
+    res.status(400).json({ error: "name is required" });
+    return;
+  }
+
+  try {
+    const user = req.user as any;
+    const auth = getGoogleAuth(user);
+    const drive = google.drive({ version: "v3", auth });
+
+    const fileMetadata: { name: string; mimeType: string; parents?: string[] } = {
+      name: name.trim(),
+      mimeType: "application/vnd.google-apps.folder",
+    };
+    if (parentId) {
+      fileMetadata.parents = [parentId];
+    }
+
+    const response = await drive.files.create({
+      requestBody: fileMetadata,
+      fields: "id,name,webViewLink",
+    });
+
+    res.json({
+      id: response.data.id,
+      name: response.data.name,
+      webViewLink: response.data.webViewLink,
+    });
+  } catch (error: any) {
+    console.error("[Drive] Error creating folder:", error.message);
+    res.status(500).json({ error: error.message || "Failed to create folder" });
+  }
+});
+
 export default router;

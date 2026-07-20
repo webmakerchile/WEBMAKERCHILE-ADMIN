@@ -448,6 +448,127 @@ function StageBreakdown({ t }: { t: Task }) {
 }
 
 /* ============================================================
+   DRIVE FOLDER PICKER (for project sheets)
+   ============================================================ */
+const DRIVE_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
+
+function FolderPickerPanel({ onSelect }: { onSelect: (id: string, name: string, url: string) => void }) {
+  const [currentId, setCurrentId] = useState<string | undefined>(undefined);
+  const [history, setHistory] = useState<{ id: string | undefined; name: string }[]>([{ id: undefined, name: "Mi Drive" }]);
+  const { data: foldersData, isLoading } = useListDriveFolders({ parentId: currentId });
+  const folders = foldersData || [];
+
+  const goInto = (id: string, name: string) => { setHistory(prev => [...prev, { id, name }]); setCurrentId(id); };
+  const goBack = () => {
+    if (history.length <= 1) return;
+    const next = history.slice(0, -1);
+    setHistory(next); setCurrentId(next[next.length - 1].id);
+  };
+  const cur = history[history.length - 1];
+
+  const rowBtn: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", color: "var(--text)", padding: "9px 12px", textAlign: "left", cursor: "pointer", fontSize: 13 };
+  const miniBtn: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", color: "var(--dim)", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" };
+  const selBtn: React.CSSProperties = { background: "var(--orange)", border: "none", color: "hsl(var(--primary-foreground))", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" };
+
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", marginTop: 8 }}>
+      <div style={{ background: "var(--card2)", padding: "8px 10px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderBottom: "1px solid var(--line)" }}>
+        {history.length > 1 && <button style={miniBtn} onClick={goBack}>← Atrás</button>}
+        <span style={{ flex: 1, fontSize: 11.5, color: "var(--faint)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {history.map(h => h.name).join(" / ")}
+        </span>
+        {cur.id && (
+          <button style={selBtn} onClick={() => onSelect(cur.id!, cur.name, `https://drive.google.com/drive/folders/${cur.id}`)}>
+            ✓ Seleccionar esta carpeta
+          </button>
+        )}
+      </div>
+      <div style={{ maxHeight: 220, overflowY: "auto" }}>
+        {isLoading && <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--faint)" }}>Cargando carpetas…</div>}
+        {!isLoading && folders.length === 0 && <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--faint)" }}>No hay subcarpetas aquí.</div>}
+        {folders.map(f => (
+          <button key={f.id} style={rowBtn} onClick={() => goInto(f.id!, f.name!)}>
+            <svg viewBox="0 0 24 24" fill="currentColor" width={15} height={15} style={{ color: "var(--orange2)", flexShrink: 0 }}><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>
+            <span style={{ flex: 1 }}>{f.name}</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={13} height={13} style={{ color: "var(--faint)" }}><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DriveFolderSelector({ value, onChange, projectName, onToast }: {
+  value: string; onChange: (link: string) => void; projectName: string; onToast: (msg: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const folderId = extractDriveFolderId(value);
+
+  const handleCreate = async () => {
+    const name = projectName.trim() || "Proyecto";
+    setCreating(true);
+    try {
+      const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Error desconocido" }));
+        throw new Error((err as { error?: string }).error || "Error al crear la carpeta");
+      }
+      const data = await res.json() as { id?: string; webViewLink?: string };
+      const link = data.webViewLink || `https://drive.google.com/drive/folders/${data.id}`;
+      onChange(link);
+      onToast(`Carpeta "${name}" creada en Drive`);
+    } catch (e: unknown) {
+      onToast(`Error al crear carpeta: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const wrapBox: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 9, padding: "10px 13px", background: "var(--card2)", fontSize: 13 };
+  const btnSec: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", color: "var(--dim)", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" };
+  const btnPrimary: React.CSSProperties = { background: "var(--orange)", border: "none", color: "hsl(var(--primary-foreground))", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
+
+  const shortName = projectName.length > 22 ? projectName.slice(0, 22) + "…" : projectName;
+
+  return (
+    <div>
+      {folderId ? (
+        <div style={{ ...wrapBox, display: "flex", alignItems: "center", gap: 10 }}>
+          <svg viewBox="0 0 24 24" fill="currentColor" width={16} height={16} style={{ color: "var(--orange2)", flexShrink: 0 }}><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>
+          <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectName || "Carpeta vinculada"}</span>
+          <a href={value} target="_blank" rel="noopener noreferrer" style={{ ...btnSec, textDecoration: "none" }}>↗ Abrir</a>
+          <button style={{ ...btnSec, color: "var(--faint)", padding: "8px 9px" }} title="Desvincular carpeta" onClick={() => { onChange(""); setPickerOpen(false); }}>✕</button>
+        </div>
+      ) : (
+        <div style={{ ...wrapBox, color: "var(--faint)", fontSize: 12 }}>Sin carpeta de Drive vinculada</div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+        <button style={btnSec} onClick={() => setPickerOpen(v => !v)}>
+          {pickerOpen ? "Cerrar selector" : folderId ? "Cambiar carpeta" : "Seleccionar carpeta"}
+        </button>
+        {!folderId && (
+          <button style={btnPrimary} onClick={handleCreate} disabled={creating}>
+            {creating ? "Creando…" : `+ Crear carpeta${shortName ? ` "${shortName}"` : ""}`}
+          </button>
+        )}
+      </div>
+      {pickerOpen && (
+        <FolderPickerPanel onSelect={(id, name, url) => {
+          onChange(url); setPickerOpen(false); onToast(`Carpeta "${name}" vinculada`);
+        }} />
+      )}
+      {folderId && !pickerOpen && (
+        <ProjectDriveInline key={folderId} folderId={folderId} rootName={projectName || "Carpeta del proyecto"} />
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    SHEET CONTENT
    ============================================================ */
 interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; }
@@ -457,11 +578,15 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
   const [progVal, setProgVal] = useState(0);
+  const [driveFolderLink, setDriveFolderLink] = useState("");
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) setProgVal(p.prog);
+      if (p) { setProgVal(p.prog); setDriveFolderLink(p.link || ""); }
+    }
+    if (sheet?.kind === "new-proj") {
+      setDriveFolderLink("");
     }
   }, [sheet, state.projects]);
 
@@ -531,12 +656,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
         <div><label>Dueño</label><input type="text" ref={R("ow")} /></div>
       </div>
       <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} /></div>
-      <div className="field"><label>Link de Drive (opcional)</label><input type="url" ref={R("lk")} placeholder="https://drive.google.com/…" /></div>
+      <div className="field"><label>Carpeta de Drive</label>
+        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={r.current["n"] ? (r.current["n"] as HTMLInputElement).value.trim() : ""} onToast={onToast} />
+      </div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
       <button className="add-btn" onClick={() => {
         const name = V("n").trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
-        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: V("lk").trim(), createdAt: now, updatedAt: now }] });
+        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, createdAt: now, updatedAt: now }] });
         onClose(); onNavigate("proj"); onToast("Proyecto creado");
       }}>Crear proyecto</button>
     </>);
@@ -559,18 +686,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       <div className="field"><label>Avance <b>{progVal}%</b></label><div className="rangewrap"><input type="range" min={0} max={100} value={progVal} onChange={e => setProgVal(Number(e.target.value))} /></div></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
       <div className="field">
-        <label>Link de Drive</label>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input type="url" ref={R("lk")} defaultValue={p.link || ""} placeholder="https://drive.google.com/…" style={{ flex: 1 }} />
-          {p.link && <a href={p.link} target="_blank" rel="noopener noreferrer" style={{ flexShrink: 0, background: "var(--orange-soft)", border: "1px solid var(--orange-line)", color: "var(--orange2)", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>↗ Abrir</a>}
-        </div>
-        {(() => { const fid = extractDriveFolderId(p.link || ""); return fid ? <ProjectDriveInline key={fid} folderId={fid} rootName={p.name} /> : null; })()}
+        <label>Carpeta de Drive</label>
+        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={p.name} onToast={onToast} />
       </div>
       <button className="save" onClick={() => {
         const newStatus = V("st") as ProjStatus;
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: progVal, notes: V("no"), link: V("lk").trim(), updatedAt: Date.now() };
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: progVal, notes: V("no"), link: driveFolderLink, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });
