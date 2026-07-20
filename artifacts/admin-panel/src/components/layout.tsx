@@ -334,8 +334,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <InstallBanner />
 
-      {/* Hub Ejecutivo FAB — visible on all admin panel pages */}
-      <Link
+      {/* Hub Ejecutivo FAB — visible on all admin panel pages except /ejecutivo itself */}
+      {location !== "/ejecutivo" && <Link
         href="/ejecutivo"
         title="Abrir Hub Ejecutivo"
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"
@@ -343,7 +343,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <LayoutGrid className="w-4 h-4 text-primary flex-shrink-0" />
         <span>Hub Ejecutivo</span>
         <ChevronRight className="w-3.5 h-3.5 opacity-50 flex-shrink-0" />
-      </Link>
+      </Link>}
     </div>
   );
 }
