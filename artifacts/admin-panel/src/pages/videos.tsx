@@ -1348,9 +1348,11 @@ export default function VideosPage() {
   });
 
   const generateCoverMutation = useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async ({ id, network }: { id: number; network?: string }) => {
       const res = await apiFetch(`${API_BASE}/content/videos/${id}/generate-cover`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ network }),
       });
       if (!res.ok) throw new Error(t.toastCoverError);
       return res.json();
@@ -1442,8 +1444,8 @@ export default function VideosPage() {
           onClearCover={() => {
             if (selectedVideo) clearCoverMutation.mutate(selectedVideo.id);
           }}
-          onGenerateCover={() => {
-            if (selectedVideo) generateCoverMutation.mutate(selectedVideo.id);
+          onGenerateCover={(network?: string) => {
+            if (selectedVideo) generateCoverMutation.mutate({ id: selectedVideo.id, network });
           }}
           onAutoGenerate={(videoId) => autoGenerateMutation.mutate(videoId)}
           onDelete={() => {
@@ -2508,7 +2510,7 @@ function VideoWizard({
   onCreate: (data: any) => void;
   onUpdate: (data: any) => void;
   onSaveInfoStep: (infoData: Record<string, any>, shouldAutoGenerate: boolean) => void;
-  onGenerateCover: () => void;
+  onGenerateCover: (network?: string) => void;
   onUploadCover: (file: File) => void;
   isUploadingCover: boolean;
   onClearCover: () => void;
@@ -3711,30 +3713,70 @@ const COVER_NETWORK_PREVIEWS: { network: Network; label: string; ratio: string }
   { network: "facebook", label: "Facebook", ratio: "1.91/1" },
 ];
 
-function CoverNetworkGrid({ src }: { src: string }) {
+function CoverNetworkGrid({
+  src,
+  onGenerate,
+  generatingNetwork,
+  isGenerating,
+}: {
+  src: string;
+  onGenerate?: (network: string) => void;
+  generatingNetwork?: string | null;
+  isGenerating?: boolean;
+}) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      {COVER_NETWORK_PREVIEWS.map(({ network, label, ratio }) => (
-        <div
-          key={network}
-          className="bg-card/70 border border-foreground/10 rounded-xl overflow-hidden"
-        >
-          <div className="px-2 py-1.5 flex items-center gap-1.5 border-b border-foreground/5">
-            <span className={`w-4 h-4 rounded flex items-center justify-center ${NETWORK_BG[network]}`}>
-              <NetworkIcon network={network} className="w-2.5 h-2.5" />
-            </span>
-            <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+      {COVER_NETWORK_PREVIEWS.map(({ network, label, ratio }) => {
+        const isThisGenerating = isGenerating && generatingNetwork === network;
+        const isOtherGenerating = isGenerating && generatingNetwork !== network && generatingNetwork != null;
+        return (
+          <div
+            key={network}
+            className="bg-card/70 border border-foreground/10 rounded-xl overflow-hidden group relative"
+          >
+            <div className="px-2 py-1.5 flex items-center gap-1.5 border-b border-foreground/5">
+              <span className={`w-4 h-4 rounded flex items-center justify-center ${NETWORK_BG[network]}`}>
+                <NetworkIcon network={network} className="w-2.5 h-2.5" />
+              </span>
+              <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+            </div>
+            <div className="bg-black/40 flex items-center justify-center relative">
+              <img
+                src={src}
+                alt={`Vista previa ${label}`}
+                className="w-full object-cover"
+                style={{ aspectRatio: ratio }}
+              />
+              {onGenerate && (
+                <div className="absolute inset-0 flex items-end justify-center pb-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => !isGenerating && onGenerate(network)}
+                    disabled={isGenerating}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-white transition-all
+                      ${isThisGenerating
+                        ? "bg-primary/90 cursor-wait"
+                        : isOtherGenerating
+                        ? "bg-black/50 cursor-not-allowed opacity-50"
+                        : "bg-black/60 hover:bg-primary/80 cursor-pointer"
+                      }`}
+                  >
+                    {isThisGenerating
+                      ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      : <Sparkles className="w-2.5 h-2.5" />
+                    }
+                    Regenerar
+                  </button>
+                </div>
+              )}
+              {isThisGenerating && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-white" />
+                </div>
+              )}
+            </div>
           </div>
-          <div className="bg-black/40 flex items-center justify-center">
-            <img
-              src={src}
-              alt={`Vista previa ${label}`}
-              className="w-full object-cover"
-              style={{ aspectRatio: ratio }}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -3750,7 +3792,7 @@ function StepCover({
   onPrev,
 }: {
   video: VideoData;
-  onGenerate: () => void;
+  onGenerate: (network?: string) => void;
   isGenerating: boolean;
   onUpload: (file: File) => void;
   isUploading: boolean;
@@ -3769,9 +3811,25 @@ function StepCover({
   const [promptOpen, setPromptOpen] = useState(false);
   const [customPrompt, setCustomPrompt] = useState<string>(video.coverPrompt || "");
   const [savingPrompt, setSavingPrompt] = useState(false);
+  const [generatingNetwork, setGeneratingNetwork] = useState<string | null>(null);
+
   useEffect(() => {
     setCustomPrompt(video.coverPrompt || "");
   }, [video.id, video.coverPrompt]);
+
+  useEffect(() => {
+    if (!isGenerating) setGeneratingNetwork(null);
+  }, [isGenerating]);
+
+  const handleGenerateForNetwork = (network: string) => {
+    setGeneratingNetwork(network);
+    onGenerate(network);
+  };
+
+  const handleGenerateGlobal = () => {
+    setGeneratingNetwork(null);
+    onGenerate();
+  };
 
   const savePromptAndGenerate = async () => {
     setSavingPrompt(true);
@@ -3783,7 +3841,7 @@ function StepCover({
         body: JSON.stringify({ coverPrompt: trimmed ? trimmed : null }),
       });
       if (!res.ok) throw new Error(t.toastSavePromptError);
-      onGenerate();
+      handleGenerateGlobal();
     } catch (err) {
       toast({ title: t.toastSavePromptErrorTitle, description: String(err), variant: "destructive" });
     } finally {
@@ -3839,11 +3897,11 @@ function StepCover({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={onGenerate}
+                  onClick={handleGenerateGlobal}
                   disabled={isGenerating || isUploading}
                   className="border-foreground/10"
                 >
-                  {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  {isGenerating && !generatingNetwork ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   {t.btnRegenerate}
                 </Button>
                 <Button
@@ -3862,7 +3920,12 @@ function StepCover({
               <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
                 {t.coverHowItLooks}
               </p>
-              <CoverNetworkGrid src={coverSrc} />
+              <CoverNetworkGrid
+                src={coverSrc}
+                onGenerate={handleGenerateForNetwork}
+                generatingNetwork={generatingNetwork}
+                isGenerating={isGenerating}
+              />
             </div>
           </div>
         ) : (
@@ -3884,7 +3947,7 @@ function StepCover({
                 )}
               </Button>
               <Button
-                onClick={onGenerate}
+                onClick={handleGenerateGlobal}
                 disabled={isGenerating || isUploading}
                 className="bg-gradient-to-r from-primary to-orange-400"
               >

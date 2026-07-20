@@ -5,6 +5,7 @@ export interface GenerateImageOptions {
   prompt: string;
   referenceImageBase64?: string;
   referenceImageMimeType?: string;
+  size?: "1024x1024" | "1024x1536" | "1536x1024";
 }
 
 export async function generateImage(
@@ -15,6 +16,8 @@ export async function generateImage(
       ? { prompt: promptOrOptions }
       : promptOrOptions;
 
+  const size = options.size ?? "1024x1536";
+
   if (options.referenceImageBase64) {
     const mimeType = (options.referenceImageMimeType || "image/png") as string;
     const ext = mimeType.split("/")[1] || "png";
@@ -24,7 +27,7 @@ export async function generateImage(
       model: "gpt-image-1",
       image: imageFile,
       prompt: options.prompt,
-      size: "1024x1536",
+      size,
     });
     const b64_json = response.data?.[0]?.b64_json ?? "";
     if (!b64_json) throw new Error("No image data in response");
@@ -35,7 +38,7 @@ export async function generateImage(
     model: "gpt-image-1",
     prompt: options.prompt,
     n: 1,
-    size: "1024x1536",
+    size,
   });
 
   const b64_json = response.data?.[0]?.b64_json ?? "";

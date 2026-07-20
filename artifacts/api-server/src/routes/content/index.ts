@@ -109,7 +109,25 @@ ADVERTENCIA CRÍTICA SOBRE ORTOGRAFÍA:
 Estilo minimalista, líneas limpias, colores planos. Formato 9:16 vertical.`;
 }
 
-async function generateCoverForVideo(videoId: number) {
+type NetworkSize = "1024x1024" | "1024x1536" | "1536x1024";
+
+function networkToSize(network?: string): NetworkSize {
+  switch (network) {
+    case "tiktok":
+      return "1024x1536";
+    case "instagram":
+      return "1024x1024";
+    case "youtube":
+    case "x":
+    case "linkedin":
+    case "facebook":
+      return "1536x1024";
+    default:
+      return "1024x1536";
+  }
+}
+
+async function generateCoverForVideo(videoId: number, network?: string) {
   const [video] = await db
     .select()
     .from(videos)
@@ -120,11 +138,13 @@ async function generateCoverForVideo(videoId: number) {
 
   const prompt = buildCoverPrompt(video.title, video.description || "", video.coverPrompt);
   const referenceImageBase64 = getReferenceImageBase64();
+  const size = networkToSize(network);
 
   const { b64_json, mimeType } = await generateImage({
     prompt,
     referenceImageBase64,
     referenceImageMimeType: "image/jpeg",
+    size,
   });
 
   const [updated] = await db
@@ -971,9 +991,10 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
 
 router.post("/content/videos/:id/generate-cover", async (req, res) => {
   const id = Number(req.params.id);
+  const network = typeof req.body?.network === "string" ? req.body.network : undefined;
 
   try {
-    const updated = await generateCoverForVideo(id);
+    const updated = await generateCoverForVideo(id, network);
     res.json(updated);
   } catch (error: any) {
     if (error.message === "Video not found") {
