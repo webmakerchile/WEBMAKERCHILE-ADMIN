@@ -109,21 +109,19 @@ ADVERTENCIA CRÍTICA SOBRE ORTOGRAFÍA:
 Estilo minimalista, líneas limpias, colores planos. Formato 9:16 vertical.`;
 }
 
-type NetworkSize = "1024x1024" | "1024x1536" | "1536x1024";
-
-function networkToSize(network?: string): NetworkSize {
+function networkToSize(network?: string) {
   switch (network) {
     case "tiktok":
-      return "1024x1536";
+      return "1024x1792" as const;
     case "instagram":
-      return "1024x1024";
+      return "1024x1024" as const;
     case "youtube":
     case "x":
     case "linkedin":
     case "facebook":
-      return "1536x1024";
+      return "1792x1024" as const;
     default:
-      return "1024x1536";
+      return "1024x1536" as const;
   }
 }
 
