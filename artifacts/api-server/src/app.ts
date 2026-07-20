@@ -37,8 +37,9 @@ app.use(
     secret: process.env.SESSION_SECRET || "webmaker-admin-secret-key-change-in-production",
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     cookie: {
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: "lax",
