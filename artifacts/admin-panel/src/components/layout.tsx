@@ -23,6 +23,7 @@ import {
   X,
   Languages,
   LayoutGrid,
+  ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -58,7 +59,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/equipo", icon: Users2, label: t.navTeam, tour: "nav-equipo" },
     { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
     { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
-    { href: "/ejecutivo", icon: LayoutGrid, label: t.navHub, tour: "nav-hub" },
   ];
 
   useEffect(() => {
@@ -333,6 +333,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
       </div>
 
       <InstallBanner />
+
+      {/* Hub Ejecutivo FAB — visible on all admin panel pages */}
+      <Link
+        href="/ejecutivo"
+        title="Abrir Hub Ejecutivo"
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"
+      >
+        <LayoutGrid className="w-4 h-4 text-primary flex-shrink-0" />
+        <span>Hub Ejecutivo</span>
+        <ChevronRight className="w-3.5 h-3.5 opacity-50 flex-shrink-0" />
+      </Link>
     </div>
   );
 }
