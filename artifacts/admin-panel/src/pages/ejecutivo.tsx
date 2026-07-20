@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "wouter";
+import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
-import { Layout } from "@/components/layout";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  LogOut, Plus, Menu, X, ChevronLeft,
+  LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
+} from "lucide-react";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -1271,6 +1279,19 @@ function HubDriveView() {
 /* ============================================================
    TAB ICONS
    ============================================================ */
+const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
+  dash: LayoutDashboard,
+  proj: Briefcase,
+  clients: Users2,
+  meet: CalendarClock,
+  notes: FileText,
+  contracts: FileCheck2,
+  drive: FolderTree,
+  svc: Package,
+};
+
+const HUB_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
+
 const TabIcons: Record<Tab, React.ReactNode> = {
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
   proj: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M3 6h18M3 12h18M3 18h12"/></svg>,
@@ -1290,6 +1311,16 @@ const ADMIN_EMAIL = "webmakerchile@gmail.com";
 export default function EjecutivoPage() {
   const authUser = useAuth();
   const isAdmin = authUser?.email === ADMIN_EMAIL;
+  const queryClient = useQueryClient();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${HUB_API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+    } catch { /* ignore */ }
+    queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+    window.location.reload();
+  };
 
   const [state, setStateRaw] = useState<HubState>(() => {
     const loaded = loadState();
@@ -1402,52 +1433,141 @@ export default function EjecutivoPage() {
   const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
 
   return (
-    <Layout>
+    <>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@300;400;500&family=Oswald:wght@500;600&display=swap" rel="stylesheet" />
 
-      <div className="hub-layout-break">
-        <div className="hub-root">
-          <div className="layout">
-            {/* ---- MAIN ---- */}
-            <div className="main">
-              <div className="topbar">
-                <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
-                <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
-              </div>
-              {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}
-              {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} />}
-              {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
-              {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
-              {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
-              {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
-              {tab === "drive" && <HubDriveView />}
-              {tab === "svc" && isAdmin && <SvcView />}
-            </div>
+      <div className="flex h-[100dvh] bg-background text-foreground overflow-hidden">
 
-            {/* ---- SIDENAV ---- */}
-            <aside className="sidenav">
-              <div className="side-brand">
-                <div className="logo"><img src="/icon-192.png" alt="WebMaker" onError={e => { (e.target as HTMLImageElement).style.display="none"; }} /></div>
-                <div className="brand">WebMaker<small>Hub Ejecutivo · Latam</small></div>
-              </div>
-              <button className="side-new" onClick={handleNew}>+ Nuevo</button>
-              <nav className="tabs">
-                {TABS.map(({ id, cnt }) => (
-                  <button key={id} className={tab === id ? "on" : ""} onClick={() => navigate(id)}>
-                    {TabIcons[id]}<span className="tl">{TAB_LABELS[id]}</span>
-                    {cnt !== undefined && <span className="cnt">{cnt}</span>}
-                  </button>
-                ))}
-              </nav>
-              <div className="side-foot">
-                <button className="side-act" onClick={handleExport}>↓ Exportar</button>
-                <button className="side-act" onClick={() => importRef.current?.click()}>↑ Importar</button>
-                <input ref={importRef} type="file" accept=".json" style={{ display:"none" }} onChange={handleImportFile} />
-              </div>
-            </aside>
+        {/* ======= MAIN CONTENT AREA ======= */}
+        <div className="hub-root flex-1 min-w-0 flex flex-col overflow-hidden relative">
+
+          {/* ---- MOBILE HEADER ---- */}
+          <header className="lg:hidden flex items-center justify-between h-14 px-4 border-b border-foreground/10 bg-card/80 backdrop-blur-xl relative z-30 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <img src="/icon-192.png" alt="Hub" className="w-7 h-7 rounded-lg" />
+              <span className="font-bold text-lg">WebMaker<span className="text-primary"> Hub</span></span>
+            </div>
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 rounded-lg hover:bg-foreground/10 transition-colors" aria-label="Menú">
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
+          </header>
+
+          {/* ---- MOBILE SLIDE-IN MENU ---- */}
+          <AnimatePresence>
+            {mobileMenuOpen && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+                  onClick={() => setMobileMenuOpen(false)}
+                />
+                <motion.div
+                  initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+                  transition={{ type: "spring", bounce: 0, duration: 0.3 }}
+                  className="lg:hidden fixed top-0 right-0 bottom-0 w-72 bg-card border-l border-foreground/10 z-50 flex flex-col"
+                >
+                  <div className="h-14 flex items-center justify-between px-4 border-b border-foreground/10">
+                    <span className="font-bold text-lg">Hub Ejecutivo</span>
+                    <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-lg hover:bg-foreground/10 transition-colors"><X className="w-5 h-5" /></button>
+                  </div>
+                  <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+                    {TABS.map(({ id, cnt }) => {
+                      const isActive = tab === id;
+                      const Icon = HubTabIcons[id];
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => { navigate(id); setMobileMenuOpen(false); }}
+                          className={cn(
+                            "flex items-center w-full px-4 py-3.5 rounded-xl transition-colors",
+                            isActive
+                              ? "bg-gradient-to-r from-primary/90 to-orange-500/80 text-white font-medium shadow-lg shadow-primary/20"
+                              : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
+                          )}
+                        >
+                          <Icon className={cn("w-5 h-5 mr-3", isActive ? "text-white" : "")} />
+                          <span className="flex-1 text-left">{TAB_LABELS[id]}</span>
+                          {cnt !== undefined && cnt > 0 && (
+                            <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", isActive ? "bg-white/20 text-white" : "bg-foreground/10 text-muted-foreground")}>{cnt}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </nav>
+                  <div className="p-4 border-t border-foreground/10 space-y-2">
+                    {authUser && (
+                      <div className="flex items-center gap-3 px-1 mb-3">
+                        {authUser.picture ? (
+                          <img src={authUser.picture} alt={authUser.name || ""} className="w-9 h-9 rounded-full border border-foreground/15" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-sm font-bold text-primary">{(authUser.name || authUser.email || "?")[0].toUpperCase()}</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{authUser.name || "Admin"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{authUser.email}</p>
+                        </div>
+                      </div>
+                    )}
+                    <ThemeToggle variant="full" />
+                    <button onClick={handleLogout} className="flex items-center w-full px-3 py-3 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors">
+                      <LogOut className="w-4 h-4 mr-3" />Cerrar sesión
+                    </button>
+                    <Link href="/" className="flex items-center px-3 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 rounded-xl transition-colors">
+                      <ChevronLeft className="w-4 h-4 mr-2" />Volver al panel
+                    </Link>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* ---- MAIN SCROLLABLE CONTENT ---- */}
+          <div className="main">
+            <div className="topbar">
+              <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
+              <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
+            </div>
+            {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}
+            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} />}
+            {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
+            {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
+            {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
+            {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
+            {tab === "drive" && <HubDriveView />}
+            {tab === "svc" && isAdmin && <SvcView />}
           </div>
+
+          {/* ---- MOBILE BOTTOM NAV ---- */}
+          <nav className="lg:hidden flex-shrink-0 border-t border-foreground/10 bg-card/80 backdrop-blur-xl safe-bottom">
+            <div className="flex items-center justify-around h-16 px-1">
+              {TABS.slice(0, 5).map(({ id }) => {
+                const isActive = tab === id;
+                const Icon = HubTabIcons[id];
+                return (
+                  <button
+                    key={id}
+                    onClick={() => navigate(id)}
+                    className={cn("flex flex-col items-center justify-center gap-0.5 py-1 px-2 rounded-lg transition-colors min-w-0 flex-1", isActive ? "text-primary" : "text-muted-foreground")}
+                  >
+                    <Icon className={cn("w-5 h-5", isActive && "drop-shadow-[0_0_6px_hsl(var(--primary)/0.5)]")} />
+                    <span className={cn("text-[10px] leading-tight truncate max-w-full", isActive && "font-semibold")}>{TAB_LABELS[id].split(" ")[0]}</span>
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="flex flex-col items-center justify-center gap-0.5 py-1 px-2 rounded-lg text-muted-foreground min-w-0 flex-1 transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+                <span className="text-[10px] leading-tight">Más</span>
+              </button>
+            </div>
+          </nav>
 
           {/* ---- SHEET ---- */}
           {sheet && <>
@@ -1478,7 +1598,121 @@ export default function EjecutivoPage() {
             </div>
           )}
         </div>
+
+        {/* ======= RIGHT SIDEBAR (same aesthetics as main Layout) ======= */}
+        <aside className="hidden lg:flex w-64 flex-shrink-0 border-l border-foreground/10 bg-card/60 backdrop-blur-xl flex-col relative z-20">
+
+          {/* Logo + Brand */}
+          <div className="h-16 flex items-center px-5 border-b border-foreground/10">
+            <img src="/icon-192.png" alt="Logo" className="w-7 h-7 rounded-lg mr-3 flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="font-display font-bold text-[17px] tracking-tight leading-none text-gradient">
+                WebMaker<span className="text-primary">Hub</span>
+              </h1>
+              <p className="text-[8.5px] text-muted-foreground tracking-[0.15em] uppercase leading-none mt-1">Ejecutivo · Latam</p>
+            </div>
+          </div>
+
+          {/* + Nuevo button */}
+          <div className="px-3 pt-4 pb-1">
+            <button
+              onClick={handleNew}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-primary/90 to-orange-500/80 text-primary-foreground font-semibold text-sm shadow-lg shadow-primary/20 hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-4 h-4" />
+              Nuevo
+            </button>
+          </div>
+
+          {/* Nav items */}
+          <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
+            {TABS.map(({ id, cnt }) => {
+              const isActive = tab === id;
+              const Icon = HubTabIcons[id];
+              return (
+                <button
+                  key={id}
+                  onClick={() => navigate(id)}
+                  className={cn(
+                    "flex items-center w-full px-3 py-3 rounded-xl transition-colors group relative",
+                    isActive
+                      ? "text-primary-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
+                  )}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="hub-active-nav"
+                      className="absolute inset-0 bg-gradient-to-r from-primary/90 to-orange-500/80 rounded-xl shadow-lg shadow-primary/20"
+                      initial={false}
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                  <Icon className={cn("w-5 h-5 mr-3 relative z-10 flex-shrink-0", isActive ? "text-white" : "group-hover:text-primary transition-colors")} />
+                  <span className="relative z-10 flex-1 text-left text-sm">{TAB_LABELS[id]}</span>
+                  {cnt !== undefined && cnt > 0 && (
+                    <span className={cn("relative z-10 text-[10px] px-1.5 py-0.5 rounded-full font-mono", isActive ? "bg-white/20 text-white" : "bg-foreground/10 text-muted-foreground")}>
+                      {cnt}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Footer: user + export/import + logout + back */}
+          <div className="p-4 border-t border-foreground/10 space-y-3">
+            {authUser && (
+              <div className="flex items-center gap-3 px-1">
+                {authUser.picture ? (
+                  <img src={authUser.picture} alt={authUser.name || ""} className="w-8 h-8 rounded-full border border-foreground/15 flex-shrink-0" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary flex-shrink-0">
+                    {(authUser.name || authUser.email || "?")[0].toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{authUser.name || "Admin"}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{authUser.email}</p>
+                </div>
+                <ThemeToggle />
+              </div>
+            )}
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleExport}
+                className="flex-1 flex items-center justify-center px-2 py-2 text-[11px] text-muted-foreground hover:text-foreground bg-foreground/[0.04] hover:bg-foreground/[0.08] border border-foreground/10 rounded-lg transition-colors"
+              >
+                ↓ Exportar
+              </button>
+              <button
+                onClick={() => importRef.current?.click()}
+                className="flex-1 flex items-center justify-center px-2 py-2 text-[11px] text-muted-foreground hover:text-foreground bg-foreground/[0.04] hover:bg-foreground/[0.08] border border-foreground/10 rounded-lg transition-colors"
+              >
+                ↑ Importar
+              </button>
+              <input ref={importRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleLogout}
+                className="flex items-center flex-1 px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
+              >
+                <LogOut className="w-4 h-4 mr-2.5" />
+                Cerrar sesión
+              </button>
+              <Link
+                href="/"
+                title="Volver al panel"
+                className="flex items-center justify-center px-2.5 py-2.5 text-muted-foreground hover:text-foreground hover:bg-foreground/5 rounded-xl transition-colors"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+        </aside>
+
       </div>
-    </Layout>
+    </>
   );
 }
