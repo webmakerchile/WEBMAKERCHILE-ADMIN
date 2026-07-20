@@ -30,6 +30,9 @@ interface Task { id: string; title: string; projectId: string; crit: Prio; stage
 type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
 interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; }
 interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
+interface WizModule { id: string; name: string; desc: string; price: number; }
+interface WizData { client: string; project: string; scope: string; date: string; advisor: string; modules: WizModule[]; downPct: number; notes: string; monthly: string; monthlyPrice: string; }
+const emptyWiz = (): WizData => ({ client: "", project: "", scope: "", date: new Date().toISOString().slice(0, 10), advisor: "", modules: [{ id: Math.random().toString(36).slice(2), name: "", desc: "", price: 0 }], downPct: 50, notes: "", monthly: "", monthlyPrice: "" });
 type SheetKind =
   | null
   | { kind: "new-proj" } | { kind: "proj"; id: string }
@@ -37,7 +40,8 @@ type SheetKind =
   | { kind: "new-client" } | { kind: "client"; id: string }
   | { kind: "new-meet" } | { kind: "meet"; id: string }
   | { kind: "new-note" } | { kind: "note"; id: string }
-  | { kind: "new-contract" } | { kind: "contract"; id: string };
+  | { kind: "new-contract-mode" } | { kind: "new-contract" } | { kind: "contract"; id: string }
+  | { kind: "new-contract-wizard" };
 
 /* ============================================================
    CONSTANTES
@@ -448,6 +452,280 @@ function StageBreakdown({ t }: { t: Task }) {
 }
 
 /* ============================================================
+   CONTRACT HELPERS
+   ============================================================ */
+const fmtCLP = (n: number) => "$" + Math.round(n).toLocaleString("es-CL");
+
+function extractDriveFileId(url: string): string | null {
+  const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+async function buildContractPdf(wiz: WizData): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, H = 297, ml = 14, mr = W - 14;
+  const IVA = 0.19;
+
+  const clrDark = () => doc.setTextColor(13, 23, 46);
+  const clrOrange = () => doc.setTextColor(234, 88, 12);
+  const clrWhite = () => doc.setTextColor(255, 255, 255);
+  const clrDim = () => doc.setTextColor(120, 120, 120);
+  const clrFaint = () => doc.setTextColor(200, 200, 200);
+
+  const validMods = wiz.modules.filter(m => m.name.trim() !== "");
+
+  function pageFooter(n: number, total: number) {
+    doc.setFillColor(13, 23, 46);
+    doc.rect(0, H - 18, W, 18, "F");
+    clrWhite();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.text(`WEBMAKER LATAM · COTIZACIÓN · ${(wiz.client || "CLIENTE").toUpperCase()}`, ml, H - 9);
+    clrFaint();
+    doc.setFont("helvetica", "normal");
+    doc.text(`${n} / ${total}`, mr, H - 9, { align: "right" });
+  }
+
+  // ===== COVER =====
+  doc.setFillColor(13, 23, 46);
+  doc.rect(0, 0, W, 78, "F");
+  clrWhite();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.text("Diseño y desarrollo de plataformas", ml, 11);
+  doc.setFont("helvetica", "bold");
+  doc.text("COTIZACIÓN COMERCIAL", mr, 11, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  const monthYear = wiz.date
+    ? new Date(wiz.date + "T12:00:00").toLocaleDateString("es-CL", { month: "long", year: "numeric" }).toUpperCase()
+    : new Date().toLocaleDateString("es-CL", { month: "long", year: "numeric" }).toUpperCase();
+  doc.text(monthYear, mr, 19, { align: "right" });
+  doc.setDrawColor(234, 88, 12);
+  doc.setLineWidth(0.4);
+  doc.line(ml, 27, mr, 27);
+  clrOrange();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text(`COTIZACIÓN · ${(wiz.client || "CLIENTE").toUpperCase()}`, ml, 37);
+  clrWhite();
+  doc.setFontSize(17);
+  const titleLines = doc.splitTextToSize((wiz.project || "Sin título").toUpperCase(), mr - ml - 5);
+  doc.text(titleLines.slice(0, 3), ml, 49);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  const scopeShort = doc.splitTextToSize(wiz.scope || "", mr - ml - 5);
+  const titleBottom = 49 + Math.min(titleLines.length, 3) * 7;
+  if (titleBottom < 74 && wiz.scope) doc.text(scopeShort.slice(0, 2), ml, Math.min(titleBottom + 3, 70));
+
+  // Grid cards
+  const gridY = 90;
+  doc.setFillColor(245, 247, 250);
+  doc.roundedRect(ml, gridY, (mr - ml) / 2 - 4, 48, 2, 2, "F");
+  doc.roundedRect(ml + (mr - ml) / 2 + 4, gridY, (mr - ml) / 2 - 4, 48, 2, 2, "F");
+  clrOrange();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.text("PREPARADO PARA", ml + 5, gridY + 8);
+  doc.text("ALCANCE DE LA COTIZACIÓN", ml + (mr - ml) / 2 + 9, gridY + 8);
+  clrDark();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text(wiz.client || "—", ml + 5, gridY + 18);
+  clrDim();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(wiz.advisor || "WebMaker Latam", ml + 5, gridY + 27);
+  clrDark();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text(`${validMods.length} módulo${validMods.length !== 1 ? "s" : ""}`, ml + (mr - ml) / 2 + 9, gridY + 18);
+  clrDim();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  const alcLines = doc.splitTextToSize(validMods.map(m => m.name).join(", ") || wiz.scope.slice(0, 80) || "—", (mr - ml) / 2 - 18);
+  doc.text(alcLines.slice(0, 3), ml + (mr - ml) / 2 + 9, gridY + 27);
+
+  doc.setFillColor(13, 23, 46);
+  doc.rect(0, H - 18, W, 18, "F");
+  clrWhite();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.text("WEBMAKER LATAM · WEBMAKERLATAM.COM", ml, H - 9);
+  clrFaint();
+  doc.setFont("helvetica", "normal");
+  doc.text("1 / 4", mr, H - 9, { align: "right" });
+  clrDim();
+  doc.text("agencia@webmakerlatam.com", mr, H - 15, { align: "right" });
+
+  // ===== PAGE 2: QUÉ SE COTIZA =====
+  doc.addPage();
+  doc.setFillColor(13, 23, 46);
+  doc.rect(0, 0, W, 14, "F");
+  clrOrange();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("01 · QUÉ SE COTIZA", ml, 10);
+  clrFaint();
+  doc.setFontSize(72);
+  doc.text("01", mr + 2, 72, { align: "right" });
+  clrDark();
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.text(wiz.project || "Proyecto", ml, 28);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  const scopeLines2 = doc.splitTextToSize(wiz.scope || "Descripción del servicio.", mr - ml - 5);
+  doc.text(scopeLines2.slice(0, 7), ml, 37);
+  let y2 = 37 + Math.min(scopeLines2.length, 7) * 4.5 + 10;
+  validMods.forEach((m, i) => {
+    if (y2 > H - 30) { doc.addPage(); y2 = 22; }
+    doc.setFillColor(234, 88, 12);
+    doc.circle(ml + 1.5, y2 - 1, 1.5, "F");
+    clrDark();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text(`${i + 1} · ${m.name}`, ml + 6, y2);
+    y2 += 6;
+    if (m.desc) {
+      clrDim();
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      const dl = doc.splitTextToSize(m.desc, mr - ml - 10);
+      doc.text(dl.slice(0, 2), ml + 6, y2);
+      y2 += Math.min(dl.length, 2) * 4.5 + 3;
+    } else { y2 += 2; }
+  });
+  pageFooter(2, 4);
+
+  // ===== PAGE 3: INVERSIÓN =====
+  doc.addPage();
+  doc.setFillColor(13, 23, 46);
+  doc.rect(0, 0, W, 14, "F");
+  clrOrange();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("02 · INVERSIÓN", ml, 10);
+  clrFaint();
+  doc.setFontSize(72);
+  doc.text("02", mr + 2, 72, { align: "right" });
+  clrDark();
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text("Inversión por módulo.", ml, 26);
+  clrDim();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("Valores en pesos chilenos (CLP), IVA incluido y desglosado:", ml, 33);
+
+  let iy = 40;
+  const priceMods = validMods.filter(m => m.price > 0);
+  if (priceMods.length === 0) {
+    clrDim(); doc.setFontSize(8.5);
+    doc.text("Los valores se coordinarán según el alcance definido.", ml, iy + 8);
+    iy += 20;
+  } else {
+    priceMods.forEach((m, i) => {
+      if (iy > H - 60) { doc.addPage(); iy = 22; }
+      const neto = m.price, iva = Math.round(neto * IVA), total = neto + iva;
+      doc.setFillColor(255, 247, 237);
+      doc.roundedRect(ml, iy, mr - ml, 30, 2, 2, "F");
+      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+      doc.text(`${i + 1} · ${m.name}`, ml + 4, iy + 7);
+      if (m.desc) {
+        clrDim(); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+        doc.text(m.desc.slice(0, 90), ml + 4, iy + 13);
+      }
+      const c1 = ml + 4, c2 = ml + (mr - ml) / 3, c3 = ml + (mr - ml) * 2 / 3;
+      clrOrange(); doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
+      doc.text("NETO", c1, iy + 20); doc.text("IVA 19%", c2, iy + 20); doc.text("TOTAL", c3, iy + 20);
+      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+      doc.text(fmtCLP(neto), c1, iy + 27); doc.text(fmtCLP(iva), c2, iy + 27); doc.text(fmtCLP(total), c3, iy + 27);
+      iy += 36;
+    });
+    if (iy > H - 50) { doc.addPage(); iy = 22; }
+    const tNeto = priceMods.reduce((a, m) => a + m.price, 0), tIva = Math.round(tNeto * IVA), tTotal = tNeto + tIva;
+    doc.setFillColor(13, 23, 46);
+    doc.roundedRect(ml, iy, mr - ml, 30, 2, 2, "F");
+    clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+    doc.text("TOTAL PROYECTO (IVA INCLUIDO)", ml + 4, iy + 7);
+    const c1 = ml + 4, c2 = ml + (mr - ml) / 3, c3 = ml + (mr - ml) * 2 / 3;
+    doc.setFontSize(6.5);
+    doc.text("NETO", c1, iy + 16); doc.text("IVA 19%", c2, iy + 16); doc.text("TOTAL", c3, iy + 16);
+    doc.setFontSize(10);
+    doc.text(fmtCLP(tNeto), c1, iy + 25); doc.text(fmtCLP(tIva), c2, iy + 25); doc.text(fmtCLP(tTotal), c3, iy + 25);
+  }
+  pageFooter(3, 4);
+
+  // ===== PAGE 4: PAGO =====
+  doc.addPage();
+  doc.setFillColor(13, 23, 46);
+  doc.rect(0, 0, W, 14, "F");
+  clrOrange();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("03 · FORMA DE PAGO Y MENSUALIDAD", ml, 10);
+  clrFaint();
+  doc.setFontSize(72);
+  doc.text("03", mr + 2, 72, { align: "right" });
+  clrDark();
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Pago ${wiz.downPct}% / ${100 - wiz.downPct}%.`, ml, 26);
+  clrDim();
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text("Simple y directo, sin sorpresas:", ml, 33);
+
+  const priceMods2 = validMods.filter(m => m.price > 0);
+  const tNeto2 = priceMods2.reduce((a, m) => a + m.price, 0);
+  const tTotal2 = tNeto2 + Math.round(tNeto2 * IVA);
+  const initAmt = Math.round(tTotal2 * wiz.downPct / 100);
+  const delivAmt = tTotal2 - initAmt;
+  const bxY = 40, bxW = (mr - ml) / 2 - 5;
+
+  doc.setFillColor(234, 88, 12);
+  doc.roundedRect(ml, bxY, bxW, 44, 3, 3, "F");
+  clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(22);
+  doc.text(`${wiz.downPct}%`, ml + bxW / 2, bxY + 18, { align: "center" });
+  doc.setFontSize(8); doc.text("AL INICIAR", ml + bxW / 2, bxY + 27, { align: "center" });
+  if (tTotal2 > 0) { doc.setFontSize(10); doc.text(fmtCLP(initAmt), ml + bxW / 2, bxY + 37, { align: "center" }); }
+
+  doc.setFillColor(13, 23, 46);
+  doc.roundedRect(mr - bxW, bxY, bxW, 44, 3, 3, "F");
+  clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(22);
+  doc.text(`${100 - wiz.downPct}%`, mr - bxW / 2, bxY + 18, { align: "center" });
+  doc.setFontSize(8); doc.text("A LA ENTREGA", mr - bxW / 2, bxY + 27, { align: "center" });
+  if (tTotal2 > 0) { doc.setFontSize(10); doc.text(fmtCLP(delivAmt), mr - bxW / 2, bxY + 37, { align: "center" }); }
+
+  let py4 = bxY + 54;
+  if (wiz.monthly) {
+    clrOrange(); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
+    doc.text("MENSUALIDAD (OPCIONAL)", ml, py4 + 6); py4 += 12;
+    if (wiz.monthlyPrice) {
+      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+      doc.text(fmtCLP(Number(wiz.monthlyPrice)), ml, py4 + 6); py4 += 10;
+    }
+    clrDim(); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
+    const ml2 = doc.splitTextToSize(wiz.monthly, mr - ml - 10);
+    doc.text(ml2.slice(0, 3), ml, py4 + 6); py4 += Math.min(ml2.length, 3) * 4.5 + 8;
+  }
+  if (wiz.notes) {
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(ml, py4, mr - ml, 20, 2, 2, "F");
+    clrDim(); doc.setFont("helvetica", "italic"); doc.setFontSize(7.5);
+    const nl = doc.splitTextToSize(wiz.notes, mr - ml - 10);
+    doc.text(nl.slice(0, 3), ml + 5, py4 + 8);
+  }
+  clrDim(); doc.setFont("helvetica", "italic"); doc.setFontSize(9);
+  doc.text("Esta cotización queda abierta a los ajustes que definamos juntos.", W / 2, H - 38, { align: "center" });
+  doc.text("Quedamos atentos para cuando quieras ponerla en marcha.", W / 2, H - 31, { align: "center" });
+  pageFooter(4, 4);
+
+  return doc.output("blob");
+}
+
+/* ============================================================
    DRIVE FOLDER PICKER (for project sheets)
    ============================================================ */
 const DRIVE_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -632,9 +910,9 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
 /* ============================================================
    SHEET CONTENT
    ============================================================ */
-interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; }
+interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; }
 
-function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: SheetProps) {
+function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet }: SheetProps) {
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
@@ -642,6 +920,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
   const [driveFolderLink, setDriveFolderLink] = useState("");
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
+  const [wizStep, setWizStep] = useState(1);
+  const [wiz, setWiz] = useState<WizData>(emptyWiz);
+  const [aiExtracting, setAiExtracting] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -656,8 +938,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
       else setPdfData(null);
     }
-    if (sheet?.kind === "new-contract") { setPdfData(null); }
+    if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
   }, [sheet, state.projects, state.contracts]);
+
+  useEffect(() => {
+    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); }
+  }, [sheet?.kind]);
 
   if (!sheet) return null;
 
@@ -883,10 +1169,60 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
     </>);
   }
 
-  /* ---- Nuevo contrato ---- */
-  if (sheet.kind === "new-contract") {
+  /* ---- Selector modo contrato ---- */
+  if (sheet.kind === "new-contract-mode") {
     return (<>
       <div className="sheet-head"><h2>Nuevo contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <div className="cms-selector">
+        <p className="cms-hint">¿Qué tipo de contrato quieres agregar?</p>
+        <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract-wizard" })}>
+          <span className="cms-icon">✨</span>
+          <div className="cms-text">
+            <strong>Contrato nuevo</strong>
+            <small>Crea la cotización desde cero y genera el PDF con el diseño de WebMaker Latam</small>
+          </div>
+          <span className="cms-arr">→</span>
+        </button>
+        <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract" })}>
+          <span className="cms-icon">📁</span>
+          <div className="cms-text">
+            <strong>Contrato existente</strong>
+            <small>Sube el PDF que ya tienes — extrae los datos automáticamente con IA</small>
+          </div>
+          <span className="cms-arr">→</span>
+        </button>
+      </div>
+    </>);
+  }
+
+  /* ---- Nuevo contrato (existente / subida) ---- */
+  if (sheet.kind === "new-contract") {
+    return (<>
+      <div className="sheet-head"><h2>Contrato existente</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <div className="field"><label>Documento PDF</label>
+        <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
+      </div>
+      {pdfData && (
+        <button className="ai-extract-btn" disabled={aiExtracting} onClick={async () => {
+          const fileId = extractDriveFileId(pdfData.url);
+          if (!fileId) { onToast("No se pudo identificar el archivo en Drive"); return; }
+          setAiExtracting(true);
+          try {
+            const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/extract-pdf`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId }) });
+            if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string,string>)); onToast((e as Record<string,string>).error || "Error al extraer datos"); return; }
+            const data = await res.json() as Record<string, string>;
+            if (r.current["ti"] && data.title) r.current["ti"].value = data.title;
+            if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
+            if (r.current["va"] && data.value) r.current["va"].value = data.value;
+            if (r.current["st"] && data.status) (r.current["st"] as HTMLSelectElement).value = data.status;
+            if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
+            if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
+            if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
+            onToast("Datos extraídos con IA ✓");
+          } catch { onToast("Error de conexión al extraer datos"); }
+          finally { setAiExtracting(false); }
+        }}>{aiExtracting ? "⏳ Extrayendo datos…" : "✨ Extraer datos con IA"}</button>
+      )}
       <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} placeholder="Ej: Servicio de Marketing Digital" /></div>
       <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} placeholder="Nombre del cliente" /></div>
       <div className="field"><label>Valor</label><input type="text" ref={R("va")} placeholder="Ej: $290.000 / mes" /></div>
@@ -901,9 +1237,6 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
       <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} /></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} placeholder="Términos, detalles, observaciones…" /></div>
-      <div className="field"><label>Documento PDF (opcional)</label>
-        <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
-      </div>
       <button className="add-btn" onClick={() => {
         const title = V("ti").trim(); if (!title) { onToast("Ponle un título al contrato"); return; }
         const now = Date.now();
@@ -916,6 +1249,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
   /* ---- Detalle contrato ---- */
   if (sheet.kind === "contract") {
     const c = state.contracts.find(x => x.id === sheet.id); if (!c) return null;
+    const previewFileId = pdfData ? extractDriveFileId(pdfData.url) : null;
     return (<>
       <div className="sheet-head"><h2>Contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} defaultValue={c.title} /></div>
@@ -931,10 +1265,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
       </div>
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
       <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} defaultValue={c.expiresAt} /></div>
-      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={c.notes || ""} /></div>
+      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} /></div>
       <div className="field"><label>Documento PDF</label>
         <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
       </div>
+      {previewFileId && (
+        <div className="field">
+          <label>Vista previa</label>
+          <div className="pdf-preview-wrap">
+            <iframe src={`https://drive.google.com/file/d/${previewFileId}/preview`} className="pdf-preview-frame" allow="autoplay" title="Vista previa del contrato" />
+            <a href={pdfData!.url} target="_blank" rel="noopener noreferrer" className="pdf-preview-ext">Abrir en Drive ↗</a>
+          </div>
+        </div>
+      )}
       <button className="save" onClick={() => {
         onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
@@ -944,6 +1287,154 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate }: Sh
         onSave({ ...state, contracts: state.contracts.filter(x => x.id !== c.id) });
         onClose(); onToast("Contrato eliminado", () => onSave({ ...state, contracts: snap }));
       }}>Eliminar contrato</button>
+    </>);
+  }
+
+  /* ---- Wizard: nuevo contrato desde cero ---- */
+  if (sheet.kind === "new-contract-wizard") {
+    const WIZ_STEPS = ["Datos", "Módulos", "Pago"];
+    const tNeto = wiz.modules.reduce((a, m) => a + m.price, 0);
+    const tIva = Math.round(tNeto * 0.19);
+    const tTotal = tNeto + tIva;
+    const newModId = () => Math.random().toString(36).slice(2);
+
+    return (<>
+      <div className="sheet-head"><h2>Nuevo contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+
+      {/* Stepper */}
+      <div className="wiz-stepper">
+        {WIZ_STEPS.map((label, i) => (
+          <button key={i} className={`wiz-step-btn${wizStep === i + 1 ? " active" : ""}${wizStep > i + 1 ? " done" : ""}`} onClick={() => { if (wizStep > i + 1) setWizStep(i + 1); }}>
+            <span className="wiz-dot">{wizStep > i + 1 ? "✓" : i + 1}</span>
+            <span className="wiz-step-lbl">{label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* STEP 1: Datos generales */}
+      {wizStep === 1 && (
+        <div className="wiz-body">
+          <div className="field"><label>Cliente *</label>
+            <input type="text" value={wiz.client} onChange={e => setWiz(w => ({ ...w, client: e.target.value }))} placeholder="Nombre del cliente o empresa" />
+          </div>
+          <div className="field"><label>Nombre del servicio / proyecto *</label>
+            <input type="text" value={wiz.project} onChange={e => setWiz(w => ({ ...w, project: e.target.value }))} placeholder="Ej: Diseño y animación de mascota" />
+          </div>
+          <div className="field"><label>Descripción del alcance</label>
+            <textarea rows={4} value={wiz.scope} onChange={e => setWiz(w => ({ ...w, scope: e.target.value }))} placeholder="¿Qué incluye este servicio? Escribe el detalle…" />
+          </div>
+          <div className="two field">
+            <div><label>Fecha de emisión</label>
+              <input type="date" value={wiz.date} onChange={e => setWiz(w => ({ ...w, date: e.target.value }))} />
+            </div>
+            <div><label>Asesor / Responsable</label>
+              <input type="text" value={wiz.advisor} onChange={e => setWiz(w => ({ ...w, advisor: e.target.value }))} placeholder="Ej: Equipo WebMaker Latam" />
+            </div>
+          </div>
+          <button className="add-btn" onClick={() => {
+            if (!wiz.client.trim() || !wiz.project.trim()) { onToast("Cliente y nombre del proyecto son requeridos"); return; }
+            setWizStep(2);
+          }}>Continuar →</button>
+        </div>
+      )}
+
+      {/* STEP 2: Módulos */}
+      {wizStep === 2 && (
+        <div className="wiz-body">
+          <div className="wiz-mod-header-row">
+            <span className="wiz-mod-title">Módulos de la cotización</span>
+            <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
+          </div>
+          {wiz.modules.map((m, i) => {
+            const mIva = Math.round(m.price * 0.19), mTotal = m.price + mIva;
+            return (
+              <div key={m.id} className="wiz-module">
+                <div className="wiz-mod-num-row">
+                  <span className="wiz-mod-num">{i + 1}</span>
+                  {wiz.modules.length > 1 && (
+                    <button className="wiz-mod-del-btn" onClick={() => setWiz(w => ({ ...w, modules: w.modules.filter(x => x.id !== m.id) }))}>✕</button>
+                  )}
+                </div>
+                <div className="field"><label>Nombre del módulo</label>
+                  <input type="text" value={m.name} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, name: e.target.value } : x) }))} placeholder="Ej: Dirección de arte" />
+                </div>
+                <div className="field"><label>Descripción breve</label>
+                  <input type="text" value={m.desc} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, desc: e.target.value } : x) }))} placeholder="Ej: Ajuste de propuesta a diseño consistente" />
+                </div>
+                <div className="field"><label>Precio neto (CLP)</label>
+                  <input type="number" value={m.price || ""} min={0} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, price: Number(e.target.value) || 0 } : x) }))} placeholder="0" />
+                  {m.price > 0 && <div className="wiz-price-hint"><span>+IVA: {fmtCLP(mIva)}</span><span className="wiz-total-mod">= {fmtCLP(mTotal)}</span></div>}
+                </div>
+              </div>
+            );
+          })}
+          {tNeto > 0 && (
+            <div className="wiz-grand-total">
+              <span>Neto: <strong>{fmtCLP(tNeto)}</strong></span>
+              <span>IVA: <strong>{fmtCLP(tIva)}</strong></span>
+              <span className="wiz-grand-v">Total: <strong>{fmtCLP(tTotal)}</strong></span>
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button className="save" onClick={() => setWizStep(1)}>← Atrás</button>
+            <button className="add-btn" style={{ flex: 1 }} onClick={() => setWizStep(3)}>Continuar →</button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 3: Condiciones de pago */}
+      {wizStep === 3 && (
+        <div className="wiz-body">
+          <div className="field"><label>% de pago al iniciar</label>
+            <input type="number" value={wiz.downPct} min={0} max={100} onChange={e => setWiz(w => ({ ...w, downPct: Math.min(100, Math.max(0, Number(e.target.value) || 50)) }))} />
+            <div className="wiz-price-hint">
+              <span>Al iniciar: <strong>{wiz.downPct}%</strong>{tTotal > 0 ? ` (${fmtCLP(Math.round(tTotal * wiz.downPct / 100))})` : ""}</span>
+              <span>A la entrega: <strong>{100 - wiz.downPct}%</strong>{tTotal > 0 ? ` (${fmtCLP(tTotal - Math.round(tTotal * wiz.downPct / 100))})` : ""}</span>
+            </div>
+          </div>
+          <div className="two field">
+            <div><label>Mensualidad (opcional)</label>
+              <input type="text" value={wiz.monthly} onChange={e => setWiz(w => ({ ...w, monthly: e.target.value }))} placeholder="Ej: Soporte técnico mensual" />
+            </div>
+            <div><label>Precio mensualidad (neto CLP)</label>
+              <input type="number" value={wiz.monthlyPrice || ""} min={0} onChange={e => setWiz(w => ({ ...w, monthlyPrice: e.target.value }))} placeholder="0" />
+            </div>
+          </div>
+          <div className="field"><label>Notas de cierre</label>
+            <textarea rows={3} value={wiz.notes} onChange={e => setWiz(w => ({ ...w, notes: e.target.value }))} placeholder="Ej: Cotización vigente por 15 días…" />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button className="save" onClick={() => setWizStep(2)}>← Atrás</button>
+            <button className="add-btn wiz-gen-btn" style={{ flex: 1 }} disabled={generatingPdf} onClick={async () => {
+              if (!wiz.client.trim() || !wiz.project.trim()) { onToast("Completa cliente y nombre del proyecto primero"); return; }
+              setGeneratingPdf(true);
+              try {
+                const blob = await buildContractPdf(wiz);
+                const fname = `Cotizacion-${wiz.client.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
+                const fd = new FormData();
+                fd.append("file", new File([blob], fname, { type: "application/pdf" }));
+                let pdfUrl = "", pdfTitleOut = fname, pdfUploadedAt = Date.now();
+                const upRes = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
+                if (upRes.ok) {
+                  const up = await upRes.json() as { webViewLink: string; name: string; uploadedAt: number };
+                  pdfUrl = up.webViewLink; pdfTitleOut = up.name; pdfUploadedAt = up.uploadedAt;
+                } else {
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+                  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+                  onToast("PDF descargado localmente (Drive no disponible)");
+                }
+                const now = Date.now();
+                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: "", expiresAt: wiz.date || "", notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
+                onClose(); onNavigate("contracts");
+                onToast(pdfUrl ? "Contrato creado y PDF subido a Drive ✓" : "Contrato creado");
+              } catch (e: unknown) {
+                onToast("Error generando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
+              } finally { setGeneratingPdf(false); }
+            }}>{generatingPdf ? "⏳ Generando PDF…" : "✨ Generar contrato PDF"}</button>
+          </div>
+        </div>
+      )}
     </>);
   }
 
@@ -1589,7 +2080,7 @@ export default function EjecutivoPage() {
     if (tab === "clients") openSheet({ kind: "new-client" });
     else if (tab === "meet") openSheet({ kind: "new-meet" });
     else if (tab === "notes") openSheet({ kind: "new-note" });
-    else if (tab === "contracts") openSheet({ kind: "new-contract" });
+    else if (tab === "contracts") openSheet({ kind: "new-contract-mode" });
     else if (tab === "proj" && projView === "scrum") openSheet({ kind: "new-task" });
     else openSheet({ kind: "new-proj" });
   };
@@ -1776,7 +2267,7 @@ export default function EjecutivoPage() {
           {sheet && <>
             <div className="overlay" onClick={() => setSheet(null)} />
             <div className="sheet">
-              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} />
+              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} />
             </div>
           </>}
 

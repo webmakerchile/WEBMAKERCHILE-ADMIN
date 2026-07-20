@@ -16,6 +16,7 @@
     "@replit/connectors-sdk": "^0.3.0",
     "@sentry/node": "^8.55.2",
     "@types/multer": "^2.1.0",
+    "@types/pdf-parse": "^1.1.5",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-gemini-ai": "workspace:*",
@@ -31,6 +32,7 @@
     "openai": "^6.35.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
+    "pdf-parse": "^2.4.5",
     "sharp": "^0.34.5",
     "web-push": "^3.6.7",
     "zod": "catalog:"

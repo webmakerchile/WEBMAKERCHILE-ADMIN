@@ -274,3 +274,71 @@
 .hub-root .pdf-remove:hover{color:var(--orange);}
 .hub-root .pdf-badge{text-decoration:none;cursor:pointer;}
 .hub-root .pdf-badge:hover{color:var(--orange2);border-color:var(--orange2)!important;}
+
+/* ============================================================
+   CONTRACT MODE SELECTOR
+   ============================================================ */
+.hub-root .cms-selector{display:flex;flex-direction:column;gap:12px;padding:8px 0;}
+.hub-root .cms-hint{font-size:12.5px;color:var(--faint);margin:0 0 4px;}
+.hub-root .cms-opt{display:flex;align-items:center;gap:14px;padding:16px;background:var(--card);border:1.5px solid var(--line);border-radius:12px;cursor:pointer;text-align:left;width:100%;transition:border-color .15s,background .15s;}
+.hub-root .cms-opt:hover{border-color:var(--orange);background:var(--bg2);}
+.hub-root .cms-icon{font-size:22px;flex:none;}
+.hub-root .cms-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+.hub-root .cms-text strong{font-size:14px;font-weight:600;color:var(--text);}
+.hub-root .cms-text small{font-size:11.5px;color:var(--faint);line-height:1.4;}
+.hub-root .cms-arr{font-size:18px;color:var(--orange);flex:none;}
+
+/* ============================================================
+   AI EXTRACT BUTTON
+   ============================================================ */
+.hub-root .ai-extract-btn{display:flex;align-items:center;gap:7px;padding:10px 16px;background:linear-gradient(135deg,var(--orange)/15% 0%,var(--orange2)/10% 100%);border:1.5px solid var(--orange)/40%;border-radius:10px;color:var(--orange2);font-size:13px;font-weight:600;cursor:pointer;width:100%;margin-bottom:6px;transition:background .15s,border-color .15s;font-family:'Oswald',sans-serif;letter-spacing:.4px;}
+.hub-root .ai-extract-btn:hover:not(:disabled){background:linear-gradient(135deg,var(--orange)/25% 0%,var(--orange2)/15% 100%);border-color:var(--orange);}
+.hub-root .ai-extract-btn:disabled{opacity:.55;cursor:not-allowed;}
+
+/* ============================================================
+   PDF PREVIEW IFRAME
+   ============================================================ */
+.hub-root .pdf-preview-wrap{display:flex;flex-direction:column;gap:8px;}
+.hub-root .pdf-preview-frame{width:100%;height:460px;border:1px solid var(--line);border-radius:10px;background:var(--bg);}
+.hub-root .pdf-preview-ext{font-size:12px;color:var(--orange2);font-weight:600;text-decoration:none;align-self:flex-end;}
+.hub-root .pdf-preview-ext:hover{text-decoration:underline;}
+
+/* ============================================================
+   WIZARD STEPPER
+   ============================================================ */
+.hub-root .wiz-stepper{display:flex;gap:0;margin-bottom:20px;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+.hub-root .wiz-step-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 6px;background:var(--card);border:0;border-right:1px solid var(--line);color:var(--faint);font-size:12px;font-weight:500;cursor:default;transition:background .15s,color .15s;}
+.hub-root .wiz-step-btn:last-child{border-right:0;}
+.hub-root .wiz-step-btn.active{background:var(--orange);color:#fff;font-weight:600;}
+.hub-root .wiz-step-btn.done{color:var(--orange2);cursor:pointer;}
+.hub-root .wiz-step-btn.done:hover{background:var(--bg2);}
+.hub-root .wiz-dot{width:20px;height:20px;border-radius:50%;background:var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-none;}
+.hub-root .wiz-step-btn.active .wiz-dot{background:rgba(255,255,255,.3);color:#fff;}
+.hub-root .wiz-step-btn.done .wiz-dot{background:var(--orange)/20%;color:var(--orange2);}
+.hub-root .wiz-step-lbl{font-family:'Oswald',sans-serif;letter-spacing:.5px;font-size:12px;}
+
+/* ============================================================
+   WIZARD BODY
+   ============================================================ */
+.hub-root .wiz-body{display:flex;flex-direction:column;gap:0;}
+.hub-root .wiz-price-hint{font-size:11.5px;color:var(--faint);margin-top:5px;display:flex;gap:14px;flex-wrap:wrap;}
+.hub-root .wiz-total-mod{color:var(--orange2);font-weight:600;}
+
+/* Modules */
+.hub-root .wiz-mod-header-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.hub-root .wiz-mod-title{font-size:13px;font-weight:600;color:var(--text);}
+.hub-root .wiz-add-mod-btn{padding:6px 12px;background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--orange2);font-size:12.5px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s;}
+.hub-root .wiz-add-mod-btn:hover{border-color:var(--orange);background:var(--bg2);}
+.hub-root .wiz-module{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;}
+.hub-root .wiz-mod-num-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.hub-root .wiz-mod-num{width:22px;height:22px;border-radius:50%;background:var(--orange);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;font-family:'Oswald',sans-serif;flex:none;}
+.hub-root .wiz-mod-del-btn{background:none;border:0;color:var(--faint);font-size:13px;cursor:pointer;padding:2px 4px;border-radius:5px;line-height:1;}
+.hub-root .wiz-mod-del-btn:hover{color:var(--orange);background:var(--bg2);}
+
+/* Grand total */
+.hub-root .wiz-grand-total{display:flex;gap:16px;flex-wrap:wrap;padding:12px 16px;background:var(--bg2);border-radius:10px;margin-bottom:4px;font-size:13px;color:var(--dim);}
+.hub-root .wiz-grand-v{color:var(--orange2);}
+
+/* Generate button */
+.hub-root .wiz-gen-btn{background:linear-gradient(135deg,var(--orange) 0%,var(--orange2) 100%)!important;color:#fff!important;font-family:'Oswald',sans-serif!important;letter-spacing:.6px!important;}
+.hub-root .wiz-gen-btn:disabled{opacity:.55!important;}
