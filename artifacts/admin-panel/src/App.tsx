@@ -230,7 +230,7 @@ function Router() {
       <Route path="/ajustes">
         <RouteShell name="ajustes"><AjustesPage /></RouteShell>
       </Route>
-      <Route path="/hub">
+      <Route path="/ejecutivo">
         <HubPage />
       </Route>
       <Route component={NotFound} />
