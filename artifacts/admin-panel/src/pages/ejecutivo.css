@@ -261,7 +261,7 @@
 
 /* "Panel Admin" back button — rendered outside .hub-root so selector is unscoped */
 .back-btn{
-  position:fixed;bottom:1.5rem;right:1.5rem;z-index:200;
+  position:fixed;bottom:1.5rem;left:1.5rem;z-index:200;
   display:flex;align-items:center;gap:0.5rem;
   padding:0.5rem 0.875rem;
   border-radius:12px;

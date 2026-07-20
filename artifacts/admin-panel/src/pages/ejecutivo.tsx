@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { ChevronRight } from "lucide-react";
+import { useAuth } from "@/App";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -833,8 +834,12 @@ const TabIcons: Record<Tab, React.ReactNode> = {
 /* ============================================================
    COMPONENTE PRINCIPAL
    ============================================================ */
+const ADMIN_EMAIL = "webmakerchile@gmail.com";
+
 export default function EjecutivoPage() {
   const [, setLocation] = useLocation();
+  const authUser = useAuth();
+  const isAdmin = authUser?.email === ADMIN_EMAIL;
 
   const [state, setStateRaw] = useState<HubState>(() => {
     const loaded = loadState();
@@ -846,6 +851,13 @@ export default function EjecutivoPage() {
     try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","svc"].includes(s)) return s as Tab; } catch { /* ignore */ }
     return "dash";
   });
+
+  useEffect(() => {
+    if (tab === "svc" && !isAdmin) {
+      setTabRaw("dash");
+      try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
+    }
+  }, [tab, isAdmin]);
   const setTab = useCallback((t: Tab) => { setTabRaw(t); try { localStorage.setItem(LS_TAB, t); } catch { /* ignore */ } }, []);
   const navigate = useCallback((t: Tab) => { setTab(t); window.scrollTo(0, 0); }, [setTab]);
 
@@ -911,7 +923,7 @@ export default function EjecutivoPage() {
     { id: "clients", cnt: state.clients.length },
     { id: "meet", cnt: state.meetings.length },
     { id: "notes", cnt: state.notes.length },
-    { id: "svc" },
+    ...(isAdmin ? [{ id: "svc" as Tab }] : []),
   ];
   const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", svc: "Servicios" };
 
@@ -934,7 +946,7 @@ export default function EjecutivoPage() {
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
-            {tab === "svc" && <SvcView />}
+            {tab === "svc" && isAdmin && <SvcView />}
           </div>
 
           {/* ---- SIDENAV ---- */}
