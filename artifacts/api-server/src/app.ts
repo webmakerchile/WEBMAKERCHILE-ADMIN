@@ -5,7 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import path from "path";
 import router from "./routes";
-import authRouter, { passport, requireAuth } from "./routes/auth";
+import authRouter, { passport, requireAuth, requireAuthRedirect } from "./routes/auth";
 
 const app: Express = express();
 
@@ -67,7 +67,7 @@ app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-uploa
 
 app.use("/api", requireAuth, router);
 
-app.get("/hub-app", requireAuth, (_req, res) => {
+app.get("/hub-app", requireAuthRedirect, (_req, res) => {
   res.sendFile(path.join(process.cwd(), "assets", "hub.html"));
 });
 

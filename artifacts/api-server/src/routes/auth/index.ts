@@ -207,5 +207,12 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "No autenticado" });
 }
 
+export function requireAuthRedirect(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated && req.isAuthenticated()) {
+    return next();
+  }
+  res.redirect("/");
+}
+
 export { passport };
 export default router;
