@@ -1,30 +1,70 @@
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Loader2, Eye, Users, Zap, Film, ArrowUp, ArrowDown, Minus, CalendarClock, CheckCircle2, Clock, ChevronRight } from "lucide-react";
+import {
+  Loader2, Eye, Users, Zap, Film,
+  ArrowUp, ArrowDown, Minus,
+  CalendarClock, CheckCircle2, Clock, ChevronRight,
+} from "lucide-react";
 import { NetworkIcon, NETWORK_BG, NETWORK_LABELS, type Network } from "@/components/social-icons";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
-type MetricBlock = {
-  total: number;
-  delta: number;
-  kind?: string;
-};
+// ─── API response types ───────────────────────────────────────────────────────
 
-type NetworkSummary = {
+type MetricBlock = { total: number; delta: number; kind?: string };
+
+type NetworkAnalytics = {
   network: string;
   connected: boolean;
   reason?: string;
-  metrics: {
-    reach?: MetricBlock;
-    followers?: MetricBlock;
-    interactions?: MetricBlock;
-  } | null;
+  metrics: { reach?: MetricBlock; followers?: MetricBlock; interactions?: MetricBlock } | null;
 };
 
 type AnalyticsSummary = {
   totals: { views: number; engagements: number; followers: number; posts: number };
-  networks: NetworkSummary[];
+  networks: NetworkAnalytics[];
+};
+
+// Per-network /status endpoint shapes
+type YoutubeStatusResp = {
+  connected: boolean;
+  channel?: { id?: string | null; title?: string | null; thumbnail?: string | null; subscriberCount?: string | null };
+  message?: string;
+};
+type InstagramStatusResp = {
+  connected: boolean;
+  account?: { username?: string | null; name?: string | null; profilePicture?: string | null; followersCount?: number | null };
+  message?: string;
+};
+type TiktokStatusResp = {
+  connected: boolean;
+  user?: { openId?: string | null; displayName?: string | null; avatar?: string | null };
+  message?: string;
+};
+type LinkedinStatusResp = {
+  connected: boolean;
+  user?: { name?: string | null; picture?: string | null; orgName?: string | null; personalName?: string | null };
+  message?: string;
+};
+type XStatusResp = {
+  connected: boolean;
+  user?: { id?: string | null; username?: string | null };
+  message?: string;
+};
+type FacebookStatusResp = {
+  connected: boolean;
+  pageName?: string | null;
+  pagePicture?: string | null;
+  message?: string;
+};
+
+type AllNetworkStatuses = {
+  youtube: YoutubeStatusResp;
+  instagram: InstagramStatusResp;
+  tiktok: TiktokStatusResp;
+  linkedin: LinkedinStatusResp;
+  x: XStatusResp;
+  facebook: FacebookStatusResp;
 };
 
 type Video = {
@@ -39,9 +79,15 @@ type Video = {
   linkedinStatus: string | null;
   xStatus: string | null;
   facebookStatus: string | null;
-  month: string | null;
-  week: string | null;
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function apiFetch<T>(path: string): Promise<T> {
+  const r = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json() as Promise<T>;
+}
 
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -51,48 +97,41 @@ function fmt(n: number): string {
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleDateString("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleDateString("es-CL", {
+    day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+  });
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Delta({ value }: { value: number }) {
   if (value > 0)
     return (
       <span className="flex items-center gap-0.5 text-emerald-400 text-xs font-semibold">
-        <ArrowUp className="w-3 h-3" />
-        {value.toFixed(1)}%
+        <ArrowUp className="w-3 h-3" />{value.toFixed(1)}%
       </span>
     );
   if (value < 0)
     return (
       <span className="flex items-center gap-0.5 text-red-400 text-xs font-semibold">
-        <ArrowDown className="w-3 h-3" />
-        {Math.abs(value).toFixed(1)}%
+        <ArrowDown className="w-3 h-3" />{Math.abs(value).toFixed(1)}%
       </span>
     );
   return (
     <span className="flex items-center gap-0.5 text-white/40 text-xs">
-      <Minus className="w-3 h-3" />
-      0%
+      <Minus className="w-3 h-3" />0%
     </span>
   );
 }
 
 function MetricCard({
-  label,
-  value,
-  delta,
-  icon: Icon,
-  accent,
+  label, value, delta, icon: Icon, accent,
 }: {
-  label: string;
-  value: number;
-  delta: number;
-  icon: React.ElementType;
-  accent: string;
+  label: string; value: number; delta: number; icon: React.ElementType; accent: string;
 }) {
   return (
-    <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+    <div className="rounded-2xl p-5 flex flex-col gap-3"
+      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
       <div className="flex items-center justify-between">
         <span className="text-white/50 text-xs font-medium uppercase tracking-widest">{label}</span>
         <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: accent + "22" }}>
@@ -108,30 +147,83 @@ function MetricCard({
   );
 }
 
-const NETWORKS: Network[] = ["tiktok", "instagram", "youtube", "linkedin", "x", "facebook"];
+// Derive display name + handle + avatar from the per-network status responses
+function networkAccount(n: Network, statuses: AllNetworkStatuses | undefined): {
+  name: string | null; handle: string | null; avatar: string | null;
+} {
+  if (!statuses) return { name: null, handle: null, avatar: null };
+  switch (n) {
+    case "youtube": {
+      const s = statuses.youtube;
+      return { name: s.channel?.title ?? null, handle: null, avatar: s.channel?.thumbnail ?? null };
+    }
+    case "instagram": {
+      const s = statuses.instagram;
+      return {
+        name: s.account?.name ?? null,
+        handle: s.account?.username ? `@${s.account.username}` : null,
+        avatar: s.account?.profilePicture ?? null,
+      };
+    }
+    case "tiktok": {
+      const s = statuses.tiktok;
+      return { name: s.user?.displayName ?? null, handle: null, avatar: s.user?.avatar ?? null };
+    }
+    case "linkedin": {
+      const s = statuses.linkedin;
+      const name = s.user?.name ?? s.user?.orgName ?? s.user?.personalName ?? null;
+      return { name, handle: null, avatar: s.user?.picture ?? null };
+    }
+    case "x": {
+      const s = statuses.x;
+      return {
+        name: s.user?.username ? `@${s.user.username}` : null,
+        handle: null,
+        avatar: null,
+      };
+    }
+    case "facebook": {
+      const s = statuses.facebook;
+      return { name: s.pageName ?? null, handle: null, avatar: s.pagePicture ?? null };
+    }
+  }
+}
 
-function NetworkCard({ net }: { net: NetworkSummary }) {
-  const n = net.network as Network;
-  const label = NETWORK_LABELS[n] ?? net.network;
-  const bg = NETWORK_BG[n] ?? "bg-white/5";
-  const followers = net.metrics?.followers?.total ?? 0;
-  const reach = net.metrics?.reach?.total ?? 0;
+function NetworkCard({
+  n, analytics, statuses,
+}: {
+  n: Network;
+  analytics: NetworkAnalytics | undefined;
+  statuses: AllNetworkStatuses | undefined;
+}) {
+  const label = NETWORK_LABELS[n];
+  const bg = NETWORK_BG[n];
+  const connected = analytics?.connected ?? false;
+  const followers = analytics?.metrics?.followers?.total ?? 0;
+  const reach = analytics?.metrics?.reach?.total ?? 0;
+  const account = networkAccount(n, statuses);
 
   return (
-    <div className="rounded-2xl p-4 flex flex-col gap-3" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+    <div className="rounded-2xl p-4 flex flex-col gap-3"
+      style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
       <div className="flex items-center gap-3">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
           <NetworkIcon network={n} className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-white text-sm font-semibold truncate">{label}</p>
-          <p className={`text-xs font-medium ${net.connected ? "text-emerald-400" : "text-white/30"}`}>
-            {net.connected ? "Conectada" : "Sin conectar"}
+          <p className={`text-xs font-medium truncate ${connected ? "text-emerald-400" : "text-white/30"}`}>
+            {connected ? (account.name ?? "Conectada") : "Sin conectar"}
           </p>
         </div>
-        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${net.connected ? "bg-emerald-400" : "bg-white/15"}`} />
+        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${connected ? "bg-emerald-400" : "bg-white/15"}`} />
       </div>
-      {net.connected && (followers > 0 || reach > 0) && (
+
+      {connected && account.handle && (
+        <p className="text-white/40 text-[11px] -mt-1 truncate">{account.handle}</p>
+      )}
+
+      {connected && (followers > 0 || reach > 0) && (
         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
           {followers > 0 && (
             <div>
@@ -160,8 +252,8 @@ const STATUS_PLATFORMS: Array<{ key: keyof Video; label: string }> = [
   { key: "facebookStatus", label: "FB" },
 ];
 
-function statusColor(s: string | null) {
-  if (!s || s === "pending") return "bg-white/15 text-white/40";
+function statusBadgeClass(s: string | null) {
+  if (!s || s === "pending") return null;
   if (s === "published") return "bg-emerald-500/20 text-emerald-400";
   if (s === "error") return "bg-red-500/20 text-red-400";
   if (s === "scheduled") return "bg-orange-500/20 text-orange-400";
@@ -169,7 +261,7 @@ function statusColor(s: string | null) {
 }
 
 function VideoRow({ v, showDate }: { v: Video; showDate: "scheduled" | "published" }) {
-  const date = showDate === "scheduled" ? v.scheduledAt : v.publishedAt;
+  const date = showDate === "scheduled" ? v.scheduledAt : (v.publishedAt ?? v.scheduledAt);
   return (
     <div className="flex items-start gap-3 py-3 border-b border-white/5 last:border-0">
       <div className="flex-1 min-w-0">
@@ -177,34 +269,58 @@ function VideoRow({ v, showDate }: { v: Video; showDate: "scheduled" | "publishe
         <p className="text-white/40 text-xs mt-0.5">{fmtDate(date)}</p>
         <div className="flex gap-1 mt-1.5 flex-wrap">
           {STATUS_PLATFORMS.map(({ key, label }) => {
-            const s = v[key] as string | null;
-            if (!s || s === "pending") return null;
+            const cls = statusBadgeClass(v[key] as string | null);
+            if (!cls) return null;
             return (
-              <span key={key} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${statusColor(s)}`}>
+              <span key={key} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${cls}`}>
                 {label}
               </span>
             );
           })}
         </div>
       </div>
-      {showDate === "scheduled" ? (
-        <CalendarClock className="w-4 h-4 text-orange-400/70 flex-shrink-0 mt-0.5" />
-      ) : (
-        <CheckCircle2 className="w-4 h-4 text-emerald-400/70 flex-shrink-0 mt-0.5" />
-      )}
+      {showDate === "scheduled"
+        ? <CalendarClock className="w-4 h-4 text-orange-400/70 flex-shrink-0 mt-0.5" />
+        : <CheckCircle2 className="w-4 h-4 text-emerald-400/70 flex-shrink-0 mt-0.5" />}
     </div>
   );
 }
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+const NETWORKS: Network[] = ["tiktok", "instagram", "youtube", "linkedin", "x", "facebook"];
 
 export default function EjecutivoPage() {
   const [, setLocation] = useLocation();
 
   const { data: analytics, isLoading: loadingAnalytics } = useQuery<AnalyticsSummary>({
     queryKey: ["analytics-summary-hub"],
+    queryFn: () => apiFetch<AnalyticsSummary>("/analytics/summary?days=7"),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  const { data: statuses, isLoading: loadingStatuses } = useQuery<AllNetworkStatuses>({
+    queryKey: ["network-statuses-hub"],
     queryFn: async () => {
-      const r = await fetch(`${API_BASE}/analytics/summary?days=7`, { credentials: "include" });
-      if (!r.ok) throw new Error("Error cargando analíticas");
-      return r.json();
+      const [youtube, instagram, tiktok, linkedin, x, facebook] = await Promise.allSettled([
+        apiFetch<YoutubeStatusResp>("/youtube/channel"),
+        apiFetch<InstagramStatusResp>("/instagram/status"),
+        apiFetch<TiktokStatusResp>("/tiktok/status"),
+        apiFetch<LinkedinStatusResp>("/linkedin/status"),
+        apiFetch<XStatusResp>("/x/status"),
+        apiFetch<FacebookStatusResp>("/facebook/status"),
+      ]);
+      const unwrap = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+        r.status === "fulfilled" ? r.value : fallback;
+      return {
+        youtube: unwrap(youtube, { connected: false }),
+        instagram: unwrap(instagram, { connected: false }),
+        tiktok: unwrap(tiktok, { connected: false }),
+        linkedin: unwrap(linkedin, { connected: false }),
+        x: unwrap(x, { connected: false }),
+        facebook: unwrap(facebook, { connected: false }),
+      };
     },
     staleTime: 5 * 60_000,
     retry: 1,
@@ -212,17 +328,12 @@ export default function EjecutivoPage() {
 
   const { data: videos, isLoading: loadingVideos } = useQuery<Video[]>({
     queryKey: ["videos-hub"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/content/videos`, { credentials: "include" });
-      if (!r.ok) throw new Error("Error cargando videos");
-      return r.json();
-    },
+    queryFn: () => apiFetch<Video[]>("/content/videos"),
     staleTime: 2 * 60_000,
     retry: 1,
   });
 
   const now = new Date();
-
   const upcoming = (videos ?? [])
     .filter((v) => v.status === "scheduled" && v.scheduledAt && new Date(v.scheduledAt) >= now)
     .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime())
@@ -230,39 +341,30 @@ export default function EjecutivoPage() {
 
   const recent = (videos ?? [])
     .filter((v) => v.status === "published")
-    .sort((a, b) => new Date(b.publishedAt ?? b.scheduledAt ?? 0).getTime() - new Date(a.publishedAt ?? a.scheduledAt ?? 0).getTime())
+    .sort((a, b) =>
+      new Date(b.publishedAt ?? b.scheduledAt ?? 0).getTime() -
+      new Date(a.publishedAt ?? a.scheduledAt ?? 0).getTime()
+    )
     .slice(0, 5);
 
   const totals = analytics?.totals ?? { views: 0, engagements: 0, followers: 0, posts: 0 };
+  const analyticsMap = Object.fromEntries((analytics?.networks ?? []).map((n) => [n.network, n]));
 
-  const networksMap = Object.fromEntries((analytics?.networks ?? []).map((n) => [n.network, n]));
-  const networkCards: NetworkSummary[] = NETWORKS.map(
-    (n) => networksMap[n] ?? { network: n, connected: false, metrics: null }
-  );
-
-  const loading = loadingAnalytics || loadingVideos;
+  const loading = loadingAnalytics || loadingStatuses || loadingVideos;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "#0A0A0A",
-        overflowY: "auto",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-        color: "white",
-        zIndex: 50,
-      }}
-    >
+    <div style={{
+      position: "fixed", inset: 0, background: "#0A0A0A", overflowY: "auto",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+      color: "white", zIndex: 50,
+    }}>
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem 1.5rem 5rem" }}>
 
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #E86A30, #f97316)" }}
-            >
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+              style={{ background: "linear-gradient(135deg, #E86A30, #f97316)" }}>
               <Film className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -273,7 +375,7 @@ export default function EjecutivoPage() {
           {loading && <Loader2 className="w-5 h-5 text-white/30 animate-spin" />}
         </div>
 
-        {/* Metric cards */}
+        {/* Metric summary */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
           <MetricCard label="Vistas" value={totals.views} delta={0} icon={Eye} accent="#E86A30" />
           <MetricCard label="Engagements" value={totals.engagements} delta={0} icon={Zap} accent="#c9a44a" />
@@ -281,38 +383,40 @@ export default function EjecutivoPage() {
           <MetricCard label="Posts" value={totals.posts} delta={0} icon={Film} accent="#6aa0c0" />
         </div>
 
-        {/* Networks */}
+        {/* Network status grid */}
         <div className="mb-8">
           <h2 className="text-white/50 text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-2">
             <span>Redes sociales</span>
-            <span className="flex-1 h-px bg-white/8" />
+            <span className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {networkCards.map((net) => (
-              <NetworkCard key={net.network} net={net} />
+            {NETWORKS.map((n) => (
+              <NetworkCard
+                key={n}
+                n={n}
+                analytics={analyticsMap[n]}
+                statuses={statuses}
+              />
             ))}
           </div>
         </div>
 
-        {/* Upcoming + Recent */}
+        {/* Upcoming + Recent lists */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-          {/* Próximas publicaciones */}
           <div>
             <h2 className="text-white/50 text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-2">
               <CalendarClock className="w-3.5 h-3.5 text-orange-400" />
               <span>Próximas publicaciones</span>
-              <span className="flex-1 h-px bg-white/8" />
+              <span className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
               {upcoming.length > 0 && (
                 <span className="text-orange-400 text-[10px] font-bold bg-orange-400/10 px-2 py-0.5 rounded-full">
                   {upcoming.length}
                 </span>
               )}
             </h2>
-            <div
-              className="rounded-2xl p-4"
-              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-            >
+            <div className="rounded-2xl p-4"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
               {loadingVideos ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-5 h-5 text-white/20 animate-spin" />
@@ -328,22 +432,19 @@ export default function EjecutivoPage() {
             </div>
           </div>
 
-          {/* Publicadas recientemente */}
           <div>
             <h2 className="text-white/50 text-xs font-semibold uppercase tracking-widest mb-3 flex items-center gap-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               <span>Publicadas recientemente</span>
-              <span className="flex-1 h-px bg-white/8" />
+              <span className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.06)" }} />
               {recent.length > 0 && (
                 <span className="text-emerald-400 text-[10px] font-bold bg-emerald-400/10 px-2 py-0.5 rounded-full">
                   {recent.length}
                 </span>
               )}
             </h2>
-            <div
-              className="rounded-2xl p-4"
-              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-            >
+            <div className="rounded-2xl p-4"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
               {loadingVideos ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-5 h-5 text-white/20 animate-spin" />
@@ -358,6 +459,7 @@ export default function EjecutivoPage() {
               )}
             </div>
           </div>
+
         </div>
       </div>
 
@@ -365,13 +467,8 @@ export default function EjecutivoPage() {
       <button
         onClick={() => setLocation("/")}
         title="Volver al panel"
-        style={{ position: "fixed", bottom: "1.5rem", right: "1.5rem", zIndex: 100 }}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl text-white text-sm font-medium shadow-xl transition-all"
-        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.9)"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.7)"; }}
-        onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.95)"; }}
-        onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.9)"; }}
-        ref={(el) => { if (el) el.style.background = "rgba(0,0,0,0.7)"; }}
+        style={{ position: "fixed", bottom: "1.5rem", right: "1.5rem", zIndex: 100, background: "rgba(0,0,0,0.72)" }}
+        className="flex items-center gap-2 px-3 py-2 rounded-xl text-white text-sm font-medium shadow-xl backdrop-blur-sm transition-colors hover:bg-black/90 border border-white/10"
       >
         <img src="/icon-192.png" alt="Logo" style={{ width: 20, height: 20, borderRadius: 5 }} />
         <ChevronRight className="w-3.5 h-3.5 rotate-180 opacity-60" />
