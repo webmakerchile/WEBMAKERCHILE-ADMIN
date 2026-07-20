@@ -179,6 +179,27 @@ function loadState(): HubState {
   return blankState();
 }
 function saveState(st: HubState) { try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch { /* ignore */ } }
+
+async function fetchHubFromServer(): Promise<HubState | null> {
+  try {
+    const res = await fetch("/api/hub", { credentials: "include" });
+    if (!res.ok) return null;
+    const json = await res.json() as { data: unknown };
+    if (!json.data || typeof json.data !== "object" || Array.isArray(json.data)) return null;
+    return Object.assign(blankState(), json.data) as HubState;
+  } catch { return null; }
+}
+
+async function patchHubToServer(st: HubState): Promise<void> {
+  try {
+    await fetch("/api/hub", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: st }),
+    });
+  } catch { /* ignore — localStorage already saved */ }
+}
 function migrate(st: HubState): HubState {
   const now = Date.now();
   st.projects.forEach(p => { if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now; });
@@ -1274,7 +1295,28 @@ export default function EjecutivoPage() {
     const loaded = loadState();
     return maybeSeededTasks(maybeSeeded(migrate(loaded)));
   });
-  const setState = useCallback((next: HubState) => { setStateRaw(next); saveState(next); }, []);
+
+  const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dirtyRef = useRef(false);
+
+  const setState = useCallback((next: HubState) => {
+    dirtyRef.current = true;
+    setStateRaw(next);
+    saveState(next);
+    if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+    serverSaveTimer.current = setTimeout(() => { void patchHubToServer(next); }, 1500);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchHubFromServer().then(serverState => {
+      if (cancelled || !serverState || dirtyRef.current) return;
+      const merged = maybeSeededTasks(maybeSeeded(migrate(serverState)));
+      setStateRaw(merged);
+      saveState(merged);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
     try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive"].includes(s)) return s as Tab; } catch { /* ignore */ }
