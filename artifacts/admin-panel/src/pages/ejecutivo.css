@@ -312,7 +312,7 @@
 .hub-root .wiz-step-btn.active{background:var(--orange);color:#fff;font-weight:600;}
 .hub-root .wiz-step-btn.done{color:var(--orange2);cursor:pointer;}
 .hub-root .wiz-step-btn.done:hover{background:var(--bg2);}
-.hub-root .wiz-dot{width:20px;height:20px;border-radius:50%;background:var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-none;}
+.hub-root .wiz-dot{width:20px;height:20px;border-radius:50%;background:var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
 .hub-root .wiz-step-btn.active .wiz-dot{background:rgba(255,255,255,.3);color:#fff;}
 .hub-root .wiz-step-btn.done .wiz-dot{background:var(--orange)/20%;color:var(--orange2);}
 .hub-root .wiz-step-lbl{font-family:'Oswald',sans-serif;letter-spacing:.5px;font-size:12px;}
