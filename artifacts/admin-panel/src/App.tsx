@@ -34,28 +34,7 @@ const InsightsPage = lazy(() => import("./pages/insights"));
 const EquipoPage = lazy(() => import("./pages/equipo"));
 const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
 const AjustesPage = lazy(() => import("./pages/ajustes"));
-
-function HubPage() {
-  const [, setLocation] = useLocation();
-  return (
-    <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", zIndex: 50 }}>
-      <iframe
-        src="/hub-app"
-        style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-        title="Hub Ejecutivo"
-      />
-      <button
-        onClick={() => setLocation("/")}
-        title="Volver al panel"
-        style={{ position: "absolute", bottom: "1.5rem", right: "1.5rem", zIndex: 100 }}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl bg-black/70 hover:bg-black/90 border border-white/10 text-white text-sm font-medium shadow-xl backdrop-blur-sm transition-all"
-      >
-        <img src="/icon-192.png" alt="Logo" className="w-5 h-5 rounded-md" />
-        <span>Panel Admin</span>
-      </button>
-    </div>
-  );
-}
+const EjecutivoPage = lazy(() => import("./pages/ejecutivo"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -231,7 +210,7 @@ function Router() {
         <RouteShell name="ajustes"><AjustesPage /></RouteShell>
       </Route>
       <Route path="/ejecutivo">
-        <HubPage />
+        <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
       </Route>
       <Route component={NotFound} />
     </Switch>
