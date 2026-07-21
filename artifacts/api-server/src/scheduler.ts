@@ -1,7 +1,7 @@
 import type { TikTokTokenJson, TikTokInitJson, IgContainerJson, IgStatusJson, IgPublishJson } from "./lib/platform-types";
 import { db } from "@workspace/db";
 import { videos, users, publishAttempts } from "@workspace/db/schema";
-import { eq, and, lte, or, isNull, isNotNull, sql } from "drizzle-orm";
+import { eq, and, lte, or, isNull, isNotNull, inArray, sql } from "drizzle-orm";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { randomBytes } from "crypto";
@@ -187,6 +187,33 @@ function isRetryCooldown(video: typeof videos.$inferSelect, platform: PublishPla
   const d = readField<Date | string | null>(video, fields.nextRetryAt);
   if (!d) return false;
   return new Date(d).getTime() > Date.now();
+}
+
+/**
+ * True when the user explicitly opted this network out of the post
+ * (per-platform status "skipped", set by quick-create / the wizard). The
+ * scheduler must neither attempt these networks nor count them as failures.
+ */
+function isSkippedByUser(video: typeof videos.$inferSelect, platform: PublishPlatform): boolean {
+  return readField<string | null>(video, PLATFORM_FIELDS[platform].status) === "skipped";
+}
+
+/**
+ * Usuario cuyas credenciales usa el scheduler para publicar. Preferimos un
+ * admin/superadmin real: `select().limit(1)` sin filtro devuelve una fila
+ * arbitraria que podría ser un usuario sin tokens conectados. Fallback al
+ * primer usuario por id solo si no existe ningún admin.
+ */
+async function getSchedulerUser(): Promise<typeof users.$inferSelect | null> {
+  const [admin] = await db
+    .select()
+    .from(users)
+    .where(inArray(users.role, ["admin", "superadmin"]))
+    .orderBy(users.id)
+    .limit(1);
+  if (admin) return admin;
+  const [fallback] = await db.select().from(users).orderBy(users.id).limit(1);
+  return fallback ?? null;
 }
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
@@ -458,7 +485,7 @@ async function pollTikTokPendingVideos(): Promise<void> {
 
   console.log(`[Scheduler] Polling TikTok status for ${pendingVideos.length} pending video(s)`);
 
-  const [adminUser] = await db.select().from(users).limit(1);
+  const adminUser = await getSchedulerUser();
   if (!adminUser) {
     console.error("[Scheduler] TikTok poll: no admin user found");
     return;
@@ -742,14 +769,17 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
 
     const mediaId = publishData.id;
 
+    // media_publish exitoso = el reel YA está publicado en Instagram; no hay
+    // un poll posterior (a diferencia de TikTok), así que dejamos el estado
+    // final "published" en vez de "uploaded" (que quedaba pegado para siempre).
     await db.update(videos).set({
       instagramMediaId: mediaId,
-      instagramStatus: "uploaded",
+      instagramStatus: "published",
       instagramError: null,
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
 
-    console.log(`[Scheduler] Instagram upload success: ${mediaId}`);
+    console.log(`[Scheduler] Instagram publish success: ${mediaId}`);
     return { success: true };
   } catch (err: any) {
     console.error(`[Scheduler] Instagram upload error: ${err.message}`);
@@ -798,7 +828,7 @@ export async function processScheduledVideos() {
 
     console.log(`[Scheduler] Found ${dueVideos.length} due video(s) at ${now.toISOString()}`);
 
-    const [adminUser] = await db.select().from(users).limit(1);
+    const adminUser = await getSchedulerUser();
     if (!adminUser) {
       console.error("[Scheduler] No admin user found in DB");
       schedulerRunning = false;
@@ -839,6 +869,15 @@ export async function processScheduledVideos() {
         youtube: false, tiktok: false, instagram: false,
         linkedin: false, x: false, facebook: false,
       };
+      // Plataformas realmente intentadas en ESTE tick (se invocó la función de
+      // publicación). Los "skips" — sin contenido, sin archivo de video o red
+      // excluida por el usuario — NO cuentan: un skip devuelve success:true
+      // para no contar como fallo, pero jamás debe convertirse en un
+      // "published" falso cuando nada se publicó de verdad.
+      const attempted: Record<PublishPlatform, boolean> = {
+        youtube: false, tiktok: false, instagram: false,
+        linkedin: false, x: false, facebook: false,
+      };
       function logCooldown(p: PublishPlatform) {
         const at = readField<Date | string | null>(video, PLATFORM_FIELDS[p].nextRetryAt);
         console.log(`[Scheduler] ${p} on cooldown until ${at ? new Date(at).toISOString() : "?"} — skipping this tick`);
@@ -850,10 +889,14 @@ export async function processScheduledVideos() {
         results.instagram = { success: true };
         console.log(`[Scheduler] YT/TT/IG skipped (no video file in Drive)`);
       } else {
-        if (isRetryCooldown(video, "youtube")) {
+        if (isSkippedByUser(video, "youtube")) {
+          results.youtube = { success: true };
+          console.log(`[Scheduler] YouTube skipped (excluded by user)`);
+        } else if (isRetryCooldown(video, "youtube")) {
           cooldown.youtube = true; logCooldown("youtube");
           results.youtube = { success: false };
         } else if (video.youtubeTitle || video.youtubeDescription) {
+          attempted.youtube = true;
           results.youtube = await uploadToYouTube(video, freshUser);
         } else {
           results.youtube = { success: true };
@@ -862,10 +905,14 @@ export async function processScheduledVideos() {
 
         const freshUser2 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
         if (freshUser2) {
-          if (isRetryCooldown(video, "tiktok")) {
+          if (isSkippedByUser(video, "tiktok")) {
+            results.tiktok = { success: true };
+            console.log(`[Scheduler] TikTok skipped (excluded by user)`);
+          } else if (isRetryCooldown(video, "tiktok")) {
             cooldown.tiktok = true; logCooldown("tiktok");
             results.tiktok = { success: false };
           } else if (video.tiktokDescription || video.description) {
+            attempted.tiktok = true;
             results.tiktok = await uploadToTikTok(video, freshUser2);
           } else {
             results.tiktok = { success: true };
@@ -875,10 +922,14 @@ export async function processScheduledVideos() {
 
         const freshUser3 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
         if (freshUser3) {
-          if (isRetryCooldown(video, "instagram")) {
+          if (isSkippedByUser(video, "instagram")) {
+            results.instagram = { success: true };
+            console.log(`[Scheduler] Instagram skipped (excluded by user)`);
+          } else if (isRetryCooldown(video, "instagram")) {
             cooldown.instagram = true; logCooldown("instagram");
             results.instagram = { success: false };
           } else if (video.instagramDescription || video.description) {
+            attempted.instagram = true;
             results.instagram = await uploadToInstagram(video, freshUser3);
           } else {
             results.instagram = { success: true };
@@ -889,10 +940,14 @@ export async function processScheduledVideos() {
 
       const freshUser4 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (freshUser4) {
-        if (isRetryCooldown(video, "linkedin")) {
+        if (isSkippedByUser(video, "linkedin")) {
+          results.linkedin = { success: true };
+          console.log(`[Scheduler] LinkedIn skipped (excluded by user)`);
+        } else if (isRetryCooldown(video, "linkedin")) {
           cooldown.linkedin = true; logCooldown("linkedin");
           results.linkedin = { success: false };
         } else if (video.linkedinDescription) {
+          attempted.linkedin = true;
           results.linkedin = await publishToLinkedIn(video, freshUser4);
         } else {
           results.linkedin = { success: true };
@@ -902,10 +957,14 @@ export async function processScheduledVideos() {
 
       const freshUser5 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
       if (freshUser5) {
-        if (isRetryCooldown(video, "x")) {
+        if (isSkippedByUser(video, "x")) {
+          results.x = { success: true };
+          console.log(`[Scheduler] X skipped (excluded by user)`);
+        } else if (isRetryCooldown(video, "x")) {
           cooldown.x = true; logCooldown("x");
           results.x = { success: false };
         } else if (video.xDescription) {
+          attempted.x = true;
           results.x = await publishToX(video, freshUser5);
         } else {
           results.x = { success: true };
@@ -922,6 +981,7 @@ export async function processScheduledVideos() {
           cooldown.facebook = true; logCooldown("facebook");
           results.facebook = { success: false };
         } else if (facebookIncluded) {
+          attempted.facebook = true;
           results.facebook = await publishToFacebookStep(video, freshUser6);
         } else {
           results.facebook = { success: true };
@@ -946,20 +1006,24 @@ export async function processScheduledVideos() {
         !results.facebook.success && results.facebook.error ? `FB: ${results.facebook.error}` : "",
       ].filter(Boolean).join("; ");
 
-      const anyAttempted =
-        (video.youtubeTitle || video.youtubeDescription) ||
-        video.tiktokDescription || video.description ||
-        video.instagramDescription ||
-        video.linkedinDescription ||
-        video.xDescription ||
-        facebookIncluded;
+      // "Intentado de verdad" = se invocó la función de publicación este tick.
+      // Antes se infería del contenido (título/descripciones), lo que producía
+      // "published" falsos: un video sin archivo y sin descripciones por red
+      // pasaba todos los skips con success:true y terminaba como publicado.
+      const anyAttempted = ALL_PLATFORMS.some((p) => attempted[p]);
+      // Un post-id previo cuenta como éxito real aunque en este tick la
+      // plataforma haya hecho short-circuit sin volver a subir nada.
+      const preAlreadyPosted: Record<PublishPlatform, boolean> = {
+        youtube:   !!video.youtubeVideoId,
+        tiktok:    !!video.tiktokPublishId,
+        instagram: !!video.instagramMediaId,
+        linkedin:  !!video.linkedinPostId,
+        x:         !!video.xPostId,
+        facebook:  !!video.facebookPostId,
+      };
+      const anyPrePosted = ALL_PLATFORMS.some((p) => preAlreadyPosted[p]);
       const anyRealSuccess =
-        (results.youtube.success && (video.youtubeTitle || video.youtubeDescription)) ||
-        (results.tiktok.success && (video.tiktokDescription || video.description)) ||
-        (results.instagram.success && (video.instagramDescription || video.description)) ||
-        (results.linkedin.success && video.linkedinDescription) ||
-        (results.x.success && video.xDescription) ||
-        (results.facebook.success && facebookIncluded);
+        ALL_PLATFORMS.some((p) => attempted[p] && results[p].success) || anyPrePosted;
 
       // Reload AFTER all platform attempts so we observe the side-effects of
       // recordFailure() (status="retrying", *NextRetryAt, etc).
@@ -998,28 +1062,14 @@ export async function processScheduledVideos() {
       }
 
       // Append-only success logging: only log a success when this run actually
-      // attempted the platform. We must guard against three "fake successes":
-      //  (a) cooldown platforms that returned `{success:true}` without trying,
-      //  (b) platforms with no content for that network (nothing to publish),
-      //  (c) platforms that already had a post-id from a previous run and
-      //      short-circuited inside upload*() (would otherwise log a duplicate
-      //      success row on every retry tick that touches the video).
-      const preAlreadyPosted: Record<PublishPlatform, boolean> = {
-        youtube:   !!video.youtubeVideoId,
-        tiktok:    !!video.tiktokPublishId,
-        instagram: !!video.instagramMediaId,
-        linkedin:  !!video.linkedinPostId,
-        x:         !!video.xPostId,
-        facebook:  !!video.facebookPostId,
-      };
-      const successResults: Array<[PublishPlatform, boolean]> = [
-        ["youtube",   results.youtube.success   && !cooldown.youtube   && !preAlreadyPosted.youtube   && !!(video.youtubeTitle || video.youtubeDescription)],
-        ["tiktok",    results.tiktok.success    && !cooldown.tiktok    && !preAlreadyPosted.tiktok    && !!(video.tiktokDescription || video.description)],
-        ["instagram", results.instagram.success && !cooldown.instagram && !preAlreadyPosted.instagram && !!(video.instagramDescription || video.description)],
-        ["linkedin",  results.linkedin.success  && !cooldown.linkedin  && !preAlreadyPosted.linkedin  && !!video.linkedinDescription],
-        ["x",         results.x.success         && !cooldown.x         && !preAlreadyPosted.x         && !!video.xDescription],
-        ["facebook",  results.facebook.success  && !cooldown.facebook  && !preAlreadyPosted.facebook  && facebookIncluded],
-      ];
+      // attempted the platform (`attempted` ya excluye cooldowns, redes sin
+      // contenido y redes excluidas por el usuario). Además descartamos las
+      // plataformas con post-id previo, que hacen short-circuit dentro de
+      // upload*() y de otro modo registrarían un éxito duplicado en cada tick.
+      const successResults = ALL_PLATFORMS.map((p): [PublishPlatform, boolean] => [
+        p,
+        attempted[p] && results[p].success && !preAlreadyPosted[p],
+      ]);
       for (const [p, ok] of successResults) {
         if (!ok) continue;
         const fields = PLATFORM_FIELDS[p];
@@ -1032,19 +1082,31 @@ export async function processScheduledVideos() {
       // video in a retry-eligible status — the scheduler must be able to
       // re-pick it via nextRetryAt. Only mark "error" once the retry budget
       // is exhausted on every failing platform.
+      // "published" exige al menos un éxito REAL (intento de este tick o
+      // post-id previo): si no había nada que publicar, el video queda en
+      // "error" con notificación clara en vez de un "published" falso.
+      const nothingToPublish = !anyAttempted && !anyPrePosted && !anyCooldown && !stillRetrying;
       let nextStatus: string;
       if (anyCooldown || stillRetrying) {
         // If any real success already happened keep "partial" so the user sees
         // partial progress; otherwise stay in "scheduled" for the retry pass.
         nextStatus = anyRealSuccess ? "partial" : (video.status === "scheduled" || video.status === "partial" ? video.status : "scheduled");
-      } else if (allSuccess && anyAttempted) nextStatus = "published";
+      } else if (allSuccess && anyRealSuccess) nextStatus = "published";
       else if (anyRealSuccess) nextStatus = "partial";
       else nextStatus = "error";
+
+      const NO_CONTENT_ERROR =
+        "No hay contenido para publicar: el video no tiene archivo en Drive ni descripciones por red. Completa el video y prográmalo de nuevo.";
+      const errorSummary = errors || (nothingToPublish ? NO_CONTENT_ERROR : "error desconocido");
 
       await db.update(videos).set({
         status: nextStatus,
         workflowStatus: nextStatus === "published" ? "publicado" : undefined,
-        publishedAt: nextStatus === "published" || nextStatus === "partial" ? new Date() : undefined,
+        // publishedAt = primera publicación real; no pisar el valor existente.
+        publishedAt:
+          (nextStatus === "published" || nextStatus === "partial") && !video.publishedAt
+            ? new Date()
+            : undefined,
         nextRetryAt: videoNextRetryAt,
         updatedAt: new Date(),
       }).where(eq(videos.id, video.id));
@@ -1054,7 +1116,7 @@ export async function processScheduledVideos() {
       } else if (nextStatus === "partial") {
         console.warn(`[Scheduler] Video #${video.id} published partially. Errors: ${errors}`);
       } else {
-        console.error(`[Scheduler] Video #${video.id} had errors: ${errors}`);
+        console.error(`[Scheduler] Video #${video.id} had errors: ${errorSummary}`);
       }
 
       // Notify the admin user (single-tenant) about the outcome. We always pick
@@ -1081,12 +1143,22 @@ export async function processScheduledVideos() {
             body: `"${video.title}" tuvo errores en algunas redes: ${errors}`,
             link: `/videos?select=${video.id}`,
           });
+        } else if (nothingToPublish) {
+          // Nada que publicar (sin archivo ni descripciones): error claro en
+          // vez de la antigua notificación de éxito sin publicación real.
+          await createNotification({
+            userId: adminUser.id,
+            type: "publish_error",
+            title: "Error al publicar",
+            body: `"${video.title}" no se publicó: ${NO_CONTENT_ERROR}`,
+            link: `/videos?select=${video.id}`,
+          });
         } else {
           await createNotification({
             userId: adminUser.id,
             type: "publish_error",
             title: "Error al publicar",
-            body: `"${video.title}" falló tras agotar reintentos: ${errors || "error desconocido"}`,
+            body: `"${video.title}" falló tras agotar reintentos: ${errorSummary}`,
             link: `/videos?select=${video.id}`,
           });
         }
@@ -1111,21 +1183,50 @@ export async function retryPlatformForVideo(
   const [video] = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
   if (!video) return { success: false, error: "Video not found" };
 
-  switch (platform) {
+  const p = ALL_PLATFORMS.find((x) => x === platform);
+  if (!p) return { success: false, error: `Unknown platform: ${platform}` };
+
+  // Reintento MANUAL: sin este reset, upload*/publish* cortan de inmediato en
+  // isTerminalError (status "error") y el endpoint de retry nunca reintentaba
+  // nada. Limpiamos status/error/retries/nextRetryAt de la plataforma para que
+  // el despacho parta de cero. No aplica si la red ya tiene un post publicado
+  // (el despacho hará short-circuit con success y el estado debe conservarse).
+  const alreadyPostedId: Record<PublishPlatform, string | null> = {
+    youtube: video.youtubeVideoId,
+    tiktok: video.tiktokPublishId,
+    instagram: video.instagramMediaId,
+    linkedin: video.linkedinPostId,
+    x: video.xPostId,
+    facebook: video.facebookPostId,
+  };
+  let target = video;
+  if (!alreadyPostedId[p]) {
+    const fields = PLATFORM_FIELDS[p];
+    const reset: Record<string, unknown> = {
+      [fields.status as string]: "pending",
+      [fields.error as string]: null,
+      [fields.retries as string]: 0,
+      [fields.nextRetryAt as string]: null,
+      updatedAt: new Date(),
+    };
+    await db.update(videos).set(reset).where(eq(videos.id, videoId));
+    const [fresh] = await db.select().from(videos).where(eq(videos.id, videoId)).limit(1);
+    if (fresh) target = fresh;
+  }
+
+  switch (p) {
     case "youtube":
-      return uploadToYouTube(video, user);
+      return uploadToYouTube(target, user);
     case "tiktok":
-      return uploadToTikTok(video, user);
+      return uploadToTikTok(target, user);
     case "instagram":
-      return uploadToInstagram(video, user);
+      return uploadToInstagram(target, user);
     case "linkedin":
-      return publishToLinkedIn(video, user);
+      return publishToLinkedIn(target, user);
     case "x":
-      return publishToX(video, user);
+      return publishToX(target, user);
     case "facebook":
-      return publishToFacebookStep(video, user);
-    default:
-      return { success: false, error: `Unknown platform: ${platform}` };
+      return publishToFacebookStep(target, user);
   }
 }
 

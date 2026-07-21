@@ -174,13 +174,6 @@ type MetricSummary = {
   series: SeriesPoint[];
   prevSeries: SeriesPoint[];
 };
-type GrowthSummary = {
-  value: number;
-  prev: number;
-  delta: number;
-  series: SeriesPoint[];
-  prevSeries: SeriesPoint[];
-};
 type NetworkMetrics = {
   followers?: number | null;
   subscribers?: number | null;
@@ -199,7 +192,6 @@ type AnalyticsSummary = {
   reach?: MetricSummary;
   interactions?: MetricSummary;
   posts?: MetricSummary;
-  growthRate?: GrowthSummary;
   networks?: NetworkSummary[];
 };
 
@@ -407,15 +399,17 @@ function AnalyticsRow() {
               {n.connected ? (
                 <span className="text-muted-foreground">
                   {fmtNumber(n.metrics?.followers ?? n.metrics?.subscribers)}
+                  {/* followersDelta es un porcentaje (computeDelta del backend),
+                      no una cantidad absoluta: siempre con símbolo %. */}
                   {(n.metrics?.followersDelta ?? 0) > 0 && (
                     <span className="text-emerald-400 ml-1 inline-flex items-center">
-                      <TrendingUp className="w-3 h-3" />+{n.metrics?.followersDelta}
+                      <TrendingUp className="w-3 h-3" />+{n.metrics?.followersDelta}%
                     </span>
                   )}
                   {(n.metrics?.followersDelta ?? 0) < 0 && (
                     <span className="text-rose-400 ml-1 inline-flex items-center">
                       <TrendingDown className="w-3 h-3" />
-                      {n.metrics?.followersDelta}
+                      {n.metrics?.followersDelta}%
                     </span>
                   )}
                 </span>
@@ -991,6 +985,8 @@ type UpcomingVideo = {
   linkedinStatus?: string | null;
   xStatus?: string | null;
   facebookStatus?: string | null;
+  /** Próximo reintento pendiente (si alguna red falló con error transitorio). */
+  nextRetryAt?: string | Date | null;
 };
 
 function upcomingCaptionLine(v: UpcomingVideo): string {
@@ -1096,6 +1092,12 @@ function UpcomingPosts() {
                     )}
                   </div>
                   <p className="text-xs font-medium leading-snug line-clamp-1">{v.title}</p>
+                  {v.nextRetryAt && (
+                    <p className="text-[10px] text-amber-400 leading-snug mt-0.5 inline-flex items-center gap-1">
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      Reintentando · próximo intento {fmtRetryAt(v.nextRetryAt) ?? "pronto"}
+                    </p>
+                  )}
                   {captionLine && (
                     <p className="text-[11px] text-muted-foreground/80 leading-snug line-clamp-1 mt-0.5">
                       {captionLine}
@@ -1131,16 +1133,33 @@ type ActivityVideo = {
   xError?: string | null;
   facebookStatus?: string | null;
   facebookError?: string | null;
+  /** Próximo reintento (mínimo entre redes) y deadlines por red. */
+  nextRetryAt?: string | null;
+  youtubeNextRetryAt?: string | null;
+  tiktokNextRetryAt?: string | null;
+  instagramNextRetryAt?: string | null;
+  linkedinNextRetryAt?: string | null;
+  xNextRetryAt?: string | null;
+  facebookNextRetryAt?: string | null;
 };
 
-const PLATFORM_KEYS: Array<{ platform: Network; statusKey: keyof ActivityVideo; errorKey?: keyof ActivityVideo }> = [
-  { platform: "youtube", statusKey: "youtubeStatus", errorKey: "youtubeError" },
-  { platform: "tiktok", statusKey: "tiktokStatus", errorKey: "tiktokError" },
-  { platform: "instagram", statusKey: "instagramStatus", errorKey: "instagramError" },
-  { platform: "linkedin", statusKey: "linkedinStatus", errorKey: "linkedinError" },
-  { platform: "x", statusKey: "xStatus", errorKey: "xError" },
-  { platform: "facebook", statusKey: "facebookStatus", errorKey: "facebookError" },
+const PLATFORM_KEYS: Array<{ platform: Network; statusKey: keyof ActivityVideo; errorKey?: keyof ActivityVideo; retryAtKey?: keyof ActivityVideo }> = [
+  { platform: "youtube", statusKey: "youtubeStatus", errorKey: "youtubeError", retryAtKey: "youtubeNextRetryAt" },
+  { platform: "tiktok", statusKey: "tiktokStatus", errorKey: "tiktokError", retryAtKey: "tiktokNextRetryAt" },
+  { platform: "instagram", statusKey: "instagramStatus", errorKey: "instagramError", retryAtKey: "instagramNextRetryAt" },
+  { platform: "linkedin", statusKey: "linkedinStatus", errorKey: "linkedinError", retryAtKey: "linkedinNextRetryAt" },
+  { platform: "x", statusKey: "xStatus", errorKey: "xError", retryAtKey: "xNextRetryAt" },
+  { platform: "facebook", statusKey: "facebookStatus", errorKey: "facebookError", retryAtKey: "facebookNextRetryAt" },
 ];
+
+function fmtRetryAt(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const time = d.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+  return sameDay ? time : `${d.toLocaleDateString("es-CL", { day: "numeric", month: "short" })} ${time}`;
+}
 
 function useRecentActivity() {
   return useQuery<ActivityVideo[]>({
@@ -1336,7 +1355,14 @@ function RecentActivity() {
                         const status = v[p.statusKey] as string | null | undefined;
                         const error = p.errorKey ? (v[p.errorKey] as string | null | undefined) : null;
                         const isError = status === "error";
+                        const isPlatformRetrying = status === "retrying";
                         const isOk = status === "published" || status === "uploaded";
+                        const retryAtLabel = isPlatformRetrying
+                          ? fmtRetryAt(
+                              (p.retryAtKey ? (v[p.retryAtKey] as string | null | undefined) : null) ??
+                                v.nextRetryAt,
+                            )
+                          : null;
                         const ttKey = `${v.id}-${p.platform}`;
                         const isRetrying = retrying === ttKey;
                         return (
@@ -1345,23 +1371,31 @@ function RecentActivity() {
                               className={`relative group flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium border ${
                                 isError
                                   ? "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                                  : isPlatformRetrying
+                                  ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
                                   : isOk
                                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
                                   : "bg-foreground/5 border-foreground/10 text-muted-foreground"
                               }`}
-                              onMouseEnter={() => error && setTooltipId(ttKey)}
+                              onMouseEnter={() => (error || retryAtLabel) && setTooltipId(ttKey)}
                               onMouseLeave={() => setTooltipId(null)}
+                              title={isPlatformRetrying ? `Reintentando${retryAtLabel ? ` · próximo intento ${retryAtLabel}` : ""}` : undefined}
                             >
                               <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ${NETWORK_BG[p.platform]}`}>
                                 <NetworkIcon network={p.platform} className="w-2 h-2" />
                               </span>
                               {isError ? (
                                 <XCircle className="w-2.5 h-2.5" />
+                              ) : isPlatformRetrying ? (
+                                <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                               ) : isOk ? (
                                 <CheckCircle2 className="w-2.5 h-2.5" />
                               ) : null}
-                              {tooltipId === ttKey && error && (
+                              {tooltipId === ttKey && (error || retryAtLabel) && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 z-50 w-48 rounded-lg bg-background border border-foreground/10 px-2 py-1.5 text-[10px] text-muted-foreground shadow-lg pointer-events-none">
+                                  {retryAtLabel && (
+                                    <p className="text-amber-300">Reintentando · próximo intento {retryAtLabel}</p>
+                                  )}
                                   {error}
                                 </div>
                               )}

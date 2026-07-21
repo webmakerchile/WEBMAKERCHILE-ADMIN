@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback, type ReactNode } from "react";
+import { getListVideosQueryKey } from "@workspace/api-client-react";
 import { useLang } from "@/lib/lang";
 import { Link } from "wouter";
 import { Virtuoso } from "react-virtuoso";
@@ -81,6 +82,11 @@ import {
 } from "@/components/ui/dialog";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
+
+// Clave ÚNICA de la lista de videos, compartida con useListVideos() (dashboard,
+// agenda). Antes esta página usaba la clave literal "videos" y las invalidaciones no cruzaban
+// entre páginas (p. ej. reprogramar en la agenda no refrescaba esta lista).
+const VIDEOS_QUERY_KEY = getListVideosQueryKey();
 
 function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   return fetch(url, { ...init, credentials: "include" });
@@ -754,7 +760,7 @@ export default function VideosPage() {
   const networkOptions = useMemo(() => getNetworkOptions(t), [t]);
 
   const { data: videos = [], isLoading } = useQuery<VideoData[]>({
-    queryKey: ["videos"],
+    queryKey: VIDEOS_QUERY_KEY,
     queryFn: async () => {
       const res = await apiFetch(`${API_BASE}/content/videos`);
       return res.json();
@@ -993,7 +999,7 @@ export default function VideosPage() {
       return res.json() as Promise<VideoData>;
     },
     onSuccess: (row) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       toast({ title: t.toastDuplicatedAs(row.title) });
     },
     onError: () => toast({ title: t.toastDuplicateFailed, variant: "destructive" }),
@@ -1010,21 +1016,21 @@ export default function VideosPage() {
       return res.json() as Promise<{ deleted: number; ids: number[] }>;
     },
     onMutate: async (ids: number[]) => {
-      await queryClient.cancelQueries({ queryKey: ["videos"] });
-      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      await queryClient.cancelQueries({ queryKey: VIDEOS_QUERY_KEY });
+      const previous = queryClient.getQueryData<VideoData[]>(VIDEOS_QUERY_KEY);
       if (previous) {
         const set = new Set(ids);
-        queryClient.setQueryData<VideoData[]>(["videos"], previous.filter((v) => !set.has(v.id)));
+        queryClient.setQueryData<VideoData[]>(VIDEOS_QUERY_KEY, previous.filter((v) => !set.has(v.id)));
       }
       return { previous };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedIds(new Set());
       toast({ title: t.toastBulkDeleted(data.deleted) });
     },
     onError: (_err, _ids, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      if (ctx?.previous) queryClient.setQueryData(VIDEOS_QUERY_KEY, ctx.previous);
       toast({ title: t.toastDeleteVideosFailed, variant: "destructive" });
     },
   });
@@ -1040,23 +1046,23 @@ export default function VideosPage() {
       return res.json() as Promise<{ updated: number; ids: number[] }>;
     },
     onMutate: async (vars) => {
-      await queryClient.cancelQueries({ queryKey: ["videos"] });
-      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      await queryClient.cancelQueries({ queryKey: VIDEOS_QUERY_KEY });
+      const previous = queryClient.getQueryData<VideoData[]>(VIDEOS_QUERY_KEY);
       if (previous) {
         const set = new Set(vars.ids);
         queryClient.setQueryData<VideoData[]>(
-          ["videos"],
+          VIDEOS_QUERY_KEY,
           previous.map((v) => (set.has(v.id) ? ({ ...v, ...vars.patch } as VideoData) : v)),
         );
       }
       return { previous };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       toast({ title: t.toastBulkUpdated(data.updated) });
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      if (ctx?.previous) queryClient.setQueryData(VIDEOS_QUERY_KEY, ctx.previous);
       toast({ title: t.toastBulkUpdateFailed, variant: "destructive" });
     },
   });
@@ -1158,7 +1164,7 @@ export default function VideosPage() {
       });
       if (!res.ok) throw new Error();
       const data = (await res.json()) as { scheduled: number };
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setBulkScheduleAt("");
       toast({ title: t.toastBulkScheduled(data.scheduled) });
     } catch {
@@ -1203,7 +1209,7 @@ export default function VideosPage() {
           failed += 1;
         }
       }
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       toast({
         title: t.toastBulkGenResult(ok, failed),
         variant: failed && !ok ? "destructive" : "default",
@@ -1226,7 +1232,7 @@ export default function VideosPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       if (data.video) setSelectedVideo(data.video);
     },
     onError: () => {
@@ -1267,7 +1273,7 @@ export default function VideosPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedVideo(data);
       setIsCreating(false);
       setWizardStep("cover");
@@ -1294,22 +1300,22 @@ export default function VideosPage() {
       return res.json();
     },
     onMutate: async ({ id, ...patch }) => {
-      await queryClient.cancelQueries({ queryKey: ["videos"] });
-      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      await queryClient.cancelQueries({ queryKey: VIDEOS_QUERY_KEY });
+      const previous = queryClient.getQueryData<VideoData[]>(VIDEOS_QUERY_KEY);
       if (previous) {
         queryClient.setQueryData<VideoData[]>(
-          ["videos"],
+          VIDEOS_QUERY_KEY,
           previous.map((v) => (v.id === id ? ({ ...v, ...patch } as VideoData) : v)),
         );
       }
       return { previous };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedVideo(data);
     },
     onError: (err: Error, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      if (ctx?.previous) queryClient.setQueryData(VIDEOS_QUERY_KEY, ctx.previous);
       toast({ title: t.toastSaveFailed, description: err.message, variant: "destructive" });
     },
   });
@@ -1335,20 +1341,20 @@ export default function VideosPage() {
       if (!res.ok && res.status !== 204) throw new Error(t.toastDeleteFailed);
     },
     onMutate: async (id: number) => {
-      await queryClient.cancelQueries({ queryKey: ["videos"] });
-      const previous = queryClient.getQueryData<VideoData[]>(["videos"]);
+      await queryClient.cancelQueries({ queryKey: VIDEOS_QUERY_KEY });
+      const previous = queryClient.getQueryData<VideoData[]>(VIDEOS_QUERY_KEY);
       if (previous) {
-        queryClient.setQueryData<VideoData[]>(["videos"], previous.filter((v) => v.id !== id));
+        queryClient.setQueryData<VideoData[]>(VIDEOS_QUERY_KEY, previous.filter((v) => v.id !== id));
       }
       return { previous };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedVideo(null);
       toast({ title: t.toastVideoDeleted });
     },
     onError: (_err, _id, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(["videos"], ctx.previous);
+      if (ctx?.previous) queryClient.setQueryData(VIDEOS_QUERY_KEY, ctx.previous);
       toast({ title: t.toastDeleteVideoError, variant: "destructive" });
     },
   });
@@ -1364,7 +1370,7 @@ export default function VideosPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedVideo(data);
       toast({ title: t.toastCoverGenerated });
     },
@@ -1401,7 +1407,7 @@ export default function VideosPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedVideo(data);
       toast({ title: t.toastCoverUploaded });
     },
@@ -1419,7 +1425,7 @@ export default function VideosPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       setSelectedVideo(data);
     },
     onError: () => toast({ title: t.toastClearCoverError, variant: "destructive" }),
@@ -1507,7 +1513,7 @@ export default function VideosPage() {
           open={importOpen}
           onClose={() => setImportOpen(false)}
           onImported={() => {
-            queryClient.invalidateQueries({ queryKey: ["videos"] });
+            queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
           }}
         />
 
@@ -2613,7 +2619,7 @@ function VideoWizard({
           uploadToast.update({ id: uploadToast.id, title: t.toastVideoUploaded, description: pendingVideoFile.fileName });
         }
         if (cancelled) return;
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } catch (err: any) {
         if (cancelled || err?.message === "UPLOAD_CANCELLED") return;
         console.error("Error linking pending video file:", err);
@@ -2865,7 +2871,7 @@ function VideoWizard({
               isCreating={isCreating}
               video={video}
               onVideoUploaded={() => {
-                queryClient.invalidateQueries({ queryKey: ["videos"] });
+                queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
               }}
               pendingVideoFile={pendingVideoFile}
               setPendingVideoFile={setPendingVideoFile}
@@ -2971,7 +2977,7 @@ function VideoWizard({
           )}
 
           {currentStep === "comments" && video && (
-            <CommentsAndApproval video={video} onUpdated={() => queryClient.invalidateQueries({ queryKey: ["videos"] })} />
+            <CommentsAndApproval video={video} onUpdated={() => queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY })} />
           )}
 
           {currentStep === "review" && video && (
@@ -3011,7 +3017,7 @@ function VideoWizard({
                   toast({ title: t.toastScheduleError, description: msg, variant: "destructive" });
                   return;
                 }
-                queryClient.invalidateQueries({ queryKey: ["videos"] });
+                queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
                 const platforms = includeFacebook ? t.platforms6 : t.platforms5;
                 toast({
                   title: t.toastScheduled(platforms),
@@ -4125,6 +4131,7 @@ function StepTikTokInstagram({
 }) {
   const [aiBusy, setAiBusy] = useState(false);
   const { t } = useLang();
+  const { toast } = useToast();
   const showTikTokPlaceholder = (isAutoGenerating || aiBusy) && !formData.tiktokDescription;
   const showInstagramPlaceholder = (isAutoGenerating || aiBusy) && !formData.instagramDescription;
   const generateAi = async () => {
@@ -4145,6 +4152,9 @@ function StepTikTokInstagram({
       }));
     } catch (err) {
       console.error(err);
+      const description =
+        err instanceof Error && err.message !== t.errorGeneratingDescriptions ? err.message : undefined;
+      toast({ title: t.errorGeneratingDescriptions, description, variant: "destructive" });
     } finally {
       setAiBusy(false);
     }
@@ -4294,6 +4304,7 @@ function StepYouTube({
 }) {
   const [aiBusy, setAiBusy] = useState(false);
   const { t } = useLang();
+  const { toast } = useToast();
   const showYoutubeTitlePlaceholder = (isAutoGenerating || aiBusy) && !formData.youtubeTitle;
   const showYoutubeDescPlaceholder = (isAutoGenerating || aiBusy) && !formData.youtubeDescription;
   const generateAi = async () => {
@@ -4314,6 +4325,9 @@ function StepYouTube({
       }));
     } catch (err) {
       console.error(err);
+      const description =
+        err instanceof Error && err.message !== t.errorGeneratingDescriptions ? err.message : undefined;
+      toast({ title: t.errorGeneratingDescriptions, description, variant: "destructive" });
     } finally {
       setAiBusy(false);
     }
@@ -4447,6 +4461,7 @@ function StepLinkedInX({
   copyText: (text: string) => void;
 }) {
   const { t } = useLang();
+  const { toast } = useToast();
   const xLen = (formData.xDescription || "").length;
   const [aiBusy, setAiBusy] = useState(false);
   const showLinkedInPlaceholder = (isAutoGenerating || aiBusy) && !formData.linkedinDescription;
@@ -4470,6 +4485,9 @@ function StepLinkedInX({
       }));
     } catch (err) {
       console.error(err);
+      const description =
+        err instanceof Error && err.message !== t.errorGeneratingDescriptions ? err.message : undefined;
+      toast({ title: t.errorGeneratingDescriptions, description, variant: "destructive" });
     } finally {
       setAiBusy(false);
     }
@@ -4689,7 +4707,7 @@ function StepReview({
         if (status === "PUBLISH_COMPLETE" || status === "FAILED") {
           stopped = true;
           setTtPolling(false);
-          queryClient.invalidateQueries({ queryKey: ["videos"] });
+          queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
           return;
         }
       } catch {
@@ -4729,7 +4747,7 @@ function StepReview({
       const data = await res.json();
       if (res.ok && data.success) {
         setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl, thumbnailSet: data.thumbnailSet, thumbnailError: data.thumbnailError });
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } else {
         setYtResult({ success: false, error: data.error || t.errorUnknown });
       }
@@ -4761,7 +4779,7 @@ function StepReview({
       const data = await res.json();
       if (res.ok && data.success) {
         setTtResult({ success: true, message: data.message, publishId: data.publishId });
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } else {
         setTtResult({ success: false, error: data.error || t.errorUnknown });
       }
@@ -4803,7 +4821,7 @@ function StepReview({
 
       if (res.ok && data.success) {
         setYtResult({ success: true, message: data.message, youtubeUrl: data.youtubeUrl, thumbnailSet: data.thumbnailSet, thumbnailError: data.thumbnailError });
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } else {
         setYtResult({ success: false, error: data.error || t.errorUnknown });
       }
@@ -4835,7 +4853,7 @@ function StepReview({
       const data = await res.json();
       if (res.ok && data.success) {
         setIgResult({ success: true, message: data.message, mediaId: data.mediaId });
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } else {
         setIgResult({ success: false, error: data.error || t.errorUnknown });
       }
@@ -4866,7 +4884,7 @@ function StepReview({
       const data = await res.json();
       if (res.ok && data.success) {
         setIgResult({ success: true, message: data.message, mediaId: data.mediaId });
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } else {
         setIgResult({ success: false, error: data.error || t.errorUnknown });
       }
@@ -4908,7 +4926,7 @@ function StepReview({
 
       if (res.ok && data.success) {
         setTtResult({ success: true, message: data.message, publishId: data.publishId });
-        queryClient.invalidateQueries({ queryKey: ["videos"] });
+        queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       } else {
         setTtResult({ success: false, error: data.error || t.errorUnknown });
       }
@@ -5778,7 +5796,7 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
       setOpen(false);
       setNote("");
       queryClient.invalidateQueries({ queryKey: ["video-reviews", video.id] });
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["reviews", "pending"] });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -5817,7 +5835,7 @@ function ApprovalBar({ video, onJumpToComments, onJumpToReview }: { video: Video
       toast({ title: toastTitle });
       setNote("");
       queryClient.invalidateQueries({ queryKey: ["video-reviews", video.id] });
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ["reviews", "pending"] });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });

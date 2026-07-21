@@ -25,7 +25,11 @@ import {
   Languages,
   LayoutGrid,
   ChevronRight,
+  type LucideIcon,
 } from "lucide-react";
+
+type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
+type NavSection = { label: string; items: NavItem[] };
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OnboardingTour } from "@/components/onboarding-tour";
@@ -44,7 +48,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t, toggleLang, lang } = useLang();
 
-  const navSections = [
+  const navSections: NavSection[] = [
     {
       label: t.navSectionContent,
       items: [
