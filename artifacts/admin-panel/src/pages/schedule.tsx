@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useCheckScheduledVideos, useListVideos } from "@workspace/api-client-react";
+import { useCheckScheduledVideos, useListVideos, getListVideosQueryKey } from "@workspace/api-client-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout";
@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Search,
-  Filter,
   Calendar as CalendarIcon,
   CalendarDays,
   LayoutGrid,
@@ -137,7 +136,18 @@ type VideoSummary = {
   xError?: string | null;
   facebookStatus?: string | null;
   facebookError?: string | null;
+  /** Próximo reintento a nivel de video (mínimo de los deadlines por red). */
+  nextRetryAt?: string | Date | null;
 };
+
+function fmtNextRetry(v: VideoSummary): string | null {
+  if (!v.nextRetryAt) return null;
+  const d = new Date(v.nextRetryAt);
+  if (Number.isNaN(d.getTime())) return null;
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const time = d.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+  return sameDay ? time : `${d.toLocaleDateString("es-CL", { day: "numeric", month: "short" })} ${time}`;
+}
 
 // A network is "targeted" by a post when its per-platform status is set and
 // not explicitly "skipped" (the value used by the scheduler to opt out of a
@@ -176,26 +186,30 @@ function coverSrc(v: VideoSummary): string | null {
 function statusColor(status?: string): string {
   if (status === "published") return "ring-emerald-500/40";
   if (status === "uploaded") return "ring-blue-500/40";
+  if (status === "retrying") return "ring-amber-500/40";
   if (status === "error") return "ring-rose-500/40";
   return "ring-foreground/10";
 }
 
-function aggregateStatus(v: VideoSummary): "published" | "uploaded" | "error" | "scheduled" {
+function aggregateStatus(v: VideoSummary): "published" | "uploaded" | "retrying" | "error" | "scheduled" {
   const nets = videoNetworks(v);
   if (nets.some((n) => n.status === "error")) return "error";
+  if (nets.some((n) => n.status === "retrying")) return "retrying";
   const live = nets.filter((n) => n.status && n.status !== "pending");
   if (live.length > 0 && nets.every((n) => n.status === "published")) return "published";
   if (live.length > 0) return "uploaded";
   return "scheduled";
 }
 
-type StatusFilter = "all" | "scheduled" | "uploaded" | "published" | "error";
+type StatusFilter = "all" | "scheduled" | "uploaded" | "retrying" | "published" | "error";
 type NetworkFilter = "all" | Network;
 type TypeFilter = "all" | "video" | "single_network" | "multi_network";
 
 const ALL_NETWORKS: Network[] = ["youtube", "instagram", "tiktok", "linkedin", "x", "facebook"];
 
-const VIDEOS_QUERY_KEY = ["/api/content/videos"] as const;
+// Clave ÚNICA de la lista de videos, compartida con useListVideos() (dashboard,
+// agenda) y con /videos, para que las invalidaciones crucen entre páginas.
+const VIDEOS_QUERY_KEY = getListVideosQueryKey();
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -224,6 +238,7 @@ const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "Cualquier estado" },
   { value: "scheduled", label: "Programado" },
   { value: "uploaded", label: "Subido" },
+  { value: "retrying", label: "Reintentando" },
   { value: "published", label: "Publicado" },
   { value: "error", label: "Error" },
 ];
@@ -313,8 +328,6 @@ export default function SchedulePage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [networkFilter, setNetworkFilter] = useState<NetworkFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [memberFilter, setMemberFilter] = useState<string>("all");
-  const [showFilters, setShowFilters] = useState(false);
   const [quickCreateDate, setQuickCreateDate] = useState<Date | null>(null);
   const [activeDragId, setActiveDragId] = useState<number | null>(null);
   const [showConflictDetail, setShowConflictDetail] = useState(false);
@@ -387,19 +400,21 @@ export default function SchedulePage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
     },
   });
 
   /**
-   * Quick-post mutation: creates the video, then PATCHes scheduledAt + the
-   * per-network "pending" flags. Used by both "Programar" (closes modal,
+   * Quick-post mutation: un ÚNICO POST atómico que crea el video con
+   * scheduledAt + los estados por red en la misma llamada (antes era
+   * POST draft + PATCH: si el PATCH fallaba quedaba un borrador huérfano
+   * invisible en el calendario). Used by both "Programar" (closes modal,
    * stays in /agenda) and "Crear video completo" (navigates to the wizard
    * for cover/descriptions/etc).
    *
-   * The "andEdit" flag is propagated through the mutation context so we
-   * branch in onSuccess instead of duplicating the create+patch fetch
-   * logic in two near-identical mutations.
+   * Targeting real por red: las redes seleccionadas quedan en "pending" y las
+   * NO seleccionadas en "skipped" (el scheduler no las intenta ni las cuenta
+   * como fallo). La descripción base se copia a LinkedIn/X/Facebook cuando
+   * están seleccionadas, para que el scheduler tenga contenido que publicar.
    */
   const quickCreateMutation = useMutation({
     mutationFn: async (input: {
@@ -411,41 +426,41 @@ export default function SchedulePage() {
       andEdit?: boolean;
       asDraft?: boolean;
     }) => {
+      const scheduledAt = buildScheduledAt(input.day, input.hour);
+      const body: Record<string, unknown> = {
+        title: input.title,
+        description: input.description,
+        scheduledAt,
+      };
+      if (input.asDraft) {
+        // Drafts: keep the chosen day/hour for reference but leave status as
+        // "draft" — the scheduler ignores drafts so nothing is published
+        // until the user promotes it.
+        body.status = "draft";
+      } else {
+        for (const net of ALL_NETWORKS) {
+          body[`${net}Status`] = input.networks.includes(net) ? "pending" : "skipped";
+        }
+        if (input.networks.includes("linkedin")) body.linkedinDescription = input.description;
+        if (input.networks.includes("x")) body.xDescription = input.description;
+        if (input.networks.includes("facebook")) body.facebookDescription = input.description;
+      }
       const createRes = await fetch(`${API_BASE}/content/videos`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: input.title, description: input.description }),
+        body: JSON.stringify(body),
       });
-      if (!createRes.ok) throw new Error(`HTTP ${createRes.status} al crear`);
-      const created = await createRes.json();
-
-      const scheduledAt = buildScheduledAt(input.day, input.hour);
-      // Drafts: keep the chosen day/hour for reference but leave status as
-      // "draft" and don't flip per-network flags to "pending" — the scheduler
-      // ignores drafts so nothing is published until the user promotes it.
-      const patchBody: Record<string, unknown> = input.asDraft
-        ? { status: "draft", scheduledAt }
-        : { status: "scheduled", scheduledAt };
-      if (!input.asDraft) {
-        for (const net of input.networks) {
-          patchBody[`${net}Status`] = "pending";
-        }
+      if (!createRes.ok) {
+        const detail = await createRes.json().catch(() => ({} as { error?: string }));
+        throw new Error(detail?.error || `HTTP ${createRes.status} al crear`);
       }
-      const patchRes = await fetch(`${API_BASE}/content/videos/${created.id}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patchBody),
-      });
-      if (!patchRes.ok) throw new Error(`HTTP ${patchRes.status} al guardar`);
-      const patched = await patchRes.json();
-      return { video: patched, andEdit: !!input.andEdit, asDraft: !!input.asDraft };
+      const created = await createRes.json();
+      return { video: created, andEdit: !!input.andEdit, asDraft: !!input.asDraft };
     },
     onSuccess: ({ video, andEdit, asDraft }) => {
       setQuickCreateDate(null);
       queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
       if (andEdit && video?.id) {
         // Hand the user off to the wizard at this video. /videos already
         // reads ?select=<id> on mount and opens the wizard at the right
@@ -468,23 +483,6 @@ export default function SchedulePage() {
       });
     },
   });
-
-  const [me, setMe] = useState<{ id: number; name: string } | null>(null);
-  useEffect(() => {
-    fetch(`${API_BASE}/auth/me`, { credentials: "include" })
-      .then((r) => (r.ok ? (r.json() as Promise<{ id?: number; email?: string; name?: string }>) : null))
-      .then((d) => {
-        if (d?.id) {
-          setMe({
-            id: d.id,
-            name: String(d.name || d.email || "Yo").split(" ")[0],
-          });
-        }
-      })
-      .catch((err) => {
-        console.warn("[schedule] auth/me failed:", err?.message ?? err);
-      });
-  }, []);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 6), [weekStart]);
@@ -524,11 +522,9 @@ export default function SchedulePage() {
         if (!nets.includes(networkFilter)) return false;
       }
       if (typeFilter !== "all" && videoType(v) !== typeFilter) return false;
-      // memberFilter: the API list is already scoped by current user; this is a
-      // visual control consistent with future multi-member support.
       return true;
     });
-  }, [videos, search, statusFilter, networkFilter, typeFilter, memberFilter]);
+  }, [videos, search, statusFilter, networkFilter, typeFilter]);
 
   const videosByDay = useMemo(() => {
     const buckets: Record<string, VideoSummary[]> = {};
@@ -706,6 +702,14 @@ export default function SchedulePage() {
     const next = new Date(targetDate);
     next.setHours(old.getHours(), old.getMinutes(), 0, 0);
     if (next.getTime() === old.getTime()) return;
+    // Aviso (no bloqueo): mover a una fecha pasada hace que el programador la
+    // procese de inmediato en su próximo ciclo.
+    if (next.getTime() < Date.now()) {
+      toast({
+        title: "Fecha en el pasado",
+        description: "La publicación quedó en una hora ya vencida: se procesará de inmediato en el próximo ciclo.",
+      });
+    }
     rescheduleMutation.mutate({ id, scheduledAt: next.toISOString() });
   };
 
@@ -718,7 +722,7 @@ export default function SchedulePage() {
               <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
                 Publicaciones
                 <HelpHint
-                  text="Aquí ves tus publicaciones programadas. El anillo de cada video indica su estado: verde = publicado, azul = subido, ámbar = pendiente, rojo = error. Usa 'Ejecutar Cola' para procesar manualmente las pendientes."
+                  text="Aquí ves tus publicaciones programadas. El anillo de cada video indica su estado: verde = publicado, azul = subido, ámbar = reintentando, rojo = error. Usa 'Procesar cola' para revisar las pendientes; el programador automático las publica en su próximo ciclo."
                   side="bottom"
                 />
               </h1>
@@ -828,10 +832,11 @@ export default function SchedulePage() {
               <button
                 onClick={() => checkSchedule.mutate()}
                 disabled={checkSchedule.isPending}
+                title="Revisa la cola de publicaciones pendientes. Los videos cuya hora ya pasó los procesa el programador automático en su próximo ciclo (cada 60 segundos)."
                 className="flex items-center px-4 py-2 bg-primary hover:bg-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/25 transition disabled:opacity-50"
               >
                 <Play className={`w-4 h-4 mr-2 ${checkSchedule.isPending ? "animate-pulse" : ""}`} />
-                {checkSchedule.isPending ? "Procesando..." : "Ejecutar Cola"}
+                {checkSchedule.isPending ? "Revisando..." : "Procesar cola"}
               </button>
             </div>
           </header>
@@ -857,15 +862,6 @@ export default function SchedulePage() {
                   {o.label}
                 </option>
               ))}
-            </select>
-            <select
-              value={memberFilter}
-              onChange={(e) => setMemberFilter(e.target.value)}
-              className="bg-background/60 border border-foreground/10 rounded-lg px-2 py-1.5 text-xs"
-              aria-label="Filtrar por miembro"
-            >
-              <option value="all">Todos los miembros</option>
-              {me && <option value={String(me.id)}>{me.name}</option>}
             </select>
             <select
               value={networkFilter}
@@ -904,16 +900,6 @@ export default function SchedulePage() {
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition ${
-                showFilters ? "bg-primary/20 text-primary" : "border border-foreground/10 text-muted-foreground hover:text-foreground"
-              }`}
-              aria-label="Mostrar/ocultar filtros avanzados"
-            >
-              <Filter className="w-3.5 h-3.5" />
-              {showFilters ? "Ocultar" : "Más"}
-            </button>
           </div>
 
           {/* Conflict banner */}
@@ -961,21 +947,34 @@ export default function SchedulePage() {
             </span>
           </div>
 
-          {checkSchedule.data && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4"
-            >
-              <h3 className="text-emerald-400 font-bold flex items-center mb-1 text-sm">
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Cola procesada
-              </h3>
-              <p className="text-emerald-400/80 text-xs">
-                Procesados: {checkSchedule.data.processed} · Errores: {checkSchedule.data.errors}
-              </p>
-            </motion.div>
-          )}
+          {checkSchedule.data && (() => {
+            // El endpoint /content/schedule/check devuelve además `pending` y
+            // `message` (el tipo generado ScheduleCheckResult aún no los
+            // declara — ver followUp de codegen). Pintamos los campos reales
+            // en vez del engañoso "Procesados: 0".
+            const check = checkSchedule.data as typeof checkSchedule.data & {
+              pending?: number;
+              message?: string;
+            };
+            return (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4"
+              >
+                <h3 className="text-emerald-400 font-bold flex items-center mb-1 text-sm">
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Cola revisada
+                </h3>
+                {check.message && (
+                  <p className="text-emerald-400/90 text-xs mb-0.5">{check.message}</p>
+                )}
+                <p className="text-emerald-400/80 text-xs">
+                  Pendientes: {check.pending ?? 0} · Procesados: {check.processed} · Errores: {check.errors}
+                </p>
+              </motion.div>
+            );
+          })()}
 
           {videosLoading && filteredVideos.length === 0 && (
             <CalendarSkeleton rows={view === "month" ? 6 : view === "week" ? 1 : 4} cols={view === "day" ? 1 : 7} />
@@ -1461,6 +1460,11 @@ function DraggableVideoCard({
       <p className={`line-clamp-2 leading-tight font-medium ${compact ? "text-[10px]" : "text-[11px]"}`}>
         {video.title}
       </p>
+      {agg === "retrying" && (
+        <p className="text-[10px] text-amber-400 mt-0.5">
+          Reintentando{fmtNextRetry(video) ? ` · próx. ${fmtNextRetry(video)}` : ""}
+        </p>
+      )}
       {cap && !compact && (
         <p className="line-clamp-1 leading-tight text-[10px] text-muted-foreground mt-0.5">{cap}</p>
       )}
@@ -1747,12 +1751,13 @@ function DayDetailModal({
             const accent =
               agg === "published" ? "border-l-emerald-400"
               : agg === "uploaded" ? "border-l-blue-400"
+              : agg === "retrying" ? "border-l-amber-400"
               : agg === "error" ? "border-l-rose-400"
               : "border-l-primary";
             return (
               <Link
                 key={v.id}
-                href={`/videos`}
+                href={`/videos?select=${v.id}`}
                 className={`flex items-center gap-2 p-2 rounded-lg bg-foreground/5 border-l-2 ${accent} hover:bg-foreground/10 transition`}
               >
                 <span className="font-mono text-xs text-primary font-semibold w-12 flex-shrink-0">{time}</span>
@@ -1820,6 +1825,7 @@ function MonthChip({ video }: { video: VideoSummary }) {
   const accent =
     agg === "published" ? "border-l-emerald-400"
     : agg === "uploaded" ? "border-l-blue-400"
+    : agg === "retrying" ? "border-l-amber-400"
     : agg === "error" ? "border-l-rose-400"
     : "border-l-primary";
 
@@ -1919,6 +1925,8 @@ function SelectedDayPanel({ date, videos }: { date: Date; videos: VideoSummary[]
                               ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
                               : n.status === "uploaded"
                               ? "bg-blue-500/15 text-blue-300 border-blue-500/30"
+                              : n.status === "retrying"
+                              ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
                               : n.status === "error"
                               ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
                               : "bg-foreground/10 text-muted-foreground border-foreground/10"
@@ -1932,6 +1940,11 @@ function SelectedDayPanel({ date, videos }: { date: Date; videos: VideoSummary[]
                       ))
                     )}
                   </div>
+                  {aggregateStatus(v) === "retrying" && fmtNextRetry(v) && (
+                    <p className="text-[10px] text-amber-400 mt-1.5">
+                      Próximo reintento: {fmtNextRetry(v)}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -2012,6 +2025,13 @@ function QuickPostModal({
 
   const canSubmit =
     !!day && title.trim().length > 0 && description.trim().length > 0 && networks.length > 0 && !isPending;
+  // Aviso (no bloqueo): programar en el pasado significa publicación inmediata
+  // en el próximo ciclo del programador.
+  const isPastSchedule = useMemo(() => {
+    if (!day) return false;
+    const ts = new Date(buildScheduledAt(day, hour)).getTime();
+    return Number.isFinite(ts) && ts < Date.now();
+  }, [day, hour]);
   // Drafts only require a title — description and networks can be filled in
   // later from the editor. Networks default to [] is fine because the patch
   // skips per-network "pending" flags when asDraft.
@@ -2124,6 +2144,13 @@ function QuickPostModal({
               />
             </div>
           </div>
+
+          {isPastSchedule && (
+            <p className="text-[11px] text-amber-400 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              La fecha y hora elegidas ya pasaron: la publicación se procesará de inmediato.
+            </p>
+          )}
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Redes</label>

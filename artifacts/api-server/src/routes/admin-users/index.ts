@@ -42,6 +42,9 @@ router.patch("/admin/users/:id/approval", async (req: Request, res: Response) =>
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
 
+  const me = req.user as any;
+  if (id === me.id) { res.status(400).json({ error: "No puedes cambiar el estado de aprobación de tu propia cuenta" }); return; }
+
   const body = req.body as { status?: unknown };
   const status = typeof body.status === "string" ? body.status : "";
   if (!["approved", "rejected", "pending"].includes(status)) {

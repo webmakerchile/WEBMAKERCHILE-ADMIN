@@ -29,6 +29,16 @@ const MUST_AI = [
   "/api/gemini/generate-cover",
   "/api/studio/ideas/generate",
   "/api/studio/ideas/77/generate-cover",
+  "/api/community/sorprendeme",
+  "/api/community/historias/generar",
+  "/api/community/historias/detectar-formato",
+  "/api/community/historias/reintentar",
+  "/api/community/descripciones/generar",
+  "/api/community/descripciones/calcular-slides",
+  "/api/community/descripciones/reintentar-slide",
+  "/api/hub/contracts/extract-pdf",
+  "/api/hub/contracts/extract-from-meeting",
+  "/api/hub/contracts/ai-chat",
 ];
 
 const MUST_PUBLISH = [
@@ -67,5 +77,8 @@ describe("Rate-limit regex coverage in app.ts", () => {
   it("does not over-apply aiLimiter to GET-style listing routes", () => {
     expect(aiRegex.test("/api/content/videos")).toBe(false);
     expect(aiRegex.test("/api/auth/me")).toBe(false);
+    expect(aiRegex.test("/api/community/historias")).toBe(false);
+    expect(aiRegex.test("/api/community/descripciones")).toBe(false);
+    expect(aiRegex.test("/api/hub")).toBe(false);
   });
 });

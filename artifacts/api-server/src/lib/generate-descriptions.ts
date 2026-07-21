@@ -1,4 +1,5 @@
 import { buildBrandToneSuffix } from "./brand-tone";
+import { BRAND_NAME, PLATFORM_GUIDES, PLATFORM_LIMITS } from "./platform-guides";
 
 export type DescTargets = "tiktok" | "instagram" | "youtube" | "linkedin" | "x" | "facebook";
 
@@ -26,16 +27,10 @@ type OpenAILike = {
   chat: { completions: { create: (req: unknown) => Promise<{ choices: Array<{ message?: { content?: string | null } }> }> } };
 };
 
-const GUIDES: Record<DescTargets, string> = {
-  tiktok: "TikTok (máx 2200): tono cercano, hook fuerte en la 1ra línea, 4-6 hashtags relevantes en español.",
-  instagram: "Instagram (máx 2200): tono inspirador, emojis moderados, 5-10 hashtags al final en español.",
-  youtube: "YouTube descripción (máx 5000): primer párrafo descriptivo con keywords SEO, luego beneficios, sin hashtags.",
-  linkedin: "LinkedIn (~150-300 caracteres): tono profesional, sin emojis excesivos, 2-3 hashtags al final.",
-  x: "X/Twitter (HASTA 280 caracteres ESTRICTOS, incluyendo hashtags): un solo tweet conciso, 1-2 hashtags.",
-  facebook: "Facebook (máx 500 caracteres): tono cercano y conversacional, 1-3 hashtags, invita a interactuar (comentar/compartir).",
-};
+// Guías compartidas con el generador de comunidad (ver lib/platform-guides.ts).
+const GUIDES: Record<DescTargets, string> = PLATFORM_GUIDES;
 
-const ALL_TARGETS: DescTargets[] = ["tiktok", "instagram", "youtube", "linkedin", "x"];
+const ALL_TARGETS: DescTargets[] = ["tiktok", "instagram", "youtube", "linkedin", "x", "facebook"];
 
 export function pickEffectiveTargets(video: DescVideo, requested: string[] | undefined, force: boolean): DescTargets[] {
   const targets: DescTargets[] = (Array.isArray(requested) && requested.length
@@ -55,7 +50,7 @@ export function pickEffectiveTargets(video: DescVideo, requested: string[] | und
 
 export function buildPrompt(video: DescVideo, wanted: DescTargets[], toneSuffix: string): string {
   const baseInfo = `Título: "${video.title}"\nDescripción base: "${video.description || ""}"`;
-  return `Eres un copywriter experto para WebMakerChile (emprendimiento, agencia digital, Chile). Genera descripciones para un video, una por red social.
+  return `Eres un copywriter experto para ${BRAND_NAME} (emprendimiento, agencia digital, LATAM). Genera descripciones para un video, una por red social.
 
 ${baseInfo}
 
@@ -79,8 +74,8 @@ export function parseAIResponse(raw: string): GeneratedDescriptions | null {
 }
 
 export function applyLengthClamps(p: GeneratedDescriptions): GeneratedDescriptions {
-  if (typeof p.x === "string") p.x = p.x.slice(0, 280);
-  if (typeof p.facebook === "string") p.facebook = p.facebook.slice(0, 500);
+  if (typeof p.x === "string") p.x = p.x.slice(0, PLATFORM_LIMITS.x);
+  if (typeof p.facebook === "string") p.facebook = p.facebook.slice(0, PLATFORM_LIMITS.facebook);
   return p;
 }
 

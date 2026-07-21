@@ -6,12 +6,20 @@ import { communityContent } from "@workspace/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { firstText } from "../../lib/gemini-parts";
+import { buildBrandToneSuffix } from "../../lib/brand-tone";
+import { PLATFORM_LIMITS, PLATFORM_HASHTAGS } from "../../lib/platform-guides";
 import { readFile } from "fs/promises";
 import path from "path";
 
 const router: IRouter = Router();
 
-const anthropic = {
+// Modelo real de texto usado por este módulo (vía OpenAI).
+const OPENAI_TEXT_MODEL = "gpt-4.1";
+
+// Shim de compatibilidad: emula la forma de la API `messages.create` de
+// Anthropic (para no reescribir los call sites), pero SIEMPRE llama a OpenAI
+// chat completions con el modelo indicado en `params.model`.
+const openaiShim = {
   messages: {
     create: async (params: {
       model: string;
@@ -24,7 +32,7 @@ const anthropic = {
       if (params.system) msgs.push({ role: "system", content: params.system });
       msgs.push(...params.messages);
       const resp = await ai._openai.chat.completions.create({
-        model: "gpt-4.1",
+        model: params.model,
         messages: msgs,
         max_completion_tokens: params.max_tokens,
       });
@@ -33,6 +41,13 @@ const anthropic = {
     },
   },
 };
+
+// userId del usuario autenticado (las rutas /api van detrás de requireAuth).
+// Se usa para inyectar el tono de marca configurado en Ajustes.
+function getReqUserId(req: { user?: unknown }): number | null {
+  const id = (req.user as { id?: number } | undefined)?.id;
+  return typeof id === "number" ? id : null;
+}
 
 async function resolveAsset(...segments: string[]): Promise<string> {
   const candidates = [
@@ -166,6 +181,30 @@ const GEMINI_IMAGE_BASE_CONFIG = {
   responseModalities: ["TEXT", "IMAGE"] as string[],
   thinkingConfig: { includeThoughts: false },
 } as const;
+
+// ============================================
+// ASPECTO EXACTO DE LAS IMÁGENES
+// gpt-image-1 (el backend real detrás del adaptador) solo soporta 1024x1024,
+// 1024x1536 y 1536x1024. Pedimos el tamaño soportado más cercano al aspecto
+// prometido por la UI (1:1, 4:5 o 9:16) y luego recortamos SIEMPRE con sharp
+// al aspecto exacto — antes todo salía 1024x1536 y el resize solo se aplicaba
+// cuando "texto en imagen" estaba activo.
+// ============================================
+const FORMATO_DIMS = {
+  "1:1": { width: 1080, height: 1080, apiSize: "1024x1024" },
+  "4:5": { width: 1080, height: 1350, apiSize: "1024x1536" },
+  "9:16": { width: 1080, height: 1920, apiSize: "1024x1536" },
+} as const;
+type FormatoImagen = keyof typeof FORMATO_DIMS;
+
+async function ajustarAspectoExacto(base64: string, formato: FormatoImagen): Promise<string> {
+  const { width, height } = FORMATO_DIMS[formato];
+  const buf = await sharp(Buffer.from(base64, "base64"))
+    .resize(width, height, { fit: "cover", position: "center" })
+    .png()
+    .toBuffer();
+  return buf.toString("base64");
+}
 
 // Selecciona 2-3 referencias canon: la mejor por score semántico + 1-2 adicionales
 // para dar variedad de pose y forzar consistencia de estilo en primera generación.
@@ -447,9 +486,6 @@ const SVG_DEFS = `
     </filter>
   </defs>
 `;
-// Backwards-compat alias
-const SVG_FILTER_DEFS = SVG_DEFS;
-void SVG_FILTER_DEFS;
 
 // Especificación rigurosa del zorro de marca - obligatoria en TODOS los prompts de imagen
 // Basado en la IMAGEN MASTER OFICIAL: artifacts/api-server/public/fox-reference.png
@@ -678,11 +714,12 @@ ${seedBlock}${evitarBlock}
 
 Devuelve SOLO el tema, máx 100 caracteres, sin comillas ni prefijos.`;
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+    const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
+    const response = await openaiShim.messages.create({
+      model: OPENAI_TEXT_MODEL,
       max_tokens: 200,
       temperature: 1,
-      system: SORPRENDEME_SYSTEM,
+      system: SORPRENDEME_SYSTEM + toneSuffix,
       messages: [{ role: "user", content: userPrompt }],
     });
     const block = response.content[0];
@@ -932,17 +969,17 @@ Tono: cercano, latino, accesible, sin cringe. Habla de "tú". CERO emojis (inter
 FORMATO DE SALIDA: SOLO un objeto JSON válido, sin markdown, sin texto adicional. Estructura:
 { "copy_principal": "...", "sub_copy": "...", "cta": "...", "hashtags": "#... #..." }`;
 
-async function callClaudeHistoria(
-  tipoHistoria: string, concepto: string, extraInstruction?: string,
+async function callTextoHistoria(
+  tipoHistoria: string, concepto: string, extraInstruction?: string, toneSuffix = "",
 ): Promise<{ copy_principal: string; sub_copy: string; cta: string; hashtags: string }> {
   const userMessage = `TIPO de historia: ${tipoHistoria}
 TEMA/CONCEPTO: ${concepto}
 
 Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.${extraInstruction ? "\n\n" + extraInstruction : ""}`;
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+  const response = await openaiShim.messages.create({
+    model: OPENAI_TEXT_MODEL,
     max_tokens: 1024,
-    system: SYSTEM_PROMPT_HISTORIA_TEXTO,
+    system: SYSTEM_PROMPT_HISTORIA_TEXTO + toneSuffix,
     messages: [{ role: "user", content: userMessage }],
   });
   const block = response.content[0];
@@ -980,7 +1017,7 @@ const CTA_INTERMEDIO_INSTRUCTION = `Este story NO es el último de la serie — 
 async function generarTextoHistoria(
   tipoHistoria: string,
   concepto: string,
-  options?: { rol?: RolFrame; numero?: number; total?: number },
+  options?: { rol?: RolFrame; numero?: number; total?: number; toneSuffix?: string },
 ): Promise<{
   copy_principal: string; sub_copy: string; cta: string; hashtags: string;
 }> {
@@ -994,13 +1031,14 @@ async function generarTextoHistoria(
     conceptoFinal = `${concepto} (rol del frame: ${options.rol})`;
   }
 
-  let texto = await callClaudeHistoria(tipoHistoria, conceptoFinal, extraSerie || undefined);
+  const toneSuffix = options?.toneSuffix || "";
+  let texto = await callTextoHistoria(tipoHistoria, conceptoFinal, extraSerie || undefined, toneSuffix);
   const issues = excedeLimites(texto);
   if (issues.length > 0) {
     console.log("[Historias] copy excede límites, pidiendo versión más corta:", issues);
     try {
       const extraRetry = `${extraSerie}\n\nIMPORTANTE: tu intento anterior excedió los límites: ${issues.join("; ")}. REESCRIBE TODO el JSON con versiones MÁS CORTAS y PUNZANTES que sí respeten los máximos. Prefiere impacto sobre información. MANTÉN las reglas de rol/CTA indicadas arriba.`;
-      texto = await callClaudeHistoria(tipoHistoria, conceptoFinal, extraRetry);
+      texto = await callTextoHistoria(tipoHistoria, conceptoFinal, extraRetry, toneSuffix);
     } catch (e) {
       console.warn("[Historias] retry de copy falló, uso truncamiento duro:", e);
     }
@@ -1036,8 +1074,8 @@ ESTRUCTURAS VÁLIDAS según cantidad:
 
 DEVUELVE SOLO un JSON válido sin markdown:
 { "formato_recomendado": "unica"|"serie", "cantidad_frames": 1|2|3|4|5, "razon": "...breve...", "estructura": ["unica"] | [...roles...] }`;
-  const resp = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+  const resp = await openaiShim.messages.create({
+    model: OPENAI_TEXT_MODEL,
     max_tokens: 400,
     system: sys,
     messages: [{ role: "user", content: `TEMA: ${concepto}\n\nDevuelve solo el JSON.` }],
@@ -1072,6 +1110,7 @@ async function generarFrameHistoria(args: {
   numero: number;
   total: number;
   textoPreservado?: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
+  toneSuffix?: string;
 }): Promise<{
   numero_frame: number;
   total_frames: number;
@@ -1102,12 +1141,13 @@ async function generarFrameHistoria(args: {
       const resp = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents,
-        config: GEMINI_IMAGE_BASE_CONFIG,
+        config: { ...GEMINI_IMAGE_BASE_CONFIG, imageSize: FORMATO_DIMS["9:16"].apiSize },
       });
       const finalImg = extractFinalImage(resp);
       if (!finalImg) throw new Error("Gemini no devolvió imagen final");
-      imgBase64 = finalImg.data;
-      mime = finalImg.mimeType;
+      // Recorte SIEMPRE al 9:16 exacto prometido (1080x1920), venga o no texto en imagen
+      imgBase64 = await ajustarAspectoExacto(finalImg.data, "9:16");
+      mime = "image/png";
       break;
     } catch (e) {
       lastErr = e;
@@ -1122,7 +1162,7 @@ async function generarFrameHistoria(args: {
   const texto = args.textoPreservado
     ? args.textoPreservado
     : await generarTextoHistoria(args.tipoHistoria, args.concepto, {
-        rol: args.rol, numero: args.numero, total: args.total,
+        rol: args.rol, numero: args.numero, total: args.total, toneSuffix: args.toneSuffix,
       });
 
   let outBase64 = imgBase64;
@@ -1306,6 +1346,7 @@ router.post("/community/historias/generar", async (req, res) => {
   try {
     const body = GenerarHistoriaBody.parse(req.body);
     const referenceBase64 = await getFoxRefBase64();
+    const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
 
     // Determinar estructura de frames
     const estructura: RolFrame[] = body.formato === "serie"
@@ -1324,6 +1365,7 @@ router.post("/community/historias/generar", async (req, res) => {
         rol,
         numero: i + 1,
         total,
+        toneSuffix,
       })),
     );
 
@@ -1442,7 +1484,7 @@ REGLAS DE ESCRITURA (NO NEGOCIABLES):
    - La descripción DEBE enumerar y explicar BREVEMENTE los N puntos (1 línea por punto, formato "1. ... 2. ... 3. ..." o con emojis numéricos).
    - Aplica TANTO si la publicación es única (una sola imagen) COMO si es un carrusel (en el carrusel la descripción ofrece el resumen de los N puntos para quien no haga swipe).
    - Esta regla aplica a TIKTOK, INSTAGRAM y YOUTUBE SHORTS.
-   - TWITTER mantiene su límite de 280 caracteres: si no caben los N puntos enteros, lista los títulos cortos numerados (ej: "1) Web lenta 2) Sin móvil 3) Sin CTA 4) Sin chat 5) Sin SEO") + CTA + hashtags.
+   - TWITTER mantiene su límite de ${PLATFORM_LIMITS.x} caracteres: si no caben los N puntos enteros, lista los títulos cortos numerados (ej: "1) Web lenta 2) Sin móvil 3) Sin CTA 4) Sin chat 5) Sin SEO") + CTA + hashtags.
    - Cierra siempre con pregunta/CTA después de la lista.
 3. Tono cercano, latino, accesible, sin cringe
 4. SIEMPRE pregunta o CTA al final para generar comentarios
@@ -1451,10 +1493,10 @@ REGLAS DE ESCRITURA (NO NEGOCIABLES):
 7. Conecta con servicios de la agencia cuando sea natural
 
 ESTRUCTURA POR RED:
-📱 TIKTOK: hook + 1-2 líneas + CTA + 5-7 hashtags (mezcla nicho+trending+marca)
-📸 INSTAGRAM: hook emocional + 3-4 líneas con valor/storytelling + pregunta + 8-12 hashtags
-▶️ YOUTUBE SHORTS: keyword en línea 1 + descripción clara + CTA + 4-6 hashtags (#shorts obligatorio)
-🐦 X/TWITTER: MÁX 280 caracteres totales incluyendo hashtags. Hook punzante + insight + 2-3 hashtags
+📱 TIKTOK: hook + 1-2 líneas + CTA + ${PLATFORM_HASHTAGS.tiktok} hashtags (mezcla nicho+trending+marca)
+📸 INSTAGRAM: hook emocional + 3-4 líneas con valor/storytelling + pregunta + ${PLATFORM_HASHTAGS.instagram} hashtags
+▶️ YOUTUBE SHORTS: keyword en línea 1 + descripción clara + CTA + ${PLATFORM_HASHTAGS.youtube_shorts} hashtags (#shorts obligatorio)
+🐦 X/TWITTER: MÁX ${PLATFORM_LIMITS.x} caracteres totales incluyendo hashtags. Hook punzante + insight + ${PLATFORM_HASHTAGS.x} hashtags
 
 HASHTAGS DE MARCA: #WebMakerLatam #WebMaker #ComunidadWebMaker (al menos 2 excepto Twitter donde es opcional).
 HASHTAGS DE INDUSTRIA del cliente sugeridos: #Emprendedores #PymesLatam #NegociosOnline #Marketing #Ecommerce #PaginasWeb #Chatbot #IA #Automatizacion #SEO #MarketingDigital #VendeMas #WhatsAppBusiness
@@ -1662,13 +1704,15 @@ async function generarImagenSlide(
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-image-preview",
     contents,
-    config: GEMINI_IMAGE_BASE_CONFIG,
+    config: { ...GEMINI_IMAGE_BASE_CONFIG, imageSize: FORMATO_DIMS[formato].apiSize },
   });
   const finalImg = extractFinalImage(response);
   if (!finalImg) {
     throw new Error(`Gemini no devolvió imagen final para slide ${slide.numero}`);
   }
-  return finalImg.data;
+  // Recorte SIEMPRE al aspecto exacto prometido (1:1 → 1080x1080, 4:5 → 1080x1350),
+  // venga o no "texto en imagen" después.
+  return ajustarAspectoExacto(finalImg.data, formato);
 }
 
 function isRateLimitErr(err: any): boolean {
@@ -1910,8 +1954,8 @@ Devuelve SOLO JSON con esta forma exacta, sin texto extra ni markdown:
   "estructura": ["portada", "<rol slide 2>", "<rol slide 3>", ..., "CTA"]
 }`;
 
-    const resp = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+    const resp = await openaiShim.messages.create({
+      model: OPENAI_TEXT_MODEL,
       max_tokens: 800,
       system: sys,
       messages: [{ role: "user", content: `TEMA: ${body.tema}\n\nDevuelve solo el JSON.` }],
@@ -1956,26 +2000,27 @@ ${body.tipo_publicacion === "carrusel"
   : `La única slide es rol "unica". Incluye un "prompt_visual" claro.`}
 Solo el JSON.`;
 
-    const claudeResp = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
+    const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
+    const aiResp = await openaiShim.messages.create({
+      model: OPENAI_TEXT_MODEL,
       max_tokens: 8192,
-      system: SYSTEM_PROMPT_DESC,
+      system: SYSTEM_PROMPT_DESC + toneSuffix,
       messages: [{ role: "user", content: userMessage }],
     });
-    const block = claudeResp.content[0];
+    const block = aiResp.content[0];
     const raw = block && block.type === "text" ? block.text.trim() : "";
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
 
-    let claudeData: any;
+    let aiData: any;
     try {
-      claudeData = JSON.parse(cleaned);
+      aiData = JSON.parse(cleaned);
     } catch {
       res.status(502).json({ success: false, error: "La IA no devolvió JSON válido. Intenta de nuevo.", raw: cleaned });
       return;
     }
 
-    const slidesPlan: SlidePlan[] = Array.isArray(claudeData.slides) && claudeData.slides.length > 0
-      ? claudeData.slides.slice(0, cantidad).map((s: any, i: number): SlidePlan => ({
+    const slidesPlan: SlidePlan[] = Array.isArray(aiData.slides) && aiData.slides.length > 0
+      ? aiData.slides.slice(0, cantidad).map((s: any, i: number): SlidePlan => ({
           numero: s.numero || i + 1,
           rol: (s.rol as SlideRol) || (cantidad === 1 ? "unica" : (i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo")),
           titulo: String(s.titulo || "").slice(0, 70),
@@ -2022,7 +2067,12 @@ Solo el JSON.`;
       }),
     );
 
-    const descripciones = claudeData.redes || {};
+    const descripciones = aiData.redes || {};
+    // X/Twitter: clamp duro a 280 caracteres — el modelo a veces se pasa
+    // aunque el prompt lo prohíba, y la UI promete el límite real de la red.
+    if (typeof descripciones?.twitter?.post_completo === "string") {
+      descripciones.twitter.post_completo = descripciones.twitter.post_completo.slice(0, PLATFORM_LIMITS.x);
+    }
 
     const [row] = await db.insert(communityContent).values({
       kind: "descripcion",
@@ -2069,7 +2119,7 @@ const ReintentarSlideBody = z.object({
 // Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
 async function regenerarTextoSlide(
   tema: string, tipoContenido: string, rol: SlideRol, numero: number, totalSlides: number,
-  ajuste?: string,
+  ajuste?: string, toneSuffix = "",
 ): Promise<{ titulo: string; subtitulo: string; prompt_visual?: string }> {
   const ajusteTxt = ajuste ? `\n\nAJUSTE PEDIDO POR EL USUARIO: "${ajuste}". Aplica este ajuste al copy.` : "";
   const prompt = `Genera SOLO una slide de carrusel para WebMakerLatam.
@@ -2078,15 +2128,15 @@ Es la slide número ${numero} de ${totalSlides} con rol "${rol}".${ajusteTxt}
 
 Devuelve JSON estricto:
 { "titulo": "máx 50 chars", "subtitulo": "máx 90 chars", "prompt_visual": "1 frase descripción visual" }`;
-  const resp = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+  const resp = await openaiShim.messages.create({
+    model: OPENAI_TEXT_MODEL,
     max_tokens: 400,
-    system: SYSTEM_PROMPT_DESC,
+    system: SYSTEM_PROMPT_DESC + toneSuffix,
     messages: [{ role: "user", content: prompt }],
   });
   const txt = resp.content[0]?.type === "text" ? resp.content[0].text : "";
   const m = txt.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("Claude no devolvió JSON válido para texto de slide");
+  if (!m) throw new Error("La IA no devolvió JSON válido para texto de slide");
   const parsed = JSON.parse(m[0]);
   return { titulo: parsed.titulo || "", subtitulo: parsed.subtitulo || "", prompt_visual: parsed.prompt_visual };
 }
@@ -2101,9 +2151,10 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
     // 1) Regenerar texto si modo lo requiere
     if (body.modo === "texto" || body.modo === "ambos") {
       try {
+        const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
         const nuevo = await regenerarTextoSlide(
           body.tema, body.tipo_contenido, body.rol, body.numero_slide, body.total_slides,
-          body.modo === "ambos" ? body.prompt_personalizado : body.prompt_personalizado,
+          body.prompt_personalizado, toneSuffix,
         );
         titulo = nuevo.titulo || titulo;
         subtitulo = nuevo.subtitulo || subtitulo;
@@ -2196,13 +2247,14 @@ router.post("/community/historias/reintentar", async (req, res) => {
     const rol: RolFrame = body.rol || "unica";
 
     // 1) Regenerar texto si modo lo requiere
+    const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
     let texto = body.texto_actual || { copy_principal: "", sub_copy: "", cta: "", hashtags: "" };
     if (body.modo === "texto" || body.modo === "ambos" ||
         (body.modo === "personalizado" && !body.texto_actual)) {
       const conceptoExtendido = body.prompt_personalizado && (body.modo === "texto" || body.modo === "ambos")
         ? `${body.concepto}. AJUSTE PEDIDO: ${body.prompt_personalizado}`
         : body.concepto;
-      texto = await generarTextoHistoria(body.tipo_historia, conceptoExtendido, { rol, numero, total });
+      texto = await generarTextoHistoria(body.tipo_historia, conceptoExtendido, { rol, numero, total, toneSuffix });
     }
 
     // 2) Modo "texto" puro: devuelve solo texto, sin imagen
@@ -2225,7 +2277,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
         ?? "La imagen anterior fue aprobada por Vision pero el usuario pidió un nuevo intento — varía la pose y el encuadre manteniendo el mismo concepto.";
     }
     // Si NO regeneramos texto en este modo y el cliente envió texto_actual,
-    // preservamos el texto y evitamos llamar a Claude (más rápido y robusto).
+    // preservamos el texto y evitamos llamar al modelo de texto (más rápido y robusto).
     const textoPreservado = (body.modo === "imagen" || body.modo === "personalizado" || body.modo === "auto-diagnose") && body.texto_actual
       ? body.texto_actual
       : undefined;
@@ -2239,6 +2291,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
       numero,
       total,
       textoPreservado,
+      toneSuffix,
     });
     // El frame ya devuelve el texto correcto (preservado o nuevo)
     const textoFinal = frame.texto;
@@ -2262,6 +2315,10 @@ router.post("/community/historias/reintentar", async (req, res) => {
     res.json({ success: true, data: { texto: textoFinal, imagen: imagenFinal, numero_frame: numero, total_frames: total, rol } });
   } catch (err: any) {
     console.error("[Reintentar historia] Error:", err);
+    if (err?.message === "RATE_LIMIT" || isRateLimitErr(err)) {
+      res.status(429).json({ success: false, error: "El servicio de imágenes está saturado ahora mismo (cuota de Gemini). Espera 1-2 minutos y vuelve a reintentar la historia." });
+      return;
+    }
     res.status(500).json({ success: false, error: err.message || "Error interno" });
   }
 });

@@ -28,7 +28,7 @@ const T = {
     navLibrary: "Biblioteca",
     navCovers: "Portadas",
     navStories: "Historias",
-    navDescriptions: "Descripciones",
+    navDescriptions: "Posts IA",
     navDrive: "Drive",
     navStudio: "Estudio",
     navTranscriber: "Transcriptor",
@@ -42,6 +42,15 @@ const T = {
     navMore: "Más",
     navCloseMenu: "Cerrar menú",
     navOpenMenu: "Abrir menú",
+    navCalendar: "Calendario / Publicaciones",
+    navSectionContent: "Contenido",
+    navSectionTools: "Herramientas",
+    navSectionAdmin: "Administración",
+
+    // Transcriptor
+    transcriberNoKey: "El servicio de transcripción no está configurado: falta GROQ_API_KEY en el servidor. Las transcripciones fallarán hasta que se configure.",
+    transcriberUnavailable: "No se pudo verificar el servicio de transcripción. Es posible que las transcripciones fallen.",
+    transcriberFileTooBig: (name: string, sizeMB: string) => `"${name}" pesa ${sizeMB} MB y supera el máximo de 150 MB.`,
 
     // Ajustes
     ajustesTitle: "Ajustes",
@@ -677,7 +686,7 @@ const T = {
     navLibrary: "Library",
     navCovers: "Covers",
     navStories: "Stories",
-    navDescriptions: "Descriptions",
+    navDescriptions: "AI Posts",
     navDrive: "Drive",
     navStudio: "Studio",
     navTranscriber: "Transcriber",
@@ -691,6 +700,15 @@ const T = {
     navMore: "More",
     navCloseMenu: "Close menu",
     navOpenMenu: "Open menu",
+    navCalendar: "Calendar / Posts",
+    navSectionContent: "Content",
+    navSectionTools: "Tools",
+    navSectionAdmin: "Administration",
+
+    // Transcriptor
+    transcriberNoKey: "The transcription service is not configured: GROQ_API_KEY is missing on the server. Transcriptions will fail until it is set.",
+    transcriberUnavailable: "Could not verify the transcription service. Transcriptions may fail.",
+    transcriberFileTooBig: (name: string, sizeMB: string) => `"${name}" is ${sizeMB} MB, over the 150 MB limit.`,
 
     // Ajustes
     ajustesTitle: "Settings",
@@ -1302,7 +1320,7 @@ const T = {
   },
 } as const;
 
-type Translations = typeof T.es;
+export type Translations = typeof T.es;
 
 interface LangCtx {
   lang: Lang;

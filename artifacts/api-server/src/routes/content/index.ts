@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { videos, users, campaigns, templates } from "@workspace/db/schema";
-import { eq, desc, lte, and, or, inArray, ilike, sql } from "drizzle-orm";
+import { eq, desc, lte, and, or, inArray, ilike, isNotNull, sql } from "drizzle-orm";
 
 /**
  * Resolve a finite numeric library reference (campaignId/templateId) to either
@@ -39,8 +39,9 @@ import { Readable } from "stream";
 import {
   CreateVideoBody,
   ScheduleVideoBody,
+  UpdateVideoBody,
 } from "@workspace/api-zod";
-import * as z from "zod/v4";
+import { z } from "zod";
 import * as fs from "fs";
 import * as path from "path";
 import multer from "multer";
@@ -301,7 +302,13 @@ router.post("/content/videos/bulk-update", async (req, res) => {
 });
 
 // Bulk schedule: marks N videos as scheduled at the same datetime.
+// Misma política que PATCH y POST /:id/schedule: ver assertCanSchedule.
 router.post("/content/videos/bulk-schedule", async (req, res) => {
+  const guardError = assertCanSchedule(req);
+  if (guardError) {
+    res.status(403).json({ error: guardError });
+    return;
+  }
   const idsRaw = req.body?.ids;
   if (!Array.isArray(idsRaw) || idsRaw.length === 0) {
     res.status(400).json({ error: "Se requiere al menos un ID" });
@@ -589,6 +596,44 @@ router.post("/content/videos", async (req, res) => {
     const v = raw[key];
     return typeof v === "string" && v.length > 0 ? v : null;
   };
+
+  // Programación atómica opcional: el quick-create del calendario puede
+  // mandar scheduledAt + estados por red en el mismo POST, evitando el flujo
+  // "crear draft + PATCH" que dejaba borradores huérfanos invisibles cuando
+  // la segunda llamada fallaba. Con `status: "draft"` se guarda la fecha como
+  // referencia pero el video queda en borrador (el scheduler lo ignora).
+  let scheduledAt: Date | null = null;
+  if (raw.scheduledAt !== undefined && raw.scheduledAt !== null) {
+    if (typeof raw.scheduledAt !== "string" || Number.isNaN(new Date(raw.scheduledAt).getTime())) {
+      res.status(400).json({ error: "scheduledAt inválido: usa una fecha ISO 8601" });
+      return;
+    }
+    scheduledAt = new Date(raw.scheduledAt);
+  }
+  const NETWORK_STATUS_KEYS = [
+    "tiktokStatus", "instagramStatus", "youtubeStatus",
+    "linkedinStatus", "xStatus", "facebookStatus",
+  ] as const;
+  const networkStatuses: Partial<Record<(typeof NETWORK_STATUS_KEYS)[number], string>> = {};
+  for (const key of NETWORK_STATUS_KEYS) {
+    const v = raw[key];
+    if (v === undefined || v === null) continue;
+    if (v !== "pending" && v !== "skipped") {
+      res.status(400).json({ error: `${key} inválido: al crear solo se acepta "pending" o "skipped"` });
+      return;
+    }
+    networkStatuses[key] = v;
+  }
+  const wantsDraft = raw.status === "draft";
+  const willSchedule = !!scheduledAt && !wantsDraft;
+  if (willSchedule) {
+    const guardError = assertCanSchedule(req);
+    if (guardError) {
+      res.status(403).json({ error: guardError });
+      return;
+    }
+  }
+
   const [row] = await db
     .insert(videos)
     .values({
@@ -599,7 +644,9 @@ router.post("/content/videos", async (req, res) => {
       week: body.week || null,
       day: body.day || null,
       videoNumber: body.videoNumber || null,
-      status: "draft",
+      status: willSchedule ? "scheduled" : "draft",
+      workflowStatus: willSchedule ? "programado" : "borrador",
+      scheduledAt,
       campaignId: campaignResolved,
       templateId: templateResolved,
       tiktokDescription: optionalText("tiktokDescription"),
@@ -609,6 +656,7 @@ router.post("/content/videos", async (req, res) => {
       linkedinDescription: optionalText("linkedinDescription"),
       xDescription: optionalText("xDescription"),
       facebookDescription: optionalText("facebookDescription"),
+      ...networkStatuses,
     })
     .returning();
   res.status(201).json(row);
@@ -634,6 +682,15 @@ router.get("/content/videos/recent-activity", async (_req, res) => {
       xError: videos.xError,
       facebookStatus: videos.facebookStatus,
       facebookError: videos.facebookError,
+      // Estado de reintentos: permite pintar "retrying" y el próximo intento
+      // en el dashboard sin otra llamada.
+      nextRetryAt: videos.nextRetryAt,
+      youtubeNextRetryAt: videos.youtubeNextRetryAt,
+      tiktokNextRetryAt: videos.tiktokNextRetryAt,
+      instagramNextRetryAt: videos.instagramNextRetryAt,
+      linkedinNextRetryAt: videos.linkedinNextRetryAt,
+      xNextRetryAt: videos.xNextRetryAt,
+      facebookNextRetryAt: videos.facebookNextRetryAt,
     })
     .from(videos)
     .where(
@@ -645,6 +702,9 @@ router.get("/content/videos/recent-activity", async (_req, res) => {
         eq(videos.youtubeStatus, "error"),
         eq(videos.tiktokStatus, "error"),
         eq(videos.instagramStatus, "error"),
+        // Videos con un reintento pendiente (backoff en curso) también son
+        // "actividad reciente" aunque su status global siga en scheduled.
+        isNotNull(videos.nextRetryAt),
       ),
     )
     .orderBy(desc(videos.updatedAt))
@@ -666,25 +726,99 @@ router.get("/content/videos/:id", async (req, res) => {
   res.json(row);
 });
 
+/**
+ * POLÍTICA DE PROGRAMACIÓN (única para todas las vías: PATCH, POST /:id/schedule,
+ * bulk-schedule y el POST de creación con scheduledAt): cualquier usuario
+ * autenticado y aprobado puede crear, programar y reprogramar videos
+ * (quick-create del calendario, drag & drop, wizard, bulk). El workflowStatus
+ * de aprobación (borrador → en_revision → aprobado → …) es un flujo
+ * informativo (badges), no un gate duro.
+ *
+ * Devuelve `null` si el usuario puede programar, o el mensaje a responder
+ * con 403 en caso contrario.
+ */
+function assertCanSchedule(req: { user?: unknown }): string | null {
+  const me = req.user as { id?: number; approvalStatus?: string } | undefined;
+  if (!me?.id) return "No autenticado";
+  if (me.approvalStatus && me.approvalStatus !== "approved") {
+    return "Tu cuenta aún no está aprobada para programar publicaciones";
+  }
+  return null;
+}
+
+const NetworkStatusEnum = z.enum([
+  "pending", "scheduled", "uploaded", "published", "error", "retrying", "skipped",
+]);
+
+// El UpdateVideoBody generado en lib/api-zod está desactualizado respecto a la
+// fila real de `videos`: no conoce linkedin/x/facebook, programación
+// (scheduledAt/workflowStatus/scheduleHour), covers ni campaignId/templateId.
+// Lo extendemos localmente (sin regenerar el codegen) con los campos que este
+// PATCH realmente acepta. Los campos desconocidos se descartan (strip).
+const PatchVideoBody = UpdateVideoBody.extend({
+  status: z.enum(["draft", "cover_generated", "scheduled", "published", "partial", "error"]).optional(),
+  workflowStatus: z.enum(["borrador", "en_revision", "aprobado", "programado", "publicado"]).optional(),
+  coverPrompt: z.string().nullable().optional(),
+  coverImageBase64: z.string().nullable().optional(),
+  coverMimeType: z.string().nullable().optional(),
+  month: z.string().nullable().optional(),
+  week: z.string().nullable().optional(),
+  day: z.string().nullable().optional(),
+  videoNumber: z.string().nullable().optional(),
+  scheduleHour: z.string().nullable().optional(),
+  scheduledAt: z.string().nullable().optional(),
+  tiktokDescription: z.string().nullable().optional(),
+  instagramDescription: z.string().nullable().optional(),
+  youtubeTitle: z.string().nullable().optional(),
+  youtubeDescription: z.string().nullable().optional(),
+  linkedinDescription: z.string().nullable().optional(),
+  xDescription: z.string().nullable().optional(),
+  facebookDescription: z.string().nullable().optional(),
+  tiktokStatus: NetworkStatusEnum.optional(),
+  instagramStatus: NetworkStatusEnum.optional(),
+  youtubeStatus: NetworkStatusEnum.optional(),
+  linkedinStatus: NetworkStatusEnum.optional(),
+  xStatus: NetworkStatusEnum.optional(),
+  facebookStatus: NetworkStatusEnum.optional(),
+  linkedinPostId: z.string().nullable().optional(),
+  linkedinError: z.string().nullable().optional(),
+  xPostId: z.string().nullable().optional(),
+  xError: z.string().nullable().optional(),
+  facebookPostId: z.string().nullable().optional(),
+  facebookError: z.string().nullable().optional(),
+  campaignId: z.number().int().nullable().optional(),
+  templateId: z.number().int().nullable().optional(),
+});
+
 router.patch("/content/videos/:id", async (req, res) => {
   const id = Number(req.params.id);
-  const body = req.body;
+  const parsed = PatchVideoBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({
+      error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    });
+    return;
+  }
+  const body = parsed.data;
 
-  // Guard: scheduling/publish state can only be set via the dedicated
-  // /schedule endpoint or by reviewers, so the approval workflow is the
-  // single source of truth for transitions to scheduled/published.
+  // POLÍTICA: los campos de programación ya no exigen teamRole "reviewer".
+  // Cualquier usuario aprobado puede programar/reprogramar (ver assertCanSchedule).
   const wantsScheduleField =
     body.status === "scheduled" ||
     body.status === "published" ||
     body.scheduledAt !== undefined ||
     body.workflowStatus !== undefined;
   if (wantsScheduleField) {
-    const meId = (req.user as { id?: number } | undefined)?.id;
-    const meRow = meId
-      ? (await db.select({ teamRole: users.teamRole }).from(users).where(eq(users.id, meId)).limit(1))[0]
-      : null;
-    if (meRow?.teamRole !== "reviewer") {
-      res.status(403).json({ error: "Usa el flujo de aprobación: programa desde el endpoint /schedule tras aprobar el video" });
+    const guardError = assertCanSchedule(req);
+    if (guardError) {
+      res.status(403).json({ error: guardError });
+      return;
+    }
+  }
+  if (body.scheduledAt) {
+    const parsedDate = new Date(body.scheduledAt);
+    if (Number.isNaN(parsedDate.getTime())) {
+      res.status(400).json({ error: "scheduledAt inválido: usa una fecha ISO 8601" });
       return;
     }
   }
@@ -961,15 +1095,21 @@ router.post("/content/videos/:id/generate-descriptions", async (req, res) => {
   const id = Number(req.params.id);
   const { platforms, force } = req.body || {};
   const forceOverwrite = force === true;
-  const targets: string[] = Array.isArray(platforms) && platforms.length
-    ? platforms.filter((p: any) => typeof p === "string")
-    : ["tiktok", "instagram", "youtube", "linkedin", "x"];
 
   const [video] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
   if (!video) {
     res.status(404).json({ error: "Video no encontrado" });
     return;
   }
+
+  // Facebook es opt-in: el scheduler usa la presencia de facebookDescription como
+  // gate de publicación, así que solo se auto-genera si el video ya optó por Facebook.
+  const targets: string[] = Array.isArray(platforms) && platforms.length
+    ? platforms.filter((p: any) => typeof p === "string")
+    : [
+        "tiktok", "instagram", "youtube", "linkedin", "x",
+        ...(video.facebookStatus === "pending" && video.facebookDescription ? ["facebook"] : []),
+      ];
 
   const reqUserId = (req.user as { id?: number } | undefined)?.id ?? null;
   const { default: OpenAI } = await import("openai");
@@ -1049,6 +1189,12 @@ router.post("/content/videos/:id/schedule", async (req, res) => {
   }
   const body = parseResult.data;
 
+  // Misma política que PATCH y bulk-schedule: ver assertCanSchedule.
+  const guardError = assertCanSchedule(req);
+  if (guardError) {
+    res.status(403).json({ error: guardError });
+    return;
+  }
 
   const [updated] = await db
     .update(videos)
@@ -1107,6 +1253,7 @@ router.post("/content/videos/:id/retry/:platform", async (req, res) => {
       linkedinStatus: videos.linkedinStatus,
       xStatus: videos.xStatus,
       facebookStatus: videos.facebookStatus,
+      publishedAt: videos.publishedAt,
     }).from(videos).where(eq(videos.id, id)).limit(1);
 
     if (fresh) {
@@ -1126,7 +1273,11 @@ router.post("/content/videos/:id/retry/:platform", async (req, res) => {
       if (newStatus) {
         await db.update(videos).set({
           status: newStatus,
-          publishedAt: newStatus === "published" || newStatus === "partial" ? new Date() : undefined,
+          // publishedAt = primera publicación real; no pisar el valor existente.
+          publishedAt:
+            (newStatus === "published" || newStatus === "partial") && !fresh.publishedAt
+              ? new Date()
+              : undefined,
           updatedAt: new Date(),
         }).where(eq(videos.id, id));
       }

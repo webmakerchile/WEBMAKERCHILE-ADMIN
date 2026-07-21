@@ -31,6 +31,12 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
       { keys: ["g", "p"], label: "Portadas" },
       { keys: ["g", "d"], label: "Descripciones" },
       { keys: ["g", "e"], label: "Estudio" },
+      { keys: ["g", "s"], label: "Insights" },
+      { keys: ["g", "b"], label: "Biblioteca" },
+      { keys: ["g", "t"], label: "Transcriptor" },
+      { keys: ["g", "q"], label: "Equipo" },
+      { keys: ["g", "a"], label: "Ajustes" },
+      { keys: ["g", "h"], label: "Hub Ejecutivo" },
     ],
   },
   {

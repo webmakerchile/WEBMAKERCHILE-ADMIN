@@ -13,6 +13,7 @@ import {
   Sparkles,
   MessageSquareText,
   Users2,
+  UserCog,
   Library,
   AudioLines,
   BarChart3,
@@ -24,7 +25,11 @@ import {
   Languages,
   LayoutGrid,
   ChevronRight,
+  type LucideIcon,
 } from "lucide-react";
+
+type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
+type NavSection = { label: string; items: NavItem[] };
 import { motion, AnimatePresence } from "framer-motion";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OnboardingTour } from "@/components/onboarding-tour";
@@ -43,23 +48,50 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t, toggleLang, lang } = useLang();
 
-  const navItems = [
-    { href: "/", icon: LayoutDashboard, label: t.navHome, tour: "nav-inicio" },
-    { href: "/schedule", icon: CalendarClock, label: t.navPosts, tour: "nav-schedule" },
-    { href: "/cuentas", icon: Users2, label: t.navAccounts, tour: "nav-cuentas" },
-    { href: "/videos", icon: Video, label: t.navVideos, tour: "nav-videos" },
-    { href: "/insights", icon: BarChart3, label: t.navInsights, tour: "nav-insights" },
-    { href: "/biblioteca", icon: Library, label: t.navLibrary, tour: "nav-biblioteca" },
-    { href: "/cover", icon: ImageIcon, label: t.navCovers, tour: "nav-cover" },
-    { href: "/historias", icon: Sparkles, label: t.navStories, tour: "nav-historias" },
-    { href: "/descripciones", icon: MessageSquareText, label: t.navDescriptions, tour: "nav-descripciones" },
-    { href: "/drive", icon: FolderTree, label: t.navDrive, tour: "nav-drive" },
-    { href: "/estudio", icon: Clapperboard, label: t.navStudio, tour: "nav-estudio" },
-    { href: "/transcriptor", icon: AudioLines, label: t.navTranscriber, tour: "nav-transcriptor" },
-    { href: "/equipo", icon: Users2, label: t.navTeam, tour: "nav-equipo" },
-    { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
-    { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
+  const navSections: NavSection[] = [
+    {
+      label: t.navSectionContent,
+      items: [
+        { href: "/", icon: LayoutDashboard, label: t.navHome, tour: "nav-inicio" },
+        { href: "/schedule", icon: CalendarClock, label: t.navPosts, tour: "nav-schedule" },
+        { href: "/cuentas", icon: Users2, label: t.navAccounts, tour: "nav-cuentas" },
+        { href: "/videos", icon: Video, label: t.navVideos, tour: "nav-videos" },
+        { href: "/insights", icon: BarChart3, label: t.navInsights, tour: "nav-insights" },
+      ],
+    },
+    {
+      label: t.navSectionTools,
+      items: [
+        { href: "/cover", icon: ImageIcon, label: t.navCovers, tour: "nav-cover" },
+        { href: "/historias", icon: Sparkles, label: t.navStories, tour: "nav-historias" },
+        { href: "/descripciones", icon: MessageSquareText, label: t.navDescriptions, tour: "nav-descripciones" },
+        { href: "/estudio", icon: Clapperboard, label: t.navStudio, tour: "nav-estudio" },
+        { href: "/transcriptor", icon: AudioLines, label: t.navTranscriber, tour: "nav-transcriptor" },
+        { href: "/drive", icon: FolderTree, label: t.navDrive, tour: "nav-drive" },
+        { href: "/biblioteca", icon: Library, label: t.navLibrary, tour: "nav-biblioteca" },
+      ],
+    },
+    {
+      label: t.navSectionAdmin,
+      items: [
+        { href: "/equipo", icon: UserCog, label: t.navTeam, tour: "nav-equipo" },
+        { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
+        { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
+      ],
+    },
   ];
+
+  // The mobile bottom-nav shows the first 5 items (the "Contenido" section).
+  const navItems = navSections.flatMap((s) => s.items);
+
+  // Prefix-aware active state so nested routes highlight their parent item
+  // (e.g. /campanas/:id lights up Biblioteca). "/" only matches exactly.
+  const isNavActive = (href: string) => {
+    if (href === "/") return location === "/";
+    if (location === href || location.startsWith(`${href}/`)) return true;
+    if (href === "/biblioteca" && location.startsWith("/campanas")) return true;
+    return false;
+  };
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -80,6 +112,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         method: "POST",
         credentials: "include",
       });
+    } catch {}
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("wm_hub")) localStorage.removeItem(key);
+      }
     } catch {}
     queryClient.invalidateQueries({ queryKey: ["auth-me"] });
     window.location.reload();
@@ -125,35 +162,44 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
-        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const isActive = location === item.href;
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                data-tour={item.tour}
-                className={cn(
-                  "flex items-center px-3 py-3 rounded-xl transition-base group relative",
-                  isActive
-                    ? "text-primary-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
-                )}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="active-nav"
-                    className="absolute inset-0 bg-gradient-to-r from-primary/90 to-orange-500/80 rounded-xl shadow-lg shadow-primary/20"
-                    initial={false}
-                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                  />
-                )}
-                <Icon className={cn("w-5 h-5 mr-3 relative z-10", isActive ? "text-white" : "group-hover:text-primary transition-base")} />
-                <span className="relative z-10">{item.label}</span>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {section.label}
+              </p>
+              <div className="space-y-1">
+                {section.items.map((item) => {
+                  const isActive = isNavActive(item.href);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      data-tour={item.tour}
+                      className={cn(
+                        "flex items-center px-3 py-3 rounded-xl transition-base group relative",
+                        isActive
+                          ? "text-primary-foreground font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
+                      )}
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="active-nav"
+                          className="absolute inset-0 bg-gradient-to-r from-primary/90 to-orange-500/80 rounded-xl shadow-lg shadow-primary/20"
+                          initial={false}
+                          transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                        />
+                      )}
+                      <Icon className={cn("w-5 h-5 mr-3 relative z-10", isActive ? "text-white" : "group-hover:text-primary transition-base")} />
+                      <span className="relative z-10">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         <div className="p-4 border-t border-foreground/10 space-y-3">
@@ -233,27 +279,36 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </button>
                 </div>
 
-                <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-                  {navItems.map((item) => {
-                    const isActive = location === item.href;
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        data-tour={`mobile-${item.tour}`}
-                        className={cn(
-                          "flex items-center px-4 py-3.5 rounded-xl transition-base",
-                          isActive
-                            ? "bg-gradient-to-r from-primary/90 to-orange-500/80 text-white font-medium shadow-lg shadow-primary/20"
-                            : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
-                        )}
-                      >
-                        <Icon className={cn("w-5 h-5 mr-3", isActive ? "text-white" : "")} />
-                        <span>{item.label}</span>
-                      </Link>
-                    );
-                  })}
+                <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">
+                  {navSections.map((section) => (
+                    <div key={section.label}>
+                      <p className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                        {section.label}
+                      </p>
+                      <div className="space-y-1">
+                        {section.items.map((item) => {
+                          const isActive = isNavActive(item.href);
+                          const Icon = item.icon;
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              data-tour={`mobile-${item.tour}`}
+                              className={cn(
+                                "flex items-center px-4 py-3.5 rounded-xl transition-base",
+                                isActive
+                                  ? "bg-gradient-to-r from-primary/90 to-orange-500/80 text-white font-medium shadow-lg shadow-primary/20"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-foreground/5"
+                              )}
+                            >
+                              <Icon className={cn("w-5 h-5 mr-3", isActive ? "text-white" : "")} />
+                              <span>{item.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </nav>
 
                 <div className="p-4 border-t border-foreground/10 space-y-3">
@@ -305,7 +360,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <nav className="lg:hidden flex-shrink-0 border-t border-foreground/10 bg-card/80 backdrop-blur-xl safe-bottom">
           <div className="flex items-center justify-around h-16 px-1">
             {navItems.slice(0, 5).map((item) => {
-              const isActive = location === item.href;
+              const isActive = isNavActive(item.href);
               const Icon = item.icon;
               return (
                 <Link
@@ -337,11 +392,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
       {/* Hub Ejecutivo FAB — visible on all admin panel pages except /ejecutivo itself */}
       {location !== "/ejecutivo" && <Link
         href="/ejecutivo"
-        title="Abrir Hub Ejecutivo"
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"
+        title={t.navHub}
+        className="fixed bottom-20 lg:bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"
       >
         <LayoutGrid className="w-4 h-4 text-primary flex-shrink-0" />
-        <span>Hub Ejecutivo</span>
+        <span>{t.navHub}</span>
         <ChevronRight className="w-3.5 h-3.5 opacity-50 flex-shrink-0" />
       </Link>}
     </div>

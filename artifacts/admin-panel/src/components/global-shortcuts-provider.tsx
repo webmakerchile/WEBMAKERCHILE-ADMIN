@@ -47,6 +47,12 @@ export function GlobalShortcutsProvider() {
     { key: "p", prefix: "g", description: "Ir a Portadas", handler: () => setLocation("/cover") },
     { key: "d", prefix: "g", description: "Ir a Descripciones", handler: () => setLocation("/descripciones") },
     { key: "e", prefix: "g", description: "Ir a Estudio", handler: () => setLocation("/estudio") },
+    { key: "s", prefix: "g", description: "Ir a Insights", handler: () => setLocation("/insights") },
+    { key: "b", prefix: "g", description: "Ir a Biblioteca", handler: () => setLocation("/biblioteca") },
+    { key: "t", prefix: "g", description: "Ir a Transcriptor", handler: () => setLocation("/transcriptor") },
+    { key: "q", prefix: "g", description: "Ir a Equipo", handler: () => setLocation("/equipo") },
+    { key: "a", prefix: "g", description: "Ir a Ajustes", handler: () => setLocation("/ajustes") },
+    { key: "h", prefix: "g", description: "Ir a Hub Ejecutivo", handler: () => setLocation("/ejecutivo") },
   ]);
 
   return (

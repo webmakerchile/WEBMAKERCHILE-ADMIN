@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getListVideosQueryKey } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import {
   Plus,
@@ -675,7 +676,7 @@ function CampaignsTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["library", "campaigns"] });
-      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: getListVideosQueryKey() });
       toast({ title: "Campaña eliminada" });
     },
   });

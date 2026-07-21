@@ -24,6 +24,7 @@ function makeThenable<T>(value: T) {
     then: (resolve: (v: unknown) => void) => Promise.resolve(arr).then(resolve),
     limit: async () => arr,
     where: () => makeThenable(arr),
+    orderBy: () => makeThenable(arr),
   };
   return obj;
 }
@@ -48,6 +49,10 @@ vi.mock("@workspace/db", () => ({
             if (tableName === "users") return state.adminUser ? [state.adminUser] : [];
             return state.dueVideos;
           },
+          orderBy: () =>
+            makeThenable(
+              tableName === "users" ? (state.adminUser ? [state.adminUser] : []) : state.dueVideos,
+            ),
         };
       },
     }),
@@ -365,7 +370,7 @@ describe("retryPlatformForVideo: publish success paths (YouTube/TikTok/Instagram
       expect(publishCalls).toBe(1);
       const persisted = state.updates.find((u) => u.instagramMediaId === "ig-media-999");
       expect(persisted).toBeTruthy();
-      expect(persisted!.instagramStatus).toBe("uploaded");
+      expect(persisted!.instagramStatus).toBe("published");
     } finally {
       globalThis.fetch = realFetch;
       vi.unstubAllEnvs();

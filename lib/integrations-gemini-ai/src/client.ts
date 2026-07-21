@@ -1,3 +1,8 @@
+// ADAPTADOR HONESTO: este módulo expone una interfaz con forma de API Gemini
+// (`ai.models.generateContent`) pero SIEMPRE llama a OpenAI por debajo:
+// texto → gpt-4.1 / gpt-4.1-mini, imágenes → gpt-image-1. Los nombres de
+// modelo "gemini-*" que reciben estas funciones solo se usan para elegir el
+// modelo OpenAI equivalente.
 import OpenAI, { toFile } from "openai";
 
 const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
@@ -13,11 +18,18 @@ const openai = new OpenAI({ apiKey, baseURL });
 
 type GeminiPart = { text: string } | { inlineData: { data: string; mimeType: string } };
 type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
+
+// Únicos tamaños que soporta gpt-image-1. El llamador debe elegir el más
+// cercano al aspecto deseado y recortar después al aspecto exacto (con sharp).
+export type SupportedImageSize = "1024x1024" | "1024x1536" | "1536x1024";
+
 type GeminiConfig = {
   maxOutputTokens?: number;
   responseMimeType?: string;
   responseModalities?: string[];
   temperature?: number;
+  // Tamaño a pedir a gpt-image-1 cuando se solicita una imagen.
+  imageSize?: SupportedImageSize;
 };
 
 function contentsToMessages(contents: GeminiContent[]): OpenAI.Chat.ChatCompletionMessageParam[] {
@@ -60,6 +72,9 @@ async function generateContentImpl(
       c.parts.filter((p): p is { inlineData: { data: string; mimeType: string } } => "inlineData" in p)
     );
     const prompt = textParts.map((p) => p.text).join("\n");
+    // Tamaño configurable: el llamador pide el soportado más cercano al aspecto
+    // final deseado y recorta después (antes estaba fijo en 1024x1536).
+    const size: SupportedImageSize = config?.imageSize ?? "1024x1536";
 
     if (imageParts.length > 0) {
       const refBuf = Buffer.from(imageParts[0].inlineData.data, "base64");
@@ -68,7 +83,7 @@ async function generateContentImpl(
         model: "gpt-image-1",
         image: imageFile,
         prompt,
-        size: "1024x1536",
+        size,
       });
       const b64 = resp.data?.[0]?.b64_json ?? "";
       return {
@@ -83,7 +98,7 @@ async function generateContentImpl(
         model: "gpt-image-1",
         prompt,
         n: 1,
-        size: "1024x1536",
+        size,
       });
       const b64 = resp.data?.[0]?.b64_json ?? "";
       return {

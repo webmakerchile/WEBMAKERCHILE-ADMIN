@@ -6,8 +6,18 @@ import { useLang } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
+function getAuthErrorMessage(): string | null {
+  const code = new URLSearchParams(window.location.search).get("error");
+  if (!code) return null;
+  if (code === "unauthorized") {
+    return "No se pudo iniciar sesión: tu cuenta no está autorizada o fue rechazada.";
+  }
+  return "Ocurrió un error al iniciar sesión. Intenta nuevamente.";
+}
+
 export default function LoginPage() {
   const { t, toggleLang, lang } = useLang();
+  const [authError] = useState<string | null>(getAuthErrorMessage);
   const [showTestLogin, setShowTestLogin] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -78,6 +88,12 @@ export default function LoginPage() {
               {t.loginSubtitle}
             </p>
           </div>
+
+          {authError && (
+            <div className="mb-4 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10">
+              <p className="text-xs text-red-400 text-center">{authError}</p>
+            </div>
+          )}
 
           <Button
             onClick={handleGoogleLogin}

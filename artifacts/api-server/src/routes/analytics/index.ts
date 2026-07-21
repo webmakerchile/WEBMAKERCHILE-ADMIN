@@ -125,6 +125,60 @@ function finalizeMetric(m: MetricBlock) {
   m.delta = computeDelta(m.total, prevTotal);
 }
 
+/**
+ * Temporal semantics of each per-network metric, so the frontend can label
+ * values correctly instead of implying everything covers the selected range:
+ * - "range":    activity that happened inside the selected window.
+ * - "snapshot": point-in-time count with no per-day history (e.g. current
+ *               follower totals from X / LinkedIn / TikTok).
+ * - "lifetime": accumulated all-time counter read at request time (e.g.
+ *               TikTok likes_count).
+ */
+type MetricPeriod = "range" | "snapshot" | "lifetime";
+type MetricPeriods = { followers: MetricPeriod; views: MetricPeriod; engagements: MetricPeriod };
+
+function metricPeriods(r: {
+  followers: MetricBlock; reach: MetricBlock; interactions: MetricBlock;
+}): MetricPeriods {
+  return {
+    followers: r.followers.kind === "snapshot" ? "snapshot" : "range",
+    views: r.reach.kind === "snapshot" ? "lifetime" : "range",
+    engagements: r.interactions.kind === "snapshot" ? "lifetime" : "range",
+  };
+}
+
+/**
+ * In-memory response cache for the expensive fan-out endpoints (summary /
+ * timeseries). Each entry is keyed by endpoint + user + range and lives for
+ * CACHE_TTL_MS. `?fresh=1` bypasses the read (and refreshes the entry), so
+ * users can force a refetch. Single-process only — good enough to stop every
+ * dashboard visit from fanning out ~12+ external API calls (X rate limits
+ * being the tightest budget).
+ */
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const responseCache = new Map<string, { expiresAt: number; payload: unknown }>();
+
+function cacheGet(key: string): unknown | null {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() >= entry.expiresAt) {
+    responseCache.delete(key);
+    return null;
+  }
+  return entry.payload;
+}
+
+function cacheSet(key: string, payload: unknown) {
+  // Opportunistic sweep so stale (user, range) combos don't accumulate.
+  if (responseCache.size >= 256) {
+    const now = Date.now();
+    for (const [k, e] of responseCache) {
+      if (now >= e.expiresAt) responseCache.delete(k);
+    }
+  }
+  responseCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, payload });
+}
+
 function getOAuth2Client(user: AuthedUser) {
   const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
   oauth2Client.setCredentials({
@@ -290,16 +344,28 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
 
     const buildUrl = (since: number, until: number) =>
       `${IG_API_BASE}/${igUserId}/insights?metric=reach,follower_count&period=day&since=${since}&until=${until}&access_token=${encodeURIComponent(igToken)}`;
+    // total_interactions (same metric the per-media stats in content/index.ts
+    // use) is only available at user level with metric_type=total_value — a
+    // single total for the window, no daily breakdown — so it needs its own
+    // request per window instead of joining the reach/follower_count call.
+    const buildInteractionsUrl = (since: number, until: number) =>
+      `${IG_API_BASE}/${igUserId}/insights?metric=total_interactions&period=day&metric_type=total_value&since=${since}&until=${until}&access_token=${encodeURIComponent(igToken)}`;
 
     type IgInsightValue = { end_time: string; value?: number };
-    type IgInsightItem = { name: string; values?: IgInsightValue[] };
+    type IgInsightItem = { name: string; values?: IgInsightValue[]; total_value?: { value?: number } };
     type IgInsightResponse = { data?: IgInsightItem[]; error?: { message?: string } } | null;
 
-    const [currR, prevR] = await Promise.all([
+    const [currR, prevR, currIntR, prevIntR] = await Promise.all([
       fetch(buildUrl(sinceCurr, untilCurr))
         .then((r) => r.json() as Promise<IgInsightResponse>)
         .catch(() => null),
       fetch(buildUrl(sincePrev, untilPrev))
+        .then((r) => r.json() as Promise<IgInsightResponse>)
+        .catch(() => null),
+      fetch(buildInteractionsUrl(sinceCurr, untilCurr))
+        .then((r) => r.json() as Promise<IgInsightResponse>)
+        .catch(() => null),
+      fetch(buildInteractionsUrl(sincePrev, untilPrev))
         .then((r) => r.json() as Promise<IgInsightResponse>)
         .catch(() => null),
     ]);
@@ -329,6 +395,27 @@ async function fetchInstagram(_user: AuthedUser, days: number): Promise<{
     consume(prevR, prevStartMs, "prevSeries");
     followers.total = followers.series.reduce((a, b) => a + b, 0);
     reach.total = reach.series.reduce((a, b) => a + b, 0);
+
+    // Engagement: total_interactions comes back as one total per window.
+    // Spread it evenly across the buckets (remainder on the last one) so
+    // sum(series) === total and sparklines show a flat-but-truthful line;
+    // finalizeMetric then derives the delta from the previous window's total.
+    const readTotalInteractions = (data: IgInsightResponse): number => {
+      if (data?.error) {
+        console.warn("[Analytics][Instagram] total_interactions:", data.error.message);
+        return 0;
+      }
+      const item = data?.data?.find((d) => d.name === "total_interactions");
+      return Number(item?.total_value?.value || 0);
+    };
+    const spreadEvenly = (total: number, target: Series) => {
+      const base = Math.floor(total / days);
+      for (let i = 0; i < days; i++) target[i] = base;
+      target[days - 1] += total - base * days;
+    };
+    interactions.total = readTotalInteractions(currIntR);
+    spreadEvenly(interactions.total, interactions.series);
+    spreadEvenly(readTotalInteractions(prevIntR), interactions.prevSeries);
 
     finalizeMetric(followers); finalizeMetric(reach); finalizeMetric(interactions);
     return { followers, reach, interactions };
@@ -460,7 +547,10 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
     ]);
     if (!currR) return null;
 
-    const followers = emptyMetric(days);
+    // networkSizes returns the org's lifetime follower count — a snapshot,
+    // not activity within the window — so mark it like the X/TikTok
+    // counterparts and plateau it across both windows.
+    const followers = emptyMetric(days, "snapshot");
     const reach = emptyMetric(days);
     const interactions = emptyMetric(days);
 
@@ -491,8 +581,10 @@ async function fetchLinkedIn(user: AuthedUser, days: number): Promise<{
         const fd = (await fs.json()) as { firstDegreeSize?: number };
         const fc = Number(fd.firstDegreeSize || 0);
         followers.total = fc;
-        followers.series[days - 1] = fc;
-        followers.prevSeries[days - 1] = fc;
+        for (let i = 0; i < days; i++) {
+          followers.series[i] = fc;
+          followers.prevSeries[i] = fc;
+        }
       }
     } catch (followersErr) {
       const msg = followersErr instanceof Error ? followersErr.message : String(followersErr);
@@ -703,10 +795,25 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   const days = Math.max(1, Math.min(90, Number(req.query.days) || 7));
   const user = getUser(req);
 
+  const cacheKey = `summary:${user.id}:${days}`;
+  if (req.query.fresh !== "1") {
+    const hit = cacheGet(cacheKey);
+    if (hit) {
+      res.json(hit);
+      return;
+    }
+  }
+
   const followers = emptyMetric(days);
   const reach = emptyMetric(days);
   const interactions = emptyMetric(days);
-  const sources: { network: string; ok: boolean; reason?: string }[] = [];
+  // Snapshot/lifetime metrics (X / LinkedIn / TikTok follower counts, TikTok
+  // lifetime likes) must not be summed with range metrics as if they happened
+  // inside the window — they accumulate here instead and are exposed as
+  // `lifetimeTotals`. Note: partial by design — only networks whose adapter
+  // returns a lifetime counter contribute (YouTube/Instagram/Facebook report
+  // range gains, not lifetime totals).
+  const lifetimeTotals = { followers: 0, views: 0, engagements: 0 };
 
   type NetworkSummary = {
     network: string;
@@ -720,6 +827,8 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
       engagements: number;
       engagementsDelta: number;
     } | null;
+    /** Temporal semantics of each metric above (see MetricPeriod). */
+    periods: MetricPeriods | null;
   };
   const networkSummaries: NetworkSummary[] = [];
 
@@ -742,17 +851,20 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
       try {
         const result = await n.fn();
         if (!result) {
-          sources.push({ network: n.name, ok: false, reason: "no_connection_or_data" });
-          networkSummaries.push({ network: n.name, connected: false, reason: "no_connection_or_data", metrics: null });
+          networkSummaries.push({ network: n.name, connected: false, reason: "no_connection_or_data", metrics: null, periods: null });
           return;
         }
         finalizeMetric(result.followers);
         finalizeMetric(result.reach);
         finalizeMetric(result.interactions);
-        addMetric(followers, result.followers);
-        addMetric(reach, result.reach);
-        addMetric(interactions, result.interactions);
-        sources.push({ network: n.name, ok: true });
+        // Only range metrics feed the aggregate period blocks/totals;
+        // snapshot/lifetime values go to lifetimeTotals (see above).
+        if (result.followers.kind === "snapshot") lifetimeTotals.followers += result.followers.total;
+        else addMetric(followers, result.followers);
+        if (result.reach.kind === "snapshot") lifetimeTotals.views += result.reach.total;
+        else addMetric(reach, result.reach);
+        if (result.interactions.kind === "snapshot") lifetimeTotals.engagements += result.interactions.total;
+        else addMetric(interactions, result.interactions);
         networkSummaries.push({
           network: n.name,
           connected: true,
@@ -764,11 +876,11 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
             engagements: result.interactions.total,
             engagementsDelta: result.interactions.delta,
           },
+          periods: metricPeriods(result),
         });
       } catch (err) {
         console.error(`[Analytics][${n.name}] error:`, (err instanceof Error ? err.message : String(err)));
-        sources.push({ network: n.name, ok: false, reason: (err instanceof Error ? err.message : String(err)) });
-        networkSummaries.push({ network: n.name, connected: false, reason: (err instanceof Error ? err.message : String(err)), metrics: null });
+        networkSummaries.push({ network: n.name, connected: false, reason: (err instanceof Error ? err.message : String(err)), metrics: null, periods: null });
       }
     }),
   );
@@ -827,33 +939,6 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
   finalizeMetric(posts);
   const postsCount = posts.total;
 
-  const currTotal = followers.total + reach.total + interactions.total;
-  // For each aggregate block, snapshot sources contributed a constant plateau
-  // to prevSeries (baseline added to every bucket via addMetric). Subtract
-  // baseline*(days-1) so the baseline is effectively counted once, matching
-  // how `finalizeMetric` computes deltas for cumulative blocks. Without this
-  // correction growthRate.delta would be heavily negative whenever an account
-  // has snapshot-only networks (X / TikTok) connected.
-  const adjPrevSum = (m: MetricBlock) => {
-    const baseline = m.snapshotBaseline || 0;
-    return m.prevSeries.reduce((a, b) => a + b, 0) - baseline * Math.max(0, days - 1);
-  };
-  const prevFollowersTotal = adjPrevSum(followers);
-  const prevReachTotal = adjPrevSum(reach);
-  const prevInterTotal = adjPrevSum(interactions);
-  const prevTotal = prevFollowersTotal + prevReachTotal + prevInterTotal;
-  const growthRate = {
-    value: currTotal,
-    prev: prevTotal,
-    delta: computeDelta(currTotal, prevTotal),
-    series: followers.series.map((_, i) =>
-      (followers.series[i] || 0) + (reach.series[i] || 0) + (interactions.series[i] || 0),
-    ),
-    prevSeries: followers.prevSeries.map((_, i) =>
-      (followers.prevSeries[i] || 0) + (reach.prevSeries[i] || 0) + (interactions.prevSeries[i] || 0),
-    ),
-  };
-
   // Sort networks in a stable, predictable order
   const ORDER = ["youtube", "instagram", "facebook", "linkedin", "x", "tiktok"];
   networkSummaries.sort((a, b) => ORDER.indexOf(a.network) - ORDER.indexOf(b.network));
@@ -877,9 +962,10 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
     prevSeries: toPoints(m.prevSeries, prevDates),
   });
 
-  res.json({
+  const payload = {
     days,
     range: { start: currDates[0], end: currDates[currDates.length - 1] },
+    // Range-only aggregates: activity that happened inside the window.
     totals: {
       views: reach.total,
       engagements: interactions.total,
@@ -890,20 +976,17 @@ router.get("/analytics/summary", async (req: Request, res: Response) => {
       followersDelta: followers.delta,
       postsDelta: posts.delta,
     },
+    // Lifetime/snapshot counters kept out of `totals` (see comment where
+    // lifetimeTotals is declared — partial: only networks that expose them).
+    lifetimeTotals,
     networks: networkSummaries,
-    sources,
     followers: serialize(followers),
     reach: serialize(reach),
     interactions: serialize(interactions),
     posts: serialize(posts),
-    growthRate: {
-      value: growthRate.value,
-      prev: growthRate.prev,
-      delta: growthRate.delta,
-      series: toPoints(growthRate.series, currDates),
-      prevSeries: toPoints(growthRate.prevSeries, prevDates),
-    },
-  });
+  };
+  cacheSet(cacheKey, payload);
+  res.json(payload);
 });
 
 // Best times to publish per network. Returns top-3 (dow 0=Mon..6=Sun, hour 0-23)
@@ -1036,6 +1119,15 @@ router.get("/analytics/timeseries", async (req: Request, res: Response) => {
   const days = Math.max(1, Math.min(90, Number(req.query.days) || 30));
   const user = getUser(req);
 
+  const cacheKey = `timeseries:${user.id}:${days}`;
+  if (req.query.fresh !== "1") {
+    const hit = cacheGet(cacheKey);
+    if (hit) {
+      res.json(hit);
+      return;
+    }
+  }
+
   const todayUtcMs = utcMidnightMs();
   const currStartMs = todayUtcMs - (days - 1) * MS_PER_DAY;
   const fmtDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
@@ -1056,7 +1148,7 @@ router.get("/analytics/timeseries", async (req: Request, res: Response) => {
     try {
       const r = await n.fn();
       if (!r) {
-        return { network: n.name, connected: false, reach: [] as TsPoint[], interactions: [] as TsPoint[], followers: [] as TsPoint[], totals: { reach: 0, interactions: 0, followers: 0 } };
+        return { network: n.name, connected: false, reach: [] as TsPoint[], interactions: [] as TsPoint[], followers: [] as TsPoint[], totals: { reach: 0, interactions: 0, followers: 0 }, periods: null as MetricPeriods | null };
       }
       const toPts = (arr: number[]) => arr.map((v, i) => ({ date: dates[i] || "", value: Number(v || 0) }));
       return {
@@ -1066,15 +1158,18 @@ router.get("/analytics/timeseries", async (req: Request, res: Response) => {
         interactions: toPts(r.interactions.series),
         followers: toPts(r.followers.series),
         totals: { reach: r.reach.total, interactions: r.interactions.total, followers: r.followers.total },
+        periods: metricPeriods(r) as MetricPeriods | null,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[Analytics][timeseries][${n.name}]`, msg);
-      return { network: n.name, connected: false, reach: [] as TsPoint[], interactions: [] as TsPoint[], followers: [] as TsPoint[], totals: { reach: 0, interactions: 0, followers: 0 }, error: msg };
+      return { network: n.name, connected: false, reach: [] as TsPoint[], interactions: [] as TsPoint[], followers: [] as TsPoint[], totals: { reach: 0, interactions: 0, followers: 0 }, periods: null as MetricPeriods | null, error: msg };
     }
   }));
 
-  res.json({ days, dates, networks: results });
+  const payload = { days, dates, networks: results };
+  cacheSet(cacheKey, payload);
+  res.json(payload);
 });
 
 type TopMetric = { views: number; likes: number; comments: number; shares: number };
