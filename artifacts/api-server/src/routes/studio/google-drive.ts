@@ -7,7 +7,7 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-const FOLDER_ID = "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
+const FOLDER_ID = process.env.STUDIO_DRIVE_FOLDER_ID || "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 
@@ -418,23 +418,6 @@ export async function uploadVideoToDriveFromFile(
   throw new Error(`Google Drive upload failed after ${MAX_ATTEMPTS} attempts: ${errors.join(" | ")}`);
 }
 
-export async function uploadVideoToDrive(
-  videoBuffer: Buffer,
-  ideaTitle: string,
-  userId: number,
-  actualMimeType: string = "video/mp4",
-  targetDay?: string,
-  targetTime?: string
-): Promise<{ fileId: string; webViewLink: string; driveFolderId: string; verified: boolean; dayName: string }> {
-  const tmpPath = path.join("/tmp", `drive-upload-${Date.now()}.tmp`);
-  await writeFile(tmpPath, videoBuffer);
-  try {
-    return await uploadVideoToDriveFromFile(tmpPath, ideaTitle, userId, actualMimeType, targetDay, targetTime);
-  } finally {
-    await unlink(tmpPath).catch(() => {});
-  }
-}
-
 export async function uploadCoverToDriveFromBuffer(
   imageBuffer: Buffer,
   videoFileName: string,
@@ -498,75 +481,5 @@ export async function uploadDescriptionsToDrive(
     return result;
   } finally {
     await unlink(tmpPath).catch(() => {});
-  }
-}
-
-export async function testDriveConnection(userId: number): Promise<boolean> {
-  try {
-    const drive = await getDriveClient(userId);
-    const resp = await drive.files.get({ fileId: FOLDER_ID, fields: "id,name" });
-    return !!resp.data.id;
-  } catch (e) {
-    console.error("[GoogleDrive] Connection test failed:", e);
-    return false;
-  }
-}
-
-export async function listDriveStudioStructure(userId: number): Promise<any> {
-  const drive = await getDriveClient(userId);
-  const result: any = { rootId: FOLDER_ID, months: [] };
-
-  const months = await listAllFoldersInParent(drive, FOLDER_ID);
-  for (const month of months) {
-    const monthData: any = { name: month.name, id: month.id, weeks: [] };
-    const weeks = await listAllFoldersInParent(drive, month.id);
-    for (const week of weeks) {
-      const weekData: any = { name: week.name, id: week.id, days: [] };
-      const days = await listAllFoldersInParent(drive, week.id);
-      for (const day of days) {
-        const slots = await listAllFoldersInParent(drive, day.id);
-        const dayData: any = { name: day.name, id: day.id, slots: slots.length, slotIds: slots.map(s => ({ name: s.name, id: s.id })) };
-        weekData.days.push(dayData);
-      }
-      monthData.weeks.push(weekData);
-    }
-    result.months.push(monthData);
-  }
-  return result;
-}
-
-export async function listFilesInDriveFolder(folderId: string, userId: number): Promise<Array<{ id: string; name: string; mimeType: string; size: string; createdTime: string }>> {
-  const drive = await getDriveClient(userId);
-  const query = `'${folderId}' in parents and trashed=false`;
-  const resp = await drive.files.list({
-    q: query,
-    fields: "files(id,name,mimeType,size,createdTime)",
-    orderBy: "createdTime",
-    pageSize: 100,
-  });
-  return (resp.data.files || []) as Array<{ id: string; name: string; mimeType: string; size: string; createdTime: string }>;
-}
-
-export async function deleteDriveFile(fileId: string, userId: number): Promise<boolean> {
-  try {
-    const drive = await getDriveClient(userId);
-    await drive.files.delete({ fileId });
-    console.log(`[GoogleDrive] Deleted file: ${fileId}`);
-    return true;
-  } catch (e: any) {
-    console.error(`[GoogleDrive] Delete failed for ${fileId}: ${e.message}`);
-    return false;
-  }
-}
-
-export async function trashDriveFile(fileId: string, userId: number): Promise<boolean> {
-  try {
-    const drive = await getDriveClient(userId);
-    await drive.files.update({ fileId, requestBody: { trashed: true } });
-    console.log(`[GoogleDrive] Trashed file: ${fileId}`);
-    return true;
-  } catch (e: any) {
-    console.error(`[GoogleDrive] Trash failed for ${fileId}: ${e.message}`);
-    return false;
   }
 }

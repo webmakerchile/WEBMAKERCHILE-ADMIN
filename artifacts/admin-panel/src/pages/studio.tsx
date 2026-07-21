@@ -58,14 +58,10 @@ import {
   Upload,
   CircleDot,
   SwitchCamera,
-  Send,
   FileText,
   Trash2,
-  Scissors,
-  Wand2,
   ZoomIn,
   ZoomOut,
-  Type,
 } from "lucide-react";
 import AiVideoIdeasTab from "@/components/ai-video-ideas-tab";
 
@@ -681,10 +677,10 @@ function CameraRecordingView({
   onComplete: () => void;
   bgUploads: BgUpload[];
   addBgUpload: (upload: BgUpload) => void;
-  runBgUploadFn: (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean, uploadPublishTiktok?: boolean) => void;
+  runBgUploadFn: (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadSegs: Array<{start: number, end: number}> | null, uploadPublishTiktok?: boolean) => void;
 }) {
   const hasScript = !!idea?.guion;
-  type Phase = "recording" | "loading-video" | "editing" | "review" | "uploading" | "done";
+  type Phase = "recording" | "loading-video" | "review" | "uploading" | "done";
   const { t } = useLang();
   const { toast } = useToast();
   const mountedRef = useRef(true);
@@ -738,24 +734,15 @@ function CameraRecordingView({
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const [videoDuration, setVideoDuration] = useState(0);
-  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
-  const [currentPreviewTime, setCurrentPreviewTime] = useState(0);
-  const [videoReady, setVideoReady] = useState(false);
 
   type Segment = { id: number; startSec: number; endSec: number; enabled: boolean };
   const [segments, setSegments] = useState<Segment[]>([]);
-  const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null);
   const segmentIdCounter = useRef(1);
-  const segmentsRef = useRef<Segment[]>([]);
 
   const [fileName, setFileName] = useState("");
-  const [waMessage, setWaMessage] = useState("");
-  const [autoEdit, setAutoEdit] = useState(false);
-  const [enableSubtitles, setEnableSubtitles] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [publishToTiktok, setPublishToTiktok] = useState(false);
   const { data: tiktokStatusData } = useQuery<{ connected: boolean }>({
     queryKey: ["/api/tiktok/status"],
@@ -947,12 +934,12 @@ function CameraRecordingView({
       const lowerRecent = fullRecent.toLowerCase().trim();
 
       if (now - voiceCommandCooldownRef.current > 3000) {
-        const goToDriveMatch = /\bgo\s*to\s*drive\b|\bgoto\s*drive\b|\bgo\s*tu\s*drive\b/.test(lowerRecent);
-        const resetMatch = /\breset\b/.test(lowerRecent);
-        const tryoutMatch = /\btry\s*out\b|\btryout\b|\btraiaut\b|\btrai\s*aut\b/.test(lowerRecent);
+        const goToDriveMatch = /\bgo\s*to\s*drive\b|\bgoto\s*drive\b|\bgo\s*tu\s*drive\b|\bs[uú]be(?:lo)?\s+al?\s+drive\b|\bsubir\s+al?\s+drive\b|\bguardar?\s+en\s+drive\b/.test(lowerRecent);
+        const resetMatch = /\breset\b|\breinicia(?:r|lo)?\b/.test(lowerRecent);
+        const tryoutMatch = /\btry\s*out\b|\btryout\b|\btraiaut\b|\btrai\s*aut\b|\botra\s+toma\b|\brepite\b|\brepetir\b/.test(lowerRecent);
         const recState = mediaRecorderRef.current?.state;
-        const stopMatch = !goToDriveMatch && recState === "recording" && /\bstop\b/.test(lowerRecent);
-        const playMatch = recState !== "recording" && /\bplay\b/.test(lowerRecent);
+        const stopMatch = !goToDriveMatch && recState === "recording" && /\bstop\b|\bcorte\b|\bpausa\b/.test(lowerRecent);
+        const playMatch = recState !== "recording" && /\bplay\b|\bacci[oó]n\b|\bgraba(?:r)?\b/.test(lowerRecent);
 
         if (goToDriveMatch) {
           voiceCommandCooldownRef.current = now;
@@ -1421,7 +1408,7 @@ function CameraRecordingView({
 
       toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(autoFileName) });
 
-      runBgUploadFn(mergedBlob, bgId, autoFileName, idea?.id || null, idea?.guion || "", mimeType, "", null, autoEdit, enableSubtitles);
+      runBgUploadFn(mergedBlob, bgId, autoFileName, idea?.id || null, idea?.guion || "", mimeType, null);
       onBack();
     };
 
@@ -1486,18 +1473,6 @@ function CameraRecordingView({
     });
   }, [isPaused, stopVoiceRecognition]);
 
-  const tempPreviewFilenameRef = useRef<string | null>(null);
-  const previewBlobUrlRef = useRef<string | null>(null);
-  const [videoSrcReady, setVideoSrcReady] = useState(false);
-
-  const setupPreview = useCallback((blob: Blob) => {
-    const localUrl = URL.createObjectURL(blob);
-    previewBlobUrlRef.current = localUrl;
-    setBlobUrl(localUrl);
-    setVideoSrcReady(true);
-    console.log(`[studio] Preview ready (blob): ${(blob.size / 1024 / 1024).toFixed(1)}MB, type=${blob.type}`);
-  }, []);
-
   const handleStopToEdit = useCallback(async () => {
     const knownDur = recordingTime;
 
@@ -1526,37 +1501,17 @@ function CameraRecordingView({
     setThumbnailUrl(thumb);
     setClipMarks([]);
     segmentIdCounter.current = 1;
-    setSelectedSegmentId(null);
-    setCurrentPreviewTime(0);
-    setIsPreviewPlaying(false);
-    setVideoSrcReady(false);
-
-    if (previewBlobUrlRef.current) {
-      URL.revokeObjectURL(previewBlobUrlRef.current);
-      previewBlobUrlRef.current = null;
-    }
 
     const dur = knownDur > 0 ? knownDur : 1;
     setVideoDuration(dur);
     setSegments([{ id: segmentIdCounter.current++, startSec: 0, endSec: dur, enabled: true }]);
-    setVideoReady(true);
 
     const defaultName = idea ? cleanText(idea.titulo).slice(0, 60).replace(/[^a-zA-Z0-9\s\-áéíóúñÁÉÍÓÚÑ]/g, "").trim() : "";
     setFileName(defaultName || `Video ${new Date().toLocaleDateString("es-CL")}`);
-    setWaMessage("");
     setPhase("review");
 
     console.log(`[studio] Recording done: ${(blob.size / 1024 / 1024).toFixed(1)}MB (only kept clips), type=${blob.type}, dur=${dur}s, clips=${clipBlobsRef.current.length}`);
   }, [stopRecording, stopAllTracks, toast, recordingTime, idea]);
-
-  const handleTrimDone = useCallback(() => {
-    if (previewVideoRef.current) previewVideoRef.current.pause();
-    setIsPreviewPlaying(false);
-    const defaultName = idea ? cleanText(idea.titulo).slice(0, 60).replace(/[^a-zA-Z0-9\s\-áéíóúñÁÉÍÓÚÑ]/g, "").trim() : "";
-    setFileName(defaultName || `Video ${new Date().toLocaleDateString("es-CL")}`);
-    setWaMessage("");
-    setPhase("review");
-  }, [idea]);
 
   const handleUpload = useCallback(async () => {
     if (!recordedBlob) return;
@@ -1583,35 +1538,16 @@ function CameraRecordingView({
 
     toast({ title: t.studioUploadingBg, description: t.studioUploadingBgDesc(uploadTitle) });
 
-    runBgUploadFn(blobCopy, bgId, uploadTitle, idea?.id || null, idea?.guion || "", mimeType, waMessage.trim(), segsToSend, autoEdit, enableSubtitles, publishToTiktok);
+    runBgUploadFn(blobCopy, bgId, uploadTitle, idea?.id || null, idea?.guion || "", mimeType, segsToSend, publishToTiktok);
     onBack();
-  }, [recordedBlob, fileName, waMessage, idea, segments, videoDuration, toast, addBgUpload, runBgUploadFn, onBack, publishToTiktok]);
-
-  const cleanupTempPreview = useCallback(() => {
-    if (previewBlobUrlRef.current) {
-      URL.revokeObjectURL(previewBlobUrlRef.current);
-      previewBlobUrlRef.current = null;
-    }
-    if (tempPreviewFilenameRef.current) {
-      fetch(`/api/studio/temp-preview/${encodeURIComponent(tempPreviewFilenameRef.current)}`, {
-        method: "DELETE", credentials: "include"
-      }).catch(() => {});
-      tempPreviewFilenameRef.current = null;
-    }
-  }, []);
+  }, [recordedBlob, fileName, idea, segments, videoDuration, toast, addBgUpload, runBgUploadFn, onBack, publishToTiktok]);
 
   const handleDiscard = useCallback(() => {
-    cleanupTempPreview();
-    setBlobUrl(null);
+    setConfirmDiscard(false);
     setRecordedBlob(null);
     setThumbnailUrl(null);
     setVideoDuration(0);
     setSegments([]);
-    setSelectedSegmentId(null);
-    setCurrentPreviewTime(0);
-    setIsPreviewPlaying(false);
-    setVideoSrcReady(false);
-    setVideoReady(false);
     setClipMarks([]);
     setIsRecording(false);
     setIsPaused(false);
@@ -1626,10 +1562,9 @@ function CameraRecordingView({
     if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch {} recognitionRef.current = null; }
     setPhase("recording");
     startCamera(facingModeRef.current);
-  }, [startCamera, cleanupTempPreview]);
+  }, [startCamera]);
 
   const fullCleanup = useCallback(() => {
-    cleanupTempPreview();
     stopVoiceRecognition();
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") { try { mediaRecorderRef.current.stop(); } catch {} }
     mediaRecorderRef.current = null;
@@ -1642,7 +1577,7 @@ function CameraRecordingView({
     stopAllTracks();
     clipBlobsRef.current = [];
     currentChunksRef.current = [];
-  }, [stopAllTracks, stopVoiceRecognition, cleanupTempPreview]);
+  }, [stopAllTracks, stopVoiceRecognition]);
 
   const handleBack = useCallback(() => {
     mountedRef.current = false;
@@ -1662,13 +1597,6 @@ function CameraRecordingView({
     const m = Math.floor(seconds / 60).toString().padStart(2, "0");
     const s = (seconds % 60).toString().padStart(2, "0");
     return `${m}:${s}`;
-  };
-
-  const formatTimePrecise = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 10);
-    return `${m}:${s.toString().padStart(2, "0")}.${ms}`;
   };
 
   const renderLineWithHighlights = useCallback((line: { text: string }, lineIdx: number) => {
@@ -1782,103 +1710,11 @@ function CameraRecordingView({
     };
   }, [phase, applyZoom]);
 
-  const videoDurationRef = useRef(videoDuration);
-  videoDurationRef.current = videoDuration;
-  segmentsRef.current = segments;
-
-
-  const initVideoFromDuration = useCallback((dur: number) => {
-    if (!dur || !isFinite(dur) || dur <= 0) return;
-    setVideoDuration(dur);
-    setVideoReady(true);
-    setCurrentPreviewTime(0);
-    if (segmentsRef.current.length === 0) {
-      setSegments([{ id: segmentIdCounter.current++, startSec: 0, endSec: dur, enabled: true }]);
-    }
-  }, []);
-
-  const handleVideoMetadata = useCallback(() => {
-    const video = previewVideoRef.current;
-    if (!video) return;
-    const dur = video.duration;
-    if (dur && isFinite(dur) && dur > 0 && Math.abs(dur - videoDuration) > 0.5) {
-      setVideoDuration(dur);
-      if (segmentsRef.current.length === 1) {
-        const seg = segmentsRef.current[0];
-        if (seg.startSec === 0 && Math.abs(seg.endSec - videoDuration) < 1.5) {
-          setSegments([{ ...seg, endSec: dur }]);
-        }
-      }
-    }
-  }, [videoDuration]);
-
-  const handleVideoTimeUpdate = useCallback(() => {
-    if (previewVideoRef.current) {
-      setCurrentPreviewTime(previewVideoRef.current.currentTime);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (phase !== "editing" || !blobUrl || !videoSrcReady) return;
-    const video = previewVideoRef.current;
-    if (!video) return;
-    video.load();
-  }, [phase, blobUrl, videoSrcReady]);
-
-
-  const handleSplitAtPlayhead = useCallback(() => {
-    const video = previewVideoRef.current;
-    if (!video || videoDuration <= 0) return;
-    const t = video.currentTime;
-    setSegments(prev => {
-      const segIdx = prev.findIndex(s => t >= s.startSec && t < s.endSec);
-      if (segIdx === -1) return prev;
-      const seg = prev[segIdx];
-      if (t - seg.startSec < 0.3 || seg.endSec - t < 0.3) return prev;
-      const newSegs = [...prev];
-      newSegs.splice(segIdx, 1,
-        { id: seg.id, startSec: seg.startSec, endSec: t, enabled: seg.enabled },
-        { id: segmentIdCounter.current++, startSec: t, endSec: seg.endSec, enabled: seg.enabled }
-      );
-      return newSegs;
-    });
-  }, [videoDuration]);
-
-  const handleToggleSegment = useCallback((segId: number) => {
-    setSegments(prev => prev.map(s => s.id === segId ? { ...s, enabled: !s.enabled } : s));
-    setSelectedSegmentId(segId);
-  }, []);
-
-  const handleDeleteSegment = useCallback((segId: number) => {
-    setSegments(prev => prev.map(s => s.id === segId ? { ...s, enabled: false } : s));
-    setSelectedSegmentId(null);
-  }, []);
-
-  const handlePreviewPlayPause = useCallback(() => {
-    const video = previewVideoRef.current;
-    if (!video || !blobUrl) return;
-    if (isPreviewPlaying) {
-      video.pause();
-      setIsPreviewPlaying(false);
-    } else {
-      video.play().then(() => {
-        setIsPreviewPlaying(true);
-        handleVideoMetadata();
-      }).catch(() => {
-        video.muted = true;
-        video.play().then(() => {
-          setIsPreviewPlaying(true);
-          handleVideoMetadata();
-        }).catch(() => setIsPreviewPlaying(false));
-      });
-    }
-  }, [isPreviewPlaying, handleVideoMetadata, blobUrl]);
-
   if (phase === "review") {
     return (
       <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-center justify-between px-4 py-4">
-          <button onClick={handleDiscard} className="p-3 rounded-full bg-white/10 text-white active:scale-90 transition-transform touch-manipulation" data-testid="button-back-to-edit">
+          <button onClick={() => setConfirmDiscard(true)} className="p-3 rounded-full bg-white/10 text-white active:scale-90 transition-transform touch-manipulation" data-testid="button-back-to-edit">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h3 className="text-white font-medium text-sm">{t.studioSendVideoTitle}</h3>
@@ -1919,17 +1755,6 @@ function CameraRecordingView({
               </div>
             </div>
             <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-              <div className="flex items-center gap-3">
-                <Send className="w-5 h-5 text-green-400 shrink-0" />
-                <div className="flex-1">
-                  <label className="text-[11px] text-white/50 block mb-1.5">{t.studioWaMessageLabel}</label>
-                  <textarea value={waMessage} onChange={(e) => setWaMessage(e.target.value)} rows={3}
-                    className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-2.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-green-500/50 resize-none"
-                    placeholder={t.studioWaMessagePlaceholder} data-testid="input-wa-message" />
-                </div>
-              </div>
-            </div>
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
               {tiktokStatusData?.connected ? (
                 <button
                   type="button"
@@ -1958,44 +1783,6 @@ function CameraRecordingView({
                 </div>
               )}
             </div>
-            <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
-              <button
-                type="button"
-                onClick={() => setAutoEdit(!autoEdit)}
-                className="w-full flex items-center justify-between gap-3"
-                data-testid="button-auto-edit-toggle"
-              >
-                <div className="flex items-center gap-3">
-                  <Wand2 className="w-5 h-5 text-cyan-400 shrink-0" />
-                  <div className="text-left">
-                    <p className="text-sm text-white font-medium">{t.studioAutoEditLabel}</p>
-                    <p className="text-[10px] text-white/40 mt-0.5">{t.studioAutoEditDesc}</p>
-                  </div>
-                </div>
-                <div className={`w-11 h-6 rounded-full transition-colors relative ${autoEdit ? "bg-cyan-500" : "bg-white/15"}`}>
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${autoEdit ? "translate-x-5" : "translate-x-0.5"}`} />
-                </div>
-              </button>
-              {autoEdit && (
-                <button
-                  type="button"
-                  onClick={() => setEnableSubtitles(!enableSubtitles)}
-                  className="w-full flex items-center justify-between gap-3 pl-8"
-                  data-testid="button-subtitles-toggle"
-                >
-                  <div className="flex items-center gap-3">
-                    <Type className="w-4 h-4 text-orange-400 shrink-0" />
-                    <div className="text-left">
-                      <p className="text-sm text-white font-medium">{t.studioSubtitlesLabel}</p>
-                      <p className="text-[10px] text-white/40 mt-0.5">{t.studioSubtitlesDesc}</p>
-                    </div>
-                  </div>
-                  <div className={`w-11 h-6 rounded-full transition-colors relative ${enableSubtitles ? "bg-orange-500" : "bg-white/15"}`}>
-                    <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${enableSubtitles ? "translate-x-5" : "translate-x-0.5"}`} />
-                  </div>
-                </button>
-              )}
-            </div>
             {idea && (
               <div className="rounded-xl bg-white/5 border border-white/10 p-3">
                 <div className="flex items-center gap-3">
@@ -2020,146 +1807,26 @@ function CameraRecordingView({
             </button>
           </div>
         </div>
-      </div>
-    );
-  }
-
-
-  if (phase === "editing") {
-    const enabledSegs = segments.filter(s => s.enabled);
-    const totalEnabledDur = enabledSegs.reduce((sum, s) => sum + (s.endSec - s.startSec), 0);
-    const playbackPct = videoDuration > 0 ? (currentPreviewTime / videoDuration) * 100 : 0;
-    const selectedSeg = segments.find(s => s.id === selectedSegmentId);
-    return (
-      <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-        <div className="flex items-center justify-between px-4 py-3">
-          <button onClick={handleDiscard} className="p-3 rounded-full bg-white/10 text-white active:scale-90 transition-transform touch-manipulation" data-testid="button-discard-edit">
-            <Trash2 className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Scissors className="w-4 h-4 text-orange-400" />
-            <h3 className="text-white font-medium text-sm">{t.studioEditVideoTitle}</h3>
-          </div>
-          <button onClick={handleTrimDone} disabled={enabledSegs.length === 0} className="px-4 py-2 rounded-full bg-green-600 text-white text-xs font-medium active:scale-90 transition-transform touch-manipulation disabled:opacity-40" data-testid="button-trim-done">
-            {t.studioNext}
-          </button>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center px-3 min-h-0">
-          <div className="relative w-full max-w-sm aspect-[9/16] rounded-xl overflow-hidden bg-black border border-white/10">
-            {videoSrcReady ? (
-              <video ref={previewVideoRef} src={blobUrl || undefined} playsInline controls preload="auto"
-                className="w-full h-full object-cover"
-                onLoadedMetadata={handleVideoMetadata}
-                onLoadedData={handleVideoMetadata}
-                onDurationChange={handleVideoMetadata}
-                onCanPlay={handleVideoMetadata}
-                onTimeUpdate={handleVideoTimeUpdate}
-                onPlay={() => setIsPreviewPlaying(true)}
-                onPause={() => setIsPreviewPlaying(false)}
-                onError={(e) => {
-                  const video = e.currentTarget;
-                  const err = video.error;
-                  console.error(`[studio] Video error: code=${err?.code}, msg=${err?.message}, src=${blobUrl?.substring(0, 80)}`);
-                }}
-                data-testid="video-preview" />
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center" data-testid="video-loading">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-16 h-16 rounded-full bg-orange-600/60 backdrop-blur-sm flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 text-white animate-spin" />
-                  </div>
-                  <span className="text-[11px] text-white/60 font-medium">{t.studioPreparingVideo}</span>
-                </div>
-              </div>
-            )}
-            <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
-              <div className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm">
-                <span className="text-[10px] text-white font-mono">{formatTimePrecise(currentPreviewTime)}</span>
-              </div>
-              <div className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm">
-                <span className="text-[10px] text-white font-mono">{formatTimePrecise(videoDuration)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="px-4 pb-4" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))" }}>
-          <div className="max-w-md mx-auto space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[10px] text-white/40 font-mono">{segments.length} clip{segments.length !== 1 ? "s" : ""}</span>
-              <span className="text-[10px] text-orange-400 font-medium font-mono">Final: {formatTimePrecise(totalEnabledDur)}</span>
-            </div>
-
-            <div className="relative h-12 rounded-lg overflow-hidden bg-white/5 border border-white/10">
-              {segments.map((seg) => {
-                const leftPct = videoDuration > 0 ? (seg.startSec / videoDuration) * 100 : 0;
-                const widthPct = videoDuration > 0 ? ((seg.endSec - seg.startSec) / videoDuration) * 100 : 0;
-                const isSelected = seg.id === selectedSegmentId;
-                return (
-                  <button key={seg.id}
-                    onClick={() => {
-                      setSelectedSegmentId(seg.id === selectedSegmentId ? null : seg.id);
-                      if (previewVideoRef.current) {
-                        previewVideoRef.current.currentTime = seg.startSec;
-                        setCurrentPreviewTime(seg.startSec);
-                      }
-                    }}
-                    className={`absolute top-0 bottom-0 transition-all touch-manipulation ${
-                      seg.enabled
-                        ? isSelected ? "bg-orange-500/60 border-y-2 border-orange-400" : "bg-green-600/40 hover:bg-green-600/50"
-                        : isSelected ? "bg-red-900/50 border-y-2 border-red-500" : "bg-white/5"
-                    }`}
-                    style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 0.5)}%` }}
-                    data-testid={`segment-${seg.id}`}
-                  >
-                    <span className="text-[8px] text-white/60 font-mono absolute bottom-0.5 left-1 truncate" style={{ maxWidth: "calc(100% - 8px)" }}>
-                      {formatTimePrecise(seg.endSec - seg.startSec)}
-                    </span>
-                    {!seg.enabled && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <X className="w-3 h-3 text-red-400/60" />
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-              {videoDuration > 0 && (
-                <div className="absolute top-0 bottom-0 w-0.5 bg-white z-10 pointer-events-none transition-[left] duration-75"
-                  style={{ left: `${playbackPct}%` }} />
-              )}
-            </div>
-
-            {selectedSeg && (
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-[10px] text-white/40 font-mono">
-                  {formatTimePrecise(selectedSeg.startSec)} - {formatTimePrecise(selectedSeg.endSec)}
-                </span>
-                <button onClick={() => handleToggleSegment(selectedSeg.id)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-medium active:scale-95 transition-transform touch-manipulation ${
-                    selectedSeg.enabled ? "bg-red-600/20 border border-red-500/30 text-red-400" : "bg-green-600/20 border border-green-500/30 text-green-400"
-                  }`} data-testid="button-toggle-segment">
-                  {selectedSeg.enabled ? t.studioExclude : t.studioInclude}
+        {confirmDiscard && (
+          <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setConfirmDiscard(false)}>
+            <div className="bg-[#141414] border border-white/10 rounded-2xl p-5 max-w-xs w-full shadow-2xl animate-in zoom-in-95 fade-in duration-200" onClick={e => e.stopPropagation()}>
+              <h3 className="text-sm font-semibold text-white mb-1">¿Descartar esta toma?</h3>
+              <p className="text-[11px] text-white/50 mb-4">La grabación se perderá y volverás a la cámara.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmDiscard(false)} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70 text-xs font-medium active:scale-95 transition-transform touch-manipulation" data-testid="button-cancel-discard">
+                  Cancelar
+                </button>
+                <button onClick={handleDiscard} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-xs font-semibold active:scale-95 transition-transform touch-manipulation" data-testid="button-confirm-discard">
+                  Descartar
                 </button>
               </div>
-            )}
-
-            <div className="flex items-center justify-center gap-3">
-              <button onClick={handlePreviewPlayPause}
-                className="w-11 h-11 rounded-full bg-white/10 border border-white/20 flex items-center justify-center active:scale-90 transition-transform touch-manipulation" data-testid="button-play-edit">
-                {isPreviewPlaying ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white ml-0.5" />}
-              </button>
-              <button onClick={handleSplitAtPlayhead}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-orange-600/20 border border-orange-500/30 text-orange-400 text-[11px] font-medium active:scale-95 transition-transform touch-manipulation" data-testid="button-split">
-                <Scissors className="w-4 h-4" />
-                Cortar aqui
-              </button>
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
+
 
   return (
     <div className="fixed inset-0 z-[100] bg-black flex flex-col">
@@ -2527,7 +2194,7 @@ export default function RecordingStudio() {
   const targetTimeRef = useRef(targetTime);
   targetTimeRef.current = targetTime;
 
-  const runBgUploadFn = useCallback(async (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadWaMessage: string, uploadSegs: Array<{start: number, end: number}> | null, uploadAutoEdit: boolean, uploadEnableSubtitles: boolean = true, uploadPublishTiktok: boolean = false) => {
+  const runBgUploadFn = useCallback(async (blob: Blob, bgId: string, uploadTitle: string, uploadIdeaId: number | null, uploadIdeaGuion: string, uploadMimeType: string, uploadSegs: Array<{start: number, end: number}> | null, uploadPublishTiktok: boolean = false) => {
     const resolvedDay = targetDayRef.current === "auto" ? undefined : targetDayRef.current;
     const resolvedTime = targetTimeRef.current || undefined;
     const safeUpdate = (updates: Partial<BgUpload>) => {
@@ -2576,10 +2243,7 @@ export default function RecordingStudio() {
           ideaTitle: uploadTitle,
           ideaGuion: uploadIdeaGuion,
           videoMimeType: uploadMimeType,
-          waMessage: uploadWaMessage || undefined,
           segments: uploadSegs,
-          autoEdit: uploadAutoEdit,
-          enableSubtitles: uploadEnableSubtitles,
           targetDay: resolvedDay,
           targetTime: resolvedTime,
           publishToTiktok: uploadPublishTiktok,
