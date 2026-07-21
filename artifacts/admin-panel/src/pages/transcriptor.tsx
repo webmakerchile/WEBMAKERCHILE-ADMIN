@@ -1,5 +1,7 @@
-import { useCallback, useRef, useState } from "react";
-import { AudioLines, Upload, Copy, Download, RotateCcw, Trash2, Check, Loader2, FileAudio, Archive } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AudioLines, Upload, Copy, Download, RotateCcw, Trash2, Check, Loader2, FileAudio, Archive, AlertTriangle } from "lucide-react";
+import { Layout } from "@/components/layout";
+import { useLang } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -15,35 +17,69 @@ interface QueueItem {
 
 const ACCEPT = ".mp3,.m4a,.ogg,.wav,.opus,.aac,.flac,.webm,.mp4";
 const CONCURRENCY = 2;
+// Must match the multer fileSize limit in api-server routes/transcriber.
+const MAX_FILE_MB = 150;
+const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
 function baseName(name: string) {
   return name.replace(/\.[^.]+$/, "");
 }
 
 export default function TranscriptorPage() {
+  const { t } = useLang();
   const [items, setItems] = useState<QueueItem[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [running, setRunning] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [health, setHealth] = useState<"ok" | "no-key" | "down" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<QueueItem[]>([]);
   itemsRef.current = items;
   const runningRef = useRef(false);
 
+  // Check the transcriber service on mount so a missing GROQ_API_KEY (or a
+  // downed API) surfaces as a banner instead of a 500 on the first upload.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/transcriber/health`, { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { groqConfigured?: boolean };
+        if (!cancelled) setHealth(data.groqConfigured ? "ok" : "no-key");
+      })
+      .catch(() => {
+        if (!cancelled) setHealth("down");
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const healthWarning =
+    health === "no-key" ? t.transcriberNoKey : health === "down" ? t.transcriberUnavailable : null;
+
   const addFiles = useCallback((files: FileList | File[]) => {
     const nuevos: QueueItem[] = Array.from(files).map((file) => ({
       id: crypto.randomUUID(),
       file,
-      status: "pendiente",
+      // Validate the 150MB limit client-side, before any upload
+      ...(file.size > MAX_FILE_BYTES
+        ? { status: "error" as const, error: t.transcriberFileTooBig(file.name, (file.size / 1048576).toFixed(1)) }
+        : { status: "pendiente" as const }),
     }));
     setItems((prev) => [...prev, ...nuevos]);
-  }, []);
+  }, [t]);
 
   const updateItem = (id: string, patch: Partial<QueueItem>) => {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
   };
 
   const transcribeOne = async (item: QueueItem) => {
+    if (item.file.size > MAX_FILE_BYTES) {
+      updateItem(item.id, {
+        status: "error",
+        error: t.transcriberFileTooBig(item.file.name, (item.file.size / 1048576).toFixed(1)),
+      });
+      return;
+    }
     updateItem(item.id, { status: "procesando", error: undefined });
     try {
       const form = new FormData();
@@ -163,7 +199,8 @@ export default function TranscriptorPage() {
   };
 
   return (
-    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
+    <Layout>
+    <div className="max-w-5xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-3">
           <AudioLines className="w-8 h-8 text-primary" /> Transcriptor de Audios
@@ -172,6 +209,16 @@ export default function TranscriptorPage() {
           Whisper large-v3-turbo vía Groq · Español · Los archivos mayores a 24MB se convierten automáticamente
         </p>
       </div>
+
+      {healthWarning && (
+        <div
+          className="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-600 dark:text-amber-400"
+          data-testid="banner-transcriber-health"
+        >
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          <p>{healthWarning}</p>
+        </div>
+      )}
 
       <div
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -189,7 +236,7 @@ export default function TranscriptorPage() {
       >
         <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
         <p className="font-semibold mb-1">Arrastra tus audios aquí</p>
-        <p className="text-sm text-muted-foreground">o haz clic para seleccionar archivos — MP3, M4A, OGG, WAV, OPUS</p>
+        <p className="text-sm text-muted-foreground">o haz clic para seleccionar archivos — MP3, M4A, OGG, WAV, OPUS, AAC, FLAC, WEBM, MP4 · Máx {MAX_FILE_MB} MB</p>
         <input
           ref={inputRef}
           type="file"
@@ -289,5 +336,6 @@ export default function TranscriptorPage() {
         ))}
       </div>
     </div>
+    </Layout>
   );
 }

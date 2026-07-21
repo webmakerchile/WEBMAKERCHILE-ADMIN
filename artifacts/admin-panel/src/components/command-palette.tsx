@@ -21,7 +21,13 @@ import {
   Sparkles,
   MessageSquareText,
   Users2,
+  UserCog,
   HelpCircle,
+  BarChart3,
+  Library,
+  AudioLines,
+  Settings,
+  LayoutGrid,
   Plus,
   Search,
   Keyboard,
@@ -32,6 +38,7 @@ import {
   Monitor,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLang, type Translations } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -80,22 +87,28 @@ type SearchedVideo = {
 
 type Page = {
   href: string;
-  label: string;
+  label: (t: Translations) => string;
   icon: React.ComponentType<{ className?: string }>;
   shortcut?: string[];
 };
 
 const PAGES: Page[] = [
-  { href: "/", label: "Inicio", icon: LayoutDashboard, shortcut: ["g", "i"] },
-  { href: "/videos", label: "Gestor de Videos", icon: Video, shortcut: ["g", "v"] },
-  { href: "/schedule", label: "Calendario / Publicaciones", icon: CalendarClock, shortcut: ["g", "c"] },
-  { href: "/cuentas", label: "Cuentas Sociales", icon: Users2, shortcut: ["g", "u"] },
-  { href: "/cover", label: "Portadas", icon: ImageIcon, shortcut: ["g", "p"] },
-  { href: "/historias", label: "Historias", icon: Sparkles },
-  { href: "/descripciones", label: "Descripciones", icon: MessageSquareText, shortcut: ["g", "d"] },
-  { href: "/drive", label: "Drive", icon: FolderTree },
-  { href: "/estudio", label: "Estudio", icon: Clapperboard, shortcut: ["g", "e"] },
-  { href: "/ayuda", label: "Ayuda", icon: HelpCircle },
+  { href: "/", label: (t) => t.navHome, icon: LayoutDashboard, shortcut: ["g", "i"] },
+  { href: "/videos", label: (t) => t.navVideos, icon: Video, shortcut: ["g", "v"] },
+  { href: "/schedule", label: (t) => t.navCalendar, icon: CalendarClock, shortcut: ["g", "c"] },
+  { href: "/cuentas", label: (t) => t.navAccounts, icon: Users2, shortcut: ["g", "u"] },
+  { href: "/insights", label: (t) => t.navInsights, icon: BarChart3, shortcut: ["g", "s"] },
+  { href: "/biblioteca", label: (t) => t.navLibrary, icon: Library, shortcut: ["g", "b"] },
+  { href: "/cover", label: (t) => t.navCovers, icon: ImageIcon, shortcut: ["g", "p"] },
+  { href: "/historias", label: (t) => t.navStories, icon: Sparkles },
+  { href: "/descripciones", label: (t) => t.navDescriptions, icon: MessageSquareText, shortcut: ["g", "d"] },
+  { href: "/drive", label: (t) => t.navDrive, icon: FolderTree },
+  { href: "/estudio", label: (t) => t.navStudio, icon: Clapperboard, shortcut: ["g", "e"] },
+  { href: "/transcriptor", label: (t) => t.navTranscriber, icon: AudioLines, shortcut: ["g", "t"] },
+  { href: "/equipo", label: (t) => t.navTeam, icon: UserCog, shortcut: ["g", "q"] },
+  { href: "/ajustes", label: (t) => t.navSettings, icon: Settings, shortcut: ["g", "a"] },
+  { href: "/ayuda", label: (t) => t.navHelp, icon: HelpCircle },
+  { href: "/ejecutivo", label: (t) => t.navHub, icon: LayoutGrid, shortcut: ["g", "h"] },
 ];
 
 type ActionContext = {
@@ -178,6 +191,7 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [currentPath, setLocation] = useLocation();
+  const { t } = useLang();
   const { mode: themeMode, cycle: cycleTheme } = useTheme();
   const actionCtx: ActionContext = { setLocation, currentPath, cycleTheme, themeMode };
 
@@ -267,12 +281,12 @@ export function CommandPalette({
           {PAGES.map((page) => (
             <CommandItem
               key={page.href}
-              value={`página ${page.label} ${page.href}`}
+              value={`página ${page.label(t)} ${page.href}`}
               onSelect={() => go(page.href)}
               className="cursor-pointer"
             >
               <page.icon className="text-muted-foreground" />
-              <span>{page.label}</span>
+              <span>{page.label(t)}</span>
               {page.shortcut && (
                 <KbdGroup className="ml-auto">
                   {page.shortcut.map((k) => (
