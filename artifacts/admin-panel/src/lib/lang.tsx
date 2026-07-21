@@ -82,7 +82,7 @@ const T = {
     descLinkedin: "Personal o Página de empresa",
     descX: "Cuenta de X (Twitter)",
     descTiktok: "Modo sandbox: el video llega como borrador",
-    descYoutube: "Canal vinculado a tu cuenta de Google",
+    descYoutube: "Conecta para subir videos a YouTube, acceder a Drive y Google Calendar",
 
     // Network server notes
     noteFacebook: "Facebook usa credenciales de System User permanentes configuradas en el servidor.",
@@ -731,7 +731,7 @@ const T = {
     descLinkedin: "Personal profile or Company Page",
     descX: "X (Twitter) account",
     descTiktok: "Sandbox mode: video arrives as a draft",
-    descYoutube: "Channel linked to your Google account",
+    descYoutube: "Connect to upload videos to YouTube, access Drive and Google Calendar",
 
     // Network server notes
     noteFacebook: "Facebook uses permanent System User credentials configured on the server.",

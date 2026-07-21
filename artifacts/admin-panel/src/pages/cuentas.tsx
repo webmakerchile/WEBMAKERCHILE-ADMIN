@@ -1099,13 +1099,23 @@ export default function CuentasPage() {
                       </div>
                     </div>
 
+                    {network === "youtube" && (
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-amber-300/90">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <p className="text-[11px] leading-relaxed">
+                          Al conectar YouTube también se habilita el acceso a <strong>Google Drive</strong> y <strong>Google Calendar</strong>.
+                          Tu sesión de login no incluye estos permisos — necesitas conectar aquí una vez.
+                        </p>
+                      </div>
+                    )}
+
                     {authHref ? (
                       <a
                         href={authHref}
                         className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-sm transition"
                       >
                         <Link2 className="w-4 h-4" />
-                        {t.cuentasConnect}
+                        {network === "youtube" ? "Conectar YouTube, Drive y Calendar" : t.cuentasConnect}
                       </a>
                     ) : serverManaged ? (
                       <p className="text-[11px] text-muted-foreground/70 leading-relaxed flex items-start gap-1.5 px-2">

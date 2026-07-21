@@ -135,6 +135,8 @@ router.get("/auth/youtube", requireAuth, async (req: Request, res: Response) => 
     scope: [
       "https://www.googleapis.com/auth/youtube.upload",
       "https://www.googleapis.com/auth/youtube",
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/calendar.readonly",
     ].join(" "),
     access_type: "offline",
     prompt: "consent",
@@ -191,9 +193,11 @@ router.get("/auth/youtube/callback", requireAuth, async (req: Request, res: Resp
 
     const updateData: Record<string, string | null> = {
       googleAccessToken: tokenData.access_token,
+      googleCalendarAccessToken: tokenData.access_token,
     };
     if (tokenData.refresh_token) {
       updateData.googleRefreshToken = tokenData.refresh_token;
+      updateData.googleCalendarRefreshToken = tokenData.refresh_token;
     }
 
     await db.update(users).set(updateData).where(eq(users.id, user.id));
