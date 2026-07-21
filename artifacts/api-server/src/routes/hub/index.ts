@@ -130,4 +130,94 @@ ${pdfText.slice(0, 6000)}`,
   }
 });
 
+router.post("/hub/contracts/extract-from-meeting", async (req: Request, res: Response) => {
+  const { notes } = req.body as { notes?: string };
+  if (!notes || notes.trim().length < 10) {
+    res.status(400).json({ error: "Se necesita al menos una descripción de la reunión" });
+    return;
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_API_BASE || undefined,
+  });
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "Eres un asistente de negocios especializado en contratos de agencias de marketing digital. Extraes información de notas de reuniones y la conviertes en datos estructurados para contratos. Responde SOLO con JSON válido.",
+      },
+      {
+        role: "user",
+        content: `Analiza estas notas de reunión y extrae los datos relevantes para crear un contrato de servicios. Si no encuentras un campo, usa string vacío.
+
+Campos a extraer:
+- title (string): nombre o descripción del servicio contratado
+- client (string): nombre del cliente o empresa
+- value (string): valor o precio acordado (ej: "$290.000 / mes", "$1.500.000")
+- status (string): uno de "borrador", "activo", "vencido", "cancelado" — usa "borrador" por defecto
+- signedAt (string): fecha de firma en formato YYYY-MM-DD (vacío si no se menciona)
+- expiresAt (string): fecha de vencimiento o fin del servicio en formato YYYY-MM-DD (vacío si no se menciona)
+- notes (string): resumen del alcance o términos importantes (máx 200 caracteres)
+- client_contact (string): nombre del contacto o representante del cliente (si se menciona)
+- scope_detail (string): descripción detallada del alcance del proyecto (para el campo "scope" del wizard)
+- project_name (string): nombre específico del proyecto o servicio
+
+Notas de la reunión:
+${notes.slice(0, 4000)}`,
+      },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content || "{}";
+  let extracted: Record<string, string> = {};
+  try { extracted = JSON.parse(raw); } catch { /* leave empty */ }
+
+  res.json(extracted);
+});
+
+router.post("/hub/contracts/ai-chat", async (req: Request, res: Response) => {
+  const { contract, instruction } = req.body as { contract?: Record<string, string>; instruction?: string };
+  if (!instruction || instruction.trim().length < 3) {
+    res.status(400).json({ error: "Instrucción requerida" });
+    return;
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_API_BASE || undefined,
+  });
+
+  const contractStr = JSON.stringify(contract || {}, null, 2);
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "Eres un asistente de contratos de marketing digital. El usuario quiere modificar un contrato según sus instrucciones. Devuelve el contrato actualizado como JSON con los mismos campos, aplicando solo los cambios solicitados. Responde SOLO con JSON válido.",
+      },
+      {
+        role: "user",
+        content: `Contrato actual:
+${contractStr}
+
+Instrucción del usuario: ${instruction}
+
+Devuelve el contrato completo con los cambios aplicados. Campos: title, client, value, status (borrador/activo/vencido/cancelado), signedAt (YYYY-MM-DD o vacío), expiresAt (YYYY-MM-DD o vacío), notes (máx 200 chars).`,
+      },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content || "{}";
+  let updated: Record<string, string> = {};
+  try { updated = JSON.parse(raw); } catch { /* leave empty */ }
+
+  res.json(updated);
+});
+
 export default router;

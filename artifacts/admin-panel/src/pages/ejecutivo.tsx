@@ -40,7 +40,7 @@ type SheetKind =
   | { kind: "new-client" } | { kind: "client"; id: string }
   | { kind: "new-meet" } | { kind: "meet"; id: string }
   | { kind: "new-note" } | { kind: "note"; id: string }
-  | { kind: "new-contract-mode" } | { kind: "new-contract" } | { kind: "contract"; id: string }
+  | { kind: "new-contract-mode" } | { kind: "new-contract" } | { kind: "new-contract-meeting" } | { kind: "contract"; id: string }
   | { kind: "new-contract-wizard" };
 
 /* ============================================================
@@ -929,6 +929,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [wiz, setWiz] = useState<WizData>(emptyWiz);
   const [aiExtracting, setAiExtracting] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [meetingNotes, setMeetingNotes] = useState("");
+  const [meetingExtracting, setMeetingExtracting] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatHistory, setChatHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -942,13 +947,31 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       const c = state.contracts.find(x => x.id === (sheet as { id: string }).id);
       if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
       else setPdfData(null);
+      setChatHistory([]); setChatInput("");
     }
     if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
+    if (sheet?.kind === "new-contract-meeting") { setMeetingNotes(""); setMeetingExtracting(false); }
   }, [sheet, state.projects, state.contracts]);
 
   useEffect(() => {
-    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); }
+    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); }
   }, [sheet?.kind]);
+
+  const extractFromMeeting = async (notes: string, onFill: (data: Record<string, string>) => void) => {
+    setMeetingExtracting(true);
+    try {
+      const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/extract-from-meeting`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string,string>)); onToast((e as {error?:string}).error || "Error al procesar las notas"); return; }
+      const data = await res.json() as Record<string, string>;
+      onFill(data);
+      onToast("Información extraída de la reunión ✓");
+    } catch { onToast("Error de conexión"); }
+    finally { setMeetingExtracting(false); }
+  };
 
   if (!sheet) return null;
 
@@ -1188,6 +1211,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
           <span className="cms-arr">→</span>
         </button>
+        <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract-meeting" })}>
+          <span className="cms-icon">🎙️</span>
+          <div className="cms-text">
+            <strong>Desde reunión</strong>
+            <small>Pega las notas de tu reunión y la IA rellena el contrato automáticamente</small>
+          </div>
+          <span className="cms-arr">→</span>
+        </button>
         <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract" })}>
           <span className="cms-icon">📁</span>
           <div className="cms-text">
@@ -1197,6 +1228,62 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <span className="cms-arr">→</span>
         </button>
       </div>
+    </>);
+  }
+
+  /* ---- Nuevo contrato desde reunión ---- */
+  if (sheet.kind === "new-contract-meeting") {
+    const existingMeetings = [...state.meetings].sort((a, b) => b.createdAt - a.createdAt).slice(0, 10);
+    return (<>
+      <div className="sheet-head"><h2>Contrato desde reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+
+      <div className="field">
+        <label>Notas de la reunión</label>
+        {existingMeetings.length > 0 && (
+          <select style={{ marginBottom: 8 }} defaultValue="" onChange={e => {
+            const m = state.meetings.find(x => x.id === e.target.value);
+            if (m) setMeetingNotes([m.client && `Cliente: ${m.client}`, m.date && `Fecha: ${m.date}`, m.summary && `Resumen: ${m.summary}`, m.notes].filter(Boolean).join("\n\n"));
+          }}>
+            <option value="">— Cargar reunión existente —</option>
+            {existingMeetings.map(m => (
+              <option key={m.id} value={m.id}>{m.date ? `${m.date} — ` : ""}{m.client || m.summary || "Sin título"}</option>
+            ))}
+          </select>
+        )}
+        <textarea rows={7} value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} placeholder="Pega aquí las notas de tu reunión con el cliente: qué servicios se acordaron, precio, fechas, alcance, nombre del cliente, etc. La IA leerá todo y completará el formulario automáticamente." style={{ fontFamily: "inherit" }} />
+      </div>
+      <button className="ai-extract-btn" disabled={meetingExtracting || meetingNotes.trim().length < 10} onClick={() => extractFromMeeting(meetingNotes, (data) => {
+        if (r.current["ti"] && (data.title || data.project_name)) r.current["ti"].value = data.title || data.project_name;
+        if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
+        if (r.current["va"] && data.value) r.current["va"].value = data.value;
+        if (r.current["st"] && data.status) (r.current["st"] as HTMLSelectElement).value = data.status;
+        if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
+        if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
+        if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
+      })}>
+        {meetingExtracting ? "⏳ Analizando reunión con IA…" : "✨ Completar formulario con IA"}
+      </button>
+
+      <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} placeholder="Ej: Servicio de Marketing Digital" /></div>
+      <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} placeholder="Nombre del cliente" /></div>
+      <div className="field"><label>Valor</label><input type="text" ref={R("va")} placeholder="Ej: $290.000 / mes" /></div>
+      <div className="field"><label>Estado</label>
+        <select ref={R("st")}>
+          <option value="borrador">Borrador</option>
+          <option value="activo">Activo</option>
+          <option value="vencido">Vencido</option>
+          <option value="cancelado">Cancelado</option>
+        </select>
+      </div>
+      <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
+      <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} /></div>
+      <div className="field"><label>Notas / Alcance</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} placeholder="Términos, detalles, observaciones…" /></div>
+      <button className="add-btn" onClick={() => {
+        const title = V("ti").trim(); if (!title) { onToast("Ponle un título al contrato"); return; }
+        const now = Date.now();
+        onSave({ ...state, contracts: [...state.contracts, { id: uid(), title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), createdAt: now, updatedAt: now }] });
+        onClose(); onNavigate("contracts"); onToast("Contrato creado");
+      }}>Crear contrato</button>
     </>);
   }
 
@@ -1287,7 +1374,91 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
       }}>Guardar cambios</button>
-      <button className="del-link" onClick={() => {
+
+      {/* ---- Chat IA para modificar el contrato ---- */}
+      <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <span style={{ fontSize: "1.1em" }}>✨</span>
+          <strong style={{ fontSize: "0.92em" }}>Modificar con IA</strong>
+          <span style={{ fontSize: "0.75em", color: "var(--muted)", fontWeight: 400 }}>Dile a la IA qué cambiar y aplicará los cambios al formulario</span>
+        </div>
+
+        {chatHistory.length > 0 && (
+          <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {chatHistory.map((msg, i) => (
+              <div key={i} style={{
+                alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                background: msg.role === "user" ? "var(--accent-bg, rgba(255,120,0,0.12))" : "var(--card-bg, rgba(255,255,255,0.06))",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "7px 12px",
+                fontSize: "0.82em",
+                maxWidth: "88%",
+                lineHeight: 1.45,
+                color: msg.role === "user" ? "var(--accent, #ff7800)" : "var(--fg)",
+              }}>{msg.text}</div>
+            ))}
+            {chatLoading && (
+              <div style={{ alignSelf: "flex-start", background: "var(--card-bg, rgba(255,255,255,0.06))", border: "1px solid var(--border)", borderRadius: 10, padding: "7px 12px", fontSize: "0.82em" }}>
+                ⏳ Modificando contrato…
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 6 }}>
+          <textarea
+            rows={2}
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!chatLoading && chatInput.trim()) document.getElementById("ai-chat-send")?.click(); } }}
+            placeholder="Ej: Cambia el precio a $350.000/mes, extiende el vencimiento 6 meses, agrega nota sobre soporte…"
+            style={{ flex: 1, resize: "none", fontFamily: "inherit", fontSize: "0.85em", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--input-bg, rgba(255,255,255,0.05))", color: "var(--fg)" }}
+            disabled={chatLoading}
+          />
+          <button
+            id="ai-chat-send"
+            disabled={chatLoading || chatInput.trim().length < 3}
+            onClick={async () => {
+              const instruction = chatInput.trim();
+              setChatInput("");
+              setChatHistory(h => [...h, { role: "user", text: instruction }]);
+              setChatLoading(true);
+              try {
+                const currentContract = {
+                  title: V("ti") || c.title,
+                  client: V("cl") || c.client,
+                  value: V("va") || c.value,
+                  status: V("st") || c.status,
+                  signedAt: V("si") || c.signedAt,
+                  expiresAt: V("ex") || c.expiresAt,
+                  notes: V("no") || c.notes,
+                };
+                const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/ai-chat`, {
+                  method: "POST", credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ contract: currentContract, instruction }),
+                });
+                if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string,string>)); setChatHistory(h => [...h, { role: "ai", text: (e as {error?:string}).error || "Error al procesar" }]); return; }
+                const data = await res.json() as Record<string, string>;
+                if (r.current["ti"] && data.title) r.current["ti"].value = data.title;
+                if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
+                if (r.current["va"] && data.value) r.current["va"].value = data.value;
+                if (r.current["st"] && data.status) (r.current["st"] as HTMLSelectElement).value = data.status;
+                if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
+                if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
+                if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
+                setChatHistory(h => [...h, { role: "ai", text: "✓ Cambios aplicados. Revisa los campos arriba y guarda cuando estés listo." }]);
+              } catch { setChatHistory(h => [...h, { role: "ai", text: "Error de conexión" }]); }
+              finally { setChatLoading(false); }
+            }}
+            style={{ padding: "0 14px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--accent-bg, rgba(255,120,0,0.15))", color: "var(--accent, #ff7800)", cursor: "pointer", fontWeight: 600, fontSize: "1em", flexShrink: 0 }}
+          >→</button>
+        </div>
+        <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 5 }}>Los cambios se aplican al formulario — haz clic en "Guardar cambios" para confirmar.</p>
+      </div>
+
+      <button className="del-link" style={{ marginTop: 16 }} onClick={() => {
         const snap = [...state.contracts];
         onSave({ ...state, contracts: state.contracts.filter(x => x.id !== c.id) });
         onClose(); onToast("Contrato eliminado", () => onSave({ ...state, contracts: snap }));
@@ -1336,6 +1507,36 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               <input type="text" value={wiz.advisor} onChange={e => setWiz(w => ({ ...w, advisor: e.target.value }))} placeholder="Ej: Equipo WebMaker Latam" />
             </div>
           </div>
+          <div className="field" style={{ marginTop: 12 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>🎙️</span> Notas de reunión <span style={{ fontSize: "0.7em", fontWeight: 400, color: "var(--muted)" }}>(opcional — la IA completa los campos)</span>
+            </label>
+            {state.meetings.length > 0 && (
+              <select style={{ marginBottom: 6 }} defaultValue="" onChange={e => {
+                const m = state.meetings.find(x => x.id === e.target.value);
+                if (m) setMeetingNotes([m.client && `Cliente: ${m.client}`, m.date && `Fecha: ${m.date}`, m.summary && `Resumen: ${m.summary}`, m.notes].filter(Boolean).join("\n\n"));
+              }}>
+                <option value="">— Cargar reunión guardada —</option>
+                {[...state.meetings].sort((a,b) => b.createdAt - a.createdAt).slice(0,10).map(m => (
+                  <option key={m.id} value={m.id}>{m.date ? `${m.date} — ` : ""}{m.client || m.summary || "Sin título"}</option>
+                ))}
+              </select>
+            )}
+            <textarea rows={4} value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} placeholder="Pega las notas de tu reunión aquí — la IA las leerá y rellenará cliente, nombre del proyecto, alcance y precio automáticamente." style={{ fontFamily: "inherit" }} />
+          </div>
+          {meetingNotes.trim().length >= 10 && (
+            <button className="ai-extract-btn" style={{ marginBottom: 8 }} disabled={meetingExtracting} onClick={() => extractFromMeeting(meetingNotes, (data) => {
+              setWiz(w => ({
+                ...w,
+                client: data.client || w.client,
+                project: data.title || data.project_name || w.project,
+                scope: data.scope_detail || data.notes || w.scope,
+              }));
+            })}>
+              {meetingExtracting ? "⏳ Analizando reunión con IA…" : "✨ Completar campos con IA"}
+            </button>
+          )}
+
           <button className="add-btn" onClick={() => {
             if (!wiz.client.trim() || !wiz.project.trim()) { onToast("Cliente y nombre del proyecto son requeridos"); return; }
             setWizStep(2);
