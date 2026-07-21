@@ -26,6 +26,7 @@ import transcriberRouter from "./transcriber";
 import credentialsRouter from "./credentials";
 import calendarRouter from "./calendar";
 import hubRouter from "./hub";
+import adminUsersRouter from "./admin-users";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(transcriberRouter);
 router.use(credentialsRouter);
 router.use(calendarRouter);
 router.use(hubRouter);
+router.use(adminUsersRouter);
 
 export default router;

@@ -42,6 +42,11 @@ export const users = pgTable("users", {
   googleCalendarAccessToken: text("google_calendar_access_token"),
   googleCalendarRefreshToken: text("google_calendar_refresh_token"),
   googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),
+  /**
+   * Access approval status. 'approved' = can log in. 'pending' = awaiting admin approval.
+   * 'rejected' = access denied. Emails in ALLOWED_ADMIN_EMAILS env are auto-approved.
+   */
+  approvalStatus: text("approval_status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
 });

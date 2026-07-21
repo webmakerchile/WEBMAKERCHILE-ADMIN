@@ -13,6 +13,7 @@ import { useEffect } from "react";
 // Eager: dashboard is the landing page; login pages are tiny and unauthed.
 import Dashboard from "./pages/dashboard";
 import LoginPage from "./pages/login";
+import PendingApprovalPage from "./pages/pending-approval";
 import TermsPage from "./pages/terms";
 import PrivacyPage from "./pages/privacy";
 import NotFound from "./pages/not-found";
@@ -88,6 +89,7 @@ type AuthUser = {
   picture: string | null;
   role: string;
   teamRole?: string;
+  approvalStatus?: string;
 };
 
 const AuthContext = createContext<AuthUser | null>(null);
@@ -140,6 +142,10 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 
   if (error || !user) {
     return <LoginPage />;
+  }
+
+  if (user.approvalStatus === "pending") {
+    return <PendingApprovalPage user={user} />;
   }
 
   return (

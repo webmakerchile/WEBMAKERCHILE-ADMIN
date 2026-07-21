@@ -41,9 +41,9 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
             return done(null, false, { message: "No se pudo obtener el correo de Google" });
           }
 
-          if (ALLOWED_EMAILS.length > 0 && !ALLOWED_EMAILS.includes(email)) {
-            return done(null, false, { message: "Correo no autorizado" });
-          }
+          const isAutoApproved = ALLOWED_EMAILS.length > 0 && ALLOWED_EMAILS.includes(email);
+          // First email in the allowlist is the super-admin
+          const isSuperAdmin = ALLOWED_EMAILS[0] === email;
 
           const [existing] = await db
             .select()
@@ -52,20 +52,36 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
             .limit(1);
 
           if (existing) {
+            // If rejected, deny immediately
+            if (existing.approvalStatus === "rejected") {
+              return done(null, false, { message: "Acceso rechazado" });
+            }
+
+            // Auto-approve if email is in the allowlist
             const updateData: Record<string, any> = {
               lastLoginAt: new Date(),
               name: profile.displayName || existing.name,
               picture: profile.photos?.[0]?.value || existing.picture,
             };
+            if (isAutoApproved && existing.approvalStatus !== "approved") {
+              updateData.approvalStatus = "approved";
+            }
+            if (isSuperAdmin && existing.role !== "superadmin") {
+              updateData.role = "superadmin";
+            }
 
             await db
               .update(users)
               .set(updateData)
               .where(eq(users.id, existing.id));
 
-            return done(null, { ...existing, ...updateData });
+            const updatedUser = { ...existing, ...updateData };
+
+            // Pending users: log in but flag as pending so frontend shows waiting screen
+            return done(null, updatedUser);
           }
 
+          // New user: auto-approve if in allowlist, otherwise pending
           const [newUser] = await db
             .insert(users)
             .values({
@@ -73,6 +89,8 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               email,
               name: profile.displayName || null,
               picture: profile.photos?.[0]?.value || null,
+              role: isSuperAdmin ? "superadmin" : "admin",
+              approvalStatus: isAutoApproved ? "approved" : "pending",
               googleAccessToken: null,
               googleRefreshToken: null,
               googleCalendarAccessToken: null,
@@ -275,6 +293,7 @@ router.get("/auth/me", (req: Request, res: Response) => {
       picture: user.picture,
       role: user.role,
       teamRole: user.teamRole || "editor",
+      approvalStatus: user.approvalStatus || "approved",
       hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
     });
   } else {

@@ -15,10 +15,15 @@ import {
   Lock,
   Database,
   Server,
+  Users,
+  UserCheck,
+  UserX,
+  Clock,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { useLang } from "@/lib/lang";
+import { useAuth } from "@/App";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -274,8 +279,173 @@ function NetworkCard({ group, onSave, onDelete }: { group: NetworkGroup; onSave:
   );
 }
 
+type ManagedUser = {
+  id: number;
+  email: string;
+  name: string | null;
+  picture: string | null;
+  role: string;
+  teamRole: string;
+  approvalStatus: string;
+  createdAt: string;
+  lastLoginAt: string;
+};
+
+function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err") => void }) {
+  const [users, setUsers] = useState<ManagedUser[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch("/admin/users");
+      setUsers(data);
+    } catch {
+      setUsers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const setApproval = async (id: number, status: string) => {
+    try {
+      await apiFetch(`/admin/users/${id}/approval`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      const labels: Record<string, string> = { approved: "aprobado", rejected: "rechazado", pending: "pendiente" };
+      showToast(`Usuario ${labels[status] || status}`, "ok");
+      await load();
+    } catch (e: any) {
+      showToast(e.message, "err");
+    }
+  };
+
+  const deleteUser = async (id: number, email: string) => {
+    if (!confirm(`¿Eliminar permanentemente a ${email}?`)) return;
+    try {
+      await apiFetch(`/admin/users/${id}`, { method: "DELETE" });
+      showToast("Usuario eliminado", "ok");
+      await load();
+    } catch (e: any) {
+      showToast(e.message, "err");
+    }
+  };
+
+  const statusBadge = (status: string) => {
+    if (status === "approved") return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+        <UserCheck className="w-2.5 h-2.5" /> Aprobado
+      </span>
+    );
+    if (status === "rejected") return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/25">
+        <UserX className="w-2.5 h-2.5" /> Rechazado
+      </span>
+    );
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+        <Clock className="w-2.5 h-2.5" /> Pendiente
+      </span>
+    );
+  };
+
+  const pending = (users ?? []).filter((u) => u.approvalStatus === "pending");
+  const rest = (users ?? []).filter((u) => u.approvalStatus !== "pending");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="bg-card/50 border border-foreground/10 rounded-2xl overflow-hidden"
+    >
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-foreground/10">
+        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+          <Users className="w-4.5 h-4.5 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold">Gestión de usuarios</p>
+          <p className="text-xs text-muted-foreground">Aprueba o rechaza acceso a colaboradores</p>
+        </div>
+        {!loading && pending.length > 0 && (
+          <span className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500 text-black">
+            {pending.length} pendiente{pending.length > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Cargando usuarios…</span>
+        </div>
+      )}
+
+      {!loading && (users ?? []).length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          Aún no hay otros usuarios registrados.
+        </p>
+      )}
+
+      {!loading && (users ?? []).length > 0 && (
+        <div className="divide-y divide-foreground/8">
+          {[...pending, ...rest].map((u) => (
+            <div key={u.id} className="flex items-center gap-3 px-5 py-3">
+              {u.picture ? (
+                <img src={u.picture} alt="" className="w-9 h-9 rounded-full flex-shrink-0 object-cover" />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-foreground/10 flex items-center justify-center flex-shrink-0 text-sm font-bold text-muted-foreground">
+                  {(u.name || u.email)[0].toUpperCase()}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium truncate">{u.name || u.email}</p>
+                  {statusBadge(u.approvalStatus)}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {u.approvalStatus !== "approved" && (
+                  <button
+                    onClick={() => setApproval(u.id, "approved")}
+                    title="Aprobar acceso"
+                    className="w-7 h-7 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 flex items-center justify-center transition"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {u.approvalStatus !== "rejected" && (
+                  <button
+                    onClick={() => setApproval(u.id, "rejected")}
+                    title="Rechazar acceso"
+                    className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition"
+                  >
+                    <UserX className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={() => deleteUser(u.id, u.email)}
+                  title="Eliminar usuario"
+                  className="w-7 h-7 rounded-lg bg-foreground/5 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 flex items-center justify-center transition"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 export default function AjustesPage() {
   const { t } = useLang();
+  const auth = useAuth();
+  const isSuperAdmin = auth?.role === "superadmin";
   const [credentials, setCredentials] = useState<CredentialStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -333,6 +503,8 @@ export default function AjustesPage() {
           </div>
           <p className="text-sm text-muted-foreground">{t.ajustesSubtitle}</p>
         </div>
+
+        {isSuperAdmin && <UsersPanel showToast={showToast} />}
 
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
           <Lock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
