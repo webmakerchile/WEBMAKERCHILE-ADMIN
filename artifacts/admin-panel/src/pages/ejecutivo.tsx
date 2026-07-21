@@ -852,6 +852,7 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
 interface PdfData { url: string; title: string; uploadedAt: number; }
 function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; onChange: (d: PdfData | null) => void; onToast: (m: string) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -876,6 +877,7 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
   if (value) {
     return (
       <div className="pdf-chip">
+        <input ref={replaceRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
         <span className="pdf-icon">📄</span>
         {editingTitle ? (
           <input
@@ -887,11 +889,14 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
             onKeyDown={e => { if (e.key === "Enter") { onChange({ ...value, title: titleDraft.trim() || value.title }); setEditingTitle(false); } }}
           />
         ) : (
-          <button className="pdf-title-btn" onClick={() => { setTitleDraft(value.title); setEditingTitle(true); }} title="Editar título">{value.title}</button>
+          <button type="button" className="pdf-title-btn" onClick={() => { setTitleDraft(value.title); setEditingTitle(true); }} title="Editar título">{value.title}</button>
         )}
         <span className="pdf-date">{new Date(value.uploadedAt).toLocaleDateString("es-CL")}</span>
         <a className="pdf-open" href={value.url} target="_blank" rel="noopener noreferrer">Abrir</a>
-        <button className="pdf-remove" onClick={() => onChange(null)} title="Quitar PDF">✕</button>
+        <button type="button" className="pdf-replace-btn" disabled={uploading} onClick={() => replaceRef.current?.click()} title="Reemplazar PDF">
+          {uploading ? "Subiendo…" : "Cambiar"}
+        </button>
+        <button type="button" className="pdf-remove" onClick={() => onChange(null)} title="Quitar PDF">✕</button>
       </div>
     );
   }
@@ -899,7 +904,7 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
   return (
     <div className="pdf-upload-area">
       <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
-      <button className="pdf-select-btn" disabled={uploading} onClick={() => fileRef.current?.click()}>
+      <button type="button" className="pdf-select-btn" disabled={uploading} onClick={() => fileRef.current?.click()}>
         {uploading ? "Subiendo…" : "📎 Adjuntar PDF"}
       </button>
       <span className="pdf-hint">Solo PDF · máx 50 MB · se guarda en Google Drive</span>

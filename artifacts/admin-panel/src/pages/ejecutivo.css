@@ -270,6 +270,9 @@
 .hub-root .pdf-date{font-size:11px;color:var(--faint);white-space:nowrap;flex:none;}
 .hub-root .pdf-open{font-size:11.5px;color:var(--orange2);font-weight:600;white-space:nowrap;flex:none;}
 .hub-root .pdf-open:hover{text-decoration:underline;}
+.hub-root .pdf-replace-btn{flex:none;background:none;border:1px solid var(--line);border-radius:6px;color:var(--dim);font-size:11px;cursor:pointer;padding:2px 8px;line-height:1.6;transition:border-color .15s,color .15s;}
+.hub-root .pdf-replace-btn:hover:not(:disabled){border-color:var(--orange);color:var(--orange2);}
+.hub-root .pdf-replace-btn:disabled{opacity:.5;cursor:not-allowed;}
 .hub-root .pdf-remove{flex:none;background:none;border:0;color:var(--faint);font-size:13px;cursor:pointer;padding:0 2px;line-height:1;}
 .hub-root .pdf-remove:hover{color:var(--orange);}
 .hub-root .pdf-badge{text-decoration:none;cursor:pointer;}
