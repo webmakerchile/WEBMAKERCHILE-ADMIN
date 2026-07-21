@@ -25,14 +25,14 @@ type ProjView = "board" | "list" | "scrum";
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
 interface Client { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number; }
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
-interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; }
+interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
 type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
 interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; }
 interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
 interface WizModule { id: string; name: string; desc: string; price: number; }
-interface WizData { client: string; project: string; scope: string; date: string; advisor: string; modules: WizModule[]; downPct: number; notes: string; monthly: string; monthlyPrice: string; }
-const emptyWiz = (): WizData => ({ client: "", project: "", scope: "", date: new Date().toISOString().slice(0, 10), advisor: "", modules: [{ id: Math.random().toString(36).slice(2), name: "", desc: "", price: 0 }], downPct: 50, notes: "", monthly: "", monthlyPrice: "" });
+interface WizData { client: string; project: string; scope: string; date: string; advisor: string; modules: WizModule[]; downPct: number; notes: string; monthly: string; monthlyPrice: string; validityDays: number; }
+const emptyWiz = (): WizData => ({ client: "", project: "", scope: "", date: new Date().toISOString().slice(0, 10), advisor: "", modules: [{ id: Math.random().toString(36).slice(2), name: "", desc: "", price: 0 }], downPct: 50, notes: "", monthly: "", monthlyPrice: "", validityDays: 15 });
 type SheetKind =
   | null
   | { kind: "new-proj" } | { kind: "proj"; id: string }
@@ -123,78 +123,48 @@ function dueInfo(p: Project) {
   return { days, label: fmtDate(new Date(p.due + "T12:00:00").getTime()), cls: days < 0 ? "overdue" : days <= 7 ? "soon" : "" };
 }
 function blankState(): HubState { return { projects: [], clients: [], notes: [], meetings: [], tasks: [], contracts: [] }; }
+const CONTRACT_STATUS_IDS: readonly ContractStatus[] = ["borrador", "activo", "vencido", "cancelado"];
+function isContractStatus(v: unknown): v is ContractStatus { return typeof v === "string" && (CONTRACT_STATUS_IDS as readonly string[]).includes(v); }
+function contractExpired(c: Contract) { return !!c.expiresAt && new Date(c.expiresAt + "T23:59:59").getTime() < Date.now(); }
 
 /* ============================================================
-   SEED DATA
+   PERSISTENCIA LOCAL (clave por usuario)
    ============================================================ */
-function maybeSeeded(st: HubState): HubState {
-  if (localStorage.getItem("wm_hub_seeded") || st.projects.length) { localStorage.setItem("wm_hub_seeded", "1"); return st; }
-  const now = Date.now();
-  const mkP = (name: string, client: string, type: string, prio: Prio, status: ProjStatus, owner: string, prog: number, notes: string): Project =>
-    ({ id: uid(), name, client, type, prio, status, owner, prog, notes, link: "", createdAt: now, updatedAt: now });
-  st.projects = [
-    mkP("TEKSHIELD Ecommerce","TEKSHIELD SYSTEMS","E-commerce","alta","dev","Josué",55,"Rediseño con paleta roja/negra. Gestión de catálogo de productos."),
-    mkP("Cierre 3 plataformas","CCCS · Acorazado · Electrotransporte","Sitio Web (x3)","alta","rev","Josué",85,"Cierre del proyecto de tres plataformas."),
-    mkP("Capazquesi","IG Inmobiliaria (Ivens González)","Plataforma Software","alta","dev","Juan",40,"Plataforma de subsidio habitacional, co-fundada con Carlos."),
-    mkP("Cotizador Inmobiliario","IG Inmobiliaria (Ivens González)","Herramienta Software","media","done","Juan",100,"Herramienta de cotización para la inmobiliaria, ya entregada."),
-    mkP("Bot WhatsApp SaaS","MyTurno (Iván Bustos)","SaaS Multi-tenant","alta","disc"," — ",15,"Bot de WhatsApp multi-tenant para condominios y PyMEs."),
-    mkP("Actualización de sitio","Chopez Solutions","Sitio Web Corporativo","media","dev","Montse / Juan",45,"Actualización del sitio de accesorios automotrices."),
-    mkP("E-commerce Skincare AI","Kori & Glow (Damián)","E-commerce","alta","dev","Juan",20,"Skincare con evaluación dermocosmética potenciada por IA."),
-    mkP("Plataforma Fundación","Fundación ProAcogida (Cote De Luca)","Plataforma Software","media","disc"," — ",10,"Matriz de permisos y scope assessment entregados al cliente."),
-    mkP("App Delivery de Agua","Sixto Moreno","App Móvil","media","lead"," — ",5,"Delivery de agua en Ecuador."),
-    mkP("E-commerce Mobiliario","Ofix Chile","E-commerce","media","rev","Juan",90,"Mobiliario corporativo B2B, en revisión final."),
-    mkP("WebMaker Hub Interno","WebMaker Latam","PWA Interna","baja","done","Beto",100,"Kanban interno con notificaciones push y sync entre dispositivos."),
-  ];
-  const mkC = (name: string, contact: string, segment: string, notes: string): Client =>
-    ({ id: uid(), name, contact, segment, notes, createdAt: now });
-  st.clients = [
-    mkC("TEKSHIELD SYSTEMS","—","Seguridad / E-commerce","Cliente activo, foco en catálogo de productos."),
-    mkC("CCCS · Acorazado · Electrotransporte","Henry (supervisor)","Industrial","Cierre de tres plataformas en curso."),
-    mkC("IG Inmobiliaria","Ivens González","Inmobiliario","Dos proyectos: Capazquesi y cotizador."),
-    mkC("MyTurno","Iván Bustos","PropTech / SaaS","Bot WhatsApp para condominios y PyMEs."),
-    mkC("Chopez Solutions","—","Automotriz","Accesorios automotrices, actualización de sitio."),
-    mkC("Kori & Glow","Damián","Skincare / E-commerce","Ecommerce con IA para diagnóstico de piel."),
-    mkC("Fundación ProAcogida","Cote De Luca","ONG · Foster Care","Plataforma para cuidado adoptivo."),
-    mkC("Sixto Moreno","Sixto Moreno","Logística / Delivery (Ecuador)","App de delivery de agua."),
-    mkC("Ofix Chile","—","Mobiliario Corporativo","E-commerce B2B, developer Juan."),
-    mkC("Freddy Ramos","Freddy Ramos","Logística (Ecuador, camarón)","Prospecto: sistema de gestión de flota."),
-    mkC("JMFSN","José Miguel Guarín","Transporte de pasajeros (Colombia)","Prospecto: app de transporte de pasajeros."),
-  ];
-  st.notes = [
-    { id: uid(), cat: "equipo", title: "Regla de oro del equipo", createdAt: now, body: "Los márgenes y precios internos de WebMaker nunca se incluyen en documentos para clientes ni para developers." },
-    { id: uid(), cat: "vision", title: "Framework de 3 reuniones", createdAt: now - 1000, body: "1) Discovery y levantamiento de alcance.\n2) Presentación de propuesta y ajustes.\n3) Cierre, firma y kickoff con el equipo de desarrollo." },
-  ];
-  localStorage.setItem("wm_hub_seeded", "1");
-  return st;
+function hubStorageKey(userId: number | null | undefined): string | null {
+  return userId != null ? `${LS_KEY}:${userId}` : null;
 }
-
-function maybeSeededTasks(st: HubState): HubState {
-  if (localStorage.getItem("wm_hub_tasks_seeded_v1") || st.tasks.length || !st.projects.length) {
-    localStorage.setItem("wm_hub_tasks_seeded_v1", "1");
-    return st;
-  }
-  const now = Date.now(), DAY = 86400000;
-  const P = st.projects;
-  const mkT = (title: string, proj: Project | undefined, crit: Prio, stage: TaskStage, daysAgo: number, notes: string): Task =>
-    ({ id: uid(), title, projectId: proj ? proj.id : "", crit, stage, stageSince: now - Math.round(daysAgo * DAY), stageTime: {}, notes, createdAt: now, updatedAt: now });
-  st.tasks = [
-    mkT("Maquetar checkout", P[0], "alta", "doing", 2.3, "Integrar pasarela y validaciones del carrito."),
-    mkT("Revisar copy de landing", P[1], "media", "qa_sent", 0.8, "Enviado a QA para revisión de textos."),
-    mkT("Definir alcance MVP", P[2], "baja", "sprint", 1.1, "Aterrizar historias del primer sprint."),
-  ];
-  localStorage.setItem("wm_hub_tasks_seeded_v1", "1");
-  return st;
+/** Migración única de la clave legacy compartida: el primer usuario que abre el Hub la hereda y se elimina para el resto. */
+function migrateLegacyStorage(key: string) {
+  try {
+    const legacy = localStorage.getItem(LS_KEY);
+    if (legacy) {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, legacy);
+      localStorage.removeItem(LS_KEY);
+    }
+  } catch { /* ignore */ }
 }
-
-function loadState(): HubState {
-  try { const raw = localStorage.getItem(LS_KEY); if (raw) return Object.assign(blankState(), JSON.parse(raw)); } catch { /* ignore */ }
+/** Limpia todas las claves del Hub (estado, tab, flags legacy) al cerrar sesión. */
+function clearHubStorage() {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("wm_hub")) doomed.push(k);
+    }
+    doomed.forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
+}
+function loadState(key: string | null): HubState {
+  if (!key) return blankState();
+  migrateLegacyStorage(key);
+  try { const raw = localStorage.getItem(key); if (raw) return Object.assign(blankState(), JSON.parse(raw)); } catch { /* ignore */ }
   return blankState();
 }
-function saveState(st: HubState) { try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch { /* ignore */ } }
+function saveState(key: string | null, st: HubState) { if (!key) return; try { localStorage.setItem(key, JSON.stringify(st)); } catch { /* ignore */ } }
 
 async function fetchHubFromServer(): Promise<HubState | null> {
   try {
-    const res = await fetch("/api/hub", { credentials: "include" });
+    const res = await fetch(`${HUB_API_BASE}/hub`, { credentials: "include" });
     if (!res.ok) return null;
     const json = await res.json() as { data: unknown };
     if (!json.data || typeof json.data !== "object" || Array.isArray(json.data)) return null;
@@ -204,7 +174,7 @@ async function fetchHubFromServer(): Promise<HubState | null> {
 
 async function patchHubToServer(st: HubState): Promise<void> {
   try {
-    await fetch("/api/hub", {
+    await fetch(`${HUB_API_BASE}/hub`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -217,6 +187,8 @@ function migrate(st: HubState): HubState {
   st.projects.forEach(p => { if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now; });
   if (!Array.isArray(st.tasks)) st.tasks = [];
   if (!Array.isArray(st.contracts)) st.contracts = [];
+  if (!Array.isArray(st.notes)) st.notes = [];
+  st.notes.forEach(n => { if (!n.updatedAt) n.updatedAt = n.createdAt || now; });
   return st;
 }
 
@@ -275,6 +247,11 @@ function DueChip({ p }: { p: Project }) {
   const d = dueInfo(p);
   if (!d) return null;
   return <span className={`chip due ${d.cls}`}>{d.days < 0 ? "venció " : "vence "}{d.label}</span>;
+}
+
+/** Datalist con los clientes existentes: permite elegir uno o escribir uno nuevo. */
+function ClientOptions({ clients }: { clients: Client[] }) {
+  return <datalist id="hub-client-options">{clients.map(c => <option key={c.id} value={c.name} />)}</datalist>;
 }
 
 function StageTimer({ since }: { since: number }) {
@@ -865,6 +842,7 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("parentId", HUB_DRIVE_ROOT);
       const res = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
       if (!res.ok) { const e = await res.json().catch(() => ({})); onToast((e as any).error || "Error al subir PDF"); return; }
       const data = await res.json() as { name: string; webViewLink: string; uploadedAt: number };
@@ -915,9 +893,9 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
 /* ============================================================
    SHEET CONTENT
    ============================================================ */
-interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; }
+interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; }
 
-function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet }: SheetProps) {
+function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm }: SheetProps) {
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
@@ -1032,7 +1010,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     return (<>
       <div className="sheet-head"><h2>Nuevo proyecto</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="field"><label>Nombre</label><input type="text" ref={R("n")} placeholder="Ej: Landing Page Corporativa" value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
-      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} placeholder="E-commerce, Landing…" /></div></div>
+      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} placeholder="E-commerce, Landing…" /></div></div>
       <div className="three field">
         <div><label>Prioridad</label><select ref={R("prio")}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
         <div><label>Estado</label><select ref={R("st")}>{STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
@@ -1059,7 +1037,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="sheet-head"><h2>Proyecto</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="detail-meta"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span></div>
       <div className="field"><label>Nombre</label><input type="text" ref={R("n")} value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
-      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} defaultValue={p.client} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} defaultValue={p.type} /></div></div>
+      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} defaultValue={p.client} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} defaultValue={p.type} /></div></div>
       <div className="three field">
         <div><label>Prioridad</label><select ref={R("prio")} defaultValue={p.prio}>{["alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
         <div><label>Estado</label><select ref={R("st")} defaultValue={p.status}>{STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
@@ -1084,8 +1062,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       }}>Guardar cambios</button>
       <button className="del-link" onClick={() => {
         const snap = [...state.projects];
-        onSave({ ...state, projects: state.projects.filter(x => x.id !== p.id) });
-        onClose(); onToast("Proyecto eliminado", () => onSave({ ...state, projects: snap }));
+        const doDelete = () => {
+          onSave({ ...state, projects: state.projects.filter(x => x.id !== p.id) });
+          onClose(); onToast("Proyecto eliminado", () => onSave({ ...state, projects: snap }));
+        };
+        const nTasks = state.tasks.filter(t => t.projectId === p.id).length;
+        if (nTasks > 0) onConfirm(`Este proyecto tiene ${nTasks} tarea${nTasks !== 1 ? "s" : ""} asociada${nTasks !== 1 ? "s" : ""} que quedará${nTasks !== 1 ? "n" : ""} sin proyecto. ¿Eliminar de todas formas?`, doDelete);
+        else doDelete();
       }}>Eliminar proyecto</button>
     </>);
   }
@@ -1120,8 +1103,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       }}>Guardar cambios</button>
       <button className="del-link" onClick={() => {
         const snap = [...state.clients];
-        onSave({ ...state, clients: state.clients.filter(x => x.id !== c.id) });
-        onClose(); onToast("Cliente eliminado", () => onSave({ ...state, clients: snap }));
+        const doDelete = () => {
+          onSave({ ...state, clients: state.clients.filter(x => x.id !== c.id) });
+          onClose(); onToast("Cliente eliminado", () => onSave({ ...state, clients: snap }));
+        };
+        const nProjs = state.projects.filter(p => p.client === c.name).length;
+        const nMeets = state.meetings.filter(m => m.client === c.name).length;
+        if (nProjs > 0 || nMeets > 0) {
+          const partes = [
+            nProjs > 0 ? `${nProjs} proyecto${nProjs !== 1 ? "s" : ""}` : "",
+            nMeets > 0 ? `${nMeets} reuni${nMeets !== 1 ? "ones" : "ón"}` : "",
+          ].filter(Boolean).join(" y ");
+          onConfirm(`"${c.name}" tiene ${partes} vinculado${nProjs + nMeets !== 1 ? "s" : ""}. No se eliminarán, pero quedarán sin cliente en la cartera. ¿Eliminar de todas formas?`, doDelete);
+        } else doDelete();
       }}>Eliminar cliente</button>
       {projs.length > 0 && <div className="detail-block" style={{ marginTop: 20 }}><h4>Proyectos vinculados</h4><p>{projs.map(p => p.name + " — " + statusOf(p.status).label).join("\n")}</p></div>}
     </>);
@@ -1131,7 +1125,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   if (sheet.kind === "new-meet") {
     return (<>
       <div className="sheet-head"><h2>Nueva reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} /></div></div>
+      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} /></div></div>
       <div className="field"><label>Resumen</label><textarea ref={R("sm") as React.Ref<HTMLTextAreaElement>} rows={3} /></div>
       <div className="field"><label>Notas completas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} /></div>
       <button className="add-btn" onClick={() => {
@@ -1147,7 +1141,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const m = state.meetings.find(x => x.id === sheet.id); if (!m) return null;
     return (<>
       <div className="sheet-head"><h2>Reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={m.client || ""} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} defaultValue={m.date || ""} /></div></div>
+      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={m.client || ""} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} defaultValue={m.date || ""} /></div></div>
       <div className="field"><label>Resumen</label><textarea ref={R("sm") as React.Ref<HTMLTextAreaElement>} rows={3} defaultValue={m.summary || ""} /></div>
       <div className="field"><label>Notas completas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={7} defaultValue={m.notes || ""} /></div>
       <button className="save" onClick={() => {
@@ -1171,7 +1165,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="field"><label>Contenido</label><textarea ref={R("bo") as React.Ref<HTMLTextAreaElement>} rows={6} /></div>
       <button className="add-btn" onClick={() => {
         const title = V("ti").trim(); if (!title) { onToast("Ponle un título a la nota"); return; }
-        onSave({ ...state, notes: [...state.notes, { id: uid(), title, cat: V("ca") as NoteCat, body: V("bo"), createdAt: Date.now() }] });
+        const now = Date.now();
+        onSave({ ...state, notes: [...state.notes, { id: uid(), title, cat: V("ca") as NoteCat, body: V("bo"), createdAt: now, updatedAt: now }] });
         onClose(); onNavigate("notes"); onToast("Nota creada");
       }}>Crear nota</button>
     </>);
@@ -1186,7 +1181,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="field"><label>Categoría</label><select ref={R("ca")} defaultValue={n.cat}>{(Object.entries(NOTE_CATS) as [NoteCat,string][]).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></div>
       <div className="field"><label>Contenido</label><textarea ref={R("bo") as React.Ref<HTMLTextAreaElement>} rows={8} defaultValue={n.body || ""} /></div>
       <button className="save" onClick={() => {
-        onSave({ ...state, notes: state.notes.map(x => x.id !== n.id ? x : { ...x, title: V("ti").trim() || x.title, cat: V("ca") as NoteCat, body: V("bo") }) });
+        onSave({ ...state, notes: state.notes.map(x => x.id !== n.id ? x : { ...x, title: V("ti").trim() || x.title, cat: V("ca") as NoteCat, body: V("bo"), updatedAt: Date.now() }) });
         onClose(); onToast("Nota actualizada");
       }}>Guardar cambios</button>
       <button className="del-link" onClick={() => {
@@ -1256,7 +1251,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         if (r.current["ti"] && (data.title || data.project_name)) r.current["ti"].value = data.title || data.project_name;
         if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
         if (r.current["va"] && data.value) r.current["va"].value = data.value;
-        if (r.current["st"] && data.status) (r.current["st"] as HTMLSelectElement).value = data.status;
+        if (r.current["st"] && isContractStatus(data.status)) (r.current["st"] as HTMLSelectElement).value = data.status;
         if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
         if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
         if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
@@ -1306,7 +1301,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
             if (r.current["ti"] && data.title) r.current["ti"].value = data.title;
             if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
             if (r.current["va"] && data.value) r.current["va"].value = data.value;
-            if (r.current["st"] && data.status) (r.current["st"] as HTMLSelectElement).value = data.status;
+            if (r.current["st"] && isContractStatus(data.status)) (r.current["st"] as HTMLSelectElement).value = data.status;
             if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
             if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
             if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
@@ -1444,7 +1439,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 if (r.current["ti"] && data.title) r.current["ti"].value = data.title;
                 if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
                 if (r.current["va"] && data.value) r.current["va"].value = data.value;
-                if (r.current["st"] && data.status) (r.current["st"] as HTMLSelectElement).value = data.status;
+                if (r.current["st"] && isContractStatus(data.status)) (r.current["st"] as HTMLSelectElement).value = data.status;
                 if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
                 if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
                 if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
@@ -1606,6 +1601,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               <input type="number" value={wiz.monthlyPrice || ""} min={0} onChange={e => setWiz(w => ({ ...w, monthlyPrice: e.target.value }))} placeholder="0" />
             </div>
           </div>
+          <div className="field"><label>Vigencia de la cotización (días)</label>
+            <input type="number" value={wiz.validityDays || ""} min={0} onChange={e => setWiz(w => ({ ...w, validityDays: Math.max(0, Number(e.target.value) || 0) }))} placeholder="15" />
+            <div className="wiz-price-hint"><span>{wiz.validityDays > 0 ? `Vence ${wiz.validityDays} día${wiz.validityDays !== 1 ? "s" : ""} después de la emisión (${wiz.date || "hoy"})` : "Sin fecha de vencimiento"}</span></div>
+          </div>
           <div className="field"><label>Notas de cierre</label>
             <textarea rows={3} value={wiz.notes} onChange={e => setWiz(w => ({ ...w, notes: e.target.value }))} placeholder="Ej: Cotización vigente por 15 días…" />
           </div>
@@ -1619,6 +1618,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const fname = `Cotizacion-${wiz.client.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
                 const fd = new FormData();
                 fd.append("file", new File([blob], fname, { type: "application/pdf" }));
+                fd.append("parentId", HUB_DRIVE_ROOT);
                 let pdfUrl = "", pdfTitleOut = fname, pdfUploadedAt = Date.now();
                 const upRes = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
                 if (upRes.ok) {
@@ -1631,7 +1631,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   onToast("PDF descargado localmente (Drive no disponible)");
                 }
                 const now = Date.now();
-                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: "", expiresAt: wiz.date || "", notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
+                const issuedAt = wiz.date || new Date().toISOString().slice(0, 10);
+                let expiresAt = "";
+                if (wiz.validityDays > 0) {
+                  const exp = new Date(issuedAt + "T12:00:00");
+                  exp.setDate(exp.getDate() + wiz.validityDays);
+                  expiresAt = exp.toISOString().slice(0, 10);
+                }
+                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
                 onToast(pdfUrl ? "Contrato creado y PDF subido a Drive ✓" : "Contrato creado");
               } catch (e: unknown) {
@@ -1827,13 +1834,13 @@ function GoogleCalendarSection() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/calendar/status", { credentials: "include" })
+    fetch(`${HUB_API_BASE}/calendar/status`, { credentials: "include" })
       .then(r => r.json())
       .then(d => {
         if (d.connected) {
           setStatus("connected");
           setEventsLoading(true);
-          fetch("/api/calendar/events", { credentials: "include" })
+          fetch(`${HUB_API_BASE}/calendar/events`, { credentials: "include" })
             .then(r => r.json())
             .then(ev => { setEvents(ev.events || []); setEventsLoading(false); })
             .catch(() => setEventsLoading(false));
@@ -1846,7 +1853,7 @@ function GoogleCalendarSection() {
 
   const handleDisconnect = async () => {
     setDisconnecting(true);
-    await fetch("/api/calendar/disconnect", { method: "POST", credentials: "include" });
+    await fetch(`${HUB_API_BASE}/calendar/disconnect`, { method: "POST", credentials: "include" });
     setStatus("disabled");
     setDisconnecting(false);
   };
@@ -1887,7 +1894,7 @@ function GoogleCalendarSection() {
                 : "Ve tus próximas reuniones directamente desde el hub. Se necesita re-autenticar con Google para autorizar el acceso al calendario."}
             </div>
           </div>
-          <a href="/api/auth/google" style={{ background: "var(--orange)", color: "#fff", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+          <a href={`${HUB_API_BASE}/auth/google`} style={{ background: "var(--orange)", color: "#fff", borderRadius: "8px", padding: "8px 14px", fontSize: "12px", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0 }}>
             Conectar Calendar
           </a>
         </div>
@@ -1925,7 +1932,9 @@ function GoogleCalendarSection() {
 }
 
 function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
-  const list = [...state.meetings].sort((a, b) => b.createdAt - a.createdAt);
+  // Mediodía local para evitar que la medianoche UTC retroceda un día en Chile
+  const meetTs = (m: Meeting) => m.date ? new Date(m.date + "T12:00:00").getTime() : m.createdAt;
+  const list = [...state.meetings].sort((a, b) => meetTs(b) - meetTs(a));
   return (
     <div className="wrap">
       <GoogleCalendarSection />
@@ -1938,7 +1947,7 @@ function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => 
         {list.map(m => (
           <div key={m.id} className="gcard" onClick={() => onOpen(m.id)}>
             <div className="gt">{m.client || "Reunión"}</div>
-            <div className="gsub">{m.date ? fmtDate(new Date(m.date).getTime()) : fmtDate(m.createdAt)}</div>
+            <div className="gsub">{m.date ? fmtDate(new Date(m.date + "T12:00:00").getTime()) : fmtDate(m.createdAt)}</div>
             <div className="gbody">{m.summary || ""}</div>
             <div className="gfoot"><span className="gdate">{fmtDate(m.createdAt)}</span></div>
           </div>
@@ -1948,11 +1957,14 @@ function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => 
   );
 }
 
-function NotesView({ state, onOpen, filterCat, setFilterCat }: { state: HubState; onOpen: (id: string) => void; filterCat: string; setFilterCat: (v: string) => void }) {
-  const list = state.notes.filter(n => !filterCat || n.cat === filterCat).sort((a, b) => b.createdAt - a.createdAt);
+function NotesView({ state, onOpen, filterCat, setFilterCat, searchQ, setSearchQ }: { state: HubState; onOpen: (id: string) => void; filterCat: string; setFilterCat: (v: string) => void; searchQ: string; setSearchQ: (v: string) => void }) {
+  const list = state.notes
+    .filter(n => (!filterCat || n.cat === filterCat) && (!searchQ || (n.title + " " + (n.body || "")).toLowerCase().includes(searchQ)))
+    .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
   return (
     <div className="wrap">
       <div className="toolbar">
+        <div className="tsearch"><span>🔍</span><input value={searchQ} onChange={e => setSearchQ(e.target.value.toLowerCase())} placeholder="Buscar nota…" /></div>
         <select className="filter" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
           <option value="">Todas las categorías</option>
           {(Object.entries(NOTE_CATS) as [NoteCat,string][]).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
@@ -1964,7 +1976,7 @@ function NotesView({ state, onOpen, filterCat, setFilterCat }: { state: HubState
           <div key={n.id} className="gcard" onClick={() => onOpen(n.id)}>
             <div className="gt">{n.title}</div><div className="gsub">{NOTE_CATS[n.cat] || "Otra"}</div>
             <div className="gbody">{n.body || ""}</div>
-            <div className="gfoot"><span className="gdate">{fmtDate(n.createdAt)}</span></div>
+            <div className="gfoot"><span className="gdate">{fmtDate(n.updatedAt || n.createdAt)}</span></div>
           </div>
         ))}
       </div>
@@ -1989,7 +2001,9 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
       {state.contracts.length === 0 && <div className="empty-all">Sin contratos aún. <strong>+ Nuevo</strong> para agregar uno.</div>}
       <div className="cardlist">
         {list.map(c => {
-          const s = CONTRACT_STATUSES[c.status] || CONTRACT_STATUSES.borrador;
+          // Badge "vencido" derivado de la fecha real de vencimiento (salvo cancelados)
+          const expired = c.status !== "cancelado" && contractExpired(c);
+          const s = expired ? CONTRACT_STATUSES.vencido : (CONTRACT_STATUSES[c.status] || CONTRACT_STATUSES.borrador);
           return (
             <div key={c.id} className="gcard" onClick={() => onOpen(c.id)}>
               <div className="gt">{c.title}</div>
@@ -1997,7 +2011,7 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
               <div className="meta" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
                 <span className="chip" style={{ color: s.color, borderColor: s.color + "55", background: s.color + "18" }}>{s.label}</span>
                 {c.value && <span className="chip">{c.value}</span>}
-                {c.expiresAt && <span className="chip">Vence: {c.expiresAt}</span>}
+                {c.expiresAt && <span className="chip" style={expired ? { color: "#e0795a", borderColor: "rgba(224,121,90,.4)" } : undefined}>Vence: {c.expiresAt}</span>}
                 {c.pdfUrl && (
                   <a className="chip pdf-badge" href={c.pdfUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
                     📄 {c.pdfTitle || "PDF"}{c.pdfUploadedAt ? ` · ${new Date(c.pdfUploadedAt).toLocaleDateString("es-CL")}` : ""}
@@ -2057,6 +2071,8 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
     state.clients.forEach(c => { if ((c.name+" "+(c.contact||"")+" "+(c.segment||"")).toLowerCase().includes(q2)) out.push({ t:"Cliente", n:c.name, s:c.segment||c.contact||"", go:()=>go("clients",{kind:"client",id:c.id}) }); });
     state.notes.forEach(n => { if ((n.title+" "+(n.body||"")).toLowerCase().includes(q2)) out.push({ t:"Nota", n:n.title, s:"", go:()=>go("notes",{kind:"note",id:n.id}) }); });
     state.meetings.forEach(m => { if (((m.client||"")+" "+(m.summary||"")).toLowerCase().includes(q2)) out.push({ t:"Reunión", n:m.client||"Reunión", s:m.summary||"", go:()=>go("meet",{kind:"meet",id:m.id}) }); });
+    state.tasks.forEach(t => { const pj = state.projects.find(p => p.id === t.projectId); if ((t.title+" "+(pj?.name||"")).toLowerCase().includes(q2)) out.push({ t:"Tarea", n:t.title, s:pj?.name||"", go:()=>go("proj",{kind:"task",id:t.id}) }); });
+    state.contracts.forEach(c => { if ((c.title+" "+(c.client||"")).toLowerCase().includes(q2)) out.push({ t:"Contrato", n:c.title, s:c.client||"", go:()=>go("contracts",{kind:"contract",id:c.id}) }); });
     setResults(out.slice(0, 8)); setShow(true);
   }, [q, state, go]);
 
@@ -2206,26 +2222,23 @@ const TabIcons: Record<Tab, React.ReactNode> = {
 /* ============================================================
    COMPONENTE PRINCIPAL
    ============================================================ */
-const ADMIN_EMAIL = "webmakerchile@gmail.com";
-
 export default function EjecutivoPage() {
   const authUser = useAuth();
-  const isAdmin = authUser?.email === ADMIN_EMAIL;
+  const isAdmin = authUser?.role === "superadmin" || authUser?.role === "admin";
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const storageKey = hubStorageKey(authUser?.id);
 
   const handleLogout = async () => {
     try {
       await fetch(`${HUB_API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
     } catch { /* ignore */ }
+    clearHubStorage();
     queryClient.invalidateQueries({ queryKey: ["auth-me"] });
     window.location.reload();
   };
 
-  const [state, setStateRaw] = useState<HubState>(() => {
-    const loaded = loadState();
-    return maybeSeededTasks(maybeSeeded(migrate(loaded)));
-  });
+  const [state, setStateRaw] = useState<HubState>(() => migrate(loadState(storageKey)));
 
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
@@ -2233,21 +2246,21 @@ export default function EjecutivoPage() {
   const setState = useCallback((next: HubState) => {
     dirtyRef.current = true;
     setStateRaw(next);
-    saveState(next);
+    saveState(storageKey, next);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
     serverSaveTimer.current = setTimeout(() => { void patchHubToServer(next); }, 1500);
-  }, []);
+  }, [storageKey]);
 
   useEffect(() => {
     let cancelled = false;
     void fetchHubFromServer().then(serverState => {
       if (cancelled || !serverState || dirtyRef.current) return;
-      const merged = maybeSeededTasks(maybeSeeded(migrate(serverState)));
+      const merged = migrate(serverState);
       setStateRaw(merged);
-      saveState(merged);
+      saveState(storageKey, merged);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [storageKey]);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
     try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive"].includes(s)) return s as Tab; } catch { /* ignore */ }
@@ -2268,6 +2281,7 @@ export default function EjecutivoPage() {
   const [projPrio, setProjPrio] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [noteCat, setNoteCat] = useState("");
+  const [noteSearch, setNoteSearch] = useState("");
   const [sheet, setSheet] = useState<SheetKind>(null);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
   const [confirm, setConfirm] = useState<{ msg: string; onYes: () => void } | null>(null);
@@ -2306,7 +2320,7 @@ export default function EjecutivoPage() {
       try {
         const data = JSON.parse(reader.result as string);
         if (!data || typeof data !== "object" || !Array.isArray(data.projects)) { showToast("Archivo de respaldo no válido"); return; }
-        setConfirm({ msg: "Esto reemplazará TODOS los datos actuales por los del respaldo. ¿Continuar?", onYes: () => { setState(Object.assign(blankState(), data)); showToast("Respaldo importado"); } });
+        setConfirm({ msg: "Esto reemplazará TODOS los datos actuales por los del respaldo. ¿Continuar?", onYes: () => { setState(migrate(Object.assign(blankState(), data))); showToast("Respaldo importado"); } });
       } catch { showToast("No se pudo leer el respaldo"); }
       finally { if (importRef.current) importRef.current.value = ""; }
     };
@@ -2436,11 +2450,18 @@ export default function EjecutivoPage() {
             {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
-            {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} />}
+            {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "drive" && <HubDriveView />}
             {tab === "svc" && isAdmin && <SvcView />}
           </div>
+
+          {/* ---- MOBILE FAB: crear según el tab activo ---- */}
+          {["proj", "clients", "meet", "notes", "contracts"].includes(tab) && !sheet && (
+            <button className="hub-fab" onClick={handleNew} aria-label="Crear nuevo">
+              <Plus className="w-6 h-6" />
+            </button>
+          )}
 
           {/* ---- MOBILE BOTTOM NAV ---- */}
           <nav className="lg:hidden flex-shrink-0 border-t border-foreground/10 bg-card/80 backdrop-blur-xl safe-bottom">
@@ -2473,7 +2494,7 @@ export default function EjecutivoPage() {
           {sheet && <>
             <div className="overlay" onClick={() => setSheet(null)} />
             <div className="sheet">
-              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} />
+              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />
             </div>
           </>}
 

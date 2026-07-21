@@ -109,6 +109,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
     } catch {}
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("wm_hub")) localStorage.removeItem(key);
+      }
+    } catch {}
     queryClient.invalidateQueries({ queryKey: ["auth-me"] });
     window.location.reload();
   };

@@ -5,8 +5,25 @@ import { eq } from "drizzle-orm";
 import { google } from "googleapis";
 import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
+import { z } from "zod";
 
 const router: IRouter = Router();
+
+// Estructura mínima del blob hub_state.data que persiste el Hub Ejecutivo
+// (ver HubState en admin-panel/src/pages/ejecutivo.tsx). Cada colección es un
+// array de objetos; se dejan opcionales para tolerar blobs antiguos parciales.
+const hubEntityArray = z.array(z.record(z.unknown()));
+const hubDataSchema = z
+  .object({
+    projects: hubEntityArray.optional(),
+    clients: hubEntityArray.optional(),
+    meetings: hubEntityArray.optional(),
+    notes: hubEntityArray.optional(),
+    tasks: hubEntityArray.optional(),
+    contracts: hubEntityArray.optional(),
+  })
+  .passthrough();
+const MAX_HUB_BYTES = 2 * 1024 * 1024; // 2 MB
 
 type AuthedUser = { id: number; email?: string; name?: string; googleAccessToken?: string; googleRefreshToken?: string };
 function getUser(req: Request): AuthedUser {
@@ -43,12 +60,26 @@ router.patch("/hub", async (req: Request, res: Response) => {
     return;
   }
 
+  if (Buffer.byteLength(JSON.stringify(data), "utf8") > MAX_HUB_BYTES) {
+    res.status(400).json({ error: "El estado del Hub supera el límite de 2 MB" });
+    return;
+  }
+
+  const parsed = hubDataSchema.safeParse(data);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "Estructura de 'data' no válida: projects/clients/meetings/notes/tasks/contracts deben ser arrays de objetos",
+    });
+    return;
+  }
+  const validData = parsed.data;
+
   const [row] = await db
     .insert(hubState)
-    .values({ userId: user.id, data, updatedAt: new Date() })
+    .values({ userId: user.id, data: validData, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: hubState.userId,
-      set: { data, updatedAt: new Date() },
+      set: { data: validData, updatedAt: new Date() },
     })
     .returning();
 
