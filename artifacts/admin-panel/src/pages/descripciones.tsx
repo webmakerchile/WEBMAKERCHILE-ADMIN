@@ -53,7 +53,6 @@ export default function DescripcionesPage() {
   const [tipoPublicacion, setTipoPublicacion] = useState<"unica" | "carrusel">("unica");
   const [cantidadSlides, setCantidadSlides] = useState(5);
   const [cantidadAuto, setCantidadAuto] = useState(true);
-  const [calculandoSlides, setCalculandoSlides] = useState(false);
   const [autoInfo, setAutoInfo] = useState<{ cantidad: number; razon: string } | null>(null);
   const [textoEnImagen, setTextoEnImagen] = useState(false);
 
@@ -312,22 +311,24 @@ export default function DescripcionesPage() {
   const slidesRender: SlideImagen[] = resultado?.imagenes || [];
   const slideShown = slidesRender[slideActual];
 
-  void calculandoSlides; void setCalculandoSlides;
-  const skeletonCount = tipoPublicacion === "carrusel" ? (cantidadAuto ? 5 : cantidadSlides) : 1;
+  // En modo auto usamos la cantidad detectada por el backend (autoInfo se
+  // actualiza justo antes de lanzar la generación); 5 solo como fallback.
+  const slidesEsperadas = cantidadAuto ? (autoInfo?.cantidad ?? 5) : cantidadSlides;
+  const skeletonCount = tipoPublicacion === "carrusel" ? slidesEsperadas : 1;
 
   return (
     <Layout>
       <div className="space-y-8 max-w-6xl mx-auto">
         <header>
           <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
-            Generador de Descripciones
+            Generador de Publicaciones
             <HelpHint
               text="La IA crea imagen(es) y descripciones por red social a partir de un tema. 'Sorpréndeme' propone un tema o lo ajusta al contexto que ya escribiste. Si eliges Carrusel, recibirás varias slides 4:5 listas para Instagram."
               side="bottom"
             />
           </h1>
           <p className="text-muted-foreground text-sm sm:text-lg">
-            Imágenes + texto listo para publicar en TikTok, Instagram, YouTube Shorts y X.
+            Imagen + copy listos para publicar en TikTok, Instagram, YouTube Shorts y X.
           </p>
         </header>
 
@@ -344,7 +345,7 @@ export default function DescripcionesPage() {
                 type="text"
                 value={tema}
                 onChange={(e) => setTema(e.target.value)}
-                placeholder="Ej: Cómo usar async/await en JavaScript"
+                placeholder="Ej: 5 señales de que tu pyme necesita una tienda online"
                 className="flex-1 px-4 py-3 bg-foreground/5 border border-foreground/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary"
               />
               <button
@@ -406,7 +407,7 @@ export default function DescripcionesPage() {
               >
                 <div className="text-2xl mb-1">🎠</div>
                 <div className="font-semibold text-foreground">Carrusel</div>
-                <div className="text-xs text-muted-foreground mt-1">3-5 slides 4:5 (1080×1350) — IG</div>
+                <div className="text-xs text-muted-foreground mt-1">3-10 slides 4:5 (1080×1350) — IG</div>
               </button>
             </div>
           </div>
@@ -526,7 +527,7 @@ export default function DescripcionesPage() {
         {loading && (
           <div className="space-y-3">
             <div className="text-sm text-muted-foreground text-center">
-              Generando {tipoPublicacion === "carrusel" ? `${cantidadSlides} slides en paralelo` : "imagen"} + descripciones... ({elapsed}s)
+              Generando {tipoPublicacion === "carrusel" ? `${slidesEsperadas} slides en paralelo` : "imagen"} + descripciones... ({elapsed}s)
             </div>
             <div className={`grid gap-3 ${tipoPublicacion === "carrusel" ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-1 max-w-sm mx-auto"}`}>
               {Array.from({ length: skeletonCount }).map((_, i) => (
@@ -842,7 +843,10 @@ export default function DescripcionesPage() {
                     {red.value === "twitter" ? (
                       <div>
                         <p className="text-foreground whitespace-pre-wrap">{contenido.post_completo}</p>
-                        <p className="text-xs text-muted-foreground mt-2">{(contenido.post_completo || "").length}/280 caracteres</p>
+                        <p className={`text-xs mt-2 ${(contenido.post_completo || "").length > 280 ? "text-red-400 font-semibold" : "text-muted-foreground"}`}>
+                          {(contenido.post_completo || "").length}/280 caracteres
+                          {(contenido.post_completo || "").length > 280 && " — se pasa del límite de X"}
+                        </p>
                       </div>
                     ) : (
                       <>

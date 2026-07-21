@@ -12,10 +12,12 @@ import { HelpHint } from "@/components/help-hint";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
+// Nota: los `value` son el contrato con el backend (enum tipo_historia) y el
+// historial guardado — solo cambian labels/descripciones hacia la audiencia real.
 const TIPOS_HISTORIA = [
-  { value: "tip_tech", label: "Tip Tech", desc: "Tips de programación y tecnología", emoji: "💡" },
-  { value: "motivacional", label: "Motivacional", desc: "Frases motivacionales para devs", emoji: "🔥" },
-  { value: "comunidad", label: "Comunidad", desc: "Behind scenes y comunidad", emoji: "🤝" },
+  { value: "tip_tech", label: "Tip de Negocio", desc: "Tips de marketing digital y ventas para pymes", emoji: "💡" },
+  { value: "motivacional", label: "Motivacional", desc: "Frases motivacionales para emprendedores", emoji: "🔥" },
+  { value: "comunidad", label: "Comunidad", desc: "Behind scenes de la agencia y comunidad", emoji: "🤝" },
 ];
 
 const FORMATOS = [
