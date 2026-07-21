@@ -954,6 +954,18 @@ export default function CuentasPage() {
                       </div>
                     </div>
 
+                    {network === "youtube" && state === "connected" && (
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-amber-300/80">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                        <p className="text-[11px] leading-relaxed">
+                          Si fallan las subidas a Drive o el calendario,{" "}
+                          <a href={`${API_BASE}/auth/youtube`} className="underline underline-offset-2 hover:text-amber-200 transition">
+                            reconecta permisos de Google aquí
+                          </a>.
+                        </p>
+                      </div>
+                    )}
+
                     {network === "linkedin" && (
                       <div>
                         <button

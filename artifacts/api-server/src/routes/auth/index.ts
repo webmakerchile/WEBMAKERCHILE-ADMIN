@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { clearNetworkRevoked } from "../../lib/connections";
 
 const router: IRouter = Router();
 
@@ -201,6 +202,8 @@ router.get("/auth/youtube/callback", requireAuth, async (req: Request, res: Resp
     }
 
     await db.update(users).set(updateData).where(eq(users.id, user.id));
+
+    try { await clearNetworkRevoked(user.id, "youtube"); } catch {}
 
     console.log("[YouTube connect] Tokens stored for user", user.id);
     res.redirect("/cuentas?youtube=connected");

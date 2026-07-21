@@ -113,7 +113,7 @@ function classifyByExpiry(
 }
 
 const RECONNECT_URLS: Record<Network, string | null> = {
-  youtube: "/api/auth/google",
+  youtube: "/api/auth/youtube",
   tiktok: "/api/tiktok/auth",
   instagram: null,
   linkedin: "/api/linkedin/auth",
