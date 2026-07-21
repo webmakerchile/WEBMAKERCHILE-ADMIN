@@ -59,7 +59,7 @@ const NETWORK_ENDPOINTS: Record<Network, { status: string; authUrl: string; disc
   linkedin: { status: "/linkedin/status", authUrl: "/linkedin/auth", disconnect: "/linkedin/disconnect" },
   x: { status: "/x/status", authUrl: "/x/auth", disconnect: "/x/disconnect" },
   tiktok: { status: "/tiktok/status", authUrl: "/tiktok/auth", disconnect: "/tiktok/disconnect" },
-  youtube: { status: "/youtube/channel", authUrl: "/auth/google", disconnect: "/youtube/disconnect" },
+  youtube: { status: "/youtube/channel", authUrl: "/auth/youtube", disconnect: "/youtube/disconnect" },
 };
 const NETWORK_ORDER: Network[] = ["facebook", "instagram", "linkedin", "x", "tiktok", "youtube"];
 
@@ -730,8 +730,8 @@ export default function CuentasPage() {
     NETWORK_ORDER.forEach((network) => fetchOne(network, NETWORK_ENDPOINTS[network].status));
     fetchHealth();
     const params = new URLSearchParams(window.location.search);
-    const connected = ["facebook", "linkedin", "tiktok", "x"].find(n => params.get(n) === "connected");
-    const errNetwork = ["facebook", "linkedin", "tiktok", "x"].find(n => params.get(n) === "error");
+    const connected = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "connected");
+    const errNetwork = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "error");
     if (connected || errNetwork) {
       window.history.replaceState({}, "", window.location.pathname);
       if (errNetwork) {

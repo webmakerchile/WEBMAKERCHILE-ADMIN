@@ -4,7 +4,7 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { clearNetworkRevoked } from "../../lib/connections";
+import crypto from "crypto";
 
 const router: IRouter = Router();
 
@@ -16,7 +16,13 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 function getCallbackURL() {
   if (process.env.GOOGLE_CALLBACK_URL) return process.env.GOOGLE_CALLBACK_URL;
   if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}/api/auth/google/callback`;
-  return "http://localhost:3000/api/auth/google/callback";
+  return "http://localhost:3001/api/auth/google/callback";
+}
+
+function getYouTubeCallbackURL() {
+  if (process.env.GOOGLE_YOUTUBE_CALLBACK_URL) return process.env.GOOGLE_YOUTUBE_CALLBACK_URL;
+  const base = getCallbackURL().replace("/auth/google/callback", "");
+  return `${base}/auth/youtube/callback`;
 }
 
 if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
@@ -26,10 +32,8 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         clientID: GOOGLE_CLIENT_ID,
         clientSecret: GOOGLE_CLIENT_SECRET,
         callbackURL: getCallbackURL(),
-        accessType: "offline",
-        prompt: "consent",
       } as any,
-      async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+      async (accessToken: string, _refreshToken: string, profile: any, done: any) => {
         try {
           const email = profile.emails?.[0]?.value?.toLowerCase();
           if (!email) {
@@ -51,22 +55,13 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               lastLoginAt: new Date(),
               name: profile.displayName || existing.name,
               picture: profile.photos?.[0]?.value || existing.picture,
-              googleAccessToken: accessToken,
-              // Copy tokens to calendar-specific fields so the Calendar
-              // integration can be disconnected independently of YouTube/Drive.
-              googleCalendarAccessToken: accessToken,
             };
-            if (refreshToken) {
-              updateData.googleRefreshToken = refreshToken;
-              updateData.googleCalendarRefreshToken = refreshToken;
-            }
 
             await db
               .update(users)
               .set(updateData)
               .where(eq(users.id, existing.id));
-            // Fresh Google token → clear any stale YouTube "revoked" flag.
-            try { await clearNetworkRevoked(existing.id, "youtube"); } catch {}
+
             return done(null, { ...existing, ...updateData });
           }
 
@@ -77,11 +72,10 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               email,
               name: profile.displayName || null,
               picture: profile.photos?.[0]?.value || null,
-              googleAccessToken: accessToken,
-              googleRefreshToken: refreshToken || null,
-              // Populate calendar-specific tokens on first sign-in too.
-              googleCalendarAccessToken: accessToken,
-              googleCalendarRefreshToken: refreshToken || null,
+              googleAccessToken: null,
+              googleRefreshToken: null,
+              googleCalendarAccessToken: null,
+              googleCalendarRefreshToken: null,
             })
             .returning();
 
@@ -112,16 +106,8 @@ passport.deserializeUser(async (id: number, done) => {
 });
 
 router.get("/auth/google", passport.authenticate("google", {
-  scope: [
-    "profile",
-    "email",
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/calendar.readonly",
-  ],
-  accessType: "offline",
-  prompt: "consent",
+  scope: ["profile", "email"],
+  prompt: "select_account",
 } as any));
 
 router.get("/auth/google/callback",
@@ -130,6 +116,95 @@ router.get("/auth/google/callback",
     res.redirect("/");
   }
 );
+
+router.get("/auth/youtube", requireAuth, async (req: Request, res: Response) => {
+  if (!GOOGLE_CLIENT_ID) {
+    res.status(500).json({ error: "Google OAuth no configurado" });
+    return;
+  }
+
+  const csrfState = crypto.randomBytes(16).toString("hex");
+  (req.session as any).youtubeCsrf = csrfState;
+
+  await new Promise<void>((resolve) => req.session.save(resolve));
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: getYouTubeCallbackURL(),
+    response_type: "code",
+    scope: [
+      "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/youtube",
+    ].join(" "),
+    access_type: "offline",
+    prompt: "consent",
+    state: csrfState,
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+router.get("/auth/youtube/callback", requireAuth, async (req: Request, res: Response) => {
+  const { code, state, error } = req.query;
+  const user = req.user as any;
+
+  if (error) {
+    console.error("[YouTube connect] OAuth error:", error);
+    res.redirect("/cuentas?youtube=error&msg=access_denied");
+    return;
+  }
+
+  const storedState = (req.session as any).youtubeCsrf;
+  delete (req.session as any).youtubeCsrf;
+
+  if (!storedState || state !== storedState) {
+    console.error("[YouTube connect] CSRF state mismatch");
+    res.redirect("/cuentas?youtube=error&msg=csrf_mismatch");
+    return;
+  }
+
+  if (!code) {
+    res.redirect("/cuentas?youtube=error&msg=no_code");
+    return;
+  }
+
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: getYouTubeCallbackURL(),
+        grant_type: "authorization_code",
+      }).toString(),
+    });
+
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      console.error("[YouTube connect] No access token in response:", JSON.stringify(tokenData));
+      res.redirect("/cuentas?youtube=error&msg=token_failed");
+      return;
+    }
+
+    const updateData: Record<string, string | null> = {
+      googleAccessToken: tokenData.access_token,
+    };
+    if (tokenData.refresh_token) {
+      updateData.googleRefreshToken = tokenData.refresh_token;
+    }
+
+    await db.update(users).set(updateData).where(eq(users.id, user.id));
+
+    console.log("[YouTube connect] Tokens stored for user", user.id);
+    res.redirect("/cuentas?youtube=connected");
+  } catch (err: any) {
+    console.error("[YouTube connect] Error:", err.message);
+    res.redirect("/cuentas?youtube=error&msg=server_error");
+  }
+});
 
 const TEST_USERNAME = "tiktok_reviewer";
 const TEST_PASSWORD = "WebMaker2026!Review";
