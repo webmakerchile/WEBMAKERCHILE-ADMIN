@@ -114,6 +114,35 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   );
 }
 
+function AccessDeniedScreen({ user }: { user: AuthUser }) {
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+    } catch {
+      // Ignorar: igual redirigimos al login.
+    }
+    window.location.href = "/";
+  };
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center p-8 max-w-md">
+        <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-xl font-bold mb-2">Acceso denegado</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Tu cuenta {user.email ? `(${user.email}) ` : ""}fue rechazada por el administrador.
+          Si crees que se trata de un error, contacta al equipo.
+        </p>
+        <button
+          onClick={handleLogout}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AuthLoader({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
 
@@ -126,6 +155,10 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     },
     retry: false,
     staleTime: 5 * 60 * 1000,
+    // Mientras la cuenta está pendiente, re-consultar cada 30s para que al
+    // aprobarla se desbloquee el panel sin recargar la página.
+    refetchInterval: (query) =>
+      query.state.data?.approvalStatus === "pending" ? 30_000 : false,
   });
 
   useEffect(() => {
@@ -146,6 +179,10 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 
   if (user.approvalStatus === "pending") {
     return <PendingApprovalPage user={user} />;
+  }
+
+  if (user.approvalStatus === "rejected") {
+    return <AccessDeniedScreen user={user} />;
   }
 
   return (

@@ -6,6 +6,7 @@ import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import { clearNetworkRevoked } from "../../lib/connections";
+import { createNotification } from "../../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -98,6 +99,28 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
             })
             .returning();
 
+          // Notify the super-admin so the pending request doesn't sit unnoticed.
+          if (newUser && newUser.approvalStatus === "pending") {
+            try {
+              const [superAdmin] = await db
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.role, "superadmin"))
+                .limit(1);
+              if (superAdmin) {
+                await createNotification({
+                  userId: superAdmin.id,
+                  type: "system",
+                  title: "Nuevo usuario pendiente de aprobación",
+                  body: `${email} solicitó acceso al panel. Revisa Ajustes para aprobarlo o rechazarlo.`,
+                  link: "/ajustes",
+                });
+              }
+            } catch (notifyErr: any) {
+              console.error("[Auth] No se pudo notificar al super-admin:", notifyErr?.message || notifyErr);
+            }
+          }
+
           return done(null, newUser);
         } catch (error) {
           return done(error as Error);
@@ -118,6 +141,11 @@ passport.deserializeUser(async (id: number, done) => {
       .from(users)
       .where(eq(users.id, id))
       .limit(1);
+    // A rejected user must not keep an operative session: treat as logged out.
+    if (user && user.approvalStatus === "rejected") {
+      done(null, false);
+      return;
+    }
     done(null, user || null);
   } catch (error) {
     done(error);
@@ -136,7 +164,7 @@ router.get("/auth/google/callback",
   }
 );
 
-router.get("/auth/youtube", requireAuth, async (req: Request, res: Response) => {
+router.get("/auth/youtube", requireAuth, requireApproved, async (req: Request, res: Response) => {
   if (!GOOGLE_CLIENT_ID) {
     res.status(500).json({ error: "Google OAuth no configurado" });
     return;
@@ -165,7 +193,7 @@ router.get("/auth/youtube", requireAuth, async (req: Request, res: Response) => 
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
-router.get("/auth/youtube/callback", requireAuth, async (req: Request, res: Response) => {
+router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
   const user = req.user as any;
 
@@ -235,6 +263,11 @@ const TEST_USERNAME = "tiktok_reviewer";
 const TEST_PASSWORD = "WebMaker2026!Review";
 
 router.post("/auth/test-login", async (req: Request, res: Response) => {
+  // Cuenta de prueba para revisores: deshabilitada en producción salvo opt-in explícito.
+  if (process.env.NODE_ENV === "production" && process.env.ENABLE_TEST_LOGIN !== "1") {
+    res.status(404).json({ error: "No disponible" });
+    return;
+  }
   try {
     const { username, password } = req.body || {};
     if (username !== TEST_USERNAME || password !== TEST_PASSWORD) {
@@ -264,6 +297,7 @@ router.post("/auth/test-login", async (req: Request, res: Response) => {
           name: "TikTok Reviewer",
           picture: null,
           role: "admin",
+          approvalStatus: "approved",
           googleAccessToken: null,
           googleRefreshToken: null,
         })
@@ -316,11 +350,24 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "No autenticado" });
 }
 
-export function requireAuthRedirect(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated && req.isAuthenticated()) {
+/**
+ * Enforce approval server-side: a pending/rejected user must not have API
+ * access beyond /api/auth/*. Mount AFTER requireAuth. Superadmin always passes.
+ */
+export function requireApproved(req: Request, res: Response, next: NextFunction) {
+  const user = req.user as { role?: string; approvalStatus?: string } | undefined;
+  if (user?.role === "superadmin") {
     return next();
   }
-  res.redirect("/");
+  const status = user?.approvalStatus || "approved";
+  if (status === "approved") {
+    return next();
+  }
+  if (status === "rejected") {
+    res.status(403).json({ error: "Acceso denegado: tu cuenta fue rechazada" });
+    return;
+  }
+  res.status(403).json({ error: "Tu cuenta está pendiente de aprobación" });
 }
 
 export { passport };

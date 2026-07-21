@@ -5,7 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import path from "path";
 import router from "./routes";
-import authRouter, { passport, requireAuth, requireAuthRedirect } from "./routes/auth";
+import authRouter, { passport, requireAuth, requireApproved } from "./routes/auth";
 
 const app: Express = express();
 
@@ -26,6 +26,13 @@ app.set("trust proxy", 1);
 
 const PgStore = connectPgSimple(session);
 
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "SESSION_SECRET no está definida. En producción es obligatoria: define la variable de entorno SESSION_SECRET con un valor aleatorio y seguro antes de arrancar el servidor."
+  );
+}
+
 app.use(
   session({
     store: new PgStore({
@@ -34,7 +41,7 @@ app.use(
       createTableIfMissing: true,
       pruneSessionInterval: 60 * 15,
     }),
-    secret: process.env.SESSION_SECRET || "webmaker-admin-secret-key-change-in-production",
+    secret: SESSION_SECRET || "webmaker-admin-secret-key-dev-only",
     resave: false,
     saveUninitialized: false,
     rolling: true,
@@ -62,19 +69,26 @@ import { aiLimiter, publishLimiter, uploadLimiter } from "./lib/rate-limit";
 // Apply rate limits to high-cost endpoints. These run before requireAuth so
 // keying falls back to IP for unauth'd callers; once a session is loaded the
 // keyGenerator switches to user id automatically.
-app.use(/^\/api\/(library\/templates\/ai-fill|content\/videos\/[^/]+\/(generate-descriptions|generate-cover)|content\/videos\/bulk-generate-descriptions|analytics\/insights|content\/hashtag-suggestions|gemini\/conversations\/[^/]+\/messages|gemini\/generate-image|gemini\/generate-cover|studio\/(ideas\/generate|ideas\/[^/]+\/generate-cover|generate-ideas|generate-descriptions|cover-generator))/, aiLimiter);
+app.use(/^\/api\/(library\/templates\/ai-fill|content\/videos\/[^/]+\/(generate-descriptions|generate-cover)|content\/videos\/bulk-generate-descriptions|analytics\/insights|content\/hashtag-suggestions|gemini\/conversations\/[^/]+\/messages|gemini\/generate-image|gemini\/generate-cover|studio\/ideas\/(generate|[^/]+\/generate-cover)|community\/(sorprendeme|historias\/(generar|detectar-formato|reintentar)|descripciones\/(generar|calcular-slides|reintentar-slide))|hub\/contracts\/(extract-pdf|extract-from-meeting|ai-chat))/, aiLimiter);
 app.use(/^\/api\/(youtube|tiktok|instagram|linkedin|x|facebook)\/(upload|publish|upload-from-drive)/, publishLimiter);
 app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-upload)|content\/videos\/import-csv|content\/videos\/[^/]+\/(upload-video|link-drive-video)|transcriber\/transcribe)/, uploadLimiter);
 
-app.use("/api", requireAuth, router);
-
-app.get("/hub-app", requireAuthRedirect, (_req, res) => {
-  res.sendFile(path.join(process.cwd(), "assets", "hub.html"));
-});
+// requireApproved runs after requireAuth so pending/rejected accounts only keep
+// access to /api/auth/* (mounted above) and public health checks.
+app.use("/api", requireAuth, requireApproved, router);
 
 import { Sentry, isSentryEnabled } from "./lib/sentry";
+import multer from "multer";
 import type { Request, Response, NextFunction } from "express";
 app.use((err: Error & { status?: number }, req: Request, res: Response, next: NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    if (res.headersSent) return next(err);
+    const isFileTooLarge = err.code === "LIMIT_FILE_SIZE";
+    res.status(isFileTooLarge ? 413 : 400).json({
+      error: isFileTooLarge ? "El archivo supera el tamaño máximo permitido" : err.message,
+    });
+    return;
+  }
   const status = err.status ?? 500;
   if (status >= 500 && isSentryEnabled()) {
     const user = req.user as { id?: string | number } | undefined;
