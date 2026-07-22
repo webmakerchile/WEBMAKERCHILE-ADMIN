@@ -154,6 +154,15 @@
 .hub-root .stage-timer .clk{opacity:.7;font-size:11px;}
 .hub-root .stage-timer.warn{color:var(--gold);border-color:rgba(201,164,74,.4);}
 .hub-root .stage-timer.stale{color:var(--red);border-color:rgba(192,86,58,.45);}
+/* compact scrum cards */
+.hub-root .tcard--compact{padding:7px 9px;margin-bottom:5px;}
+.hub-root .tcard--compact .tcard-title{font-family:'Oswald',sans-serif;font-weight:500;font-size:12.5px;color:var(--text);line-height:1.25;margin-bottom:4px;}
+.hub-root .tcard--compact .tcard-meta{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow:hidden;}
+.hub-root .tcard--compact .tcard-meta .chip{font-size:9px;padding:1px 5px;flex-shrink:0;}
+.hub-root .tcard--compact .tcard-proj{font-size:10px;color:var(--faint);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hub-root .tcard--compact .tcard-timer{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--faint);white-space:nowrap;flex-shrink:0;}
+.hub-root .tcard--compact .tcard-timer.warn{color:var(--gold);}
+.hub-root .tcard--compact .tcard-timer.stale{color:var(--red);}
 .hub-root .stage-breakdown{display:flex;flex-direction:column;gap:6px;}
 .hub-root .stage-breakdown .sbrow{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;}
 .hub-root .stage-breakdown .sbrow .sbl{display:flex;align-items:center;gap:7px;color:var(--dim);}

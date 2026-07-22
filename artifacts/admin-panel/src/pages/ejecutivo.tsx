@@ -59,8 +59,8 @@ const TASK_STAGES = [
   { id: "backlog", label: "Backlog", color: "var(--faint)" },
   { id: "sprint", label: "Sprint Backlog", color: "var(--lead)" },
   { id: "doing", label: "En desarrollo", color: "var(--dev)" },
-  { id: "qa_sent", label: "QA (Enviada)", color: "var(--disc)" },
-  { id: "qa_rev", label: "QA (Revisada)", color: "var(--rev)" },
+  { id: "qa_sent", label: "QA", color: "var(--disc)" },
+  { id: "qa_rev", label: "Revisada", color: "var(--rev)" },
   { id: "done", label: "Lista", color: "var(--done)" },
 ];
 const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cliente", vision: "Visión", equipo: "Equipo", otro: "Otra" };
@@ -406,14 +406,24 @@ function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; t
 function TaskCard({ t, projects, onClick, onDragStart, onDragEnd }: { t: Task; projects: Project[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
   const proj = projects.find(p => p.id === t.projectId);
   return (
-    <div className="pcard tcard" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}
+    <div className="pcard tcard tcard--compact" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}
       style={{ borderLeft: `3px solid ${CRIT_COLOR[t.crit] || "var(--line)"}` }}>
-      <div className="pt">{t.title}</div>
-      <div className="cl">{proj ? proj.name : "— sin proyecto"}</div>
-      <div className="meta"><span className={`chip prio-${t.crit}`}>{t.crit}</span></div>
-      <StageTimer since={t.stageSince || t.createdAt || Date.now()} />
+      <div className="tcard-title">{t.title}</div>
+      <div className="tcard-meta">
+        <span className={`chip prio-${t.crit}`}>{t.crit}</span>
+        <span className="tcard-proj">{proj ? proj.name : "—"}</span>
+        <StageTimerInline since={t.stageSince || t.createdAt || Date.now()} />
+      </div>
     </div>
   );
+}
+
+function StageTimerInline({ since }: { since: number }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick(n => n + 1), 60000); return () => clearInterval(t); }, []);
+  void tick;
+  const ms = Date.now() - since;
+  return <span className={`tcard-timer ${timerClass(ms)}`}>⏱{fmtDur(ms)}</span>;
 }
 
 function StageBreakdown({ t }: { t: Task }) {
