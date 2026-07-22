@@ -40,6 +40,12 @@ export type NotificationType =
   | "connection_expiring"
   | "connection_expired"
   | "connection_revoked"
+  | "hub_task_assigned"
+  | "hub_task_due"
+  | "hub_meeting_reminder"
+  | "hub_quote_status"
+  | "hub_contract_expiry"
+  | "hub_digest"
   | "system";
 
 export type CreateNotificationInput = {

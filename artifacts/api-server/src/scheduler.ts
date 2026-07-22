@@ -13,6 +13,7 @@ import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 import { publishToFacebook } from "./routes/facebook";
 import { createNotification } from "./lib/notifications";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
+import { runHubSchedulerChecks } from "./routes/hub/scheduler-checks";
 import { getCredential } from "./lib/credentials";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
@@ -1243,6 +1244,14 @@ async function tick() {
     await checkConnectionsForAdmin();
   } catch (err: any) {
     console.error("[Scheduler] checkConnectionsForAdmin failed:", err?.message || err);
+  }
+  // Hub Ejecutivo: recordatorios de reuniones (cada tick) + bloque diario de
+  // 09:00 Santiago (digest por usuario y contratos por vencer). Aislado en su
+  // propio try/catch: jamás debe interferir con la publicación de videos.
+  try {
+    await runHubSchedulerChecks();
+  } catch (err: any) {
+    console.error("[Scheduler] runHubSchedulerChecks failed:", err?.message || err);
   }
 }
 

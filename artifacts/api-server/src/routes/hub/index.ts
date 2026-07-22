@@ -6,8 +6,30 @@ import { google } from "googleapis";
 import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
 import { z } from "zod";
+import clientsRouter from "./clients";
+import projectsRouter from "./projects";
+import tasksRouter from "./tasks";
+import meetingsRouter from "./meetings";
+import notesRouter from "./notes";
+import contractsRouter from "./contracts";
+import quotesRouter from "./quotes";
+import overviewRouter from "./overview";
+import migrateLegacyRouter from "./migrate-legacy";
 
 const router: IRouter = Router();
+
+// Hub Ejecutivo v2 — entidades normalizadas del equipo (fuente de verdad en
+// PostgreSQL). Los GET/PATCH /hub del blob legacy (más abajo) se mantienen
+// solo para compatibilidad y como origen de /hub/migrate-legacy.
+router.use(overviewRouter);
+router.use(clientsRouter);
+router.use(projectsRouter);
+router.use(tasksRouter);
+router.use(meetingsRouter);
+router.use(notesRouter);
+router.use(contractsRouter);
+router.use(quotesRouter);
+router.use(migrateLegacyRouter);
 
 // Estructura mínima del blob hub_state.data que persiste el Hub Ejecutivo
 // (ver HubState en admin-panel/src/pages/ejecutivo.tsx). Cada colección es un
