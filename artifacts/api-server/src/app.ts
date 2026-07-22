@@ -50,6 +50,9 @@ app.use(
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: "lax",
+      // Optional: set an explicit cookie domain to prevent proxy ambiguity.
+      // Leave unset (undefined) in dev so it defaults to the request host.
+      ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
     },
   })
 );

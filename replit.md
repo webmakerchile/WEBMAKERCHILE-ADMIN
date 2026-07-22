@@ -131,11 +131,15 @@ artifacts-monorepo/
 
 ### Authentication
 - Google OAuth 2.0 login via Passport.js
-- Session-based auth with express-session (7-day cookie)
+- Session-based auth with express-session (30-day cookie, rolling)
+- Sessions stored in PostgreSQL via connect-pg-simple (table `session`, `createTableIfMissing: true`)
+- Cookie config: `secure: NODE_ENV==="production"`, `sameSite: "lax"`, `trust proxy: 1`. Optional `COOKIE_DOMAIN` env var sets an explicit cookie domain (e.g. `.webmakerlatam.com`) to prevent proxy ambiguity.
 - Only whitelisted emails can access (ALLOWED_ADMIN_EMAILS env var)
 - Auth routes: GET /api/auth/google, GET /api/auth/google/callback, GET /api/auth/me, POST /api/auth/logout
+- Google Calendar OAuth: GET /api/auth/google-calendar, GET /api/auth/google-calendar/callback — dedicated flow for `calendar.readonly` scope, independent of YouTube. Callback URL: GOOGLE_CALENDAR_CALLBACK_URL env var (must also be registered in Google Cloud Console as an authorized redirect URI).
 - All /api routes except auth and health require authentication
-- Callback URL: https://admin.webmakerchile.com/api/auth/google/callback
+- Callback URL: https://admin.webmakerlatam.com/api/auth/google/callback
+- **Required deployment secrets**: `SESSION_SECRET` (random string ≥32 chars) — mandatory in production, server refuses to start without it. Generate with `openssl rand -base64 32`.
 
 ### Hardening (Task #53)
 - **Rate limiting** (`artifacts/api-server/src/lib/rate-limit.ts`): Three named limiters (aiLimiter, publishLimiter, uploadLimiter) keyed by user id (fallback to IPv6-safe IP via `ipKeyGenerator`). Wired in `app.ts` via path-regex `app.use(...)` cubriendo todas las rutas costosas: AI (library templates ai-fill, content/videos generate-descriptions, content/videos bulk-generate-descriptions, content/hashtag-suggestions, analytics/insights, gemini conversations/:id/messages, gemini generate-image, gemini generate-cover, studio generate-ideas/generate-descriptions/cover-generator), publish (`/api/{youtube,tiktok,instagram,linkedin,x,facebook}/{upload,publish,upload-from-drive}`) y upload (studio chunk/preview/finalize, content import-csv). 429 responses include `Retry-After` y `retryAfterSeconds`.
