@@ -100,6 +100,12 @@ const SERVICES: Array<{ cat: string; items: Array<{ n: string; d: string; incl?:
    ============================================================ */
 function uid() { return "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function prioW(x: string) { return PRIO_W[x] !== undefined ? PRIO_W[x] : 1; }
+function projProg(projectId: string, tasks: Task[]): { done: number; total: number; pct: number } {
+  const pt = tasks.filter(t => t.projectId === projectId);
+  if (!pt.length) return { done: 0, total: 0, pct: 0 };
+  const done = pt.filter(t => t.stage === "done").length;
+  return { done, total: pt.length, pct: Math.round((done / pt.length) * 100) };
+}
 function fmtDur(ms: number) {
   if (!ms || ms < 0) ms = 0;
   const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
@@ -372,7 +378,8 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
   );
 }
 
-function ProjCard({ p, onClick, onDragStart, onDragEnd }: { p: Project; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
+function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; tasks: Task[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
+  const prog = projProg(p.id, tasks);
   return (
     <div className="pcard" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="pt">{p.name}</div>
@@ -389,7 +396,8 @@ function ProjCard({ p, onClick, onDragStart, onDragEnd }: { p: Project; onClick:
           </a>
         )}
       </div>
-      <div className="bar-prog"><i style={{ width: p.prog + "%" }} /></div>
+      <div className="bar-prog"><i style={{ width: prog.pct + "%" }} /></div>
+      {prog.total > 0 && <div style={{ fontSize: "0.68em", color: "var(--muted)", marginTop: 2, textAlign: "right" }}>{prog.done}/{prog.total} tareas</div>}
       <StageTimer since={p.stageSince || p.updatedAt || p.createdAt || Date.now()} />
     </div>
   );
@@ -899,7 +907,6 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
-  const [progVal, setProgVal] = useState(0);
   const [driveFolderLink, setDriveFolderLink] = useState("");
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
@@ -925,7 +932,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) { setProgVal(p.prog); setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
+      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
       // Reset Scrum proposals when switching to a different project
       if (lastScrumProjIdRef.current !== (sheet as { id: string }).id) {
         setScrumProposed([]); setScrumLoading(false);
@@ -1103,7 +1110,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
         );
       })()}
-      <div className="field"><label>Avance <b>{progVal}%</b></label><div className="rangewrap"><input type="range" min={0} max={100} value={progVal} onChange={e => setProgVal(Number(e.target.value))} /></div></div>
+      {(() => {
+        const { done, total, pct } = projProg(p.id, state.tasks);
+        return (
+          <div className="field">
+            <label>Avance {total > 0 ? <b>{done}/{total} tareas completadas ({pct}%)</b> : <span style={{ color: "var(--muted)", fontWeight: 400 }}>Sin tareas asignadas</span>}</label>
+            <div className="rangewrap" style={{ pointerEvents: "none", opacity: 0.7 }}>
+              <div style={{ height: 6, borderRadius: 3, background: "var(--border)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: pct + "%", background: pct === 100 ? "#1db87b" : "var(--accent, #ff7800)", borderRadius: 3, transition: "width .3s" }} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
       <div className="field">
         <label>Carpeta de Drive</label>
@@ -1113,7 +1132,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const newStatus = V("st") as ProjStatus;
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: progVal, notes: V("no"), link: driveFolderLink, updatedAt: Date.now() };
+          const computedProg = projProg(x.id, state.tasks).pct;
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });
@@ -1553,7 +1573,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                     <div style={{ fontSize: "0.84em", fontWeight: 600, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{proj.name}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                       <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: `${statusColor[proj.status] || "#888"}22`, color: statusColor[proj.status] || "#888" }}>{statusOf(proj.status).label}</span>
-                      <span style={{ fontSize: "0.68em", color: "var(--muted)" }}>{proj.prog}%</span>
+                      <span style={{ fontSize: "0.68em", color: "var(--muted)" }}>{projProg(proj.id, state.tasks).pct}%</span>
                     </div>
                   </div>
                   <button onClick={() => onOpenSheet({ kind: "proj", id: proj.id })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.78em", cursor: "pointer", whiteSpace: "nowrap" }}>Ver →</button>
@@ -1941,10 +1961,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
    ============================================================ */
 function DashView({ state, onOpenProject, onNavigate }: { state: HubState; onOpenProject: (id: string) => void; onNavigate: (tab: Tab) => void }) {
   const active = state.projects.filter(p => p.status !== "done");
-  const avg = state.projects.length ? Math.round(state.projects.reduce((a, p) => a + Number(p.prog || 0), 0) / state.projects.length) : 0;
+  const avg = state.projects.length ? Math.round(state.projects.reduce((a, p) => a + projProg(p.id, state.tasks).pct, 0) / state.projects.length) : 0;
   const urgent = state.projects.filter(p => p.prio === "alta" && p.status !== "done").length;
   const due7 = state.projects.filter(p => { if (!p.due || p.status === "done") return false; const d = dueInfo(p); return d != null && d.days <= 7; }).length;
-  const prog = [...state.projects].sort((a, b) => Number(b.prog) - Number(a.prog)).slice(0, 8);
+  const prog = [...state.projects].sort((a, b) => projProg(b.id, state.tasks).pct - projProg(a.id, state.tasks).pct).slice(0, 8);
   const acts = [...state.projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 7);
   const orbitSvg = useMemo(() => buildOrbitSvg(state.projects), [state.projects]);
   return (
@@ -1980,14 +2000,14 @@ function DashView({ state, onOpenProject, onNavigate }: { state: HubState; onOpe
           {prog.length ? prog.map(p => (
             <div key={p.id} className="prow clickable" onClick={() => { onNavigate("proj"); setTimeout(() => onOpenProject(p.id), 80); }}>
               <div className="pn"><b>{p.name}</b><small>{p.client}</small></div>
-              <div className="pbarwrap"><div className="pbar"><i style={{ width: p.prog + "%" }} /></div></div>
-              <div className="ppct">{p.prog}%</div>
+              <div className="pbarwrap"><div className="pbar"><i style={{ width: projProg(p.id, state.tasks).pct + "%" }} /></div></div>
+              <div className="ppct">{projProg(p.id, state.tasks).pct}%</div>
             </div>
           )) : <div className="col-empty">Sin proyectos aún</div>}
         </div>
         <div className="panel activity">
           <h2>Actividad Reciente</h2>
-          {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {p.prog}%</span></div>) : <div className="col-empty">Sin actividad reciente</div>}
+          {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, state.tasks).pct}%</span></div>) : <div className="col-empty">Sin actividad reciente</div>}
         </div>
       </div>
     </div>
@@ -2049,7 +2069,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
                 onDragLeave={() => setDragOver(null)}
                 onDrop={() => dropProj(s.id)}>
                 <h3><span className="top"><span className="dot" style={{ background: s.color }} />{s.label}</span><span className="n">{items.length}</span></h3>
-                {items.length ? items.map(p => <ProjCard key={p.id} p={p} onClick={() => onOpenProject(p.id)} onDragStart={e => { setDragId(p.id); e.dataTransfer.setData("text/plain", p.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
+                {items.length ? items.map(p => <ProjCard key={p.id} p={p} tasks={state.tasks} onClick={() => onOpenProject(p.id)} onDragStart={e => { setDragId(p.id); e.dataTransfer.setData("text/plain", p.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
               </div>
             );
           })}
@@ -2061,7 +2081,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
             <div key={p.id} className="gcard" onClick={() => onOpenProject(p.id)}>
               <div className="gt">{p.name}</div><div className="gsub">{p.client} · {p.type}</div>
               <div className="gbody">{p.notes || ""}</div>
-              <div className="gfoot"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{p.prog}%</span></div>
+              <div className="gfoot"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{projProg(p.id, state.tasks).pct}%</span></div>
             </div>
           ))}
         </div>
