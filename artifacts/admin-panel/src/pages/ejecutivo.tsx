@@ -912,6 +912,9 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatHistory, setChatHistory] = useState<{ role: "user" | "ai"; text: string }[]>([]);
+  const [extractingProject, setExtractingProject] = useState(false);
+  const [scrumLoading, setScrumLoading] = useState(false);
+  const [scrumProposed, setScrumProposed] = useState<Array<{ title: string; crit: string; notes: string; selected: boolean }>>([]);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -921,11 +924,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     if (sheet?.kind === "new-proj") {
       setDriveFolderLink(""); setProjNameDraft("");
     }
+    if (sheet?.kind === "proj") { setScrumProposed([]); setScrumLoading(false); }
     if (sheet?.kind === "contract") {
       const c = state.contracts.find(x => x.id === (sheet as { id: string }).id);
       if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
       else setPdfData(null);
-      setChatHistory([]); setChatInput("");
+      setChatHistory([]); setChatInput(""); setExtractingProject(false);
     }
     if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
     if (sheet?.kind === "new-contract-meeting") { setMeetingNotes(""); setMeetingExtracting(false); }
@@ -1060,7 +1064,112 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         });
         onSave({ ...state, projects }); onClose(); onToast("Proyecto actualizado");
       }}>Guardar cambios</button>
-      <button className="del-link" onClick={() => {
+
+      {/* ---- Generar tareas Scrum con IA ---- */}
+      <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontSize: "1em" }}>🤖</span>
+          <strong style={{ fontSize: "0.9em" }}>Generar tareas Scrum con IA</strong>
+        </div>
+        <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>La IA analiza los requerimientos del proyecto y propone tareas listas para agregar al Backlog.</p>
+
+        {scrumProposed.length === 0 && (
+          <button
+            disabled={scrumLoading}
+            onClick={async () => {
+              setScrumLoading(true);
+              try {
+                const res = await fetch(`${DRIVE_API_BASE}/hub/projects/ai-extract-tasks`, {
+                  method: "POST", credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ project: { name: V("n") || p.name, client: V("cli") || p.client, type: V("ty") || p.type, notes: V("no") || p.notes } }),
+                });
+                if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al generar tareas"); return; }
+                const data = await res.json() as { tasks?: Array<{ title: string; crit: string; notes: string }> };
+                const tasks = (data.tasks || []).slice(0, 15).map(t => ({ ...t, selected: true }));
+                if (tasks.length === 0) { onToast("La IA no pudo generar tareas — agrega más notas al proyecto"); return; }
+                setScrumProposed(tasks);
+              } catch { onToast("Error de conexión"); }
+              finally { setScrumLoading(false); }
+            }}
+            style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: scrumLoading ? "var(--card-bg)" : "rgba(0,200,120,0.09)", color: scrumLoading ? "var(--muted)" : "#1db87b", fontWeight: 600, fontSize: "0.88em", cursor: scrumLoading ? "not-allowed" : "pointer" }}
+          >
+            {scrumLoading ? "⏳ Generando tareas Scrum…" : "✨ Generar tareas Scrum"}
+          </button>
+        )}
+
+        {scrumProposed.length > 0 && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: "0.8em", color: "var(--muted)" }}>{scrumProposed.filter(t => t.selected).length} de {scrumProposed.length} tareas seleccionadas</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: true })))} style={{ fontSize: "0.72em", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "none", color: "var(--muted)", cursor: "pointer" }}>Todas</button>
+                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: false })))} style={{ fontSize: "0.72em", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "none", color: "var(--muted)", cursor: "pointer" }}>Ninguna</button>
+                <button onClick={() => setScrumProposed([])} style={{ fontSize: "0.72em", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button>
+              </div>
+            </div>
+            <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+              {scrumProposed.map((t, i) => (
+                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", borderRadius: 8, border: `1px solid ${t.selected ? "var(--accent, #ff7800)" : "var(--border)"}`, background: t.selected ? "rgba(255,120,0,0.05)" : "var(--card-bg, rgba(255,255,255,0.03))", cursor: "pointer", userSelect: "none" }}>
+                  <input type="checkbox" checked={t.selected} onChange={() => setScrumProposed(ts => ts.map((x, j) => j === i ? { ...x, selected: !x.selected } : x))} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "0.85em", fontWeight: 600, color: "var(--fg)" }}>{t.title}</span>
+                      <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: t.crit === "alta" ? "rgba(224,121,90,0.18)" : t.crit === "media" ? "rgba(201,164,74,0.18)" : "rgba(106,160,192,0.18)", color: CRIT_COLOR[t.crit] || "var(--muted)" }}>{t.crit}</span>
+                    </div>
+                    {t.notes && <p style={{ margin: "3px 0 0", fontSize: "0.75em", color: "var(--muted)", lineHeight: 1.4 }}>{t.notes}</p>}
+                  </div>
+                </label>
+              ))}
+            </div>
+            <button
+              disabled={scrumProposed.filter(t => t.selected).length === 0}
+              onClick={() => {
+                const now = Date.now();
+                const newTasks: Task[] = scrumProposed
+                  .filter(t => t.selected)
+                  .map(t => ({
+                    id: uid(),
+                    title: t.title,
+                    projectId: p.id,
+                    crit: (["alta","media","baja"].includes(t.crit) ? t.crit : "media") as Prio,
+                    stage: "backlog" as TaskStage,
+                    stageSince: now,
+                    stageTime: {},
+                    notes: t.notes || "",
+                    createdAt: now,
+                    updatedAt: now,
+                  }));
+                onSave({ ...state, tasks: [...state.tasks, ...newTasks] });
+                setScrumProposed([]);
+                onToast(`${newTasks.length} tarea${newTasks.length !== 1 ? "s" : ""} agregada${newTasks.length !== 1 ? "s" : ""} al Backlog ✓`);
+              }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid #1db87b", background: "rgba(0,200,120,0.1)", color: "#1db87b", fontWeight: 700, fontSize: "0.9em", cursor: scrumProposed.filter(t => t.selected).length === 0 ? "not-allowed" : "pointer", opacity: scrumProposed.filter(t => t.selected).length === 0 ? 0.5 : 1 }}
+            >
+              ✓ Agregar {scrumProposed.filter(t => t.selected).length} tarea{scrumProposed.filter(t => t.selected).length !== 1 ? "s" : ""} al Backlog
+            </button>
+            <button onClick={async () => {
+              setScrumProposed([]);
+              setScrumLoading(true);
+              try {
+                const res = await fetch(`${DRIVE_API_BASE}/hub/projects/ai-extract-tasks`, {
+                  method: "POST", credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ project: { name: V("n") || p.name, client: V("cli") || p.client, type: V("ty") || p.type, notes: V("no") || p.notes } }),
+                });
+                if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al regenerar tareas"); return; }
+                const data = await res.json() as { tasks?: Array<{ title: string; crit: string; notes: string }> };
+                setScrumProposed((data.tasks || []).slice(0, 15).map(t => ({ ...t, selected: true })));
+              } catch { onToast("Error de conexión"); }
+              finally { setScrumLoading(false); }
+            }} style={{ marginTop: 6, width: "100%", padding: "7px 0", borderRadius: 8, border: "1px solid var(--border)", background: "none", color: "var(--muted)", fontSize: "0.8em", cursor: "pointer" }}>
+              🔄 Regenerar tareas
+            </button>
+          </>
+        )}
+      </div>
+
+      <button className="del-link" style={{ marginTop: 16 }} onClick={() => {
         const snap = [...state.projects];
         const doDelete = () => {
           onSave({ ...state, projects: state.projects.filter(x => x.id !== p.id) });
@@ -1369,6 +1478,56 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
       }}>Guardar cambios</button>
+
+      {/* ---- Crear Proyecto desde contrato ---- */}
+      <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: "1em" }}>🗂️</span>
+          <strong style={{ fontSize: "0.9em" }}>Crear Proyecto desde este contrato</strong>
+        </div>
+        <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>La IA lee los requerimientos y alcance del contrato y pre-rellena el formulario de nuevo proyecto.</p>
+        <button
+          disabled={extractingProject}
+          onClick={async () => {
+            setExtractingProject(true);
+            try {
+              const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/ai-extract-project`, {
+                method: "POST", credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contract: { title: V("ti") || c.title, client: V("cl") || c.client, value: V("va") || c.value, notes: V("no") || c.notes } }),
+              });
+              if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al extraer datos"); return; }
+              const data = await res.json() as { name?: string; client?: string; type?: string; prio?: string; due?: string; notes?: string };
+              const now = Date.now();
+              const newProj: Project = {
+                id: uid(),
+                name: data.name || c.title,
+                client: data.client || c.client,
+                type: data.type || "",
+                prio: (["alta","media","baja"].includes(data.prio || "") ? data.prio : "media") as Prio,
+                status: "lead",
+                owner: "",
+                prog: 0,
+                notes: data.notes || c.notes || "",
+                link: "",
+                due: data.due || "",
+                createdAt: now,
+                updatedAt: now,
+                stageSince: now,
+                stageTime: {},
+              };
+              onSave({ ...state, projects: [...state.projects, newProj] });
+              onToast("Proyecto creado desde el contrato ✓");
+              onNavigate("proj");
+              onClose();
+            } catch { onToast("Error de conexión"); }
+            finally { setExtractingProject(false); }
+          }}
+          style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: extractingProject ? "var(--card-bg)" : "rgba(255,120,0,0.1)", color: "var(--accent, #ff7800)", fontWeight: 600, fontSize: "0.88em", cursor: extractingProject ? "not-allowed" : "pointer", transition: "background .2s" }}
+        >
+          {extractingProject ? "⏳ Creando proyecto con IA…" : "✨ Crear Proyecto desde contrato"}
+        </button>
+      </div>
 
       {/* ---- Chat IA para modificar el contrato ---- */}
       <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>

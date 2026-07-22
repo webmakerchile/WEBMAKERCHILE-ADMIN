@@ -210,6 +210,122 @@ ${notes.slice(0, 4000)}`,
   res.json(extracted);
 });
 
+router.post("/hub/contracts/ai-extract-project", async (req: Request, res: Response) => {
+  const { contract } = req.body as { contract?: Record<string, string> };
+  if (!contract || typeof contract !== "object") {
+    res.status(400).json({ error: "Se requiere el objeto 'contract'" });
+    return;
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_API_BASE || undefined,
+  });
+
+  const contractStr = [
+    contract.title && `Título: ${contract.title}`,
+    contract.client && `Cliente: ${contract.client}`,
+    contract.value && `Valor: ${contract.value}`,
+    contract.notes && `Notas/Alcance: ${contract.notes}`,
+  ].filter(Boolean).join("\n");
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "Eres un asistente de agencia de marketing digital. A partir de la información de un contrato, extraes los datos necesarios para crear un proyecto interno de gestión. Responde SOLO con JSON válido.",
+      },
+      {
+        role: "user",
+        content: `Analiza este contrato y extrae los datos para crear un proyecto en nuestro sistema de gestión.
+
+Contrato:
+${contractStr}
+
+Devuelve un JSON con estos campos (string vacío si no aplica):
+- name (string): nombre del proyecto, derivado del servicio contratado
+- client (string): nombre del cliente
+- type (string): tipo de proyecto (ej: "Sitio Web", "Marketing Digital", "Branding", "E-Commerce", "Software", "Redes Sociales", "SEO", "Diseño Gráfico", etc.)
+- prio (string): prioridad sugerida — solo "alta", "media" o "baja"
+- due (string): fecha de entrega estimada en formato YYYY-MM-DD (calcula ~3 meses desde hoy si no se menciona una fecha explícita; usa "" solo si no hay ninguna referencia)
+- notes (string): resumen detallado de los requerimientos, alcance y entregables del proyecto (máx 400 caracteres)`,
+      },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content || "{}";
+  let extracted: Record<string, string> = {};
+  try { extracted = JSON.parse(raw); } catch { /* leave empty */ }
+
+  res.json(extracted);
+});
+
+router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response) => {
+  const { project } = req.body as { project?: Record<string, string> };
+  if (!project || typeof project !== "object") {
+    res.status(400).json({ error: "Se requiere el objeto 'project'" });
+    return;
+  }
+  if (!project.notes && !project.name) {
+    res.status(400).json({ error: "El proyecto necesita notas o nombre para generar tareas" });
+    return;
+  }
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_API_BASE || undefined,
+  });
+
+  const projectStr = [
+    project.name && `Nombre del proyecto: ${project.name}`,
+    project.client && `Cliente: ${project.client}`,
+    project.type && `Tipo: ${project.type}`,
+    project.notes && `Requerimientos/Alcance: ${project.notes}`,
+  ].filter(Boolean).join("\n");
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4.1-mini",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: "Eres un Scrum Master de una agencia digital. Generas historias de usuario y tareas técnicas bien definidas para el backlog de proyectos. Responde SOLO con JSON válido.",
+      },
+      {
+        role: "user",
+        content: `Genera las tareas Scrum para el siguiente proyecto de agencia digital. Crea entre 6 y 14 tareas concretas y accionables que cubran todo el alcance del proyecto.
+
+Proyecto:
+${projectStr}
+
+Responde con un JSON que tenga exactamente esta forma:
+{
+  "tasks": [
+    { "title": "...", "crit": "alta|media|baja", "notes": "..." },
+    ...
+  ]
+}
+
+Reglas:
+- title: corto y accionable (máx 80 chars), empieza con verbo (Diseñar, Desarrollar, Configurar, Revisar, etc.)
+- crit: "alta" para tareas bloqueantes o del camino crítico, "media" para entregables principales, "baja" para ajustes finales
+- notes: descripción breve de qué implica la tarea (máx 150 chars)
+- Cubre fases típicas: kickoff/briefing, diseño, desarrollo/implementación, contenido, pruebas/QA, entrega
+- Sé específico según el tipo de proyecto`,
+      },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content || '{"tasks":[]}';
+  let result: { tasks: Array<{ title: string; crit: string; notes: string }> } = { tasks: [] };
+  try { result = JSON.parse(raw); } catch { /* leave empty */ }
+  if (!Array.isArray(result.tasks)) result.tasks = [];
+
+  res.json(result);
+});
+
 router.post("/hub/contracts/ai-chat", async (req: Request, res: Response) => {
   const { contract, instruction } = req.body as { contract?: Record<string, string>; instruction?: string };
   if (!instruction || instruction.trim().length < 3) {
