@@ -60,7 +60,7 @@ const TASK_STAGES = [
   { id: "sprint", label: "Sprint Backlog", color: "var(--lead)" },
   { id: "doing", label: "En desarrollo", color: "var(--dev)" },
   { id: "qa_sent", label: "QA", color: "var(--disc)" },
-  { id: "qa_rev", label: "Revisada", color: "var(--rev)" },
+  { id: "qa_rev", label: "Revisión", color: "var(--rev)" },
   { id: "done", label: "Lista", color: "var(--done)" },
 ];
 const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cliente", vision: "Visión", equipo: "Equipo", otro: "Otra" };
