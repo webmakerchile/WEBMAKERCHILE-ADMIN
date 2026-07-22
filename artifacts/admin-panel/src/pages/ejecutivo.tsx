@@ -915,6 +915,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [extractingProject, setExtractingProject] = useState(false);
   const [scrumLoading, setScrumLoading] = useState(false);
   const [scrumProposed, setScrumProposed] = useState<Array<{ title: string; crit: string; notes: string; selected: boolean }>>([]);
+  const projPreFillRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -922,9 +923,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       if (p) { setProgVal(p.prog); setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
     }
     if (sheet?.kind === "new-proj") {
-      setDriveFolderLink(""); setProjNameDraft("");
+      const pf = projPreFillRef.current;
+      const hasPrefill = Object.keys(pf).length > 0;
+      setDriveFolderLink("");
+      setProjNameDraft(hasPrefill ? (pf.name || "") : "");
+      projPreFillRef.current = {}; // clear after reading so next fresh open starts blank
     }
-    if (sheet?.kind === "proj") { setScrumProposed([]); setScrumLoading(false); }
     if (sheet?.kind === "contract") {
       const c = state.contracts.find(x => x.id === (sheet as { id: string }).id);
       if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
@@ -1011,20 +1015,34 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 
   /* ---- Nuevo proyecto ---- */
   if (sheet.kind === "new-proj") {
+    // projPreFillRef.current is read here (before useEffect clears it after mount)
+    // uncontrolled inputs use defaultValue (applied only on mount) — safe to read from ref here
+    const pf = projPreFillRef.current;
     return (<>
-      <div className="sheet-head"><h2>Nuevo proyecto</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <div className="sheet-head">
+        <h2>Nuevo proyecto</h2>
+        <button className="close-btn" onClick={onClose}>✕</button>
+      </div>
+      {projNameDraft !== "" && Object.keys(pf).length === 0 && projNameDraft.length > 0 && (
+        <div style={{ margin: "0 0 10px", padding: "8px 12px", borderRadius: 8, background: "rgba(0,200,120,0.08)", border: "1px solid rgba(0,200,120,0.25)", fontSize: "0.78em", color: "#1db87b" }}>
+          ✨ Pre-rellenado por IA desde el contrato — revisa y ajusta los campos antes de crear.
+        </div>
+      )}
       <div className="field"><label>Nombre</label><input type="text" ref={R("n")} placeholder="Ej: Landing Page Corporativa" value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
-      <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} placeholder="E-commerce, Landing…" /></div></div>
+      <div className="two field">
+        <div><label>Cliente</label><input type="text" ref={R("cli")} list="hub-client-options" defaultValue={pf.client || ""} /><ClientOptions clients={state.clients} /></div>
+        <div><label>Tipo</label><input type="text" ref={R("ty")} placeholder="E-commerce, Landing…" defaultValue={pf.type || ""} /></div>
+      </div>
       <div className="three field">
-        <div><label>Prioridad</label><select ref={R("prio")}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
+        <div><label>Prioridad</label><select ref={R("prio")} defaultValue={pf.prio || "media"}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
         <div><label>Estado</label><select ref={R("st")}>{STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div><label>Dueño</label><input type="text" ref={R("ow")} /></div>
       </div>
-      <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} /></div>
+      <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} defaultValue={pf.due || ""} /></div>
       <div className="field"><label>Carpeta de Drive</label>
         <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} onToast={onToast} />
       </div>
-      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
+      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={pf.notes || ""} /></div>
       <button className="add-btn" onClick={() => {
         const name = projNameDraft.trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
@@ -1498,34 +1516,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               });
               if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al extraer datos"); return; }
               const data = await res.json() as { name?: string; client?: string; type?: string; prio?: string; due?: string; notes?: string };
-              const now = Date.now();
-              const newProj: Project = {
-                id: uid(),
-                name: data.name || c.title,
-                client: data.client || c.client,
+              // Pre-fill the new-proj sheet ref before opening it
+              projPreFillRef.current = {
+                name: data.name || c.title || "",
+                client: data.client || c.client || "",
                 type: data.type || "",
-                prio: (["alta","media","baja"].includes(data.prio || "") ? data.prio : "media") as Prio,
-                status: "lead",
-                owner: "",
-                prog: 0,
-                notes: data.notes || c.notes || "",
-                link: "",
+                prio: (["alta","media","baja"].includes(data.prio || "") ? data.prio : "media") || "media",
                 due: data.due || "",
-                createdAt: now,
-                updatedAt: now,
-                stageSince: now,
-                stageTime: {},
+                notes: data.notes || c.notes || "",
               };
-              onSave({ ...state, projects: [...state.projects, newProj] });
-              onToast("Proyecto creado desde el contrato ✓");
-              onNavigate("proj");
-              onClose();
+              // Open the new-proj sheet so the user can review and confirm
+              onOpenSheet({ kind: "new-proj" });
             } catch { onToast("Error de conexión"); }
             finally { setExtractingProject(false); }
           }}
           style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: extractingProject ? "var(--card-bg)" : "rgba(255,120,0,0.1)", color: "var(--accent, #ff7800)", fontWeight: 600, fontSize: "0.88em", cursor: extractingProject ? "not-allowed" : "pointer", transition: "background .2s" }}
         >
-          {extractingProject ? "⏳ Creando proyecto con IA…" : "✨ Crear Proyecto desde contrato"}
+          {extractingProject ? "⏳ Analizando contrato con IA…" : "✨ Crear Proyecto desde contrato"}
         </button>
       </div>
 
