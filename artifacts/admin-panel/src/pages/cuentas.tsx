@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Link2, Pencil, Trash2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Link2, Pencil, Trash2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { HelpHint } from "@/components/help-hint";
@@ -726,13 +726,44 @@ export default function CuentasPage() {
     }
   };
 
+  const [calendarStatus, setCalendarStatus] = useState<{ loading: boolean; connected: boolean; reason?: string }>({ loading: true, connected: false });
+  const [calendarDisconnecting, setCalendarDisconnecting] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+
+  const fetchCalendarStatus = useCallback(async () => {
+    setCalendarStatus((s) => ({ ...s, loading: true }));
+    try {
+      const res = await fetch(`${API_BASE}/calendar/status`, { credentials: "include" });
+      const data = await res.json() as { connected: boolean; reason?: string };
+      setCalendarStatus({ loading: false, connected: data.connected, reason: data.reason });
+    } catch {
+      setCalendarStatus({ loading: false, connected: false, reason: "error" });
+    }
+  }, []);
+
+  const handleCalendarDisconnect = async () => {
+    if (!confirm("¿Desconectar Google Calendar?")) return;
+    setCalendarDisconnecting(true);
+    try {
+      await fetch(`${API_BASE}/calendar/disconnect`, { method: "POST", credentials: "include" });
+      setCalendarStatus({ loading: false, connected: false });
+    } catch {
+      setCalendarError("Error al desconectar. Intenta de nuevo.");
+    } finally {
+      setCalendarDisconnecting(false);
+    }
+  };
+
   useEffect(() => {
     NETWORK_ORDER.forEach((network) => fetchOne(network, NETWORK_ENDPOINTS[network].status));
     fetchHealth();
+    fetchCalendarStatus();
     const params = new URLSearchParams(window.location.search);
     const connected = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "connected");
     const errNetwork = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "error");
-    if (connected || errNetwork) {
+    const calConnected = params.get("calendar") === "connected";
+    const calError = params.get("calendar") === "error";
+    if (connected || errNetwork || calConnected || calError) {
       window.history.replaceState({}, "", window.location.pathname);
       if (errNetwork) {
         const msg = params.get("msg") || "error_desconocido";
@@ -745,8 +776,19 @@ export default function CuentasPage() {
         };
         setOauthError({ network: errNetwork, msg: label[msg] || msg });
       }
+      if (calConnected) fetchCalendarStatus();
+      if (calError) {
+        const msg = params.get("msg") || "error_desconocido";
+        const label: Record<string, string> = {
+          csrf_mismatch: "La sesión de autorización expiró o hubo un problema de seguridad. Intenta conectar de nuevo.",
+          token_failed: "No se pudo obtener el token de acceso de Calendar.",
+          access_denied: "Acceso denegado por Google.",
+          no_code: "La plataforma no devolvió un código de autorización.",
+        };
+        setCalendarError(label[msg] || msg);
+      }
     }
-  }, []);
+  }, [fetchCalendarStatus]);
 
   const [linkedinOrgs, setLinkedinOrgs] = useState<LinkedInOrg[] | null>(null);
   const [linkedinOrgLoading, setLinkedinOrgLoading] = useState(false);
@@ -1144,6 +1186,74 @@ export default function CuentasPage() {
               </motion.div>
             );
           })}
+        </div>
+
+        {/* Google Calendar integration card */}
+        <div className="rounded-2xl border border-foreground/10 bg-card/50 overflow-hidden">
+          <div className="px-5 py-4 flex items-center gap-3 border-b border-foreground/5">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+              <Calendar className="w-5 h-5 text-blue-400" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold">Google Calendar</h2>
+              <p className="text-xs text-muted-foreground">Muestra tus eventos del calendario en el Hub ejecutivo</p>
+            </div>
+            {calendarStatus.loading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
+            ) : calendarStatus.connected ? (
+              <span className="ml-auto text-[10px] uppercase tracking-wide bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded-full flex-shrink-0">Conectado</span>
+            ) : (
+              <span className="ml-auto text-[10px] uppercase tracking-wide bg-foreground/10 text-muted-foreground px-2 py-0.5 rounded-full flex-shrink-0">No conectado</span>
+            )}
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            {calendarError && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{calendarError}</span>
+                <button onClick={() => setCalendarError(null)} className="ml-auto"><X className="w-3 h-3" /></button>
+              </div>
+            )}
+
+            {calendarStatus.connected ? (
+              <>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <p className="text-xs text-emerald-300">Google Calendar conectado. Tus eventos se mostrarán en el Hub.</p>
+                </div>
+                <button
+                  onClick={handleCalendarDisconnect}
+                  disabled={calendarDisconnecting}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 text-sm transition disabled:opacity-50"
+                >
+                  {calendarDisconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlink className="w-4 h-4" />}
+                  Desconectar Calendar
+                </button>
+              </>
+            ) : (
+              <>
+                {calendarStatus.reason === "no_scope" && (
+                  <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-500/8 border border-amber-500/20 text-amber-300/90">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <p className="text-[11px] leading-relaxed">
+                      Los permisos de Calendar no están autorizados. Haz clic en Conectar para otorgar acceso.
+                    </p>
+                  </div>
+                )}
+                <a
+                  href={`${API_BASE}/auth/google-calendar`}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-sm transition"
+                >
+                  <Link2 className="w-4 h-4" />
+                  Conectar Google Calendar
+                </a>
+                <p className="text-[11px] text-muted-foreground/70 text-center px-2">
+                  Solo requiere permiso de lectura. No modifica tu calendario.
+                </p>
+              </>
+            )}
+          </div>
         </div>
 
         <CredencialesSection />

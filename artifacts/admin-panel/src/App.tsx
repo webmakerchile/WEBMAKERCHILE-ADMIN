@@ -150,10 +150,15 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     queryKey: ["auth-me"],
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
-      if (!res.ok) throw new Error("No autenticado");
+      if (res.status === 401) throw new Error("No autenticado");
+      if (!res.ok) throw new Error(`server_error_${res.status}`);
       return res.json();
     },
-    retry: false,
+    retry: (failureCount, error: any) => {
+      if (error?.message === "No autenticado") return false;
+      return failureCount < 2;
+    },
+    retryDelay: 1500,
     staleTime: 5 * 60 * 1000,
     // Mientras la cuenta está pendiente, re-consultar cada 30s para que al
     // aprobarla se desbloquee el panel sin recargar la página.

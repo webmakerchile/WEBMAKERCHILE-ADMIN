@@ -27,6 +27,12 @@ function getYouTubeCallbackURL() {
   return `${base}/auth/youtube/callback`;
 }
 
+function getCalendarCallbackURL() {
+  if (process.env.GOOGLE_CALENDAR_CALLBACK_URL) return process.env.GOOGLE_CALENDAR_CALLBACK_URL;
+  const base = getCallbackURL().replace("/auth/google/callback", "");
+  return `${base}/auth/google-calendar/callback`;
+}
+
 if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
   passport.use(
     new GoogleStrategy(
@@ -256,6 +262,96 @@ router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: R
   } catch (err: any) {
     console.error("[YouTube connect] Error:", err.message);
     res.redirect("/cuentas?youtube=error&msg=server_error");
+  }
+});
+
+router.get("/auth/google-calendar", requireAuth, requireApproved, async (req: Request, res: Response) => {
+  if (!GOOGLE_CLIENT_ID) {
+    res.status(500).json({ error: "Google OAuth no configurado" });
+    return;
+  }
+
+  const csrfState = crypto.randomBytes(16).toString("hex");
+  (req.session as any).calendarCsrf = csrfState;
+  await new Promise<void>((resolve) => req.session.save(resolve));
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: getCalendarCallbackURL(),
+    response_type: "code",
+    scope: "https://www.googleapis.com/auth/calendar.readonly",
+    access_type: "offline",
+    prompt: "consent",
+    state: csrfState,
+  });
+
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+router.get("/auth/google-calendar/callback", requireAuth, requireApproved, async (req: Request, res: Response) => {
+  const { code, state, error } = req.query;
+  const user = req.user as any;
+
+  if (error) {
+    console.error("[Calendar connect] OAuth error:", error);
+    res.redirect("/cuentas?calendar=error&msg=access_denied");
+    return;
+  }
+
+  const storedState = (req.session as any).calendarCsrf;
+  delete (req.session as any).calendarCsrf;
+
+  if (!storedState || state !== storedState) {
+    console.error("[Calendar connect] CSRF state mismatch");
+    res.redirect("/cuentas?calendar=error&msg=csrf_mismatch");
+    return;
+  }
+
+  if (!code) {
+    res.redirect("/cuentas?calendar=error&msg=no_code");
+    return;
+  }
+
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: String(code),
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: getCalendarCallbackURL(),
+        grant_type: "authorization_code",
+      }).toString(),
+    });
+
+    const tokenData = await tokenRes.json() as any;
+
+    if (!tokenData.access_token) {
+      console.error("[Calendar connect] No access token:", JSON.stringify(tokenData));
+      res.redirect("/cuentas?calendar=error&msg=token_failed");
+      return;
+    }
+
+    const updateData: Record<string, string | null | Date> = {
+      googleCalendarAccessToken: tokenData.access_token,
+    };
+    if (tokenData.refresh_token) {
+      updateData.googleCalendarRefreshToken = tokenData.refresh_token;
+    }
+    if (tokenData.expiry_date) {
+      updateData.googleCalendarTokenExpiry = new Date(tokenData.expiry_date);
+    } else if (tokenData.expires_in) {
+      updateData.googleCalendarTokenExpiry = new Date(Date.now() + tokenData.expires_in * 1000);
+    }
+
+    await db.update(users).set(updateData).where(eq(users.id, user.id));
+
+    console.log("[Calendar connect] Tokens stored for user", user.id);
+    res.redirect("/cuentas?calendar=connected");
+  } catch (err: any) {
+    console.error("[Calendar connect] Error:", err.message);
+    res.redirect("/cuentas?calendar=error&msg=server_error");
   }
 });
 
