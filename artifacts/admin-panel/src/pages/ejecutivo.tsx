@@ -22,7 +22,7 @@ type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
 type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive";
 type ProjView = "board" | "list" | "scrum";
 
-interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
+interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
 interface Client { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number; }
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; updatedAt: number; }
@@ -1059,10 +1059,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <button className="add-btn" onClick={() => {
         const name = projNameDraft.trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
-        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, createdAt: now, updatedAt: now }] });
-        if (newProjFromContractIdRef.current) {
-          const cid = newProjFromContractIdRef.current;
-          setProjectCreatedContractIds(prev => new Set([...prev, cid]));
+        const fromCid = newProjFromContractIdRef.current || undefined;
+        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, contractId: fromCid, createdAt: now, updatedAt: now }] });
+        if (fromCid) {
+          setProjectCreatedContractIds(prev => new Set([...prev, fromCid]));
           newProjFromContractIdRef.current = null;
         }
         onClose(); onNavigate("proj"); onToast("Proyecto creado");
@@ -1079,11 +1079,30 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="field"><label>Nombre</label><input type="text" ref={R("n")} value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} defaultValue={p.client} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} defaultValue={p.type} /></div></div>
       <div className="three field">
-        <div><label>Prioridad</label><select ref={R("prio")} defaultValue={p.prio}>{["alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
+        <div><label>Prioridad</label><select ref={R("prio")} defaultValue={p.prio}>{["crítica","alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
         <div><label>Estado</label><select ref={R("st")} defaultValue={p.status}>{STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div><label>Dueño</label><input type="text" ref={R("ow")} defaultValue={p.owner || ""} /></div>
       </div>
       <div className="field"><label>Fecha límite</label><input type="date" ref={R("due")} defaultValue={p.due || ""} /></div>
+      {p.contractId && (() => {
+        const c = state.contracts.find(x => x.id === p.contractId);
+        if (!c) return null;
+        const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888" };
+        return (
+          <div style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "1em" }}>📄</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "0.7em", color: "var(--muted)", marginBottom: 2 }}>Contrato origen</div>
+              <div style={{ fontSize: "0.85em", fontWeight: 600, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.title}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: `${statusColor[c.status]}22`, color: statusColor[c.status] }}>{c.status}</span>
+                {c.value && <span style={{ fontSize: "0.72em", color: "var(--muted)" }}>{c.value}</span>}
+              </div>
+            </div>
+            <button onClick={() => onOpenSheet({ kind: "contract", id: c.id })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.78em", cursor: "pointer", whiteSpace: "nowrap" }}>Ver →</button>
+          </div>
+        );
+      })()}
       <div className="field"><label>Avance <b>{progVal}%</b></label><div className="rangewrap"><input type="range" min={0} max={100} value={progVal} onChange={e => setProgVal(Number(e.target.value))} /></div></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
       <div className="field">
@@ -1514,6 +1533,36 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
       }}>Guardar cambios</button>
+
+      {/* ---- Proyectos vinculados ---- */}
+      {(() => {
+        const linked = state.projects.filter(p => p.contractId === c.id);
+        if (linked.length === 0) return null;
+        const statusColor: Record<string, string> = { lead: "#6aa0c0", disc: "#c9a44a", dev: "#e0795a", rev: "#b07bce", done: "#1db87b" };
+        return (
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: "1em" }}>🗃️</span>
+              <strong style={{ fontSize: "0.92em" }}>Proyectos vinculados</strong>
+              <span style={{ fontSize: "0.75em", color: "var(--muted)", fontWeight: 400 }}>{linked.length} proyecto{linked.length > 1 ? "s" : ""}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {linked.map(proj => (
+                <div key={proj.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "0.84em", fontWeight: 600, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{proj.name}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                      <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: `${statusColor[proj.status] || "#888"}22`, color: statusColor[proj.status] || "#888" }}>{statusOf(proj.status).label}</span>
+                      <span style={{ fontSize: "0.68em", color: "var(--muted)" }}>{proj.prog}%</span>
+                    </div>
+                  </div>
+                  <button onClick={() => onOpenSheet({ kind: "proj", id: proj.id })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.78em", cursor: "pointer", whiteSpace: "nowrap" }}>Ver →</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---- Crear Proyecto desde contrato ---- */}
       <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
