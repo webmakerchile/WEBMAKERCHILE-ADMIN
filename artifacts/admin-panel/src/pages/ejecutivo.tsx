@@ -15,7 +15,7 @@ import "./ejecutivo.css";
 /* ============================================================
    TIPOS
    ============================================================ */
-type Prio = "alta" | "media" | "baja";
+type Prio = "crítica" | "alta" | "media" | "baja";
 type ProjStatus = "lead" | "disc" | "dev" | "rev" | "done";
 type TaskStage = "backlog" | "sprint" | "doing" | "qa_sent" | "qa_rev" | "done";
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
@@ -64,8 +64,8 @@ const TASK_STAGES = [
   { id: "done", label: "Lista", color: "var(--done)" },
 ];
 const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cliente", vision: "Visión", equipo: "Equipo", otro: "Otra" };
-const CRIT_COLOR: Record<string, string> = { alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
-const PRIO_W: Record<string, number> = { alta: 0, media: 1, baja: 2 };
+const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
+const PRIO_W: Record<string, number> = { crítica: -1, alta: 0, media: 1, baja: 2 };
 const TAB_TITLES: Record<Tab, [string, string]> = {
   dash: ["Dashboard", "Resumen ejecutivo en vivo"],
   proj: ["Proyectos", "Kanban · Lista · Scrumban"],
@@ -232,7 +232,7 @@ function buildOrbitSvg(projects: Project[]): string {
   defs += "</defs>";
   let nodes = "";
   Object.values(pos).forEach(o => {
-    const rad = o.p.prio === "alta" ? 10 : o.p.prio === "media" ? 8 : 6.5;
+    const rad = o.p.prio === "crítica" ? 12 : o.p.prio === "alta" ? 10 : o.p.prio === "media" ? 8 : 6.5;
     const lbl = (o.p.client || o.p.name).slice(0, 16);
     const lx = o.x > W - 95 ? -1 : 1;
     nodes += `<g class="nn-node" data-id="${o.p.id}" transform="translate(${o.x},${o.y})"><circle class="halo" r="${rad+7}" fill="${o.color}" opacity=".12"/><circle class="n-dot" r="${rad}" fill="${o.color}" fill-opacity=".9" stroke="${o.color}" stroke-width="1.5" filter="url(#nglow)"/><text class="lbl" x="${lx*(rad+9)}" y="3.5" text-anchor="${lx>0?"start":"end"}" font-family="IBM Plex Mono" font-size="8.5" fill="var(--text)" stroke="var(--bg2)" stroke-width="3" paint-order="stroke">${esc(lbl)}</text><title>${esc(o.p.name)} — ${esc(o.p.client||"")}</title></g>`;
@@ -915,18 +915,26 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [extractingProject, setExtractingProject] = useState(false);
   const [scrumLoading, setScrumLoading] = useState(false);
   const [scrumProposed, setScrumProposed] = useState<Array<{ title: string; crit: string; notes: string; selected: boolean }>>([]);
+  const [projPrefilledByAI, setProjPrefilledByAI] = useState(false);
   const projPreFillRef = useRef<Record<string, string>>({});
+  const lastScrumProjIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
       if (p) { setProgVal(p.prog); setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
+      // Reset Scrum proposals when switching to a different project
+      if (lastScrumProjIdRef.current !== (sheet as { id: string }).id) {
+        setScrumProposed([]); setScrumLoading(false);
+        lastScrumProjIdRef.current = (sheet as { id: string }).id;
+      }
     }
     if (sheet?.kind === "new-proj") {
       const pf = projPreFillRef.current;
       const hasPrefill = Object.keys(pf).length > 0;
       setDriveFolderLink("");
       setProjNameDraft(hasPrefill ? (pf.name || "") : "");
+      setProjPrefilledByAI(hasPrefill);
       projPreFillRef.current = {}; // clear after reading so next fresh open starts blank
     }
     if (sheet?.kind === "contract") {
@@ -968,7 +976,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="field"><label>Título</label><input type="text" ref={R("t")} placeholder="Ej: Maquetar checkout" /></div>
       <div className="two field">
         <div><label>Proyecto</label><select ref={R("proj")}><option value="">— sin proyecto —</option>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-        <div><label>Criticidad</label><select ref={R("crit")}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
+        <div><label>Criticidad</label><select ref={R("crit")}><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
       </div>
       <div className="field"><label>Etapa</label><select ref={R("stage")}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
@@ -990,7 +998,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="field"><label>Título</label><input type="text" ref={R("t")} defaultValue={t.title} /></div>
       <div className="two field">
         <div><label>Proyecto</label><select ref={R("proj")} defaultValue={t.projectId}><option value="">— sin proyecto —</option>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-        <div><label>Criticidad</label><select ref={R("crit")} defaultValue={t.crit}>{["alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
+        <div><label>Criticidad</label><select ref={R("crit")} defaultValue={t.crit}>{["crítica","alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
       </div>
       <div className="field"><label>Etapa</label><select ref={R("stage")} defaultValue={t.stage}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={5} defaultValue={t.notes || ""} /></div>
@@ -1023,7 +1031,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <h2>Nuevo proyecto</h2>
         <button className="close-btn" onClick={onClose}>✕</button>
       </div>
-      {projNameDraft !== "" && Object.keys(pf).length === 0 && projNameDraft.length > 0 && (
+      {projPrefilledByAI && (
         <div style={{ margin: "0 0 10px", padding: "8px 12px", borderRadius: 8, background: "rgba(0,200,120,0.08)", border: "1px solid rgba(0,200,120,0.25)", fontSize: "0.78em", color: "#1db87b" }}>
           ✨ Pre-rellenado por IA desde el contrato — revisa y ajusta los campos antes de crear.
         </div>
@@ -1133,7 +1141,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       <span style={{ fontSize: "0.85em", fontWeight: 600, color: "var(--fg)" }}>{t.title}</span>
-                      <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: t.crit === "alta" ? "rgba(224,121,90,0.18)" : t.crit === "media" ? "rgba(201,164,74,0.18)" : "rgba(106,160,192,0.18)", color: CRIT_COLOR[t.crit] || "var(--muted)" }}>{t.crit}</span>
+                      <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: t.crit === "crítica" ? "rgba(204,34,34,0.15)" : t.crit === "alta" ? "rgba(224,121,90,0.18)" : t.crit === "media" ? "rgba(201,164,74,0.18)" : "rgba(106,160,192,0.18)", color: CRIT_COLOR[t.crit] || "var(--muted)" }}>{t.crit}</span>
                     </div>
                     {t.notes && <p style={{ margin: "3px 0 0", fontSize: "0.75em", color: "var(--muted)", lineHeight: 1.4 }}>{t.notes}</p>}
                   </div>
@@ -1150,7 +1158,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                     id: uid(),
                     title: t.title,
                     projectId: p.id,
-                    crit: (["alta","media","baja"].includes(t.crit) ? t.crit : "media") as Prio,
+                    crit: (["crítica","alta","media","baja"].includes(t.crit) ? t.crit : "media") as Prio,
                     stage: "backlog" as TaskStage,
                     stageSince: now,
                     stageTime: {},
@@ -1919,7 +1927,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
           {(["board","list","scrum"] as ProjView[]).map(v => <button key={v} className={projView === v ? "on" : ""} onClick={() => setProjView(v)}>{v === "board" ? "Kanban" : v === "list" ? "Lista" : "Scrum"}</button>)}
         </div>
         <select className="filter" value={filterPrio} onChange={e => setFilterPrio(e.target.value)}>
-          <option value="">Prioridad</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
+          <option value="">Prioridad</option><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
         </select>
       </div>
       {projView === "board" && (

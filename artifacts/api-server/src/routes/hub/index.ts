@@ -303,14 +303,14 @@ ${projectStr}
 Responde con un JSON que tenga exactamente esta forma:
 {
   "tasks": [
-    { "title": "...", "crit": "alta|media|baja", "notes": "..." },
+    { "title": "...", "crit": "crítica|alta|media|baja", "notes": "..." },
     ...
   ]
 }
 
 Reglas:
 - title: corto y accionable (máx 80 chars), empieza con verbo (Diseñar, Desarrollar, Configurar, Revisar, etc.)
-- crit: "alta" para tareas bloqueantes o del camino crítico, "media" para entregables principales, "baja" para ajustes finales
+- crit — usa EXACTAMENTE uno de estos cuatro valores: "crítica" (bloqueante, sin esto nada avanza), "alta" (entregable principal del proyecto), "media" (funcionalidad importante), "baja" (ajuste o mejora final)
 - notes: descripción breve de qué implica la tarea (máx 150 chars)
 - Cubre fases típicas: kickoff/briefing, diseño, desarrollo/implementación, contenido, pruebas/QA, entrega
 - Sé específico según el tipo de proyecto`,
