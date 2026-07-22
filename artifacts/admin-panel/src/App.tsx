@@ -1,5 +1,5 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, useContext, Component, lazy, Suspense, type ReactNode } from "react";
@@ -143,6 +143,27 @@ function AccessDeniedScreen({ user }: { user: AuthUser }) {
   );
 }
 
+function ReconnectingScreen() {
+  const qc = useQueryClient();
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center p-8 max-w-sm">
+        <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
+        <h2 className="text-lg font-semibold mb-1">Reconectando con el servidor…</h2>
+        <p className="text-sm text-muted-foreground mb-5">
+          El servidor está iniciando, por favor espera un momento.
+        </p>
+        <button
+          onClick={() => qc.invalidateQueries({ queryKey: ["auth-me"] })}
+          className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+        >
+          Reintentar ahora
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AuthLoader({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
 
@@ -155,10 +176,12 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     retry: (failureCount, error: any) => {
+      // 401 = sesión inválida, no reintentar
       if (error?.message === "No autenticado") return false;
-      return failureCount < 2;
+      // Errores de servidor/red durante arranque: hasta 8 intentos (~25 s)
+      return failureCount < 8;
     },
-    retryDelay: 1500,
+    retryDelay: (attempt) => Math.min(1500 * attempt, 5000),
     staleTime: 5 * 60 * 1000,
     // Mientras la cuenta está pendiente, re-consultar cada 30s para que al
     // aprobarla se desbloquee el panel sin recargar la página.
@@ -176,6 +199,11 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  // Error de servidor/red (no 401): mostrar pantalla de reconexión, no login
+  if (error && (error as Error).message !== "No autenticado") {
+    return <ReconnectingScreen />;
   }
 
   if (error || !user) {
