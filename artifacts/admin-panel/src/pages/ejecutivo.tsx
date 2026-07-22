@@ -917,6 +917,9 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [scrumProposed, setScrumProposed] = useState<Array<{ title: string; crit: string; notes: string; selected: boolean }>>([]);
   const [projPrefilledByAI, setProjPrefilledByAI] = useState(false);
   const projPreFillRef = useRef<Record<string, string>>({});
+  const [projectCreatedContractIds, setProjectCreatedContractIds] = useState<Set<string>>(new Set());
+  const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{ name: string; client: string; pendingPrefill: Record<string, string> } | null>(null);
+  const newProjFromContractIdRef = useRef<string | null>(null);
   const lastScrumProjIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -935,6 +938,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       setDriveFolderLink("");
       setProjNameDraft(hasPrefill ? (pf.name || "") : "");
       setProjPrefilledByAI(hasPrefill);
+      newProjFromContractIdRef.current = pf.fromContractId || null;
       projPreFillRef.current = {}; // clear after reading so next fresh open starts blank
     }
     if (sheet?.kind === "contract") {
@@ -942,6 +946,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
       else setPdfData(null);
       setChatHistory([]); setChatInput(""); setExtractingProject(false);
+      setDuplicateProjectWarning(null);
     }
     if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
     if (sheet?.kind === "new-contract-meeting") { setMeetingNotes(""); setMeetingExtracting(false); }
@@ -1055,6 +1060,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const name = projNameDraft.trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
         onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, createdAt: now, updatedAt: now }] });
+        if (newProjFromContractIdRef.current) {
+          const cid = newProjFromContractIdRef.current;
+          setProjectCreatedContractIds(prev => new Set([...prev, cid]));
+          newProjFromContractIdRef.current = null;
+        }
         onClose(); onNavigate("proj"); onToast("Proyecto creado");
       }}>Crear proyecto</button>
     </>);
@@ -1512,10 +1522,38 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <strong style={{ fontSize: "0.9em" }}>Crear Proyecto desde este contrato</strong>
         </div>
         <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>La IA lee los requerimientos y alcance del contrato y pre-rellena el formulario de nuevo proyecto.</p>
+
+        {/* Duplicate warning */}
+        {duplicateProjectWarning && (
+          <div style={{ marginBottom: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,180,0,0.08)", border: "1px solid rgba(255,180,0,0.35)", fontSize: "0.8em" }}>
+            <div style={{ fontWeight: 600, marginBottom: 6, color: "var(--fg)" }}>
+              ⚠️ Ya existe un proyecto similar
+            </div>
+            <div style={{ color: "var(--muted)", marginBottom: 10 }}>
+              <strong style={{ color: "var(--fg)" }}>"{duplicateProjectWarning.name}"</strong> del cliente <strong style={{ color: "var(--fg)" }}>{duplicateProjectWarning.client}</strong> ya tiene un proyecto creado. ¿Quieres crear uno de todas formas?
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => {
+                  projPreFillRef.current = { ...duplicateProjectWarning.pendingPrefill, fromContractId: c.id };
+                  setDuplicateProjectWarning(null);
+                  onOpenSheet({ kind: "new-proj" });
+                }}
+                style={{ flex: 1, padding: "7px 0", borderRadius: 6, border: "1px solid rgba(255,180,0,0.5)", background: "rgba(255,180,0,0.12)", color: "var(--fg)", fontWeight: 600, fontSize: "0.9em", cursor: "pointer" }}
+              >Crear de todas formas</button>
+              <button
+                onClick={() => setDuplicateProjectWarning(null)}
+                style={{ flex: 1, padding: "7px 0", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", fontWeight: 500, fontSize: "0.9em", cursor: "pointer" }}
+              >Cancelar</button>
+            </div>
+          </div>
+        )}
+
         <button
-          disabled={extractingProject}
+          disabled={extractingProject || projectCreatedContractIds.has(c.id)}
           onClick={async () => {
             setExtractingProject(true);
+            setDuplicateProjectWarning(null);
             try {
               const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/ai-extract-project`, {
                 method: "POST", credentials: "include",
@@ -1524,8 +1562,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               });
               if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al extraer datos"); return; }
               const data = await res.json() as { name?: string; client?: string; type?: string; prio?: string; due?: string; notes?: string };
-              // Pre-fill the new-proj sheet ref before opening it
-              projPreFillRef.current = {
+              const prefill: Record<string, string> = {
                 name: data.name || c.title || "",
                 client: data.client || c.client || "",
                 type: data.type || "",
@@ -1533,14 +1570,36 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 due: data.due || "",
                 notes: data.notes || c.notes || "",
               };
-              // Open the new-proj sheet so the user can review and confirm
+              // Check for duplicate: same client + similar name
+              const extractedClient = prefill.client.trim().toLowerCase();
+              const extractedName = prefill.name.trim().toLowerCase();
+              const duplicate = state.projects.find(p => {
+                const sameClient = p.client.trim().toLowerCase() === extractedClient;
+                if (!sameClient) return false;
+                const pName = p.name.trim().toLowerCase();
+                return pName.includes(extractedName.slice(0, Math.max(6, extractedName.length - 4))) ||
+                  extractedName.includes(pName.slice(0, Math.max(6, pName.length - 4)));
+              });
+              if (duplicate) {
+                setDuplicateProjectWarning({ name: duplicate.name, client: duplicate.client, pendingPrefill: prefill });
+                return;
+              }
+              // No duplicate — open the new-proj sheet directly
+              projPreFillRef.current = { ...prefill, fromContractId: c.id };
               onOpenSheet({ kind: "new-proj" });
             } catch { onToast("Error de conexión"); }
             finally { setExtractingProject(false); }
           }}
-          style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: extractingProject ? "var(--card-bg)" : "rgba(255,120,0,0.1)", color: "var(--accent, #ff7800)", fontWeight: 600, fontSize: "0.88em", cursor: extractingProject ? "not-allowed" : "pointer", transition: "background .2s" }}
+          style={{
+            width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)",
+            background: projectCreatedContractIds.has(c.id) ? "rgba(0,200,120,0.08)" : extractingProject ? "var(--card-bg)" : "rgba(255,120,0,0.1)",
+            color: projectCreatedContractIds.has(c.id) ? "#1db87b" : "var(--accent, #ff7800)",
+            fontWeight: 600, fontSize: "0.88em",
+            cursor: (extractingProject || projectCreatedContractIds.has(c.id)) ? "not-allowed" : "pointer",
+            transition: "background .2s",
+          }}
         >
-          {extractingProject ? "⏳ Analizando contrato con IA…" : "✨ Crear Proyecto desde contrato"}
+          {projectCreatedContractIds.has(c.id) ? "✓ Proyecto creado" : extractingProject ? "⏳ Analizando contrato con IA…" : "✨ Crear Proyecto desde contrato"}
         </button>
       </div>
 
