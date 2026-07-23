@@ -166,6 +166,7 @@ function AccessDeniedScreen({ user }: { user: AuthUser }) {
     } catch {
       // Ignorar: igual redirigimos al login.
     }
+    clearSessionHint();
     window.location.href = "/";
   };
   return (
@@ -209,6 +210,18 @@ function ReconnectingScreen() {
   );
 }
 
+const SESSION_HINT_KEY = "wm_auth_hint";
+
+function setSessionHint() {
+  try { localStorage.setItem(SESSION_HINT_KEY, "1"); } catch {}
+}
+function clearSessionHint() {
+  try { localStorage.removeItem(SESSION_HINT_KEY); } catch {}
+}
+function hasSessionHint() {
+  try { return !!localStorage.getItem(SESSION_HINT_KEY); } catch { return false; }
+}
+
 function AuthLoader({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
 
@@ -218,13 +231,24 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
       if (res.status === 401) throw new Error("No autenticado");
       if (!res.ok) throw new Error(`server_error_${res.status}`);
-      return res.json();
+      const data = await res.json();
+      setSessionHint();
+      return data;
     },
     retry: (failureCount, error: any) => {
-      if (error?.message === "No autenticado") return false;
+      if (error?.message === "No autenticado") {
+        // Si el usuario estaba autenticado previamente, reintentamos hasta 4 veces
+        // para cubrir el caso de un reinicio de servidor (el servidor puede devolver
+        // 401 transitoriamente mientras la sesión PG se inicializa).
+        if (hasSessionHint() && failureCount < 4) return true;
+        return false;
+      }
       return failureCount < 8;
     },
-    retryDelay: (attempt) => Math.min(1500 * attempt, 5000),
+    retryDelay: (attempt, error: any) => {
+      if ((error as Error)?.message === "No autenticado") return 3000;
+      return Math.min(1500 * attempt, 5000);
+    },
     staleTime: 5 * 60 * 1000,
     refetchInterval: (query) =>
       query.state.data?.approvalStatus === "pending" ? 30_000 : false,

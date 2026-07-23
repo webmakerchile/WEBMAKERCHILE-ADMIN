@@ -2822,6 +2822,7 @@ export default function EjecutivoPage() {
       await fetch(`${HUB_API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
     } catch { /* ignore */ }
     clearHubStorage();
+    try { localStorage.removeItem("wm_auth_hint"); } catch {}
     queryClient.invalidateQueries({ queryKey: ["auth-me"] });
     window.location.reload();
   };

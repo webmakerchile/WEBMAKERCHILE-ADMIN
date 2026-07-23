@@ -128,7 +128,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } catch {}
     try {
       for (const key of Object.keys(localStorage)) {
-        if (key.startsWith("wm_hub")) localStorage.removeItem(key);
+        if (key.startsWith("wm_hub") || key === "wm_auth_hint") localStorage.removeItem(key);
       }
     } catch {}
     queryClient.invalidateQueries({ queryKey: ["auth-me"] });
