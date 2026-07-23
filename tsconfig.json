@@ -4,6 +4,9 @@
   "files": [],
   "references": [
     {
+      "path": "./lib/areas"
+    },
+    {
       "path": "./lib/db"
     },
     {

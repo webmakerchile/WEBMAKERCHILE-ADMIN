@@ -7,8 +7,15 @@ import { users, hubState, hubTasks } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
 async function runDataMigrations() {
-  await db.update(users).set({ teamRole: "editora" }).where(eq(users.teamRole, "editor"));
-  await db.update(users).set({ teamRole: "ceo" }).where(eq(users.teamRole, "reviewer"));
+  // Migrate legacy area values to the new 4-area system.
+  // Any value not in ["ceo","ejecutivo","edicion","marketing"] becomes "ceo"
+  // so no user is accidentally locked out. Reassign manually after deploy.
+  const { sql } = await import("drizzle-orm");
+  await db.execute(sql`
+    UPDATE users
+    SET team_role = 'ceo'
+    WHERE team_role NOT IN ('ceo', 'ejecutivo', 'edicion', 'marketing')
+  `);
   await migrateHubTasksFromBlob();
 }
 

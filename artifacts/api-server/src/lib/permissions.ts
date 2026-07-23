@@ -1,27 +1,25 @@
 import { type Request, type Response, type NextFunction } from "express";
+import { type Area, AREAS } from "@workspace/areas";
 
-export type TeamRole = "ceo" | "editora" | "programador" | "publicista" | "rrhh";
+/** @deprecated Use Area from @workspace/areas instead. Kept for backward compatibility. */
+export type TeamRole = Area;
 
-export const TEAM_ROLES: readonly TeamRole[] = [
-  "ceo",
-  "editora",
-  "programador",
-  "publicista",
-  "rrhh",
-] as const;
+/** @deprecated Use AREAS from @workspace/areas instead. */
+export const TEAM_ROLES: readonly TeamRole[] = AREAS;
 
+/** @deprecated Use AREA_LABELS from @workspace/areas instead. */
 export const TEAM_ROLE_LABELS: Record<TeamRole, string> = {
   ceo: "CEO",
-  editora: "Editora",
-  programador: "Programador",
-  publicista: "Publicista",
-  rrhh: "RRHH",
+  ejecutivo: "Ejecutivo",
+  edicion: "Edición",
+  marketing: "Marketing",
 };
 
 /**
  * Express middleware factory that restricts access to users with one of the
- * given teamRoles. Superadmins (role === "superadmin") always bypass the check.
+ * given teamRoles/areas. Superadmins (role === "superadmin") always bypass.
  * Mount AFTER requireAuth + requireApproved.
+ * @deprecated Prefer requireArea from ./require-area for new routes.
  */
 export function requireRole(...roles: TeamRole[]) {
   return (req: Request, res: Response, next: NextFunction): void => {

@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq, desc, ne } from "drizzle-orm";
-import { TEAM_ROLES, type TeamRole } from "../../lib/permissions";
+import { AREAS, type Area } from "@workspace/areas";
 
 const router: IRouter = Router();
 
@@ -68,27 +68,32 @@ router.patch("/admin/users/:id/approval", async (req: Request, res: Response) =>
   res.json(updated);
 });
 
+/**
+ * PATCH /admin/users/:id/team-role
+ * Assigns an area to a user. Only CEO or superadmin can call this.
+ * Valid values: ceo | ejecutivo | edicion | marketing
+ */
 router.patch("/admin/users/:id/team-role", async (req: Request, res: Response) => {
   if (!isCeoOrSuperAdmin(req)) {
-    res.status(403).json({ error: "Solo el CEO o super-admin puede asignar roles de equipo" });
+    res.status(403).json({ error: "Solo el CEO o super-admin puede asignar áreas" });
     return;
   }
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const me = req.user as any;
-  if (id === me.id) { res.status(400).json({ error: "No puedes cambiar tu propio rol de equipo" }); return; }
+  if (id === me.id) { res.status(400).json({ error: "No puedes cambiar tu propia área" }); return; }
 
   const body = req.body as { teamRole?: unknown };
   const teamRole = typeof body.teamRole === "string" ? body.teamRole : "";
-  if (!(TEAM_ROLES as readonly string[]).includes(teamRole)) {
-    res.status(400).json({ error: `Rol inválido. Use: ${TEAM_ROLES.join(", ")}` });
+  if (!(AREAS as readonly string[]).includes(teamRole)) {
+    res.status(400).json({ error: `Área inválida. Use: ${AREAS.join(", ")}` });
     return;
   }
 
   const [updated] = await db
     .update(users)
-    .set({ teamRole: teamRole as TeamRole })
+    .set({ teamRole: teamRole as Area })
     .where(eq(users.id, id))
     .returning({ id: users.id, email: users.email, teamRole: users.teamRole });
 

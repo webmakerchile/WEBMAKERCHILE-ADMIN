@@ -28,6 +28,7 @@ import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hubTasksRouter from "./hub/tasks";
 import adminUsersRouter from "./admin-users";
+import { requireArea } from "../lib/require-area";
 
 const router: IRouter = Router();
 
@@ -35,17 +36,29 @@ router.use(healthRouter);
 router.use(geminiRouter);
 router.use(driveRouter);
 router.use(contentRouter);
+
+// Studio + transcriber: edicion area only (+ ceo/superadmin bypassed inside requireArea)
+router.use("/studio", requireArea("ceo", "edicion"));
 router.use(studioRouter);
+router.use("/transcriber", requireArea("ceo", "edicion"));
+router.use(transcriberRouter);
+
 router.use(youtubeRouter);
 router.use(tiktokRouter);
 router.use(instagramRouter);
 router.use(linkedinRouter);
 router.use(xRouter);
 router.use(facebookRouter);
+
+// Community + analytics + inspirations: marketing area only
+router.use("/community", requireArea("ceo", "marketing"));
 router.use(communityRouter);
-router.use(ideasRouter);
+router.use("/analytics", requireArea("ceo", "marketing"));
 router.use(analyticsRouter);
+router.use("/inspirations", requireArea("ceo", "marketing"));
 router.use(inspirationsRouter);
+
+router.use(ideasRouter);
 router.use(onboardingRouter);
 router.use(savedViewsRouter);
 router.use(socialRouter);
@@ -54,12 +67,15 @@ router.use(notificationsRouter);
 router.use(collaborationRouter);
 router.use(connectionsRouter);
 router.use(settingsRouter);
-router.use(transcriberRouter);
 router.use(credentialsRouter);
 router.use(calendarRouter);
+
+// Hub routes: ejecutivo area only
 // hubTasksRouter must be before hubRouter so /hub/tasks/* is NOT caught by the CEO middleware
+router.use("/hub", requireArea("ceo", "ejecutivo"));
 router.use(hubTasksRouter);
 router.use(hubRouter);
+
 router.use(adminUsersRouter);
 
 export default router;

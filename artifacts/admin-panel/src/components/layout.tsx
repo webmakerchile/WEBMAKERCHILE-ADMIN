@@ -38,6 +38,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { InstallBanner } from "@/components/install-banner";
 import { useLang } from "@/lib/lang";
+import { areaCanAccessPage, toArea } from "@workspace/areas";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -47,6 +48,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t, toggleLang, lang } = useLang();
+
+  const userArea = toArea(user?.teamRole);
 
   const navSections: NavSection[] = [
     {
@@ -81,8 +84,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
     },
   ];
 
-  // The mobile bottom-nav shows the first 5 items (the "Contenido" section).
-  const navItems = navSections.flatMap((s) => s.items);
+  // Filter nav items to only those accessible for the current user's area.
+  const filteredNavSections = navSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => areaCanAccessPage(userArea, item.href)),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  // The mobile bottom-nav shows the first 5 accessible items.
+  const navItems = filteredNavSections.flatMap((s) => s.items);
 
   // Prefix-aware active state so nested routes highlight their parent item
   // (e.g. /campanas/:id lights up Biblioteca). "/" only matches exactly.
@@ -163,7 +174,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">
-          {navSections.map((section) => (
+          {filteredNavSections.map((section) => (
             <div key={section.label}>
               <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                 {section.label}
@@ -280,7 +291,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </div>
 
                 <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">
-                  {navSections.map((section) => (
+                  {filteredNavSections.map((section) => (
                     <div key={section.label}>
                       <p className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                         {section.label}
@@ -389,16 +400,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <InstallBanner />
 
-      {/* Hub Ejecutivo FAB — visible only for CEO */}
-      {location !== "/ejecutivo" && user?.teamRole === "ceo" && <Link
-        href="/ejecutivo"
-        title={t.navHub}
-        className="fixed bottom-20 lg:bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"
-      >
-        <LayoutGrid className="w-4 h-4 text-primary flex-shrink-0" />
-        <span>{t.navHub}</span>
-        <ChevronRight className="w-3.5 h-3.5 opacity-50 flex-shrink-0" />
-      </Link>}
+      {/* Hub Ejecutivo FAB — visible for CEO and Ejecutivo */}
+      {location !== "/ejecutivo" && (userArea === "ceo" || userArea === "ejecutivo") && (
+        <Link
+          href="/ejecutivo"
+          title={t.navHub}
+          className="fixed bottom-20 lg:bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"
+        >
+          <LayoutGrid className="w-4 h-4 text-primary flex-shrink-0" />
+          <span>{t.navHub}</span>
+          <ChevronRight className="w-3.5 h-3.5 opacity-50 flex-shrink-0" />
+        </Link>
+      )}
     </div>
   );
 }

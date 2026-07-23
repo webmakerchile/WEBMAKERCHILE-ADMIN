@@ -172,6 +172,9 @@ importers:
       '@sentry/react':
         specifier: ^8.55.2
         version: 8.55.2(react@19.1.0)
+      '@workspace/areas':
+        specifier: workspace:*
+        version: link:../../lib/areas
       jspdf:
         specifier: ^4.2.1
         version: 4.2.1
@@ -398,6 +401,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/areas':
+        specifier: workspace:*
+        version: link:../../lib/areas
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
@@ -705,6 +711,8 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/areas: {}
 
   lib/db:
     dependencies:

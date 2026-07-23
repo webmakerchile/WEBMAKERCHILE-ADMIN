@@ -7,8 +7,8 @@ export const users = pgTable("users", {
   name: text("name"),
   picture: text("picture"),
   role: text("role").notNull().default("admin"),
-  /** Collaboration role: 'ceo' | 'editora' | 'programador' | 'publicista' | 'rrhh'. Default: 'editora'. */
-  teamRole: text("team_role").notNull().default("editora"),
+  /** User area (access zone): 'ceo' | 'ejecutivo' | 'edicion' | 'marketing'. Default: 'edicion'. Full definition in @workspace/areas. */
+  teamRole: text("team_role").notNull().default("edicion"),
   googleAccessToken: text("google_access_token"),
   googleRefreshToken: text("google_refresh_token"),
   tiktokOpenId: text("tiktok_open_id"),
