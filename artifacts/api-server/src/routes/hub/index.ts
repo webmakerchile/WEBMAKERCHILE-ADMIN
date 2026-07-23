@@ -6,8 +6,11 @@ import { google } from "googleapis";
 import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
 import { z } from "zod";
+import { requireRole } from "../../lib/permissions";
 
 const router: IRouter = Router();
+
+router.use(requireRole("ceo"));
 
 // Estructura mínima del blob hub_state.data que persiste el Hub Ejecutivo
 // (ver HubState en admin-panel/src/pages/ejecutivo.tsx). Cada colección es un

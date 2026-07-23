@@ -114,6 +114,23 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   );
 }
 
+function CeoRoute({ children }: { children: ReactNode }) {
+  const user = useAuth();
+  if (!user) return null;
+  if (user.role !== "superadmin" && user.teamRole !== "ceo") {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center">
+        <div className="text-center p-8 max-w-sm">
+          <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+          <h2 className="text-lg font-semibold mb-1">Acceso restringido</h2>
+          <p className="text-sm text-muted-foreground">Esta sección es exclusiva para el CEO.</p>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 function AccessDeniedScreen({ user }: { user: AuthUser }) {
   const handleLogout = async () => {
     try {
@@ -286,7 +303,7 @@ function Router() {
         <RouteShell name="ajustes"><AjustesPage /></RouteShell>
       </Route>
       <Route path="/ejecutivo">
-        <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
+        <CeoRoute><RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell></CeoRoute>
       </Route>
       <Route component={NotFound} />
     </Switch>

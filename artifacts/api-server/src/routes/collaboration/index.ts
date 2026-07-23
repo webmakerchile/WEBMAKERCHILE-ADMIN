@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { comments, reviews, users, videos } from "@workspace/db/schema";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createNotification } from "../../lib/notifications";
+import { TEAM_ROLES, type TeamRole } from "../../lib/permissions";
 
 const router: IRouter = Router();
 
@@ -54,16 +55,16 @@ router.get("/team/members", async (req, res) => {
 router.patch("/team/members/:id/role", async (req, res) => {
   const me = getUser(req);
   if (!me) return unauthorized(res);
-  // Only reviewers can promote/demote others.
+  // Only CEO can promote/demote others via this route.
   const [meRow] = await db.select().from(users).where(eq(users.id, me.id)).limit(1);
-  if (!meRow || meRow.teamRole !== "reviewer") {
-    res.status(403).json({ error: "Solo un revisor puede cambiar roles" });
+  if (!meRow || meRow.teamRole !== "ceo") {
+    res.status(403).json({ error: "Solo el CEO puede cambiar roles de equipo" });
     return;
   }
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return badRequest(res, "ID inválido");
   const role = String(req.body?.teamRole || "");
-  if (role !== "editor" && role !== "reviewer") return badRequest(res, "Rol inválido");
+  if (!(TEAM_ROLES as readonly string[]).includes(role)) return badRequest(res, `Rol inválido. Use: ${TEAM_ROLES.join(", ")}`);
   const [row] = await db
     .update(users)
     .set({ teamRole: role })
@@ -229,7 +230,6 @@ router.post("/content/videos/:videoId/reviews", async (req, res) => {
   if (!video) return badRequest(res, "Video no encontrado");
   const [reviewer] = await db.select({ id: users.id, teamRole: users.teamRole }).from(users).where(eq(users.id, assignedTo)).limit(1);
   if (!reviewer) return badRequest(res, "Revisor no encontrado");
-  if (reviewer.teamRole !== "reviewer") return badRequest(res, "El usuario seleccionado no tiene rol de revisor");
 
   // Resolve any pending reviews for this video before creating a new one.
   await db
@@ -287,8 +287,8 @@ router.post("/content/videos/:videoId/reviews/decision", async (req, res) => {
       res.status(403).json({ error: "Solo el revisor asignado puede decidir" });
       return;
     }
-  } else if (meRow.teamRole !== "reviewer") {
-    res.status(403).json({ error: "Necesitas rol de revisor para aprobar" });
+  } else if (meRow.teamRole !== "ceo") {
+    res.status(403).json({ error: "Necesitas rol de CEO para aprobar sin asignación activa" });
     return;
   }
 

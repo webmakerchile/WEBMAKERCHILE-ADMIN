@@ -7,8 +7,8 @@ export const users = pgTable("users", {
   name: text("name"),
   picture: text("picture"),
   role: text("role").notNull().default("admin"),
-  /** Collaboration role: 'editor' (default) or 'reviewer' (can approve videos). */
-  teamRole: text("team_role").notNull().default("editor"),
+  /** Collaboration role: 'ceo' | 'editora' | 'programador' | 'publicista' | 'rrhh'. Default: 'editora'. */
+  teamRole: text("team_role").notNull().default("editora"),
   googleAccessToken: text("google_access_token"),
   googleRefreshToken: text("google_refresh_token"),
   tiktokOpenId: text("tiktok_open_id"),
