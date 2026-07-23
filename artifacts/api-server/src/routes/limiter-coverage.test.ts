@@ -39,6 +39,7 @@ const MUST_AI = [
   "/api/hub/contracts/extract-pdf",
   "/api/hub/contracts/extract-from-meeting",
   "/api/hub/contracts/ai-chat",
+  "/api/cotizaciones/generar",
 ];
 
 const MUST_PUBLISH = [
@@ -61,6 +62,7 @@ const MUST_UPLOAD = [
   "/api/content/videos/123/upload-video",
   "/api/content/videos/123/link-drive-video",
   "/api/transcriber/transcribe",
+  "/api/cotizaciones/pdf",
 ];
 
 describe("Rate-limit regex coverage in app.ts", () => {

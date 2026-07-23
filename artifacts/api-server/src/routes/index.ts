@@ -27,6 +27,7 @@ import credentialsRouter from "./credentials";
 import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hubTasksRouter from "./hub/tasks";
+import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
 import { requireArea } from "../lib/require-area";
 
@@ -75,6 +76,10 @@ router.use(calendarRouter);
 router.use("/hub", requireArea("ceo", "ejecutivo", "rrhh"));
 router.use(hubTasksRouter);
 router.use(hubRouter);
+
+// Cotizaciones: generador de cotizaciones PDF (hub ejecutivo)
+router.use("/cotizaciones", requireArea("ceo", "ejecutivo"));
+router.use("/cotizaciones", cotizacionesRouter);
 
 router.use(adminUsersRouter);
 

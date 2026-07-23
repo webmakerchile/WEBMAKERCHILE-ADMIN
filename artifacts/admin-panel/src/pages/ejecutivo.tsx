@@ -489,270 +489,6 @@ function extractDriveFileId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-async function buildContractPdf(wiz: WizData): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const W = 210, H = 297, ml = 14, mr = W - 14;
-  const IVA = 0.19;
-
-  const clrDark = () => doc.setTextColor(13, 23, 46);
-  const clrOrange = () => doc.setTextColor(234, 88, 12);
-  const clrWhite = () => doc.setTextColor(255, 255, 255);
-  const clrDim = () => doc.setTextColor(120, 120, 120);
-  const clrFaint = () => doc.setTextColor(200, 200, 200);
-
-  const validMods = wiz.modules.filter(m => m.name.trim() !== "");
-
-  function pageFooter(n: number, total: number) {
-    doc.setFillColor(13, 23, 46);
-    doc.rect(0, H - 18, W, 18, "F");
-    clrWhite();
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5);
-    doc.text(`WEBMAKER LATAM · COTIZACIÓN · ${(wiz.client || "CLIENTE").toUpperCase()}`, ml, H - 9);
-    clrFaint();
-    doc.setFont("helvetica", "normal");
-    doc.text(`${n} / ${total}`, mr, H - 9, { align: "right" });
-  }
-
-  // ===== COVER =====
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 78, "F");
-  clrWhite();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text("Diseño y desarrollo de plataformas", ml, 11);
-  doc.setFont("helvetica", "bold");
-  doc.text("COTIZACIÓN COMERCIAL", mr, 11, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  const monthYear = wiz.date
-    ? new Date(wiz.date + "T12:00:00").toLocaleDateString("es-CL", { month: "long", year: "numeric" }).toUpperCase()
-    : new Date().toLocaleDateString("es-CL", { month: "long", year: "numeric" }).toUpperCase();
-  doc.text(monthYear, mr, 19, { align: "right" });
-  doc.setDrawColor(234, 88, 12);
-  doc.setLineWidth(0.4);
-  doc.line(ml, 27, mr, 27);
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text(`COTIZACIÓN · ${(wiz.client || "CLIENTE").toUpperCase()}`, ml, 37);
-  clrWhite();
-  doc.setFontSize(17);
-  const titleLines = doc.splitTextToSize((wiz.project || "Sin título").toUpperCase(), mr - ml - 5);
-  doc.text(titleLines.slice(0, 3), ml, 49);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  const scopeShort = doc.splitTextToSize(wiz.scope || "", mr - ml - 5);
-  const titleBottom = 49 + Math.min(titleLines.length, 3) * 7;
-  if (titleBottom < 74 && wiz.scope) doc.text(scopeShort.slice(0, 2), ml, Math.min(titleBottom + 3, 70));
-
-  // Grid cards
-  const gridY = 90;
-  doc.setFillColor(245, 247, 250);
-  doc.roundedRect(ml, gridY, (mr - ml) / 2 - 4, 48, 2, 2, "F");
-  doc.roundedRect(ml + (mr - ml) / 2 + 4, gridY, (mr - ml) / 2 - 4, 48, 2, 2, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text("PREPARADO PARA", ml + 5, gridY + 8);
-  doc.text("ALCANCE DE LA COTIZACIÓN", ml + (mr - ml) / 2 + 9, gridY + 8);
-  clrDark();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.text(wiz.client || "—", ml + 5, gridY + 18);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text(wiz.advisor || "WebMaker Latam", ml + 5, gridY + 27);
-  clrDark();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text(`${validMods.length} módulo${validMods.length !== 1 ? "s" : ""}`, ml + (mr - ml) / 2 + 9, gridY + 18);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  const alcLines = doc.splitTextToSize(validMods.map(m => m.name).join(", ") || wiz.scope.slice(0, 80) || "—", (mr - ml) / 2 - 18);
-  doc.text(alcLines.slice(0, 3), ml + (mr - ml) / 2 + 9, gridY + 27);
-
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, H - 18, W, 18, "F");
-  clrWhite();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text("WEBMAKER LATAM · WEBMAKERLATAM.COM", ml, H - 9);
-  clrFaint();
-  doc.setFont("helvetica", "normal");
-  doc.text("1 / 4", mr, H - 9, { align: "right" });
-  clrDim();
-  doc.text("agencia@webmakerlatam.com", mr, H - 15, { align: "right" });
-
-  // ===== PAGE 2: QUÉ SE COTIZA =====
-  doc.addPage();
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 14, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("01 · QUÉ SE COTIZA", ml, 10);
-  clrFaint();
-  doc.setFontSize(72);
-  doc.text("01", mr + 2, 72, { align: "right" });
-  clrDark();
-  doc.setFontSize(13);
-  doc.setFont("helvetica", "bold");
-  doc.text(wiz.project || "Proyecto", ml, 28);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  const scopeLines2 = doc.splitTextToSize(wiz.scope || "Descripción del servicio.", mr - ml - 5);
-  doc.text(scopeLines2.slice(0, 7), ml, 37);
-  let y2 = 37 + Math.min(scopeLines2.length, 7) * 4.5 + 10;
-  validMods.forEach((m, i) => {
-    if (y2 > H - 30) { doc.addPage(); y2 = 22; }
-    doc.setFillColor(234, 88, 12);
-    doc.circle(ml + 1.5, y2 - 1, 1.5, "F");
-    clrDark();
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text(`${i + 1} · ${m.name}`, ml + 6, y2);
-    y2 += 6;
-    if (m.desc) {
-      clrDim();
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      const dl = doc.splitTextToSize(m.desc, mr - ml - 10);
-      doc.text(dl.slice(0, 2), ml + 6, y2);
-      y2 += Math.min(dl.length, 2) * 4.5 + 3;
-    } else { y2 += 2; }
-  });
-  pageFooter(2, 4);
-
-  // ===== PAGE 3: INVERSIÓN =====
-  doc.addPage();
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 14, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("02 · INVERSIÓN", ml, 10);
-  clrFaint();
-  doc.setFontSize(72);
-  doc.text("02", mr + 2, 72, { align: "right" });
-  clrDark();
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Inversión por módulo.", ml, 26);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text("Valores en pesos chilenos (CLP), IVA incluido y desglosado:", ml, 33);
-
-  let iy = 40;
-  const priceMods = validMods.filter(m => m.price > 0);
-  if (priceMods.length === 0) {
-    clrDim(); doc.setFontSize(8.5);
-    doc.text("Los valores se coordinarán según el alcance definido.", ml, iy + 8);
-    iy += 20;
-  } else {
-    priceMods.forEach((m, i) => {
-      if (iy > H - 60) { doc.addPage(); iy = 22; }
-      const neto = m.price, iva = Math.round(neto * IVA), total = neto + iva;
-      doc.setFillColor(255, 247, 237);
-      doc.roundedRect(ml, iy, mr - ml, 30, 2, 2, "F");
-      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-      doc.text(`${i + 1} · ${m.name}`, ml + 4, iy + 7);
-      if (m.desc) {
-        clrDim(); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
-        doc.text(m.desc.slice(0, 90), ml + 4, iy + 13);
-      }
-      const c1 = ml + 4, c2 = ml + (mr - ml) / 3, c3 = ml + (mr - ml) * 2 / 3;
-      clrOrange(); doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
-      doc.text("NETO", c1, iy + 20); doc.text("IVA 19%", c2, iy + 20); doc.text("TOTAL", c3, iy + 20);
-      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-      doc.text(fmtCLP(neto), c1, iy + 27); doc.text(fmtCLP(iva), c2, iy + 27); doc.text(fmtCLP(total), c3, iy + 27);
-      iy += 36;
-    });
-    if (iy > H - 50) { doc.addPage(); iy = 22; }
-    const tNeto = priceMods.reduce((a, m) => a + m.price, 0), tIva = Math.round(tNeto * IVA), tTotal = tNeto + tIva;
-    doc.setFillColor(13, 23, 46);
-    doc.roundedRect(ml, iy, mr - ml, 30, 2, 2, "F");
-    clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-    doc.text("TOTAL PROYECTO (IVA INCLUIDO)", ml + 4, iy + 7);
-    const c1 = ml + 4, c2 = ml + (mr - ml) / 3, c3 = ml + (mr - ml) * 2 / 3;
-    doc.setFontSize(6.5);
-    doc.text("NETO", c1, iy + 16); doc.text("IVA 19%", c2, iy + 16); doc.text("TOTAL", c3, iy + 16);
-    doc.setFontSize(10);
-    doc.text(fmtCLP(tNeto), c1, iy + 25); doc.text(fmtCLP(tIva), c2, iy + 25); doc.text(fmtCLP(tTotal), c3, iy + 25);
-  }
-  pageFooter(3, 4);
-
-  // ===== PAGE 4: PAGO =====
-  doc.addPage();
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 14, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("03 · FORMA DE PAGO Y MENSUALIDAD", ml, 10);
-  clrFaint();
-  doc.setFontSize(72);
-  doc.text("03", mr + 2, 72, { align: "right" });
-  clrDark();
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text(`Pago ${wiz.downPct}% / ${100 - wiz.downPct}%.`, ml, 26);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text("Simple y directo, sin sorpresas:", ml, 33);
-
-  const priceMods2 = validMods.filter(m => m.price > 0);
-  const tNeto2 = priceMods2.reduce((a, m) => a + m.price, 0);
-  const tTotal2 = tNeto2 + Math.round(tNeto2 * IVA);
-  const initAmt = Math.round(tTotal2 * wiz.downPct / 100);
-  const delivAmt = tTotal2 - initAmt;
-  const bxY = 40, bxW = (mr - ml) / 2 - 5;
-
-  doc.setFillColor(234, 88, 12);
-  doc.roundedRect(ml, bxY, bxW, 44, 3, 3, "F");
-  clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(22);
-  doc.text(`${wiz.downPct}%`, ml + bxW / 2, bxY + 18, { align: "center" });
-  doc.setFontSize(8); doc.text("AL INICIAR", ml + bxW / 2, bxY + 27, { align: "center" });
-  if (tTotal2 > 0) { doc.setFontSize(10); doc.text(fmtCLP(initAmt), ml + bxW / 2, bxY + 37, { align: "center" }); }
-
-  doc.setFillColor(13, 23, 46);
-  doc.roundedRect(mr - bxW, bxY, bxW, 44, 3, 3, "F");
-  clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(22);
-  doc.text(`${100 - wiz.downPct}%`, mr - bxW / 2, bxY + 18, { align: "center" });
-  doc.setFontSize(8); doc.text("A LA ENTREGA", mr - bxW / 2, bxY + 27, { align: "center" });
-  if (tTotal2 > 0) { doc.setFontSize(10); doc.text(fmtCLP(delivAmt), mr - bxW / 2, bxY + 37, { align: "center" }); }
-
-  let py4 = bxY + 54;
-  if (wiz.monthly) {
-    clrOrange(); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-    doc.text("MENSUALIDAD (OPCIONAL)", ml, py4 + 6); py4 += 12;
-    if (wiz.monthlyPrice) {
-      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
-      doc.text(fmtCLP(Number(wiz.monthlyPrice)), ml, py4 + 6); py4 += 10;
-    }
-    clrDim(); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
-    const ml2 = doc.splitTextToSize(wiz.monthly, mr - ml - 10);
-    doc.text(ml2.slice(0, 3), ml, py4 + 6); py4 += Math.min(ml2.length, 3) * 4.5 + 8;
-  }
-  if (wiz.notes) {
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(ml, py4, mr - ml, 20, 2, 2, "F");
-    clrDim(); doc.setFont("helvetica", "italic"); doc.setFontSize(7.5);
-    const nl = doc.splitTextToSize(wiz.notes, mr - ml - 10);
-    doc.text(nl.slice(0, 3), ml + 5, py4 + 8);
-  }
-  clrDim(); doc.setFont("helvetica", "italic"); doc.setFontSize(9);
-  doc.text("Esta cotización queda abierta a los ajustes que definamos juntos.", W / 2, H - 38, { align: "center" });
-  doc.text("Quedamos atentos para cuando quieras ponerla en marcha.", W / 2, H - 31, { align: "center" });
-  pageFooter(4, 4);
-
-  return doc.output("blob");
-}
-
 /* ============================================================
    DRIVE FOLDER PICKER (for project sheets)
    ============================================================ */
@@ -957,6 +693,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [wiz, setWiz] = useState<WizData>(emptyWiz);
   const [aiExtracting, setAiExtracting] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [cotJson, setCotJson] = useState("");
+  const [cotHtml, setCotHtml] = useState<string | null>(null);
+  const [cotError, setCotError] = useState<string | null>(null);
+  const [cotLoading, setCotLoading] = useState(false);
+  const [cotShowJson, setCotShowJson] = useState(false);
   const [meetingNotes, setMeetingNotes] = useState("");
   const [meetingExtracting, setMeetingExtracting] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -1003,7 +744,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   }, [sheet, state.projects, state.contracts]);
 
   useEffect(() => {
-    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); }
+    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); setCotJson(""); setCotHtml(null); setCotError(null); setCotLoading(false); setCotShowJson(false); }
   }, [sheet?.kind]);
 
   const extractFromMeeting = async (notes: string, onFill: (data: Record<string, string>) => void) => {
@@ -1823,7 +1564,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 
   /* ---- Wizard: nuevo contrato desde cero ---- */
   if (sheet.kind === "new-contract-wizard") {
-    const WIZ_STEPS = ["Datos", "Módulos", "Pago"];
+    const WIZ_STEPS = ["Datos", "Módulos", "Pago", "Vista previa"];
     const tNeto = wiz.modules.reduce((a, m) => a + m.price, 0);
     const tIva = Math.round(tNeto * 0.19);
     const tTotal = tNeto + tIva;
@@ -1970,11 +1711,111 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
             <button className="save" onClick={() => setWizStep(2)}>← Atrás</button>
-            <button className="add-btn wiz-gen-btn" style={{ flex: 1 }} disabled={generatingPdf} onClick={async () => {
+            <button className="add-btn wiz-gen-btn" style={{ flex: 1 }} disabled={cotLoading} onClick={async () => {
               if (!wiz.client.trim() || !wiz.project.trim()) { onToast("Completa cliente y nombre del proyecto primero"); return; }
+              setCotLoading(true); setCotError(null);
+              try {
+                const validMods = wiz.modules.filter(m => m.name.trim() !== "");
+                const contexto = [
+                  `Cliente: ${wiz.client}`,
+                  `Proyecto: ${wiz.project}`,
+                  wiz.scope && `Alcance: ${wiz.scope}`,
+                  wiz.advisor && `Asesor responsable: ${wiz.advisor}`,
+                  wiz.monthly && `Mensualidad: ${wiz.monthly}`,
+                  wiz.notes && `Notas: ${wiz.notes}`,
+                  meetingNotes.trim() && `Notas de reunión:\n${meetingNotes.trim()}`,
+                ].filter(Boolean).join("\n");
+                const body: Record<string, unknown> = { contexto_cliente: contexto };
+                if (validMods.length > 0) body.modulos_sugeridos = validMods.map(m => m.desc ? `${m.name}: ${m.desc}` : m.name).join("; ");
+                if (validMods.length > 0 && validMods.length <= 4 && validMods.every(m => m.price > 0)) body.precios_netos = validMods.map(m => Math.round(m.price));
+                const mensualidadNeto = Math.round(Number(wiz.monthlyPrice) || 0);
+                if (mensualidadNeto > 0) body.mensualidad_neto = mensualidadNeto;
+                const pct = Math.round(wiz.downPct);
+                body.esquema_pago = pct >= 100 ? [{ porcentaje: 100, momento: "AL INICIAR" }]
+                  : pct <= 0 ? [{ porcentaje: 100, momento: "CONTRA ENTREGA" }]
+                  : [{ porcentaje: pct, momento: "AL INICIAR" }, { porcentaje: 100 - pct, momento: "CONTRA ENTREGA" }];
+                const res = await fetch(`${DRIVE_API_BASE}/cotizaciones/generar`, {
+                  method: "POST", credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+                const data = await res.json().catch(() => ({})) as { cotizacion?: unknown; html?: string | null; htmlError?: string | null; error?: string };
+                if (!res.ok || !data.cotizacion) {
+                  onToast(data.error || `Error generando la cotización (${res.status})`);
+                  return;
+                }
+                setCotJson(JSON.stringify(data.cotizacion, null, 2));
+                setCotHtml(data.html || null);
+                setCotError(data.htmlError || null);
+                setCotShowJson(!!data.htmlError);
+                setWizStep(4);
+              } catch (e: unknown) {
+                onToast("Error generando la cotización: " + (e instanceof Error ? e.message : "desconocido"));
+              } finally { setCotLoading(false); }
+            }}>{cotLoading ? "⏳ Generando cotización con IA…" : "✨ Generar cotización con IA"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* STEP 4: Vista previa (HTML del servidor) + PDF */}
+      {wizStep === 4 && (
+        <div className="wiz-body">
+          {cotHtml ? (
+            <iframe title="Vista previa de la cotización" srcDoc={cotHtml} sandbox="" style={{ width: "100%", height: "60vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
+          ) : (
+            <div className="wiz-price-hint" style={{ padding: 12, border: "1px solid var(--line)", borderRadius: 8 }}>
+              <span>Sin vista previa aún. {cotError ? "Corrige el JSON y actualiza la vista." : ""}</span>
+            </div>
+          )}
+          {cotError && <div style={{ color: "#dc2626", fontSize: "0.8em", marginTop: 8, whiteSpace: "pre-wrap" }}>{cotError}</div>}
+
+          <button className="save" style={{ marginTop: 10 }} onClick={() => setCotShowJson(v => !v)}>
+            {cotShowJson ? "Ocultar contenido editable" : "✏️ Editar contenido (JSON)"}
+          </button>
+          {cotShowJson && (
+            <div className="field" style={{ marginTop: 8 }}>
+              <textarea rows={14} value={cotJson} onChange={e => { setCotJson(e.target.value); setCotHtml(null); setCotError("Contenido editado — actualiza la vista previa para continuar"); }} style={{ fontFamily: "monospace", fontSize: "0.75em" }} spellCheck={false} />
+              <button className="save" style={{ marginTop: 6 }} disabled={cotLoading} onClick={async () => {
+                setCotLoading(true); setCotError(null);
+                try {
+                  let parsed: unknown;
+                  try { parsed = JSON.parse(cotJson); } catch { setCotError("El JSON no es válido (error de sintaxis)"); return; }
+                  const res = await fetch(`${DRIVE_API_BASE}/cotizaciones/preview`, {
+                    method: "POST", credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ cotizacion: parsed }),
+                  });
+                  const data = await res.json().catch(() => ({})) as { html?: string; error?: string; detalles?: string[] };
+                  if (!res.ok || !data.html) {
+                    setCotError([data.error, ...(data.detalles || [])].filter(Boolean).join("\n") || "No se pudo renderizar la vista previa");
+                    return;
+                  }
+                  setCotHtml(data.html); setCotError(null);
+                } catch (e: unknown) {
+                  setCotError("Error actualizando la vista: " + (e instanceof Error ? e.message : "desconocido"));
+                } finally { setCotLoading(false); }
+              }}>{cotLoading ? "⏳ Actualizando…" : "🔄 Actualizar vista previa"}</button>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button className="save" onClick={() => setWizStep(3)}>← Atrás</button>
+            <button className="add-btn wiz-gen-btn" style={{ flex: 1 }} disabled={generatingPdf || !cotHtml} onClick={async () => {
               setGeneratingPdf(true);
               try {
-                const blob = await buildContractPdf(wiz);
+                let parsed: { modulos?: Array<{ neto?: number }> };
+                try { parsed = JSON.parse(cotJson) as { modulos?: Array<{ neto?: number }> }; } catch { onToast("El JSON no es válido — corrígelo antes de generar el PDF"); return; }
+                const res = await fetch(`${DRIVE_API_BASE}/cotizaciones/pdf`, {
+                  method: "POST", credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ cotizacion: parsed }),
+                });
+                if (!res.ok) {
+                  const err = await res.json().catch(() => ({})) as { error?: string; detalles?: string[] };
+                  onToast([err.error, ...(err.detalles || [])].filter(Boolean).join(" · ") || `No se pudo generar el PDF (${res.status})`);
+                  return;
+                }
+                const blob = await res.blob();
                 const fname = `Cotizacion-${wiz.client.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
                 const fd = new FormData();
                 fd.append("file", new File([blob], fname, { type: "application/pdf" }));
@@ -1990,6 +1831,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
                   onToast("PDF descargado localmente (Drive no disponible)");
                 }
+                const sumNetos = (parsed.modulos || []).map(m => m.neto || 0).filter(n => n > 0).reduce((a, n) => a + n, 0);
+                const totalConIva = sumNetos + Math.round(sumNetos * 0.19);
                 const now = Date.now();
                 const issuedAt = wiz.date || new Date().toISOString().slice(0, 10);
                 let expiresAt = "";
@@ -1998,13 +1841,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   exp.setDate(exp.getDate() + wiz.validityDays);
                   expiresAt = exp.toISOString().slice(0, 10);
                 }
-                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
+                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: totalConIva > 0 ? fmtCLP(totalConIva) : (tTotal > 0 ? fmtCLP(tTotal) : ""), status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
                 onToast(pdfUrl ? "Contrato creado y PDF subido a Drive ✓" : "Contrato creado");
               } catch (e: unknown) {
                 onToast("Error generando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
               } finally { setGeneratingPdf(false); }
-            }}>{generatingPdf ? "⏳ Generando PDF…" : "✨ Generar contrato PDF"}</button>
+            }}>{generatingPdf ? "⏳ Generando PDF…" : "📄 Generar PDF y guardar contrato"}</button>
           </div>
         </div>
       )}

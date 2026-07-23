@@ -1,0 +1,251 @@
+Necesito que construyas (o integres a mi sistema existente de cotizaciones) un generador de cotizaciones en PDF que replique píxel a píxel el diseño del PDF adjunto (Cotizacion_MM_Moda.pdf). Ese PDF es la referencia visual absoluta: mismo layout, misma tipografía, mismos colores, mismos componentes. Lo único que cambia entre cotizaciones es el contenido, que será generado por un LLM (API de OpenAI/ChatGPT) a partir del contexto del cliente que yo le entregue.
+
+0. Regla de arquitectura (NO NEGOCIABLE)
+
+Esta es la regla más importante de todo el proyecto:
+
+El LLM genera SOLO contenido en JSON (textos y precios netos). El LLM NUNCA genera HTML, CSS, ni realiza cálculos matemáticos.
+La plantilla HTML/CSS es fija y está hardcodeada en el código. El JSON se inyecta en la plantilla.
+Todos los cálculos financieros los hace el servidor en TypeScript: IVA, totales, suma del proyecto, división de pagos y formato de moneda. Jamás el LLM.
+Si el JSON del LLM no pasa la validación, se reintenta automáticamente enviándole el error (máx. 2 reintentos).
+
+Motivo: en versiones anteriores el LLM omitía el IVA, ponía mensualidades en $0 o dividía mal los pagos. Con esta separación, eso es matemáticamente imposible.
+
+1. Stack y flujo
+Backend Node/Express + TypeScript (integrar a mi app existente si ya está corriendo).
+Render del PDF: plantilla HTML + CSS inyectada con los datos → Puppeteer → page.pdf({ format: 'A4', printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 } }).
+Dato: el PDF original fue generado con WeasyPrint desde HTML/CSS, por lo que el diseño es 100% reproducible con CSS de impresión. Puppeteer logra el mismo resultado en Node.
+Antes de generar el PDF, esperar document.fonts.ready para que las fuentes de Google Fonts estén cargadas.
+Flujo del endpoint POST /api/cotizaciones/generar:
+Recibe: { contexto_cliente: string, modulos_sugeridos?: string, precios_netos?: number[], mensualidad_neto?: number, esquema_pago?: [{porcentaje, momento}] } — contexto_cliente es texto libre: mi resumen de la reunión/conversación de WhatsApp con el cliente, con sus datos, números y dolores reales.
+Llama al LLM con el system prompt de la sección 7 → obtiene JSON.
+Valida con Zod (sección 6) + reglas de negocio. Si falla → reintenta con el error.
+Calcula todos los montos con el módulo financiero (sección 5).
+Renderiza la plantilla → Puppeteer → devuelve el PDF y lo guarda vinculado a la cotización en la base de datos.
+Debe existir también una vista previa HTML en el navegador (misma plantilla, antes de exportar) y la opción de editar el JSON manualmente y re-renderizar.
+2. Design tokens EXACTOS (extraídos del PDF original)
+css
+:root {
+  /* Colores medidos del PDF real — usar EXACTAMENTE estos */
+  --bg: #0A0A0A;            /* fondo de todas las páginas */
+  --surface: #141414;       /* fondo de cards */
+  --surface-2: #1B1B1B;     /* celdas internas (fila de precios dentro de una card) */
+  --border: #262626;        /* borde de cards estándar */
+  --accent: #E87B3C;        /* naranja de marca (NO usar #F97316 ni otro naranja) */
+  --accent-border: rgba(232, 123, 60, 0.35); /* borde de cards destacadas */
+  --accent-glow: #24150E;   /* tono del resplandor de la portada */
+  --text: #F2F2F0;          /* texto principal (blanco hueso, no blanco puro) */
+  --text-muted: #A3A3A0;    /* texto secundario / párrafos */
+  --text-dim: #6E6E6B;      /* footers, notas legales */
+}
+
+Tipografías (las exactas embebidas en el PDF original), cargar desde Google Fonts:
+
+html
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+Oswald (condensada): títulos de portada, títulos de sección, números grandes (stats, "50%", monto de mensualidad). Peso 600–700.
+IBM Plex Sans: párrafos, descripciones, títulos de cards. Peso 400 cuerpo, 700 títulos de card.
+IBM Plex Mono: TODOS los labels en mayúsculas (PREPARADO PARA, NETO, INCLUIDO, 01 · CONTEXTO), metadata del header, footers, números de página. Siempre con letter-spacing: 0.12em y text-transform: uppercase.
+3. Layout base de página
+css
+@page { size: A4; margin: 0; }
+.page {
+  width: 210mm;
+  height: 297mm;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  page-break-after: always;
+  padding: 18mm 16mm 22mm 16mm;
+  box-sizing: border-box;
+  font-family: 'IBM Plex Sans', sans-serif;
+  color: var(--text);
+}
+
+Footer de páginas interiores (2 a N−1), posicionado absoluto abajo:
+
+Izquierda: WEBMAKER LATAM · COTIZACIÓN · {EMPRESA EN MAYÚSCULAS} · {AÑO}
+Derecha: {n} / {total}
+IBM Plex Mono, 8pt, color --text-dim, letter-spacing 0.12em.
+
+Encabezado de sección (páginas 2 a N−1), en este orden:
+
+Label: 0{n} · {NOMBRE SECCIÓN} — Plex Mono 9pt; el número 0n en --accent, el resto en --text-muted.
+Título: Oswald 600, 26–28pt, color --text, en oración con punto final (ej: "Tienes la demanda. Falta quien responda de noche."). Max-width 85%.
+Línea intro: Plex Sans 11pt, --text-muted.
+4. Especificación página por página (replicar del PDF de ejemplo)
+PÁGINA 1 — PORTADA
+Glow: sobre el fondo, un radial-gradient naranja muy tenue centrado en la zona media-izquierda: radial-gradient(ellipse 60% 45% at 30% 45%, rgba(232,123,60,0.10), transparent 70%).
+Header (flex space-between):
+Izquierda: logo (imagen logo-webmaker.png que te adjunto, altura 34px — NO recrear el logo, usar el asset) + al lado texto en dos líneas "Diseño y desarrollo de plataformas", Plex Sans 9pt --text-muted.
+Derecha, alineado a la derecha, Plex Mono 8.5pt --text-muted, dos líneas: COTIZACIÓN COMERCIAL / {MES AÑO en mayúsculas}.
+Bloque central (empieza a ~35% de la altura):
+Badge pill: borde 1px --accent-border, radius 999px, padding 6px 14px, texto Plex Mono 9pt en --accent: COTIZACIÓN · {EMPRESA MAYÚSCULAS}.
+Título hero: Oswald 700, ~52pt, line-height 1.02, MAYÚSCULAS, --text, en 2–3 líneas. El fragmento indicado en titulo_resaltado se envuelve en <span style="color: var(--accent)">. Ejemplo del PDF: "TU CHATBOT, VENDIENDO LAS 24 HORAS".
+Subtítulo: Plex Sans 12.5pt, --text-muted, line-height 1.6, max-width 70%.
+Dos cards en fila (gap 14px, cada una ~48% ancho): fondo --surface, borde 1px --border, radius 10px, padding 20px. Estructura interna: label Plex Mono 8.5pt --accent → título Plex Sans 700 12.5pt --text → descripción Plex Sans 9.5pt --text-muted.
+Card 1: label PREPARADO PARA / {nombre_cliente} · {empresa} / {empresa_descripcion}.
+Card 2: label ALCANCE DE LA COTIZACIÓN / {alcance_titulo} / {alcance_detalle}.
+Footer de portada: border-top 1px 
+#1F1F1F, flex space-between, Plex Mono 8pt --text-dim. Izquierda: WEBMAKER LATAM · WEBMAKERLATAM.COM. Derecha (dos líneas, alineado derecha): agencia@webmakerlatam.com / webmakerlatam.com.
+PÁGINA 2 — 01 · CONTEXTO
+Encabezado de sección estándar.
+2 párrafos: Plex Sans 10.5pt, --text-muted, line-height 1.7. Cuentan la historia del cliente con SUS números reales.
+Grid de 3 stat-cards (fila, gap 12px): fondo --surface, borde --border, radius 10px, padding 18px. Número: Oswald 700, 30pt, --accent. Descripción debajo: Plex Sans 9pt, --text-muted.
+Subtítulo: "Lo que resolvemos con este proyecto:" — Plex Sans 700, 11.5pt, --text.
+Lista de 4 checks: ✓ en --accent (bold) + texto Plex Sans 10pt --text-muted, espaciado vertical 10px.
+PÁGINA 3 — 02 · ALCANCE E INVERSIÓN
+Encabezado estándar + intro: "Tres piezas, cada una con precio cerrado e IVA incluido y desglosado:" (adaptar el número de piezas al total de módulos).
+Por cada módulo, una card (fondo --surface, borde --border, radius 10px, padding 18px, margen inferior 12px):
+Título: {n} · {nombre} — Plex Sans 700 13pt; el {n} · en --accent, el nombre en --text.
+Descripción: Plex Sans 10pt --text-muted, 1–2 líneas.
+Fila de precios: contenedor fondo --surface-2, radius 8px, padding 10px 14px, grid de 3 columnas iguales. Cada celda: label Plex Mono 7.5pt --text-dim (NETO / IVA 19% / TOTAL) + monto Plex Mono 500, 11pt. NETO e IVA en --text; el monto de TOTAL en --accent y peso 700.
+Card de total destacada: fondo --surface, borde 1px --accent-border, radius 10px, padding 18px. Label Plex Mono 9pt --accent: INVERSIÓN TOTAL DEL PROYECTO. Misma fila de 3 columnas pero montos más grandes: NETO e IVA a 12pt, TOTAL a 17pt --accent bold.
+Nota final: Plex Sans 8.5pt --text-dim, itálica opcional: texto de nota_alcance (ej: "Precio cerrado, sin letra chica. No incluye…").
+Si hay más de 4 módulos, continuar en una página extra con label 02 · ALCANCE E INVERSIÓN (CONT.) y recalcular la numeración total de páginas.
+PÁGINA 4 — 03 · CÓMO FUNCIONA
+Encabezado estándar.
+Grid 2 columnas × 3 filas (gap 12px) de cards: fondo --surface, borde --border, radius 10px, padding 16px. Label del actor Plex Mono 8pt --accent (CLIENTA / TÚ / AMBOS — el LLM lo adapta al rubro), título Plex Sans 700 11.5pt --text, descripción Plex Sans 9.5pt --text-muted.
+PÁGINA 5 — 04 · CRONOGRAMA
+Encabezado estándar.
+Lista vertical de fases, cada una como card (fondo --surface, borde --border, radius 10px, padding 16px 18px, margen 10px): a la izquierda un círculo de 30px con borde 1.5px --accent, fondo transparente, número Plex Mono 700 en --accent centrado; a la derecha, título Plex Sans 700 12pt --text + descripción Plex Sans 10pt --text-muted.
+Nota al pie: Plex Sans 8.5pt --text-dim (nota_cronograma).
+PÁGINA 6 — 05 · MENSUALIDAD
+Encabezado estándar.
+Card hero: fondo --surface, borde --accent-border, radius 10px, padding 22px, margen inferior 14px. Label Plex Mono 9pt --accent: MENSUALIDAD · HOSTING Y MANTENCIÓN. Monto: Oswald 700, 36pt, --accent: {total mensual con IVA}. Nota debajo, Plex Sans 9pt --text-muted: Neto {neto} + IVA 19% ({iva}) — precio cerrado, se factura mes a mes desde el mes siguiente a la entrega. (los tres montos calculados por el servidor).
+Grid 2×2 de cards INCLUIDO: mismo estilo que las cards de la página 4, label Plex Mono 8pt --accent fijo INCLUIDO, título 11pt bold, descripción 9.5pt.
+Bloque QUÉ NO CUBRE LA MENSUALIDAD: label Plex Mono 8.5pt --text-muted, luego lista con guión largo – en --text-dim, texto Plex Sans 9.5pt --text-muted. El último ítem siempre es "Cancelable con 30 días de aviso."
+PÁGINA 7 — 06 · CONDICIONES DE PAGO
+Encabezado estándar (título tipo "Cuando quieran partir, está todo listo." + intro "Simple y directo, sin sorpresas:").
+Fila de bloques de pago (uno por hito del esquema, típicamente 2, cada uno ~48% de ancho): card fondo --surface, borde --border, radius 10px, padding 22px, centrado. Porcentaje: Oswald 700, 40pt, --accent (50%). Label: Plex Mono 8.5pt --text-muted (AL INICIAR / CONTRA ENTREGA). Monto: Plex Mono 700, 15pt, --text (calculado por el servidor sobre el total CON IVA).
+Nota: Plex Sans 9.5pt --text-muted: "Ambos montos con IVA incluido. El proyecto arranca con el primer abono; el saldo se paga cuando {condición}." + debajo la nota_personal (una frase que retoma algo real de la conversación con el cliente; en el ejemplo: que lo conversaría con su esposo).
+"Próximos pasos, cuando quieran partir:" + 3 pasos con el mismo componente de círculo numerado del cronograma, versión compacta (círculo 24px, una sola línea de texto 10pt).
+PÁGINA FINAL — CIERRE
+Sin encabezado de sección. Todo centrado vertical y horizontalmente:
+Logo (asset) a ~80px de alto.
+Línea: {alcance_titulo} · {empresa} — Plex Sans 11pt --text-muted.
+Card centrada: max-width 150mm, fondo --surface, borde --border, radius 12px, padding 26px. Dos párrafos centrados, Plex Sans 10pt --text-muted (cierre.linea1 y cierre.linea2).
+Footer estándar de interiores con {total} / {total}.
+5. Módulo financiero (TypeScript, en el servidor — el LLM jamás toca esto)
+ts
+const IVA_RATE = 0.19;
+
+export const calcIva = (neto: number) => Math.round(neto * IVA_RATE);
+export const calcTotal = (neto: number) => neto + calcIva(neto);
+
+// Formato chileno: $2.499.000 (es-CL usa punto de miles, sin decimales)
+export const clp = (n: number) => '$' + new Intl.NumberFormat('es-CL').format(n);
+
+// División de pagos sobre el TOTAL CON IVA. El residuo por redondeo se asigna al último hito
+// para que la suma de los hitos sea EXACTAMENTE el total.
+export function splitPagos(totalConIva: number, esquema: { porcentaje: number; momento: string }[]) {
+  const montos = esquema.map(h => Math.round(totalConIva * h.porcentaje / 100));
+  const diff = totalConIva - montos.reduce((a, b) => a + b, 0);
+  montos[montos.length - 1] += diff;
+  return esquema.map((h, i) => ({ ...h, monto: montos[i] }));
+}
+
+Derivados que calcula el servidor y se inyectan a la plantilla: IVA y total de cada módulo, neto/IVA/total del proyecto (sumas de módulos), IVA y total de la mensualidad, y los montos de cada hito de pago. Ningún monto formateado viene del LLM.
+
+6. Validación con Zod (rechazar y reintentar si falla)
+ts
+import { z } from 'zod';
+
+const CotizacionSchema = z.object({
+  meta: z.object({
+    cliente_nombre: z.string().min(2),
+    empresa: z.string().min(2),
+    empresa_descripcion: z.string().min(5).max(60),
+    mes_anio: z.string().regex(/^[A-ZÁÉÍÓÚÑ]+ \d{4}$/), // "JULIO 2026"
+    anio: z.string().length(4),
+  }),
+  portada: z.object({
+    titulo: z.string().min(10).max(60),           // MAYÚSCULAS, es el hero
+    titulo_resaltado: z.string().min(3).max(30),  // substring EXACTO de titulo
+    subtitulo: z.string().min(40).max(240),
+    alcance_titulo: z.string().min(8).max(60),
+    alcance_detalle: z.string().min(8).max(70),
+  }).refine(p => p.titulo.includes(p.titulo_resaltado), { message: 'titulo_resaltado debe ser substring exacto de titulo' }),
+  contexto: z.object({
+    titulo: z.string().min(15).max(90),
+    parrafos: z.array(z.string().min(60).max(500)).length(2),
+    stats: z.array(z.object({ valor: z.string().min(1).max(10), descripcion: z.string().min(10).max(90) })).length(3),
+    soluciones: z.array(z.string().min(20).max(160)).length(4),
+  }),
+  modulos: z.array(z.object({
+    nombre: z.string().min(5).max(45),
+    descripcion: z.string().min(30).max(240),
+    neto: z.number().int().positive(),            // NUNCA 0, NUNCA con IVA incluido
+  })).min(1).max(4),
+  nota_alcance: z.string().min(20).max(300),
+  como_funciona: z.object({
+    titulo: z.string().min(15).max(90),
+    items: z.array(z.object({
+      actor: z.string().min(2).max(12),           // CLIENTA / TÚ / AMBOS o equivalentes
+      titulo: z.string().min(5).max(45),
+      descripcion: z.string().min(20).max(160),
+    })).length(6),
+  }),
+  cronograma: z.object({
+    titulo: z.string().min(10).max(70),
+    intro: z.string().min(15).max(120),
+    fases: z.array(z.object({ titulo: z.string().min(5).max(50), descripcion: z.string().min(20).max(180) })).min(3).max(4),
+    nota: z.string().min(20).max(220),
+  }),
+  mensualidad: z.object({
+    neto: z.number().int().positive(),            // NUNCA 0
+    incluye: z.array(z.object({ titulo: z.string().min(5).max(40), descripcion: z.string().min(15).max(140) })).length(4),
+    no_cubre: z.array(z.string().min(10).max(180)).min(2).max(4),
+  }),
+  pago: z.object({
+    esquema: z.array(z.object({ porcentaje: z.number().int().positive(), momento: z.string().min(3).max(25) })).min(1).max(3),
+    condicion_saldo: z.string().min(10).max(140),
+    nota_personal: z.string().min(15).max(220),
+    proximos_pasos: z.array(z.string().min(10).max(140)).length(3),
+  }).refine(p => p.esquema.reduce((a, h) => a + h.porcentaje, 0) === 100, { message: 'Los porcentajes de pago deben sumar 100' }),
+  cierre: z.object({ linea1: z.string().min(20).max(160), linea2: z.string().min(15).max(120) }),
+});
+
+Además del schema, validar en código: si yo entregué precios netos en el request, los neto del JSON deben coincidir exactamente con los que entregué (el LLM no inventa ni redondea precios).
+
+7. System prompt para el LLM de contenido (usar tal cual)
+Eres el redactor comercial de WebMaker Latam, agencia chilena de desarrollo web y software. Generas el CONTENIDO de cotizaciones comerciales en formato JSON. NO generas HTML, NO calculas IVA ni totales, NO formateas montos.
+
+Recibirás el contexto real de un cliente (resumen de reuniones o conversaciones de WhatsApp) y opcionalmente la lista de módulos con sus precios netos. Con eso produces un único objeto JSON con el schema indicado.
+
+REGLAS DE REDACCIÓN:
+- Español chileno cercano y directo. Tuteo siempre. Cero jerga corporativa, cero tono robótico.
+- portada.titulo: el BENEFICIO principal para este cliente en 4 a 8 palabras, en MAYÚSCULAS. No es el nombre del servicio, es lo que gana. Ejemplo: "TU CHATBOT, VENDIENDO LAS 24 HORAS". portada.titulo_resaltado es el fragmento final más potente (substring exacto del título).
+- contexto.parrafos: párrafo 1 cuenta la historia del cliente CON SUS NÚMEROS REALES (años, clientes, volúmenes) reconociendo su mérito; párrafo 2 nombra el problema puntual con la estructura "El problema no es X — es Y".
+- contexto.stats: 3 cifras. Las dos primeras son datos reales del negocio del cliente; la tercera es aspiracional del proyecto (ej: valor "0", descripción "horas del día sin respuesta, una vez tu chatbot esté funcionando").
+- contexto.soluciones: 4 frases que parten con verbo en infinitivo o "Que…", concretas, mencionando detalles reales (nombre del sitio, canales, etc.).
+- modulos: nombre corto y vendedor (ej: "Chatbot inteligente 24/7"); descripción de 1-2 frases centrada en el beneficio, no en la tecnología. El neto es el número entero exacto que te entregaron, sin IVA, sin puntos, sin formato.
+- como_funciona.items: exactamente 6 cards. Los actores alternan entre el cliente final del negocio (CLIENTA, CLIENTE, PACIENTE… según el rubro), el dueño (TÚ) y AMBOS. Describen escenas del día a día, no features.
+- pago.nota_personal: retoma UN detalle real de la conversación que humanice el cierre (ej: "Sabemos que esto lo estás conversando también con tu esposo — esta cotización queda a tu disposición para cuando decidan avanzar."). Si no hay ningún detalle así en el contexto, usa una frase cordial de disponibilidad sin inventar hechos.
+- Si el contexto menciona demos, promesas o pedidos específicos del cliente, referéncialos ("igual que en la demo que vimos", "tal como lo pediste").
+
+PROHIBIDO:
+- Inventar cifras, nombres o hechos que no estén en el contexto entregado.
+- Calcular o escribir montos con IVA, totales, o montos formateados con $ o puntos.
+- Dejar precios en 0 o inventar precios si no te los entregaron: en ese caso usa el valor -1 en neto para que el sistema lo marque como pendiente.
+- Usar markdown, backticks o texto fuera del JSON.
+
+Responde ÚNICAMENTE con el objeto JSON válido.
+
+Incluye como few-shot en el mensaje del LLM el JSON completo del caso real M&M Moda (extráelo del PDF adjunto: título "TU CHATBOT, VENDIENDO LAS 24 HORAS", los dos párrafos de contexto con los 12 años / 500 personas / 50 clientas fijas / 20 modelos por semana / 1.000 unidades, los 3 módulos con netos 900000, 550000 y 650000, la mensualidad neto 80000, el esquema 50/50, la nota del esposo, etc.). Ese ejemplo define el estándar de calidad de redacción.
+
+8. Assets
+public/assets/logo-webmaker.png: logo del zorro con wordmark (te lo adjunto). Usarlo en portada (34px alto) y página final (80px alto). No generar, dibujar ni recrear el logo bajo ninguna circunstancia.
+9. Criterios de aceptación (verificar antes de dar por terminado)
+Generando una cotización con el contexto de M&M Moda y los netos 900000/550000/650000 + mensualidad 80000, el PDF resultante es visualmente indistinguible del PDF adjunto: mismos colores (
+#0A0A0A, 
+#141414, 
+#E87B3C, 
+#F2F2F0), mismas fuentes (Oswald + IBM Plex Sans + IBM Plex Mono), misma estructura de 8 páginas.
+Los montos del PDF de prueba coinciden exactos: módulos $1.071.000 / $654.500 / $773.500, total $2.499.000 (neto $2.100.000 + IVA $399.000), mensualidad $95.200, pagos $1.249.500 y $1.249.500.
+Cambiando solo el JSON (otro cliente, otro rubro, 2 o 4 módulos), el diseño se mantiene idéntico y el paginado se ajusta con el footer n / total correcto.
+Un neto en 0, un porcentaje de pago que no suma 100, o un titulo_resaltado que no es substring del título, bloquean la generación con un error claro (no generan PDF malo).
+La vista previa HTML en el navegador se ve igual que el PDF exportado.
+Formato de moneda siempre chileno: $2.499.000 (punto de miles, sin decimales).
+
+Empieza por la plantilla HTML/CSS con los datos de M&M Moda hardcodeados hasta que sea idéntica al PDF adjunto. Recién entonces conecta el LLM y la validación.
