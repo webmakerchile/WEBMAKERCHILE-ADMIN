@@ -1,0 +1,13 @@
+El Hub Ejecutivo ya tiene proyectos, contratos, clientes y un tablero Scrum con tareas asignables por integrante. Pero como CEO no me responde lo esencial: quién está haciendo qué, quién está atrasado y quién está libre. Quiero convertirlo en un centro de comando del equipo. Somos: CEO, ejecutivo/RRHH, 2 editoras (área edicion), 1 programador y 1 publicista (área marketing).
+
+1. Nueva vista principal del Hub: "Equipo hoy" (visible para áreas ceo y ejecutivo):
+   - Una fila/card por integrante aprobado: avatar, área, y sus tareas activas ordenadas por prioridad, con la etapa Scrum actual de cada una y CUÁNTO TIEMPO lleva en esa etapa (ya guardamos stageTime/stageSince — úsalo).
+   - Semáforo por integrante: verde = al día, amarillo = tiene tareas por vencer hoy, rojo = tiene tareas vencidas o una tarea estancada más de 48h en la misma etapa.
+   - Contador de carga: cuántas tareas activas tiene cada uno, para ver de un vistazo quién está sobrecargado y quién libre antes de asignar.
+   - Composer rápido arriba: escribir tarea + elegir responsable + prioridad + fecha, Enter y queda asignada y notificada.
+2. Página "Mi día" (/mi-dia) para TODAS las áreas: las tareas asignadas al usuario logueado agrupadas en Vencidas / Hoy / Esta semana / Sin fecha, con checkbox grande para ir tickeando durante el día (optimistic update), sección "Completadas hoy" colapsable y barra de progreso "X de Y". Es la pantalla de trabajo diario de editoras, programador y publicista.
+3. Registro de actividad: cada cambio de etapa de una tarea guarda quién lo hizo y cuándo. En "Equipo hoy" el CEO puede expandir un integrante y ver su actividad del día (ej: "movió 'Editar video X' a QA a las 11:32").
+4. Notificaciones: al asignarme una tarea me llega notificación; al CEO le llega cuando una tarea queda vencida o estancada 48h.
+5. Todo respeta las áreas: edicion/marketing/rrhh solo ven y mueven lo suyo en "Mi día"; ceo y ejecutivo ven todo.
+
+Mantén el diseño dark actual del panel, español, TypeScript strict, typecheck y tests de los endpoints nuevos.
