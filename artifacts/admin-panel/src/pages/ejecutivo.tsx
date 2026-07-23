@@ -24,7 +24,12 @@ interface HubTask {
   title: string;
   notes: string | null;
   priority: Prio;
-  status: TaskStatus;
+  /** Scrumban stage — primary field for the Scrum board */
+  stage: TaskStage;
+  stageSince: string;
+  stageTime: Record<string, number>;
+  /** Legacy status field kept for backward compat */
+  status?: TaskStatus;
   dueDate: string | null;
   completedAt: string | null;
   orderIndex: number;
@@ -33,7 +38,7 @@ interface HubTask {
   assigneeId: number | null;
   createdAt: string;
   updatedAt: string;
-  assignee: { id: number; name: string | null; picture: string | null } | null;
+  assignee: { id: number; name: string | null; picture: string | null; email?: string | null } | null;
 }
 interface TeamMember {
   id: number;
@@ -81,9 +86,12 @@ const STATUS = [
   { id: "done", label: "Entregado", color: "var(--done)" },
 ];
 const TASK_STAGES = [
-  { id: "pendiente", label: "Pendiente", color: "var(--faint)" },
-  { id: "en_progreso", label: "En progreso", color: "var(--dev)" },
-  { id: "hecha", label: "Hecha", color: "var(--done)" },
+  { id: "backlog",  label: "Backlog",      color: "var(--faint)" },
+  { id: "sprint",   label: "Sprint",       color: "#6aa0c0" },
+  { id: "doing",    label: "En Progreso",  color: "var(--dev)" },
+  { id: "qa_sent",  label: "QA Enviado",   color: "#9b6ec0" },
+  { id: "qa_rev",   label: "QA Revisión",  color: "#7b5ec0" },
+  { id: "done",     label: "Hecho",        color: "var(--done)" },
 ];
 const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cliente", vision: "Visión", equipo: "Equipo", otro: "Otra" };
 const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
@@ -125,7 +133,7 @@ function prioW(x: string) { return PRIO_W[x] !== undefined ? PRIO_W[x] : 1; }
 function projProg(projectId: string, tasks: HubTask[]): { done: number; total: number; pct: number } {
   const pt = tasks.filter(t => t.projectRef === projectId);
   if (!pt.length) return { done: 0, total: 0, pct: 0 };
-  const done = pt.filter(t => t.status === "hecha").length;
+  const done = pt.filter(t => t.stage === "done").length;
   return { done, total: pt.length, pct: Math.round((done / pt.length) * 100) };
 }
 function fmtDur(ms: number) {
@@ -1024,11 +1032,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div><label>Prioridad</label><select ref={R("crit")}><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
       </div>
       <div className="two field">
-        <div><label>Estado</label><select ref={R("stage")}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+        <div><label>Etapa</label><select ref={R("stage")}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div><label>Vencimiento</label><input type="date" ref={R("due")} /></div>
       </div>
       {teamMembers.length > 0 && (
-        <div className="field"><label>Asignar a</label><select ref={R("assignee")}><option value="">— sin asignar —</option>{teamMembers.filter(m => m.approvalStatus === "approved").map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
+        <div className="field"><label>Asignar a</label><select ref={R("assignee")}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
       )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
       <button className="add-btn" onClick={async () => {
@@ -1036,7 +1044,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const assigneeRaw = V("assignee");
         const assigneeId = assigneeRaw ? parseInt(assigneeRaw, 10) : null;
         const dueRaw = V("due");
-        const body: Record<string, unknown> = { title, notes: V("notes") || undefined, priority: V("crit") || "media", status: V("stage") || "pendiente", projectRef: V("proj") || undefined };
+        const body: Record<string, unknown> = { title, notes: V("notes") || undefined, priority: V("crit") || "media", stage: V("stage") || "backlog", projectRef: V("proj") || undefined };
         if (assigneeId && !isNaN(assigneeId)) body["assigneeId"] = assigneeId;
         if (dueRaw) body["dueDate"] = dueRaw;
         try {
@@ -1054,18 +1062,18 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const t = apiTasks.find(x => x.id === (sheet as { kind: "task"; id: number }).id); if (!t) return null;
     return (<>
       <div className="sheet-head"><h2>Tarea</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="detail-meta"><span className={`chip prio-${t.priority}`}>{t.priority}</span><span className="badge">{taskStatusOf(t.status).label}</span>{t.dueDate && <span className="badge">📅 {t.dueDate}</span>}</div>
+      <div className="detail-meta"><span className={`chip prio-${t.priority}`}>{t.priority}</span><span className="badge">{taskStatusOf(t.stage).label}</span>{t.dueDate && <span className="badge">📅 {t.dueDate}</span>}</div>
       <div className="field"><label>Título</label><input type="text" ref={R("t")} defaultValue={t.title} /></div>
       <div className="two field">
         <div><label>Proyecto</label><select ref={R("proj")} defaultValue={t.projectRef || ""}><option value="">— sin proyecto —</option>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
         <div><label>Prioridad</label><select ref={R("crit")} defaultValue={t.priority}>{["crítica","alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
       </div>
       <div className="two field">
-        <div><label>Estado</label><select ref={R("stage")} defaultValue={t.status}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+        <div><label>Etapa</label><select ref={R("stage")} defaultValue={t.stage}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div><label>Vencimiento</label><input type="date" ref={R("due")} defaultValue={t.dueDate || ""} /></div>
       </div>
       {teamMembers.length > 0 && (
-        <div className="field"><label>Asignar a</label><select ref={R("assignee")} defaultValue={t.assigneeId != null ? String(t.assigneeId) : ""}><option value="">— sin asignar —</option>{teamMembers.filter(m => m.approvalStatus === "approved").map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
+        <div className="field"><label>Asignar a</label><select ref={R("assignee")} defaultValue={t.assigneeId != null ? String(t.assigneeId) : ""}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
       )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={5} defaultValue={t.notes || ""} /></div>
       {t.assignee && <div style={{ fontSize: "0.78em", color: "var(--muted)", marginBottom: 8 }}>Asignada a: <strong>{t.assignee.name}</strong></div>}
@@ -1073,7 +1081,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const assigneeRaw = V("assignee");
         const assigneeId = assigneeRaw ? parseInt(assigneeRaw, 10) : null;
         const dueRaw = V("due");
-        const body: Record<string, unknown> = { title: V("t").trim() || t.title, notes: V("notes") || null, priority: V("crit"), status: V("stage"), projectRef: V("proj") || null, assigneeId: assigneeId && !isNaN(assigneeId) ? assigneeId : null, dueDate: dueRaw || null };
+        const body: Record<string, unknown> = { title: V("t").trim() || t.title, notes: V("notes") || null, priority: V("crit"), stage: V("stage"), projectRef: V("proj") || null, assigneeId: assigneeId && !isNaN(assigneeId) ? assigneeId : null, dueDate: dueRaw || null };
         try {
           const res = await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
           if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al guardar"); return; }
@@ -2091,9 +2099,9 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
     const taskId = parseInt(dragId, 10);
     if (isNaN(taskId)) { setDragId(null); setDragOver(null); return; }
     const t = apiTasks.find(x => x.id === taskId);
-    if (t && t.status !== stage) {
+    if (t && t.stage !== stage) {
       try {
-        await fetch(`${DRIVE_API_BASE}/hub/tasks/${taskId}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: stage }) });
+        await fetch(`${DRIVE_API_BASE}/hub/tasks/${taskId}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }) });
         onRefreshTasks();
         onToast("Tarea → " + taskStatusOf(stage).label);
       } catch { onToast("Error al mover tarea"); }
@@ -2143,7 +2151,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
         <div className="board scrum3">
           {!state.projects.length && !apiTasks.length && <div className="col-empty" style={{ gridColumn: "1/-1" }}>Crea un proyecto primero, luego añade tareas con <strong>+ Nuevo</strong>.</div>}
           {TASK_STAGES.map(s => {
-            const items = ft.filter(t => t.status === s.id).sort((a, b) => (prioW(a.priority) - prioW(b.priority)) || (a.orderIndex - b.orderIndex));
+            const items = ft.filter(t => t.stage === s.id).sort((a, b) => (prioW(a.priority) - prioW(b.priority)) || (a.orderIndex - b.orderIndex));
             return (
               <div key={s.id} className={`col ${dragOver === s.id ? "dragover" : ""}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(s.id); }}
@@ -2597,15 +2605,15 @@ export default function EjecutivoPage() {
   const onRefreshTasks = useCallback(() => { void refetchTasks(); }, [refetchTasks]);
 
   const { data: teamMembersData } = useQuery({
-    queryKey: ["team-members"],
+    queryKey: ["hub-team-members"],
     queryFn: async () => {
-      const res = await fetch(`${HUB_API_BASE}/admin/users`, { credentials: "include" });
-      if (!res.ok) return [] as TeamMember[];
-      return res.json() as Promise<TeamMember[]>;
+      const res = await fetch(`${HUB_API_BASE}/hub/tasks/team-members`, { credentials: "include" });
+      if (!res.ok) return { users: [] as TeamMember[] };
+      return res.json() as Promise<{ users: TeamMember[] }>;
     },
     staleTime: 120000,
   });
-  const teamMembers: TeamMember[] = Array.isArray(teamMembersData) ? teamMembersData : [];
+  const teamMembers: TeamMember[] = teamMembersData?.users ?? [];
 
   const handleLogout = async () => {
     try {
