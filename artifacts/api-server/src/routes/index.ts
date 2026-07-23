@@ -26,6 +26,7 @@ import transcriberRouter from "./transcriber";
 import credentialsRouter from "./credentials";
 import calendarRouter from "./calendar";
 import hubRouter from "./hub";
+import hubTasksRouter from "./hub/tasks";
 import adminUsersRouter from "./admin-users";
 
 const router: IRouter = Router();
@@ -56,6 +57,8 @@ router.use(settingsRouter);
 router.use(transcriberRouter);
 router.use(credentialsRouter);
 router.use(calendarRouter);
+// hubTasksRouter must be before hubRouter so /hub/tasks/* is NOT caught by the CEO middleware
+router.use(hubTasksRouter);
 router.use(hubRouter);
 router.use(adminUsersRouter);
 

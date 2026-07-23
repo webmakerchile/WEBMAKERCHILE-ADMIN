@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -18,6 +18,31 @@ import "./ejecutivo.css";
 type Prio = "crítica" | "alta" | "media" | "baja";
 type ProjStatus = "lead" | "disc" | "dev" | "rev" | "done";
 type TaskStage = "backlog" | "sprint" | "doing" | "qa_sent" | "qa_rev" | "done";
+type TaskStatus = "pendiente" | "en_progreso" | "hecha";
+interface HubTask {
+  id: number;
+  title: string;
+  notes: string | null;
+  priority: Prio;
+  status: TaskStatus;
+  dueDate: string | null;
+  completedAt: string | null;
+  orderIndex: number;
+  projectRef: string | null;
+  createdById: number;
+  assigneeId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  assignee: { id: number; name: string | null; picture: string | null } | null;
+}
+interface TeamMember {
+  id: number;
+  email: string;
+  name: string | null;
+  picture: string | null;
+  teamRole: string | null;
+  approvalStatus: string | null;
+}
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
 type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive";
 type ProjView = "board" | "list" | "scrum";
@@ -36,7 +61,7 @@ const emptyWiz = (): WizData => ({ client: "", project: "", scope: "", date: new
 type SheetKind =
   | null
   | { kind: "new-proj" } | { kind: "proj"; id: string }
-  | { kind: "new-task" } | { kind: "task"; id: string }
+  | { kind: "new-task" } | { kind: "task"; id: number }
   | { kind: "new-client" } | { kind: "client"; id: string }
   | { kind: "new-meet" } | { kind: "meet"; id: string }
   | { kind: "new-note" } | { kind: "note"; id: string }
@@ -56,12 +81,9 @@ const STATUS = [
   { id: "done", label: "Entregado", color: "var(--done)" },
 ];
 const TASK_STAGES = [
-  { id: "backlog", label: "Backlog", color: "var(--faint)" },
-  { id: "sprint", label: "Sprint Backlog", color: "var(--lead)" },
-  { id: "doing", label: "En desarrollo", color: "var(--dev)" },
-  { id: "qa_sent", label: "QA", color: "var(--disc)" },
-  { id: "qa_rev", label: "Revisión", color: "var(--rev)" },
-  { id: "done", label: "Lista", color: "var(--done)" },
+  { id: "pendiente", label: "Pendiente", color: "var(--faint)" },
+  { id: "en_progreso", label: "En progreso", color: "var(--dev)" },
+  { id: "hecha", label: "Hecha", color: "var(--done)" },
 ];
 const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cliente", vision: "Visión", equipo: "Equipo", otro: "Otra" };
 const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
@@ -100,10 +122,10 @@ const SERVICES: Array<{ cat: string; items: Array<{ n: string; d: string; incl?:
    ============================================================ */
 function uid() { return "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function prioW(x: string) { return PRIO_W[x] !== undefined ? PRIO_W[x] : 1; }
-function projProg(projectId: string, tasks: Task[]): { done: number; total: number; pct: number } {
-  const pt = tasks.filter(t => t.projectId === projectId);
+function projProg(projectId: string, tasks: HubTask[]): { done: number; total: number; pct: number } {
+  const pt = tasks.filter(t => t.projectRef === projectId);
   if (!pt.length) return { done: 0, total: 0, pct: 0 };
-  const done = pt.filter(t => t.stage === "done").length;
+  const done = pt.filter(t => t.status === "hecha").length;
   return { done, total: pt.length, pct: Math.round((done / pt.length) * 100) };
 }
 function fmtDur(ms: number) {
@@ -114,7 +136,7 @@ function fmtDur(ms: number) {
 function timerClass(ms: number) { return ms >= 5 * 86400000 ? "stale" : ms >= 2 * 86400000 ? "warn" : ""; }
 function fmtDate(ts: number) { if (!ts) return ""; return new Date(ts).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" }); }
 function statusOf(id: string) { return STATUS.find(s => s.id === id) || STATUS[0]; }
-function taskStageOf(id: string) { return TASK_STAGES.find(s => s.id === id) || TASK_STAGES[0]; }
+function taskStatusOf(id: string) { return TASK_STAGES.find(s => s.id === id) || TASK_STAGES[0]; }
 function advanceStageObj(o: Record<string, unknown>, newVal: string, field: string) {
   const now = Date.now();
   if (!o.stageTime) o.stageTime = {};
@@ -378,7 +400,7 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
   );
 }
 
-function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; tasks: Task[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
+function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; tasks: HubTask[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
   const prog = projProg(p.id, tasks);
   return (
     <div className="pcard" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -403,16 +425,17 @@ function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; t
   );
 }
 
-function TaskCard({ t, projects, onClick, onDragStart, onDragEnd }: { t: Task; projects: Project[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
-  const proj = projects.find(p => p.id === t.projectId);
+function TaskCard({ t, projects, onClick, onDragStart, onDragEnd }: { t: HubTask; projects: Project[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
+  const proj = projects.find(p => p.id === t.projectRef);
   return (
     <div className="pcard tcard tcard--compact" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}
-      style={{ borderLeft: `3px solid ${CRIT_COLOR[t.crit] || "var(--line)"}` }}>
+      style={{ borderLeft: `3px solid ${CRIT_COLOR[t.priority] || "var(--line)"}` }}>
       <div className="tcard-title">{t.title}</div>
       <div className="tcard-meta">
-        <span className={`chip prio-${t.crit}`}>{t.crit}</span>
+        <span className={`chip prio-${t.priority}`}>{t.priority}</span>
         <span className="tcard-proj">{proj ? proj.name : "—"}</span>
-        <StageTimerInline since={t.stageSince || t.createdAt || Date.now()} />
+        {t.assignee && <span className="tcard-timer" title={`Asignada a ${t.assignee.name || ""}`}>👤 {(t.assignee.name || "").split(" ")[0]}</span>}
+        {t.dueDate && <span className="tcard-timer">{t.dueDate}</span>}
       </div>
     </div>
   );
@@ -911,9 +934,9 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
 /* ============================================================
    SHEET CONTENT
    ============================================================ */
-interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; }
+interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; apiTasks: HubTask[]; teamMembers: TeamMember[]; onRefreshTasks: () => void; }
 
-function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm }: SheetProps) {
+function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, apiTasks, teamMembers, onRefreshTasks }: SheetProps) {
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
@@ -998,48 +1021,71 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="field"><label>Título</label><input type="text" ref={R("t")} placeholder="Ej: Maquetar checkout" /></div>
       <div className="two field">
         <div><label>Proyecto</label><select ref={R("proj")}><option value="">— sin proyecto —</option>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-        <div><label>Criticidad</label><select ref={R("crit")}><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
+        <div><label>Prioridad</label><select ref={R("crit")}><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></div>
       </div>
-      <div className="field"><label>Etapa</label><select ref={R("stage")}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+      <div className="two field">
+        <div><label>Estado</label><select ref={R("stage")}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+        <div><label>Vencimiento</label><input type="date" ref={R("due")} /></div>
+      </div>
+      {teamMembers.length > 0 && (
+        <div className="field"><label>Asignar a</label><select ref={R("assignee")}><option value="">— sin asignar —</option>{teamMembers.filter(m => m.approvalStatus === "approved").map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
+      )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
-      <button className="add-btn" onClick={() => {
+      <button className="add-btn" onClick={async () => {
         const title = V("t").trim(); if (!title) { onToast("Ponle un título a la tarea"); return; }
-        const now = Date.now();
-        onSave({ ...state, tasks: [...state.tasks, { id: uid(), title, projectId: V("proj"), crit: V("crit") as Prio, stage: V("stage") as TaskStage, stageSince: now, stageTime: {}, notes: V("notes"), createdAt: now, updatedAt: now }] });
-        onClose(); onNavigate("proj"); onToast("Tarea creada");
+        const assigneeRaw = V("assignee");
+        const assigneeId = assigneeRaw ? parseInt(assigneeRaw, 10) : null;
+        const dueRaw = V("due");
+        const body: Record<string, unknown> = { title, notes: V("notes") || undefined, priority: V("crit") || "media", status: V("stage") || "pendiente", projectRef: V("proj") || undefined };
+        if (assigneeId && !isNaN(assigneeId)) body["assigneeId"] = assigneeId;
+        if (dueRaw) body["dueDate"] = dueRaw;
+        try {
+          const res = await fetch(`${DRIVE_API_BASE}/hub/tasks`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al crear tarea"); return; }
+          onRefreshTasks();
+          onClose(); onNavigate("proj"); onToast("Tarea creada");
+        } catch { onToast("Error de conexión"); }
       }}>Crear tarea</button>
     </>);
   }
 
   /* ---- Detalle tarea ---- */
   if (sheet.kind === "task") {
-    const t = state.tasks.find(x => x.id === sheet.id); if (!t) return null;
+    const t = apiTasks.find(x => x.id === (sheet as { kind: "task"; id: number }).id); if (!t) return null;
     return (<>
       <div className="sheet-head"><h2>Tarea</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="detail-meta"><span className={`chip prio-${t.crit}`}>{t.crit}</span><span className="badge">{taskStageOf(t.stage).label}</span></div>
+      <div className="detail-meta"><span className={`chip prio-${t.priority}`}>{t.priority}</span><span className="badge">{taskStatusOf(t.status).label}</span>{t.dueDate && <span className="badge">📅 {t.dueDate}</span>}</div>
       <div className="field"><label>Título</label><input type="text" ref={R("t")} defaultValue={t.title} /></div>
       <div className="two field">
-        <div><label>Proyecto</label><select ref={R("proj")} defaultValue={t.projectId}><option value="">— sin proyecto —</option>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-        <div><label>Criticidad</label><select ref={R("crit")} defaultValue={t.crit}>{["crítica","alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
+        <div><label>Proyecto</label><select ref={R("proj")} defaultValue={t.projectRef || ""}><option value="">— sin proyecto —</option>{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
+        <div><label>Prioridad</label><select ref={R("crit")} defaultValue={t.priority}>{["crítica","alta","media","baja"].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
       </div>
-      <div className="field"><label>Etapa</label><select ref={R("stage")} defaultValue={t.stage}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+      <div className="two field">
+        <div><label>Estado</label><select ref={R("stage")} defaultValue={t.status}>{TASK_STAGES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
+        <div><label>Vencimiento</label><input type="date" ref={R("due")} defaultValue={t.dueDate || ""} /></div>
+      </div>
+      {teamMembers.length > 0 && (
+        <div className="field"><label>Asignar a</label><select ref={R("assignee")} defaultValue={t.assigneeId != null ? String(t.assigneeId) : ""}><option value="">— sin asignar —</option>{teamMembers.filter(m => m.approvalStatus === "approved").map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
+      )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={5} defaultValue={t.notes || ""} /></div>
-      <div className="detail-block"><h4>Tiempo por etapa</h4><StageBreakdown t={t} /></div>
-      <button className="save" onClick={() => {
-        const newStage = V("stage") as TaskStage;
-        const tasks = state.tasks.map(x => {
-          if (x.id !== t.id) return x;
-          const u: Record<string, unknown> = { ...x, title: V("t").trim() || x.title, projectId: V("proj"), crit: V("crit"), notes: V("notes"), updatedAt: Date.now() };
-          if (newStage !== x.stage) advanceStageObj(u, newStage, "stage");
-          return u as unknown as Task;
-        });
-        onSave({ ...state, tasks }); onClose(); onToast("Tarea actualizada");
+      {t.assignee && <div style={{ fontSize: "0.78em", color: "var(--muted)", marginBottom: 8 }}>Asignada a: <strong>{t.assignee.name}</strong></div>}
+      <button className="save" onClick={async () => {
+        const assigneeRaw = V("assignee");
+        const assigneeId = assigneeRaw ? parseInt(assigneeRaw, 10) : null;
+        const dueRaw = V("due");
+        const body: Record<string, unknown> = { title: V("t").trim() || t.title, notes: V("notes") || null, priority: V("crit"), status: V("stage"), projectRef: V("proj") || null, assigneeId: assigneeId && !isNaN(assigneeId) ? assigneeId : null, dueDate: dueRaw || null };
+        try {
+          const res = await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al guardar"); return; }
+          onRefreshTasks(); onClose(); onToast("Tarea actualizada");
+        } catch { onToast("Error de conexión"); }
       }}>Guardar cambios</button>
-      <button className="del-link" onClick={() => {
-        const snap = [...state.tasks];
-        onSave({ ...state, tasks: state.tasks.filter(x => x.id !== t.id) });
-        onClose(); onToast("Tarea eliminada", () => onSave({ ...state, tasks: snap }));
-      }}>Eliminar tarea</button>
+      <button className="del-link" onClick={() => onConfirm("¿Eliminar esta tarea? No se puede deshacer.", async () => {
+        try {
+          await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "DELETE", credentials: "include" });
+          onRefreshTasks(); onClose(); onToast("Tarea eliminada");
+        } catch { onToast("Error al eliminar"); }
+      })}>Eliminar tarea</button>
     </>);
   }
 
@@ -1121,7 +1167,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         );
       })()}
       {(() => {
-        const { done, total, pct } = projProg(p.id, state.tasks);
+        const { done, total, pct } = projProg(p.id, apiTasks);
         return (
           <div className="field">
             <label>Avance {total > 0 ? <b>{done}/{total} tareas completadas ({pct}%)</b> : <span style={{ color: "var(--muted)", fontWeight: 400 }}>Sin tareas asignadas</span>}</label>
@@ -1142,7 +1188,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const newStatus = V("st") as ProjStatus;
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
-          const computedProg = projProg(x.id, state.tasks).pct;
+          const computedProg = projProg(x.id, apiTasks).pct;
           const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
@@ -1209,25 +1255,17 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
             </div>
             <button
               disabled={scrumProposed.filter(t => t.selected).length === 0}
-              onClick={() => {
-                const now = Date.now();
-                const newTasks: Task[] = scrumProposed
-                  .filter(t => t.selected)
-                  .map(t => ({
-                    id: uid(),
-                    title: t.title,
-                    projectId: p.id,
-                    crit: (["crítica","alta","media","baja"].includes(t.crit) ? t.crit : "media") as Prio,
-                    stage: "backlog" as TaskStage,
-                    stageSince: now,
-                    stageTime: {},
-                    notes: t.notes || "",
-                    createdAt: now,
-                    updatedAt: now,
-                  }));
-                onSave({ ...state, tasks: [...state.tasks, ...newTasks] });
-                setScrumProposed([]);
-                onToast(`${newTasks.length} tarea${newTasks.length !== 1 ? "s" : ""} agregada${newTasks.length !== 1 ? "s" : ""} al Backlog ✓`);
+              onClick={async () => {
+                const selected = scrumProposed.filter(t => t.selected);
+                if (!selected.length) return;
+                const payload = { tasks: selected.map(t => ({ title: t.title, notes: t.notes || undefined, priority: (["crítica","alta","media","baja"].includes(t.crit) ? t.crit : "media") as Prio, projectRef: p.id })) };
+                try {
+                  const res = await fetch(`${DRIVE_API_BASE}/hub/tasks/batch`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                  if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al crear tareas"); return; }
+                  onRefreshTasks();
+                  setScrumProposed([]);
+                  onToast(`${selected.length} tarea${selected.length !== 1 ? "s" : ""} agregada${selected.length !== 1 ? "s" : ""} al Backlog ✓`);
+                } catch { onToast("Error de conexión"); }
               }}
               style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid #1db87b", background: "rgba(0,200,120,0.1)", color: "#1db87b", fontWeight: 700, fontSize: "0.9em", cursor: scrumProposed.filter(t => t.selected).length === 0 ? "not-allowed" : "pointer", opacity: scrumProposed.filter(t => t.selected).length === 0 ? 0.5 : 1 }}
             >
@@ -1260,7 +1298,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           onSave({ ...state, projects: state.projects.filter(x => x.id !== p.id) });
           onClose(); onToast("Proyecto eliminado", () => onSave({ ...state, projects: snap }));
         };
-        const nTasks = state.tasks.filter(t => t.projectId === p.id).length;
+        const nTasks = apiTasks.filter(t => t.projectRef === p.id).length;
         if (nTasks > 0) onConfirm(`Este proyecto tiene ${nTasks} tarea${nTasks !== 1 ? "s" : ""} asociada${nTasks !== 1 ? "s" : ""} que quedará${nTasks !== 1 ? "n" : ""} sin proyecto. ¿Eliminar de todas formas?`, doDelete);
         else doDelete();
       }}>Eliminar proyecto</button>
@@ -1583,7 +1621,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                     <div style={{ fontSize: "0.84em", fontWeight: 600, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{proj.name}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                       <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: `${statusColor[proj.status] || "#888"}22`, color: statusColor[proj.status] || "#888" }}>{statusOf(proj.status).label}</span>
-                      <span style={{ fontSize: "0.68em", color: "var(--muted)" }}>{projProg(proj.id, state.tasks).pct}%</span>
+                      <span style={{ fontSize: "0.68em", color: "var(--muted)" }}>{projProg(proj.id, apiTasks).pct}%</span>
                     </div>
                   </div>
                   <button onClick={() => onOpenSheet({ kind: "proj", id: proj.id })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.78em", cursor: "pointer", whiteSpace: "nowrap" }}>Ver →</button>
@@ -1969,12 +2007,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 /* ============================================================
    VISTAS
    ============================================================ */
-function DashView({ state, onOpenProject, onNavigate }: { state: HubState; onOpenProject: (id: string) => void; onNavigate: (tab: Tab) => void }) {
+function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubState; onOpenProject: (id: string) => void; onNavigate: (tab: Tab) => void; apiTasks: HubTask[] }) {
   const active = state.projects.filter(p => p.status !== "done");
-  const avg = state.projects.length ? Math.round(state.projects.reduce((a, p) => a + projProg(p.id, state.tasks).pct, 0) / state.projects.length) : 0;
+  const avg = state.projects.length ? Math.round(state.projects.reduce((a, p) => a + projProg(p.id, apiTasks).pct, 0) / state.projects.length) : 0;
   const urgent = state.projects.filter(p => p.prio === "alta" && p.status !== "done").length;
   const due7 = state.projects.filter(p => { if (!p.due || p.status === "done") return false; const d = dueInfo(p); return d != null && d.days <= 7; }).length;
-  const prog = [...state.projects].sort((a, b) => projProg(b.id, state.tasks).pct - projProg(a.id, state.tasks).pct).slice(0, 8);
+  const prog = [...state.projects].sort((a, b) => projProg(b.id, apiTasks).pct - projProg(a.id, apiTasks).pct).slice(0, 8);
   const acts = [...state.projects].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 7);
   const orbitSvg = useMemo(() => buildOrbitSvg(state.projects), [state.projects]);
   return (
@@ -2010,31 +2048,32 @@ function DashView({ state, onOpenProject, onNavigate }: { state: HubState; onOpe
           {prog.length ? prog.map(p => (
             <div key={p.id} className="prow clickable" onClick={() => { onNavigate("proj"); setTimeout(() => onOpenProject(p.id), 80); }}>
               <div className="pn"><b>{p.name}</b><small>{p.client}</small></div>
-              <div className="pbarwrap"><div className="pbar"><i style={{ width: projProg(p.id, state.tasks).pct + "%" }} /></div></div>
-              <div className="ppct">{projProg(p.id, state.tasks).pct}%</div>
+              <div className="pbarwrap"><div className="pbar"><i style={{ width: projProg(p.id, apiTasks).pct + "%" }} /></div></div>
+              <div className="ppct">{projProg(p.id, apiTasks).pct}%</div>
             </div>
           )) : <div className="col-empty">Sin proyectos aún</div>}
         </div>
         <div className="panel activity">
           <h2>Actividad Reciente</h2>
-          {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, state.tasks).pct}%</span></div>) : <div className="col-empty">Sin actividad reciente</div>}
+          {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, apiTasks).pct}%</span></div>) : <div className="col-empty">Sin actividad reciente</div>}
         </div>
       </div>
     </div>
   );
 }
 
-function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio }: {
-  state: HubState; onSave: (n: HubState) => void; onOpenProject: (id: string) => void; onOpenTask: (id: string) => void;
+function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks }: {
+  state: HubState; onSave: (n: HubState) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
   onToast: (m: string) => void; projView: ProjView; setProjView: (v: ProjView) => void;
   searchQ: string; setSearchQ: (v: string) => void; filterPrio: string; setFilterPrio: (v: string) => void;
+  apiTasks: HubTask[]; onRefreshTasks: () => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
   const fp = state.projects.filter(p => (!filterPrio || p.prio === filterPrio) && (!searchQ || (p.name + p.client + p.type).toLowerCase().includes(searchQ)));
-  const ft = state.tasks.filter(t => {
-    if (filterPrio && t.crit !== filterPrio) return false;
-    if (searchQ) { const pj = state.projects.find(p => p.id === t.projectId); if (!((t.title + " " + (pj ? pj.name : "")).toLowerCase().includes(searchQ))) return false; }
+  const ft = apiTasks.filter(t => {
+    if (filterPrio && t.priority !== filterPrio) return false;
+    if (searchQ) { const pj = state.projects.find(p => p.id === t.projectRef); if (!((t.title + " " + (pj ? pj.name : "")).toLowerCase().includes(searchQ))) return false; }
     return true;
   });
   const dropProj = (status: string) => {
@@ -2047,13 +2086,17 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
     }
     setDragId(null); setDragOver(null);
   };
-  const dropTask = (stage: string) => {
+  const dropTask = async (stage: string) => {
     if (!dragId) return;
-    const t = state.tasks.find(x => x.id === dragId);
-    if (t && t.stage !== stage) {
-      const u: Record<string, unknown> = { ...t }; advanceStageObj(u, stage, "stage");
-      onSave({ ...state, tasks: state.tasks.map(x => x.id === dragId ? u as unknown as Task : x) });
-      onToast("Tarea → " + taskStageOf(stage).label);
+    const taskId = parseInt(dragId, 10);
+    if (isNaN(taskId)) { setDragId(null); setDragOver(null); return; }
+    const t = apiTasks.find(x => x.id === taskId);
+    if (t && t.status !== stage) {
+      try {
+        await fetch(`${DRIVE_API_BASE}/hub/tasks/${taskId}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: stage }) });
+        onRefreshTasks();
+        onToast("Tarea → " + taskStatusOf(stage).label);
+      } catch { onToast("Error al mover tarea"); }
     }
     setDragId(null); setDragOver(null);
   };
@@ -2079,7 +2122,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
                 onDragLeave={() => setDragOver(null)}
                 onDrop={() => dropProj(s.id)}>
                 <h3><span className="top"><span className="dot" style={{ background: s.color }} />{s.label}</span><span className="n">{items.length}</span></h3>
-                {items.length ? items.map(p => <ProjCard key={p.id} p={p} tasks={state.tasks} onClick={() => onOpenProject(p.id)} onDragStart={e => { setDragId(p.id); e.dataTransfer.setData("text/plain", p.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
+                {items.length ? items.map(p => <ProjCard key={p.id} p={p} tasks={apiTasks} onClick={() => onOpenProject(p.id)} onDragStart={e => { setDragId(p.id); e.dataTransfer.setData("text/plain", p.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
               </div>
             );
           })}
@@ -2091,23 +2134,23 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
             <div key={p.id} className="gcard" onClick={() => onOpenProject(p.id)}>
               <div className="gt">{p.name}</div><div className="gsub">{p.client} · {p.type}</div>
               <div className="gbody">{p.notes || ""}</div>
-              <div className="gfoot"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{projProg(p.id, state.tasks).pct}%</span></div>
+              <div className="gfoot"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{projProg(p.id, apiTasks).pct}%</span></div>
             </div>
           ))}
         </div>
       )}
       {projView === "scrum" && (
-        <div className="board scrum6">
-          {!state.projects.length && !state.tasks.length && <div className="col-empty" style={{ gridColumn: "1/-1" }}>Crea un proyecto primero, luego añade tareas con <strong>+ Nuevo</strong>.</div>}
+        <div className="board scrum3">
+          {!state.projects.length && !apiTasks.length && <div className="col-empty" style={{ gridColumn: "1/-1" }}>Crea un proyecto primero, luego añade tareas con <strong>+ Nuevo</strong>.</div>}
           {TASK_STAGES.map(s => {
-            const items = ft.filter(t => t.stage === s.id).sort((a, b) => (prioW(a.crit) - prioW(b.crit)) || ((a.stageSince||0) - (b.stageSince||0)));
+            const items = ft.filter(t => t.status === s.id).sort((a, b) => (prioW(a.priority) - prioW(b.priority)) || (a.orderIndex - b.orderIndex));
             return (
               <div key={s.id} className={`col ${dragOver === s.id ? "dragover" : ""}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(s.id); }}
                 onDragLeave={() => setDragOver(null)}
-                onDrop={() => dropTask(s.id)}>
+                onDrop={() => void dropTask(s.id)}>
                 <h3><span className="top"><span className="dot" style={{ background: s.color }} />{s.label}</span><span className="n">{items.length}</span></h3>
-                {items.length ? items.map(t => <TaskCard key={t.id} t={t} projects={state.projects} onClick={() => onOpenTask(t.id)} onDragStart={e => { setDragId(t.id); e.dataTransfer.setData("text/plain", t.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
+                {items.length ? items.map(t => <TaskCard key={t.id} t={t} projects={state.projects} onClick={() => onOpenTask(t.id)} onDragStart={e => { setDragId(String(t.id)); e.dataTransfer.setData("text/plain", String(t.id)); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
               </div>
             );
           })}
@@ -2383,7 +2426,7 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
     state.clients.forEach(c => { if ((c.name+" "+(c.contact||"")+" "+(c.segment||"")).toLowerCase().includes(q2)) out.push({ t:"Cliente", n:c.name, s:c.segment||c.contact||"", go:()=>go("clients",{kind:"client",id:c.id}) }); });
     state.notes.forEach(n => { if ((n.title+" "+(n.body||"")).toLowerCase().includes(q2)) out.push({ t:"Nota", n:n.title, s:"", go:()=>go("notes",{kind:"note",id:n.id}) }); });
     state.meetings.forEach(m => { if (((m.client||"")+" "+(m.summary||"")).toLowerCase().includes(q2)) out.push({ t:"Reunión", n:m.client||"Reunión", s:m.summary||"", go:()=>go("meet",{kind:"meet",id:m.id}) }); });
-    state.tasks.forEach(t => { const pj = state.projects.find(p => p.id === t.projectId); if ((t.title+" "+(pj?.name||"")).toLowerCase().includes(q2)) out.push({ t:"Tarea", n:t.title, s:pj?.name||"", go:()=>go("proj",{kind:"task",id:t.id}) }); });
+    /* hub_tasks now live in the API — task search omitted from global search */
     state.contracts.forEach(c => { if ((c.title+" "+(c.client||"")).toLowerCase().includes(q2)) out.push({ t:"Contrato", n:c.title, s:c.client||"", go:()=>go("contracts",{kind:"contract",id:c.id}) }); });
     setResults(out.slice(0, 8)); setShow(true);
   }, [q, state, go]);
@@ -2540,6 +2583,29 @@ export default function EjecutivoPage() {
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const storageKey = hubStorageKey(authUser?.id);
+
+  const { data: tasksData, refetch: refetchTasks } = useQuery({
+    queryKey: ["hub-tasks"],
+    queryFn: async () => {
+      const res = await fetch(`${HUB_API_BASE}/hub/tasks`, { credentials: "include" });
+      if (!res.ok) return { tasks: [] as HubTask[] };
+      return res.json() as Promise<{ tasks: HubTask[] }>;
+    },
+    staleTime: 30000,
+  });
+  const apiTasks: HubTask[] = tasksData?.tasks ?? [];
+  const onRefreshTasks = useCallback(() => { void refetchTasks(); }, [refetchTasks]);
+
+  const { data: teamMembersData } = useQuery({
+    queryKey: ["team-members"],
+    queryFn: async () => {
+      const res = await fetch(`${HUB_API_BASE}/admin/users`, { credentials: "include" });
+      if (!res.ok) return [] as TeamMember[];
+      return res.json() as Promise<TeamMember[]>;
+    },
+    staleTime: 120000,
+  });
+  const teamMembers: TeamMember[] = Array.isArray(teamMembersData) ? teamMembersData : [];
 
   const handleLogout = async () => {
     try {
@@ -2758,8 +2824,8 @@ export default function EjecutivoPage() {
               <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
               <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
             </div>
-            {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}
-            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} />}
+            {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} apiTasks={apiTasks} />}
+            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
@@ -2806,7 +2872,7 @@ export default function EjecutivoPage() {
           {sheet && <>
             <div className="overlay" onClick={() => setSheet(null)} />
             <div className="sheet">
-              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />
+              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} apiTasks={apiTasks} teamMembers={teamMembers} onRefreshTasks={onRefreshTasks} />
             </div>
           </>}
 
