@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import {
   ShieldCheck,
@@ -349,17 +350,17 @@ function TeamRoleSelector({
         Rol
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-foreground/15 rounded-xl shadow-xl py-1 min-w-[130px]">
+        <div className="absolute right-0 top-full mt-1 z-50 bg-popover text-popover-foreground border border-foreground/15 rounded-xl shadow-xl py-1 min-w-[150px]">
           {AREAS.map((r) => {
             const badge = AREA_BADGE[r];
             return (
               <button
                 key={r}
                 onClick={() => handleSelect(r)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-foreground/5 transition-colors ${r === currentRole ? "font-semibold" : ""}`}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-foreground/8 transition-colors ${r === currentRole ? "font-semibold" : "font-normal"}`}
               >
                 <span
-                  className="inline-block w-2 h-2 rounded-full"
+                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
                   style={{ background: badge.text }}
                 />
                 {AREA_LABELS[r]}
@@ -382,22 +383,20 @@ function UsersPanel({
   isSuperAdmin: boolean;
   isCeo: boolean;
 }) {
-  const [users, setUsers] = useState<ManagedUser[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  const { data: users, isLoading: loading } = useQuery<ManagedUser[]>({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
       const data = await apiFetch("/admin/users");
-      setUsers(data);
-    } catch {
-      setUsers([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return data as ManagedUser[];
+    },
+    staleTime: 30000,
+  });
 
-  useEffect(() => { load(); }, [load]);
+  const invalidate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+  }, [queryClient]);
 
   const setApproval = async (id: number, status: string) => {
     try {
@@ -407,7 +406,7 @@ function UsersPanel({
       });
       const labels: Record<string, string> = { approved: "aprobado", rejected: "rechazado", pending: "pendiente" };
       showToast(`Usuario ${labels[status] || status}`, "ok");
-      await load();
+      invalidate();
     } catch (e: any) {
       showToast(e.message, "err");
     }
@@ -418,7 +417,7 @@ function UsersPanel({
     try {
       await apiFetch(`/admin/users/${id}`, { method: "DELETE" });
       showToast("Usuario eliminado", "ok");
-      await load();
+      invalidate();
     } catch (e: any) {
       showToast(e.message, "err");
     }
@@ -505,7 +504,7 @@ function UsersPanel({
                   <TeamRoleSelector
                     userId={u.id}
                     currentRole={u.teamRole}
-                    onChanged={load}
+                    onChanged={invalidate}
                   />
                 )}
                 {isSuperAdmin && u.approvalStatus !== "approved" && (
