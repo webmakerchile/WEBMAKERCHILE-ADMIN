@@ -25,6 +25,7 @@ import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { useLang } from "@/lib/lang";
 import { useAuth } from "@/App";
+import { AREAS, AREA_LABELS, AREA_BADGE, type Area } from "@workspace/areas";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -292,27 +293,19 @@ type ManagedUser = {
   lastLoginAt: string;
 };
 
-const TEAM_ROLES = ["ceo", "editora", "programador", "publicista", "rrhh"] as const;
-type TeamRole = typeof TEAM_ROLES[number];
-
-const TEAM_ROLE_CONFIG: Record<TeamRole, { label: string; color: string }> = {
-  ceo: { label: "CEO", color: "bg-purple-500/15 text-purple-400 border-purple-500/25" },
-  editora: { label: "Editora", color: "bg-blue-500/15 text-blue-400 border-blue-500/25" },
-  programador: { label: "Programador", color: "bg-green-500/15 text-green-400 border-green-500/25" },
-  publicista: { label: "Publicista", color: "bg-orange-500/15 text-orange-400 border-orange-500/25" },
-  rrhh: { label: "RRHH", color: "bg-rose-500/15 text-rose-400 border-rose-500/25" },
-};
-
 function TeamRoleBadge({ teamRole }: { teamRole: string }) {
-  const cfg = TEAM_ROLE_CONFIG[teamRole as TeamRole];
-  if (!cfg) return (
+  const badge = AREA_BADGE[teamRole as Area];
+  if (!badge) return (
     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-foreground/10 text-muted-foreground border border-foreground/15">
       {teamRole}
     </span>
   );
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${cfg.color}`}>
-      {cfg.label}
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border"
+      style={{ background: badge.bg, color: badge.text, borderColor: badge.text + "40" }}
+    >
+      {AREA_LABELS[teamRole as Area]}
     </span>
   );
 }
@@ -329,7 +322,7 @@ function TeamRoleSelector({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const handleSelect = async (role: TeamRole) => {
+  const handleSelect = async (role: Area) => {
     if (role === currentRole) { setOpen(false); return; }
     setSaving(true);
     try {
@@ -357,16 +350,19 @@ function TeamRoleSelector({
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-foreground/15 rounded-xl shadow-xl py-1 min-w-[130px]">
-          {TEAM_ROLES.map((r) => {
-            const cfg = TEAM_ROLE_CONFIG[r];
+          {AREAS.map((r) => {
+            const badge = AREA_BADGE[r];
             return (
               <button
                 key={r}
                 onClick={() => handleSelect(r)}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-foreground/5 transition-colors ${r === currentRole ? "font-semibold" : ""}`}
               >
-                <span className={`inline-block w-2 h-2 rounded-full border ${cfg.color}`} />
-                {cfg.label}
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ background: badge.text }}
+                />
+                {AREA_LABELS[r]}
                 {r === currentRole && <CheckCircle2 className="w-3 h-3 ml-auto text-primary" />}
               </button>
             );

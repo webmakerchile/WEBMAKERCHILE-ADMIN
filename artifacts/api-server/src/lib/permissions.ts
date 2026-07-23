@@ -9,10 +9,11 @@ export const TEAM_ROLES: readonly TeamRole[] = AREAS;
 
 /** @deprecated Use AREA_LABELS from @workspace/areas instead. */
 export const TEAM_ROLE_LABELS: Record<TeamRole, string> = {
-  ceo: "CEO",
+  ceo:       "CEO",
   ejecutivo: "Ejecutivo",
-  edicion: "Edición",
+  edicion:   "Edición",
   marketing: "Marketing",
+  rrhh:      "RRHH",
 };
 
 /**

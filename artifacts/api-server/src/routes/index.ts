@@ -72,7 +72,7 @@ router.use(calendarRouter);
 
 // Hub routes: ejecutivo area only
 // hubTasksRouter must be before hubRouter so /hub/tasks/* is NOT caught by the CEO middleware
-router.use("/hub", requireArea("ceo", "ejecutivo"));
+router.use("/hub", requireArea("ceo", "ejecutivo", "rrhh"));
 router.use(hubTasksRouter);
 router.use(hubRouter);
 

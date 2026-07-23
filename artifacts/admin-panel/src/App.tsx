@@ -152,7 +152,7 @@ function EjecutivoRoute({ children }: { children: ReactNode }) {
   const user = useAuth();
   if (!user) return null;
   const area = toArea(user.teamRole);
-  if (user.role !== "superadmin" && area !== "ceo" && area !== "ejecutivo") {
+  if (user.role !== "superadmin" && area !== "ceo" && area !== "ejecutivo" && area !== "rrhh") {
     return <UnauthorizedPage />;
   }
   return <>{children}</>;

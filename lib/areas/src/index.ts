@@ -4,15 +4,22 @@
  * No Node.js–only dependencies.
  */
 
-export type Area = "ceo" | "ejecutivo" | "edicion" | "marketing";
+export type Area = "ceo" | "ejecutivo" | "edicion" | "marketing" | "rrhh";
 
-export const AREAS: readonly Area[] = ["ceo", "ejecutivo", "edicion", "marketing"] as const;
+export const AREAS: readonly Area[] = [
+  "ceo",
+  "ejecutivo",
+  "edicion",
+  "marketing",
+  "rrhh",
+] as const;
 
 export const AREA_LABELS: Record<Area, string> = {
   ceo:       "CEO",
   ejecutivo: "Ejecutivo",
   edicion:   "Edición",
   marketing: "Marketing",
+  rrhh:      "RRHH",
 };
 
 /** Badge colours for each area (CSS strings safe in both dark and light themes). */
@@ -21,6 +28,7 @@ export const AREA_BADGE: Record<Area, { bg: string; text: string }> = {
   ejecutivo: { bg: "rgba(59,130,246,0.18)",  text: "#3B82F6" },
   edicion:   { bg: "rgba(139,92,246,0.18)",  text: "#8B5CF6" },
   marketing: { bg: "rgba(34,197,94,0.18)",   text: "#22C55E" },
+  rrhh:      { bg: "rgba(244,114,182,0.18)", text: "#F472B6" },
 };
 
 /**
@@ -29,10 +37,11 @@ export const AREA_BADGE: Record<Area, { bg: string; text: string }> = {
  * Paths are matched exactly or as a prefix (e.g. "/biblioteca" also covers "/campanas/:id").
  */
 export const AREA_PAGES: Record<Area, string[] | "*"> = {
-  ceo: "*",
+  ceo:       "*",
   ejecutivo: ["/ejecutivo", "/ayuda"],
   edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/ayuda"],
   marketing: ["/insights", "/historias", "/descripciones", "/schedule", "/cuentas", "/ayuda"],
+  rrhh:      ["/ejecutivo", "/equipo", "/", "/ayuda"],
 };
 
 /**
@@ -55,6 +64,7 @@ export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
     "/calendar", "/connections", "/notifications", "/social",
     "/credentials", "/settings",
   ],
+  rrhh: ["/hub/tasks"],
 };
 
 /** Default landing page after login for each area. */
@@ -63,6 +73,7 @@ export const AREA_HOME: Record<Area, string> = {
   ejecutivo: "/ejecutivo",
   edicion:   "/",
   marketing: "/insights",
+  rrhh:      "/ejecutivo",
 };
 
 /**

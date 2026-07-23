@@ -15,7 +15,7 @@ function me(req: Request): AuthUser {
 
 function isCeoOrEjecutivo(req: Request): boolean {
   const u = me(req);
-  return u.role === "superadmin" || u.teamRole === "ceo" || u.teamRole === "ejecutivo";
+  return u.role === "superadmin" || u.teamRole === "ceo" || u.teamRole === "ejecutivo" || u.teamRole === "rrhh";
 }
 
 function isCeoOrSuperAdmin(req: Request): boolean {
