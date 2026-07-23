@@ -20,11 +20,18 @@ const GenerarBody = z.object({
     .optional(),
 });
 
+/** Esquema de pago por defecto cuando el cliente no especifica uno. */
+const ESQUEMA_PAGO_DEFAULT = [
+  { porcentaje: 50, momento: "AL INICIAR" },
+  { porcentaje: 50, momento: "CONTRA ENTREGA" },
+];
+
 /**
  * POST /cotizaciones/generar
  * Contexto libre del cliente → LLM (solo JSON) → validación Zod (+2 reintentos)
  * → devuelve el JSON de contenido + vista previa HTML.
  * Los montos los calcula SIEMPRE el servidor al renderizar.
+ * Si no llega esquema_pago se usa 50% al iniciar / 50% contra entrega.
  */
 router.post("/generar", async (req: Request, res: Response) => {
   const body = GenerarBody.safeParse(req.body);
@@ -33,7 +40,11 @@ router.post("/generar", async (req: Request, res: Response) => {
     return;
   }
   try {
-    const { data, intentos } = await generarContenidoCotizacion(body.data);
+    const input = {
+      ...body.data,
+      esquema_pago: body.data.esquema_pago ?? ESQUEMA_PAGO_DEFAULT,
+    };
+    const { data, intentos } = await generarContenidoCotizacion(input);
     let html: string | null = null;
     let htmlError: string | null = null;
     try {

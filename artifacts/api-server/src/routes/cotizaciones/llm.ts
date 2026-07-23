@@ -19,15 +19,28 @@ REGLAS DE REDACCIÓN:
 - contexto.parrafos: párrafo 1 cuenta la historia del cliente CON SUS NÚMEROS REALES (años, clientes, volúmenes) reconociendo su mérito; párrafo 2 nombra el problema puntual con la estructura "El problema no es X — es Y".
 - contexto.stats: 3 cifras. Las dos primeras son datos reales del negocio del cliente; la tercera es aspiracional del proyecto (ej: valor "0", descripción "horas del día sin respuesta, una vez tu chatbot esté funcionando").
 - contexto.soluciones: 4 frases que parten con verbo en infinitivo o "Que…", concretas, mencionando detalles reales (nombre del sitio, canales, etc.).
-- modulos: nombre corto y vendedor (ej: "Chatbot inteligente 24/7"); descripción de 1-2 frases centrada en el beneficio, no en la tecnología. El neto es el número entero exacto que te entregaron, sin IVA, sin puntos, sin formato.
+- modulos: nombre corto y vendedor (ej: "Chatbot inteligente 24/7"); descripción de 1-2 frases centrada en el beneficio, no en la tecnología. Si te entregaron precios netos, el neto es el número entero EXACTO que te entregaron, sin IVA, sin puntos, sin formato. Si NO te entregaron precios, ESTIMA tú un precio neto realista para cada módulo siguiendo la GUÍA DE PRECIOS (entero CLP, redondeado a miles, sin IVA).
 - como_funciona.items: exactamente 6 cards. Los actores alternan entre el cliente final del negocio (CLIENTA, CLIENTE, PACIENTE… según el rubro), el dueño (TÚ) y AMBOS. Describen escenas del día a día, no features.
 - pago.nota_personal: retoma UN detalle real de la conversación que humanice el cierre (ej: "Sabemos que esto lo estás conversando también con tu esposo — esta cotización queda a tu disposición para cuando decidan avanzar."). Si no hay ningún detalle así en el contexto, usa una frase cordial de disponibilidad sin inventar hechos.
 - Si el contexto menciona demos, promesas o pedidos específicos del cliente, referéncialos ("igual que en la demo que vimos", "tal como lo pediste").
 
+GUÍA DE PRECIOS (netos CLP de WebMaker Latam, solo para cuando NO te entregan precios — estima dentro de estos rangos según la complejidad que describa el contexto, redondeando a miles):
+- Landing page / sitio de una página: 250.000 – 500.000
+- Sitio web corporativo (varias páginas, formularios): 450.000 – 1.200.000
+- Tienda online / e-commerce: 800.000 – 2.000.000
+- Chatbot con IA (entrenado con catálogo): 600.000 – 1.200.000
+- Integración multicanal (WhatsApp, Instagram, web): 400.000 – 800.000
+- Sistema multiagente / panel para equipos: 450.000 – 900.000
+- Automatizaciones e integraciones (APIs, pagos, bodega): 300.000 – 900.000
+- Sistema o app a medida (según alcance): 1.500.000 – 5.000.000
+- Branding / diseño (logo, dirección de arte): 200.000 – 600.000
+- Mantención / soporte mensual: 50.000 – 150.000
+El total del proyecto debe ser coherente con el tamaño del negocio descrito en el contexto.
+
 PROHIBIDO:
-- Inventar cifras, nombres o hechos que no estén en el contexto entregado.
+- Inventar cifras, nombres o hechos que no estén en el contexto entregado (los precios estimados según la GUÍA DE PRECIOS son la única excepción).
 - Calcular o escribir montos con IVA, totales, o montos formateados con $ o puntos.
-- Dejar precios en 0 o inventar precios si no te los entregaron: en ese caso usa el valor -1 en neto para que el sistema lo marque como pendiente.
+- Dejar precios en 0. Si te entregaron precios úsalos exactos; si no, estímalos con la GUÍA DE PRECIOS. Usa -1 solo si el contexto es tan ambiguo que estimar sería irresponsable.
 - Usar markdown, backticks o texto fuera del JSON.
 
 Responde ÚNICAMENTE con el objeto JSON válido.`;
@@ -81,13 +94,15 @@ function buildUserMessage(input: GenerarCotizacionInput, hoy: Date): string {
       `\nPRECIOS NETOS ENTREGADOS (en CLP, sin IVA — úsalos EXACTOS y en este orden, un módulo por precio; genera exactamente ${input.precios_netos.length} módulos): ${input.precios_netos.join(", ")}`
     );
   } else {
-    parts.push(`\nNo se entregaron precios netos: usa -1 en cada neto para marcarlos como pendientes.`);
+    parts.push(
+      `\nNo se entregaron precios netos: ESTIMA tú un precio neto realista para cada módulo usando la GUÍA DE PRECIOS (entero CLP redondeado a miles, sin IVA). No dejes netos en -1 salvo que sea imposible estimar.`
+    );
   }
   if (input.mensualidad_neto != null) {
     parts.push(`\nMENSUALIDAD NETO ENTREGADA (CLP sin IVA, úsala EXACTA): ${input.mensualidad_neto}`);
   } else {
     parts.push(
-      `\nNo se entregó mensualidad: si el contexto no menciona mantención/hosting mensual, usa "mensualidad": null; si la menciona sin precio, usa neto -1.`
+      `\nNo se entregó mensualidad: si el contexto no menciona mantención/hosting mensual, usa "mensualidad": null; si la menciona sin precio, ESTIMA un neto mensual realista con la GUÍA DE PRECIOS (redondeado a miles).`
     );
   }
   if (input.esquema_pago && input.esquema_pago.length > 0) {
@@ -145,7 +160,12 @@ export async function generarContenidoCotizacion(
       continue;
     }
 
-    const bizErrors = validarPreciosEntregados(result.data, input.precios_netos, input.mensualidad_neto);
+    const bizErrors = validarPreciosEntregados(
+      result.data,
+      input.precios_netos,
+      input.mensualidad_neto,
+      input.esquema_pago
+    );
     if (bizErrors.length > 0) {
       lastError = bizErrors.map((e) => `- ${e}`).join("\n");
       messages.push({ role: "assistant", content: raw.slice(0, 8000) });
@@ -154,6 +174,37 @@ export async function generarContenidoCotizacion(
         content: `ERROR DE REGLAS DE NEGOCIO — corrige y reenvía el JSON COMPLETO corregido:\n${lastError}`,
       });
       continue;
+    }
+
+    // Nudge de estimación: si el usuario NO entregó precios y el LLM dejó netos
+    // pendientes (-1), se le pide estimar con la guía de precios. Solo mientras
+    // queden reintentos — en el último intento se acepta el -1 como "pendiente"
+    // (bloquea la vista previa) en vez de fallar la generación completa.
+    if (intento <= MAX_RETRIES) {
+      const pendientes: string[] = [];
+      if (!input.precios_netos || input.precios_netos.length === 0) {
+        result.data.modulos.forEach((m, i) => {
+          if (m.neto === -1) {
+            pendientes.push(
+              `- El módulo ${i + 1} ("${m.nombre}") quedó con neto -1: estima un precio neto realista (entero CLP redondeado a miles) usando la GUÍA DE PRECIOS.`
+            );
+          }
+        });
+      }
+      if (input.mensualidad_neto == null && result.data.mensualidad && result.data.mensualidad.neto === -1) {
+        pendientes.push(
+          `- La mensualidad quedó con neto -1: estima un neto mensual realista (entero CLP redondeado a miles) usando la GUÍA DE PRECIOS.`
+        );
+      }
+      if (pendientes.length > 0) {
+        lastError = pendientes.join("\n");
+        messages.push({ role: "assistant", content: raw.slice(0, 8000) });
+        messages.push({
+          role: "user",
+          content: `PRECIOS PENDIENTES — estima los precios faltantes y reenvía el JSON COMPLETO corregido:\n${lastError}`,
+        });
+        continue;
+      }
     }
 
     return { data: result.data, intentos: intento };

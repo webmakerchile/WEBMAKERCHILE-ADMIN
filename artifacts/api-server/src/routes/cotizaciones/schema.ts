@@ -114,12 +114,14 @@ export type Cotizacion = z.infer<typeof CotizacionSchema>;
 
 /**
  * Reglas de negocio adicionales al schema: si el usuario entregó precios netos
- * en el request, los netos del JSON deben coincidir exactamente.
+ * en el request, los netos del JSON deben coincidir exactamente. Lo mismo para
+ * el esquema de pago solicitado: los porcentajes deben respetarse tal cual.
  */
 export function validarPreciosEntregados(
   data: Cotizacion,
   preciosNetos?: number[] | null,
-  mensualidadNeto?: number | null
+  mensualidadNeto?: number | null,
+  esquemaPago?: { porcentaje: number; momento: string }[] | null
 ): string[] {
   const errores: string[] = [];
   if (preciosNetos && preciosNetos.length > 0) {
@@ -143,6 +145,18 @@ export function validarPreciosEntregados(
     } else if (data.mensualidad.neto !== mensualidadNeto) {
       errores.push(
         `La mensualidad tiene neto ${data.mensualidad.neto} pero el precio entregado es ${mensualidadNeto}; usa exactamente el precio entregado.`
+      );
+    }
+  }
+  if (esquemaPago && esquemaPago.length > 0) {
+    const pedidos = esquemaPago.map((h) => h.porcentaje);
+    const generados = data.pago.esquema.map((h) => h.porcentaje);
+    if (
+      generados.length !== pedidos.length ||
+      generados.some((p, i) => p !== pedidos[i])
+    ) {
+      errores.push(
+        `El esquema de pago entregado es [${pedidos.join("/")}] pero el JSON tiene [${generados.join("/")}]; usa exactamente los porcentajes entregados, en ese orden.`
       );
     }
   }

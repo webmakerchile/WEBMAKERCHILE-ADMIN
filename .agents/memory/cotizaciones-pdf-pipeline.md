@@ -14,3 +14,9 @@ description: Non-obvious constraints of the server-side cotizaciones PDF generat
 - **Limiter coverage is an invariant test:** `routes/limiter-coverage.test.ts` parses the literal regexes in `app.ts`. Adding any expensive endpoint (AI / publish / upload / Puppeteer) requires updating BOTH the `app.ts` regex and the MUST_* list in that test, or the suite fails by design.
 
 - **Wizard preview freshness:** editing the cotización JSON clears `cotHtml` so the PDF button stays disabled until `/preview` succeeds — this prevents PDF/preview divergence. Keep that behavior if reworking the wizard.
+
+- **Request fields the LLM must respect are enforced in the retry loop, not just prompted.** `validarPreciosEntregados` checks exact netos, mensualidad AND esquema-de-pago percentages against the request; mismatches trigger a business-error retry (budget shared with schema errors, 3 LLM calls max).
+  **Why:** prompt-only compliance drifts; the loop guarantees the user's numbers.
+  **How to apply:** when adding a new "entregado" field, add its check to `validarPreciosEntregados` — and note that test fixtures mocking the LLM must return values matching the requested field or the route 502s after retries.
+
+- **Price estimation mode:** when no prices are given, the prompt's GUÍA DE PRECIOS makes the LLM estimate netos; a post-validation nudge retries on `neto: -1`, but the LAST attempt accepts -1 (pending, blocks preview) instead of failing the whole generation. Keep that asymmetry: hard-fail only on contradicting user-given numbers, soft-degrade on missing estimates.

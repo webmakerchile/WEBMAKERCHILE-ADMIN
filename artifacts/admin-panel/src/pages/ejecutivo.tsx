@@ -698,6 +698,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [cotError, setCotError] = useState<string | null>(null);
   const [cotLoading, setCotLoading] = useState(false);
   const [cotShowJson, setCotShowJson] = useState(false);
+  const [cotEstimated, setCotEstimated] = useState(false);
+  const [wizAdvanced, setWizAdvanced] = useState(false);
   const [meetingNotes, setMeetingNotes] = useState("");
   const [meetingExtracting, setMeetingExtracting] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -1564,7 +1566,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 
   /* ---- Wizard: nuevo contrato desde cero ---- */
   if (sheet.kind === "new-contract-wizard") {
-    const WIZ_STEPS = ["Datos", "Módulos", "Pago", "Vista previa"];
+    const WIZ_STEPS = ["Contexto", "Vista previa"];
     const tNeto = wiz.modules.reduce((a, m) => a + m.price, 0);
     const tIva = Math.round(tNeto * 0.19);
     const tTotal = tNeto + tIva;
@@ -1583,29 +1585,18 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         ))}
       </div>
 
-      {/* STEP 1: Datos generales */}
+      {/* STEP 1: Contexto — la IA planifica módulos, alcance y precios automáticamente */}
       {wizStep === 1 && (
         <div className="wiz-body">
           <div className="field"><label>Cliente *</label>
             <input type="text" value={wiz.client} onChange={e => setWiz(w => ({ ...w, client: e.target.value }))} placeholder="Nombre del cliente o empresa" />
           </div>
-          <div className="field"><label>Nombre del servicio / proyecto *</label>
-            <input type="text" value={wiz.project} onChange={e => setWiz(w => ({ ...w, project: e.target.value }))} placeholder="Ej: Diseño y animación de mascota" />
-          </div>
-          <div className="field"><label>Descripción del alcance</label>
-            <textarea rows={4} value={wiz.scope} onChange={e => setWiz(w => ({ ...w, scope: e.target.value }))} placeholder="¿Qué incluye este servicio? Escribe el detalle…" />
-          </div>
-          <div className="two field">
-            <div><label>Fecha de emisión</label>
-              <input type="date" value={wiz.date} onChange={e => setWiz(w => ({ ...w, date: e.target.value }))} />
-            </div>
-            <div><label>Asesor / Responsable</label>
-              <input type="text" value={wiz.advisor} onChange={e => setWiz(w => ({ ...w, advisor: e.target.value }))} placeholder="Ej: Equipo WebMaker Latam" />
-            </div>
+          <div className="field"><label>Descripción del proyecto *</label>
+            <textarea rows={4} value={wiz.scope} onChange={e => setWiz(w => ({ ...w, scope: e.target.value }))} placeholder="¿Qué necesita el cliente? Descríbelo en 2-3 líneas — la IA planifica los módulos, el alcance y los precios automáticamente." />
           </div>
           <div className="field" style={{ marginTop: 12 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span>🎙️</span> Notas de reunión <span style={{ fontSize: "0.7em", fontWeight: 400, color: "var(--muted)" }}>(opcional — la IA completa los campos)</span>
+              <span>🎙️</span> Notas de reunión <span style={{ fontSize: "0.7em", fontWeight: 400, color: "var(--muted)" }}>(opcional — la IA las usa como contexto)</span>
             </label>
             {state.meetings.length > 0 && (
               <select style={{ marginBottom: 6 }} defaultValue="" onChange={e => {
@@ -1618,7 +1609,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 ))}
               </select>
             )}
-            <textarea rows={4} value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} placeholder="Pega las notas de tu reunión aquí — la IA las leerá y rellenará cliente, nombre del proyecto, alcance y precio automáticamente." style={{ fontFamily: "inherit" }} />
+            <textarea rows={4} value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} placeholder="Pega las notas de tu reunión aquí — la IA las leerá para armar la cotización completa." style={{ fontFamily: "inherit" }} />
           </div>
           {meetingNotes.trim().length >= 10 && (
             <button className="ai-extract-btn" style={{ marginBottom: 8 }} disabled={meetingExtracting} onClick={() => extractFromMeeting(meetingNotes, (data) => {
@@ -1633,138 +1624,145 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
             </button>
           )}
 
-          <button className="add-btn" onClick={() => {
-            if (!wiz.client.trim() || !wiz.project.trim()) { onToast("Cliente y nombre del proyecto son requeridos"); return; }
-            setWizStep(2);
-          }}>Continuar →</button>
-        </div>
-      )}
+          <button className="save" style={{ marginTop: 4, marginBottom: 8 }} onClick={() => setWizAdvanced(v => !v)}>
+            {wizAdvanced ? "▾ Ocultar opciones avanzadas" : "▸ Opciones avanzadas — módulos y pago (opcional)"}
+          </button>
 
-      {/* STEP 2: Módulos */}
-      {wizStep === 2 && (
-        <div className="wiz-body">
-          <div className="wiz-mod-header-row">
-            <span className="wiz-mod-title">Módulos de la cotización</span>
-            <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
-          </div>
-          {wiz.modules.map((m, i) => {
-            const mIva = Math.round(m.price * 0.19), mTotal = m.price + mIva;
-            return (
-              <div key={m.id} className="wiz-module">
-                <div className="wiz-mod-num-row">
-                  <span className="wiz-mod-num">{i + 1}</span>
-                  {wiz.modules.length > 1 && (
-                    <button className="wiz-mod-del-btn" onClick={() => setWiz(w => ({ ...w, modules: w.modules.filter(x => x.id !== m.id) }))}>✕</button>
-                  )}
-                </div>
-                <div className="field"><label>Nombre del módulo</label>
-                  <input type="text" value={m.name} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, name: e.target.value } : x) }))} placeholder="Ej: Dirección de arte" />
-                </div>
-                <div className="field"><label>Descripción breve</label>
-                  <input type="text" value={m.desc} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, desc: e.target.value } : x) }))} placeholder="Ej: Ajuste de propuesta a diseño consistente" />
-                </div>
-                <div className="field"><label>Precio neto (CLP)</label>
-                  <input type="number" value={m.price || ""} min={0} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, price: Number(e.target.value) || 0 } : x) }))} placeholder="0" />
-                  {m.price > 0 && <div className="wiz-price-hint"><span>+IVA: {fmtCLP(mIva)}</span><span className="wiz-total-mod">= {fmtCLP(mTotal)}</span></div>}
-                </div>
+          {wizAdvanced && (<>
+            <div className="field"><label>Nombre del servicio / proyecto</label>
+              <input type="text" value={wiz.project} onChange={e => setWiz(w => ({ ...w, project: e.target.value }))} placeholder="Opcional — la IA lo propone si lo dejas vacío" />
+            </div>
+            <div className="two field">
+              <div><label>Fecha de emisión</label>
+                <input type="date" value={wiz.date} onChange={e => setWiz(w => ({ ...w, date: e.target.value }))} />
               </div>
-            );
-          })}
-          {tNeto > 0 && (
-            <div className="wiz-grand-total">
-              <span>Neto: <strong>{fmtCLP(tNeto)}</strong></span>
-              <span>IVA: <strong>{fmtCLP(tIva)}</strong></span>
-              <span className="wiz-grand-v">Total: <strong>{fmtCLP(tTotal)}</strong></span>
+              <div><label>Asesor / Responsable</label>
+                <input type="text" value={wiz.advisor} onChange={e => setWiz(w => ({ ...w, advisor: e.target.value }))} placeholder="Ej: Equipo WebMaker Latam" />
+              </div>
             </div>
-          )}
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button className="save" onClick={() => setWizStep(1)}>← Atrás</button>
-            <button className="add-btn" style={{ flex: 1 }} onClick={() => setWizStep(3)}>Continuar →</button>
-          </div>
-        </div>
-      )}
 
-      {/* STEP 3: Condiciones de pago */}
-      {wizStep === 3 && (
-        <div className="wiz-body">
-          <div className="field"><label>% de pago al iniciar</label>
-            <input type="number" value={wiz.downPct} min={0} max={100} onChange={e => setWiz(w => ({ ...w, downPct: Math.min(100, Math.max(0, Number(e.target.value) || 50)) }))} />
-            <div className="wiz-price-hint">
-              <span>Al iniciar: <strong>{wiz.downPct}%</strong>{tTotal > 0 ? ` (${fmtCLP(Math.round(tTotal * wiz.downPct / 100))})` : ""}</span>
-              <span>A la entrega: <strong>{100 - wiz.downPct}%</strong>{tTotal > 0 ? ` (${fmtCLP(tTotal - Math.round(tTotal * wiz.downPct / 100))})` : ""}</span>
+            <div className="wiz-mod-header-row">
+              <span className="wiz-mod-title">Módulos (opcional — si no los defines, la IA los propone con precios estimados)</span>
+              <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
             </div>
-          </div>
-          <div className="two field">
-            <div><label>Mensualidad (opcional)</label>
-              <input type="text" value={wiz.monthly} onChange={e => setWiz(w => ({ ...w, monthly: e.target.value }))} placeholder="Ej: Soporte técnico mensual" />
+            {wiz.modules.map((m, i) => {
+              const mIva = Math.round(m.price * 0.19), mTotal = m.price + mIva;
+              return (
+                <div key={m.id} className="wiz-module">
+                  <div className="wiz-mod-num-row">
+                    <span className="wiz-mod-num">{i + 1}</span>
+                    {wiz.modules.length > 1 && (
+                      <button className="wiz-mod-del-btn" onClick={() => setWiz(w => ({ ...w, modules: w.modules.filter(x => x.id !== m.id) }))}>✕</button>
+                    )}
+                  </div>
+                  <div className="field"><label>Nombre del módulo</label>
+                    <input type="text" value={m.name} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, name: e.target.value } : x) }))} placeholder="Ej: Dirección de arte" />
+                  </div>
+                  <div className="field"><label>Descripción breve</label>
+                    <input type="text" value={m.desc} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, desc: e.target.value } : x) }))} placeholder="Ej: Ajuste de propuesta a diseño consistente" />
+                  </div>
+                  <div className="field"><label>Precio neto (CLP)</label>
+                    <input type="number" value={m.price || ""} min={0} onChange={e => setWiz(w => ({ ...w, modules: w.modules.map(x => x.id === m.id ? { ...x, price: Number(e.target.value) || 0 } : x) }))} placeholder="Vacío = la IA lo estima" />
+                    {m.price > 0 && <div className="wiz-price-hint"><span>+IVA: {fmtCLP(mIva)}</span><span className="wiz-total-mod">= {fmtCLP(mTotal)}</span></div>}
+                  </div>
+                </div>
+              );
+            })}
+            {tNeto > 0 && (
+              <div className="wiz-grand-total">
+                <span>Neto: <strong>{fmtCLP(tNeto)}</strong></span>
+                <span>IVA: <strong>{fmtCLP(tIva)}</strong></span>
+                <span className="wiz-grand-v">Total: <strong>{fmtCLP(tTotal)}</strong></span>
+              </div>
+            )}
+
+            <div className="field" style={{ marginTop: 12 }}><label>% de pago al iniciar</label>
+              <input type="number" value={wiz.downPct} min={0} max={100} onChange={e => { const raw = e.target.value; const n = raw === "" ? 50 : Number(raw); setWiz(w => ({ ...w, downPct: Math.min(100, Math.max(0, Number.isNaN(n) ? 50 : n)) })); }} />
+              <div className="wiz-price-hint">
+                <span>Al iniciar: <strong>{wiz.downPct}%</strong>{tTotal > 0 ? ` (${fmtCLP(Math.round(tTotal * wiz.downPct / 100))})` : ""}</span>
+                <span>A la entrega: <strong>{100 - wiz.downPct}%</strong>{tTotal > 0 ? ` (${fmtCLP(tTotal - Math.round(tTotal * wiz.downPct / 100))})` : ""}</span>
+              </div>
             </div>
-            <div><label>Precio mensualidad (neto CLP)</label>
-              <input type="number" value={wiz.monthlyPrice || ""} min={0} onChange={e => setWiz(w => ({ ...w, monthlyPrice: e.target.value }))} placeholder="0" />
+            <div className="two field">
+              <div><label>Mensualidad (opcional)</label>
+                <input type="text" value={wiz.monthly} onChange={e => setWiz(w => ({ ...w, monthly: e.target.value }))} placeholder="Ej: Soporte técnico mensual" />
+              </div>
+              <div><label>Precio mensualidad (neto CLP)</label>
+                <input type="number" value={wiz.monthlyPrice || ""} min={0} onChange={e => setWiz(w => ({ ...w, monthlyPrice: e.target.value }))} placeholder="0" />
+              </div>
             </div>
-          </div>
-          <div className="field"><label>Vigencia de la cotización (días)</label>
-            <input type="number" value={wiz.validityDays || ""} min={0} onChange={e => setWiz(w => ({ ...w, validityDays: Math.max(0, Number(e.target.value) || 0) }))} placeholder="15" />
-            <div className="wiz-price-hint"><span>{wiz.validityDays > 0 ? `Vence ${wiz.validityDays} día${wiz.validityDays !== 1 ? "s" : ""} después de la emisión (${wiz.date || "hoy"})` : "Sin fecha de vencimiento"}</span></div>
-          </div>
-          <div className="field"><label>Notas de cierre</label>
-            <textarea rows={3} value={wiz.notes} onChange={e => setWiz(w => ({ ...w, notes: e.target.value }))} placeholder="Ej: Cotización vigente por 15 días…" />
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button className="save" onClick={() => setWizStep(2)}>← Atrás</button>
-            <button className="add-btn wiz-gen-btn" style={{ flex: 1 }} disabled={cotLoading} onClick={async () => {
-              if (!wiz.client.trim() || !wiz.project.trim()) { onToast("Completa cliente y nombre del proyecto primero"); return; }
-              setCotLoading(true); setCotError(null);
-              try {
-                const validMods = wiz.modules.filter(m => m.name.trim() !== "");
-                const contexto = [
-                  `Cliente: ${wiz.client}`,
-                  `Proyecto: ${wiz.project}`,
-                  wiz.scope && `Alcance: ${wiz.scope}`,
-                  wiz.advisor && `Asesor responsable: ${wiz.advisor}`,
-                  wiz.monthly && `Mensualidad: ${wiz.monthly}`,
-                  wiz.notes && `Notas: ${wiz.notes}`,
-                  meetingNotes.trim() && `Notas de reunión:\n${meetingNotes.trim()}`,
-                ].filter(Boolean).join("\n");
-                const body: Record<string, unknown> = { contexto_cliente: contexto };
-                if (validMods.length > 0) body.modulos_sugeridos = validMods.map(m => m.desc ? `${m.name}: ${m.desc}` : m.name).join("; ");
-                if (validMods.length > 0 && validMods.length <= 4 && validMods.every(m => m.price > 0)) body.precios_netos = validMods.map(m => Math.round(m.price));
-                const mensualidadNeto = Math.round(Number(wiz.monthlyPrice) || 0);
-                if (mensualidadNeto > 0) body.mensualidad_neto = mensualidadNeto;
-                const pct = Math.round(wiz.downPct);
+            <div className="field"><label>Vigencia de la cotización (días)</label>
+              <input type="number" value={wiz.validityDays || ""} min={0} onChange={e => setWiz(w => ({ ...w, validityDays: Math.max(0, Number(e.target.value) || 0) }))} placeholder="15" />
+              <div className="wiz-price-hint"><span>{wiz.validityDays > 0 ? `Vence ${wiz.validityDays} día${wiz.validityDays !== 1 ? "s" : ""} después de la emisión (${wiz.date || "hoy"})` : "Sin fecha de vencimiento"}</span></div>
+            </div>
+            <div className="field"><label>Notas de cierre</label>
+              <textarea rows={3} value={wiz.notes} onChange={e => setWiz(w => ({ ...w, notes: e.target.value }))} placeholder="Ej: Cotización vigente por 15 días…" />
+            </div>
+          </>)}
+
+          <button className="add-btn wiz-gen-btn" style={{ marginTop: 12, width: "100%" }} disabled={cotLoading} onClick={async () => {
+            if (!wiz.client.trim()) { onToast("Ingresa el nombre del cliente"); return; }
+            if (wiz.scope.trim().length < 10 && meetingNotes.trim().length < 10) { onToast("Describe el proyecto o pega las notas de la reunión — la IA necesita contexto"); return; }
+            setCotLoading(true); setCotError(null);
+            try {
+              const validMods = wiz.modules.filter(m => m.name.trim() !== "");
+              const contexto = [
+                `Cliente: ${wiz.client}`,
+                wiz.project.trim() && `Proyecto: ${wiz.project}`,
+                wiz.scope && `Alcance: ${wiz.scope}`,
+                wiz.advisor && `Asesor responsable: ${wiz.advisor}`,
+                wiz.monthly && `Mensualidad: ${wiz.monthly}`,
+                wiz.notes && `Notas: ${wiz.notes}`,
+                meetingNotes.trim() && `Notas de reunión:\n${meetingNotes.trim()}`,
+              ].filter(Boolean).join("\n");
+              const body: Record<string, unknown> = { contexto_cliente: contexto };
+              if (validMods.length > 0) body.modulos_sugeridos = validMods.map(m => m.desc ? `${m.name}: ${m.desc}` : m.name).join("; ");
+              const conPrecios = validMods.length > 0 && validMods.length <= 4 && validMods.every(m => m.price > 0);
+              if (conPrecios) body.precios_netos = validMods.map(m => Math.round(m.price));
+              const mensualidadNeto = Math.round(Number(wiz.monthlyPrice) || 0);
+              if (mensualidadNeto > 0) body.mensualidad_neto = mensualidadNeto;
+              const pct = Math.round(wiz.downPct);
+              if (pct !== 50) {
                 body.esquema_pago = pct >= 100 ? [{ porcentaje: 100, momento: "AL INICIAR" }]
                   : pct <= 0 ? [{ porcentaje: 100, momento: "CONTRA ENTREGA" }]
                   : [{ porcentaje: pct, momento: "AL INICIAR" }, { porcentaje: 100 - pct, momento: "CONTRA ENTREGA" }];
-                const res = await fetch(`${DRIVE_API_BASE}/cotizaciones/generar`, {
-                  method: "POST", credentials: "include",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-                const data = await res.json().catch(() => ({})) as { cotizacion?: unknown; html?: string | null; htmlError?: string | null; error?: string };
-                if (!res.ok || !data.cotizacion) {
-                  onToast(data.error || `Error generando la cotización (${res.status})`);
-                  return;
-                }
-                setCotJson(JSON.stringify(data.cotizacion, null, 2));
-                setCotHtml(data.html || null);
-                setCotError(data.htmlError || null);
-                setCotShowJson(!!data.htmlError);
-                setWizStep(4);
-              } catch (e: unknown) {
-                onToast("Error generando la cotización: " + (e instanceof Error ? e.message : "desconocido"));
-              } finally { setCotLoading(false); }
-            }}>{cotLoading ? "⏳ Generando cotización con IA…" : "✨ Generar cotización con IA"}</button>
-          </div>
+              }
+              const res = await fetch(`${DRIVE_API_BASE}/cotizaciones/generar`, {
+                method: "POST", credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              });
+              const data = await res.json().catch(() => ({})) as { cotizacion?: unknown; html?: string | null; htmlError?: string | null; error?: string };
+              if (!res.ok || !data.cotizacion) {
+                onToast(data.error || `Error generando la cotización (${res.status})`);
+                return;
+              }
+              setCotEstimated(!conPrecios);
+              setCotJson(JSON.stringify(data.cotizacion, null, 2));
+              setCotHtml(data.html || null);
+              setCotError(data.htmlError || null);
+              setCotShowJson(!!data.htmlError);
+              setWizStep(2);
+            } catch (e: unknown) {
+              onToast("Error generando la cotización: " + (e instanceof Error ? e.message : "desconocido"));
+            } finally { setCotLoading(false); }
+          }}>{cotLoading ? "⏳ Generando cotización con IA…" : "✨ Generar cotización con IA"}</button>
         </div>
       )}
 
-      {/* STEP 4: Vista previa (HTML del servidor) + PDF */}
-      {wizStep === 4 && (
+      {/* STEP 2: Vista previa (HTML del servidor) + PDF */}
+      {wizStep === 2 && (
         <div className="wiz-body">
           {cotHtml ? (
             <iframe title="Vista previa de la cotización" srcDoc={cotHtml} sandbox="" style={{ width: "100%", height: "60vh", border: "1px solid var(--line)", borderRadius: 8, background: "#fff" }} />
           ) : (
             <div className="wiz-price-hint" style={{ padding: 12, border: "1px solid var(--line)", borderRadius: 8 }}>
               <span>Sin vista previa aún. {cotError ? "Corrige el JSON y actualiza la vista." : ""}</span>
+            </div>
+          )}
+          {cotEstimated && cotHtml && (
+            <div className="wiz-price-hint" style={{ marginTop: 8 }}>
+              <span>💡 Los precios fueron estimados por la IA — puedes ajustarlos en "Editar contenido (JSON)" y actualizar la vista.</span>
             </div>
           )}
           {cotError && <div style={{ color: "#dc2626", fontSize: "0.8em", marginTop: 8, whiteSpace: "pre-wrap" }}>{cotError}</div>}
@@ -1799,12 +1797,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           )}
 
           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button className="save" onClick={() => setWizStep(3)}>← Atrás</button>
+            <button className="save" onClick={() => setWizStep(1)}>← Atrás</button>
             <button className="add-btn wiz-gen-btn" style={{ flex: 1 }} disabled={generatingPdf || !cotHtml} onClick={async () => {
               setGeneratingPdf(true);
               try {
-                let parsed: { modulos?: Array<{ neto?: number }> };
-                try { parsed = JSON.parse(cotJson) as { modulos?: Array<{ neto?: number }> }; } catch { onToast("El JSON no es válido — corrígelo antes de generar el PDF"); return; }
+                let parsed: { modulos?: Array<{ neto?: number }>; portada?: { alcance_titulo?: string } };
+                try { parsed = JSON.parse(cotJson) as { modulos?: Array<{ neto?: number }>; portada?: { alcance_titulo?: string } }; } catch { onToast("El JSON no es válido — corrígelo antes de generar el PDF"); return; }
                 const res = await fetch(`${DRIVE_API_BASE}/cotizaciones/pdf`, {
                   method: "POST", credentials: "include",
                   headers: { "Content-Type": "application/json" },
@@ -1841,7 +1839,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   exp.setDate(exp.getDate() + wiz.validityDays);
                   expiresAt = exp.toISOString().slice(0, 10);
                 }
-                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: totalConIva > 0 ? fmtCLP(totalConIva) : (tTotal > 0 ? fmtCLP(tTotal) : ""), status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
+                const contractTitle = wiz.project.trim() || parsed.portada?.alcance_titulo || `Cotización ${wiz.client}`;
+                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: contractTitle, client: wiz.client, value: totalConIva > 0 ? fmtCLP(totalConIva) : (tTotal > 0 ? fmtCLP(tTotal) : ""), status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
                 onToast(pdfUrl ? "Contrato creado y PDF subido a Drive ✓" : "Contrato creado");
               } catch (e: unknown) {
