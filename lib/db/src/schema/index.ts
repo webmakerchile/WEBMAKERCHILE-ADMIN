@@ -15,3 +15,4 @@ export * from "./brand-tone";
 export * from "./credentials";
 export * from "./hub-state";
 export * from "./hub-tasks";
+export * from "./hub-task-activity";

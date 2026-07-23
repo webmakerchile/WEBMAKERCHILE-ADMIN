@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { hubTasks, users, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
-import { eq, and, asc, sql } from "drizzle-orm";
+import { hubTasks, users, hubTaskActivity, type HubTaskRow, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
+import { eq, and, asc, desc, sql, gte, lte, isNull, or, ne } from "drizzle-orm";
 import { z } from "zod";
 import { createNotification } from "../../lib/notifications";
 
@@ -70,6 +70,25 @@ function computeStageTransition(
     [existing.stage]: (prev[existing.stage] ?? 0) + elapsedSec,
   };
   return { stage: newStage, stageSince: now, stageTime: newStageTime };
+}
+
+/** Insert a row in hub_task_activity. Silently ignores errors. */
+async function logActivity(entry: {
+  taskId: number;
+  taskTitle: string;
+  userId: number;
+  action: "stage_change" | "created" | "assigned";
+  oldStage?: string | null;
+  newStage?: string | null;
+}): Promise<void> {
+  await db.insert(hubTaskActivity).values({
+    taskId: entry.taskId,
+    taskTitle: entry.taskTitle,
+    userId: entry.userId,
+    action: entry.action,
+    oldStage: entry.oldStage ?? null,
+    newStage: entry.newStage ?? null,
+  });
 }
 
 async function fetchTaskWithUsers(taskId: number) {
@@ -268,8 +287,11 @@ router.post("/hub/tasks", async (req: Request, res: Response) => {
         type: "system",
         title: "Nueva tarea asignada",
         body: d.title,
-        link: "/ejecutivo",
+        link: "/mi-dia",
       }).catch(() => {});
+    }
+    if (inserted) {
+      await logActivity({ taskId: inserted.id, taskTitle: inserted.title, userId: user.id, action: "created" }).catch(() => {});
     }
     res.status(201).json({ task: inserted });
   } catch (err) {
@@ -324,6 +346,130 @@ router.post("/hub/tasks/batch", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[hub/tasks/batch POST]", err);
     res.status(500).json({ error: "Error al crear tareas" });
+  }
+});
+
+/* GET /hub/tasks/team-view — full team load for CEO/ejecutivo */
+router.get("/hub/tasks/team-view", async (req: Request, res: Response) => {
+  if (!isCeoOrEjecutivo(req)) { res.status(403).json({ error: "Sin acceso" }); return; }
+  try {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const stagnantThreshold = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const PRIO_ORDER: Record<string, number> = { "crítica": 0, "alta": 1, "media": 2, "baja": 3 };
+    const STAGNANT_STAGES = new Set(["sprint", "doing", "qa_sent", "qa_rev"]);
+
+    const [allUsers, allActiveTasks] = await Promise.all([
+      db.select({ id: users.id, name: users.name, picture: users.picture, email: users.email, teamRole: users.teamRole })
+        .from(users).where(eq(users.approvalStatus, "approved")).orderBy(asc(users.name)),
+      db.select({ id: hubTasks.id, title: hubTasks.title, stage: hubTasks.stage, priority: hubTasks.priority, dueDate: hubTasks.dueDate, stageSince: hubTasks.stageSince, assigneeId: hubTasks.assigneeId })
+        .from(hubTasks).where(and(ne(hubTasks.stage, "done"), sql`${hubTasks.assigneeId} IS NOT NULL`))
+        .orderBy(asc(hubTasks.orderIndex), asc(hubTasks.createdAt)),
+    ]);
+
+    const tasksByAssignee = new Map<number, typeof allActiveTasks>();
+    for (const t of allActiveTasks) {
+      if (t.assigneeId == null) continue;
+      if (!tasksByAssignee.has(t.assigneeId)) tasksByAssignee.set(t.assigneeId, []);
+      tasksByAssignee.get(t.assigneeId)!.push(t);
+    }
+
+    const members = allUsers.map((u) => {
+      const tasks = (tasksByAssignee.get(u.id) ?? []).sort(
+        (a, b) => (PRIO_ORDER[a.priority] ?? 9) - (PRIO_ORDER[b.priority] ?? 9),
+      );
+      let semaphore: "green" | "yellow" | "red" = "green";
+      const enriched = tasks.map((t) => {
+        const stageSinceMs = t.stageSince ? now.getTime() - new Date(t.stageSince).getTime() : 0;
+        const stagnant = STAGNANT_STAGES.has(t.stage) && t.stageSince != null && new Date(t.stageSince) < stagnantThreshold;
+        const overdue = t.dueDate != null && t.dueDate < todayStr;
+        const dueToday = t.dueDate === todayStr;
+        if (stagnant || overdue) semaphore = "red";
+        else if (dueToday && semaphore !== "red") semaphore = "yellow";
+        return { id: t.id, title: t.title, stage: t.stage, priority: t.priority, dueDate: t.dueDate, stageSinceMs, stagnant, overdue, dueToday };
+      });
+      return { id: u.id, name: u.name, picture: u.picture, email: u.email, teamRole: u.teamRole, semaphore, activeTasks: enriched, activeCount: tasks.length };
+    });
+
+    res.json({ members });
+  } catch (err) {
+    console.error("[hub/tasks/team-view GET]", err);
+    res.status(500).json({ error: "Error al obtener vista del equipo" });
+  }
+});
+
+/* GET /hub/tasks/my-day — tasks for current user grouped by date category */
+router.get("/hub/tasks/my-day", async (req: Request, res: Response) => {
+  try {
+    const user = me(req);
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const weekEndDate = new Date(now);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+    const weekEndStr = weekEndDate.toISOString().slice(0, 10);
+    const todayStart = new Date(`${todayStr}T00:00:00.000Z`);
+
+    const rows = await db.select({
+      id: hubTasks.id,
+      title: hubTasks.title,
+      stage: hubTasks.stage,
+      priority: hubTasks.priority,
+      dueDate: hubTasks.dueDate,
+      completedAt: hubTasks.completedAt,
+      projectRef: hubTasks.projectRef,
+      notes: hubTasks.notes,
+      stageSince: hubTasks.stageSince,
+    }).from(hubTasks).where(
+      and(eq(hubTasks.assigneeId, user.id), or(ne(hubTasks.stage, "done"), gte(hubTasks.completedAt, todayStart))),
+    ).orderBy(asc(hubTasks.dueDate), asc(hubTasks.orderIndex));
+
+    type TaskRow = typeof rows[number];
+    const vencidas: TaskRow[] = [], hoy: TaskRow[] = [], semana: TaskRow[] = [], sinFecha: TaskRow[] = [], completedToday: TaskRow[] = [];
+    for (const t of rows) {
+      if (t.stage === "done" && t.completedAt && t.completedAt >= todayStart) { completedToday.push(t); continue; }
+      if (t.stage === "done") continue;
+      if (t.dueDate == null) { sinFecha.push(t); continue; }
+      if (t.dueDate < todayStr) { vencidas.push(t); continue; }
+      if (t.dueDate === todayStr) { hoy.push(t); continue; }
+      if (t.dueDate <= weekEndStr) { semana.push(t); continue; }
+      sinFecha.push(t);
+    }
+    const total = vencidas.length + hoy.length + semana.length + sinFecha.length + completedToday.length;
+    res.json({ groups: { vencidas, hoy, semana, sinFecha, completedToday }, progress: { done: completedToday.length, total } });
+  } catch (err) {
+    console.error("[hub/tasks/my-day GET]", err);
+    res.status(500).json({ error: "Error al obtener tareas del día" });
+  }
+});
+
+/* GET /hub/tasks/activity — activity log for a user on a date (CEO/ejecutivo only) */
+router.get("/hub/tasks/activity", async (req: Request, res: Response) => {
+  if (!isCeoOrEjecutivo(req)) { res.status(403).json({ error: "Sin acceso" }); return; }
+  const { userId, date } = req.query as Record<string, string>;
+  const uid = parseInt(userId || "", 10);
+  if (isNaN(uid)) { res.status(400).json({ error: "userId inválido" }); return; }
+  const dateStr = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10);
+  try {
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+    const rows = await db.select({
+      id: hubTaskActivity.id,
+      taskId: hubTaskActivity.taskId,
+      taskTitle: hubTaskActivity.taskTitle,
+      action: hubTaskActivity.action,
+      oldStage: hubTaskActivity.oldStage,
+      newStage: hubTaskActivity.newStage,
+      createdAt: hubTaskActivity.createdAt,
+      actorName: users.name,
+    }).from(hubTaskActivity)
+      .leftJoin(users, eq(users.id, hubTaskActivity.userId))
+      .where(and(eq(hubTaskActivity.userId, uid), gte(hubTaskActivity.createdAt, dayStart), lte(hubTaskActivity.createdAt, dayEnd)))
+      .orderBy(desc(hubTaskActivity.createdAt))
+      .limit(50);
+    res.json({ items: rows });
+  } catch (err) {
+    console.error("[hub/tasks/activity GET]", err);
+    res.status(500).json({ error: "Error al obtener actividad" });
   }
 });
 
@@ -406,6 +552,14 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
     }
 
     await db.update(hubTasks).set(updates).where(eq(hubTasks.id, id));
+
+    // Log activity
+    if (d.stage !== undefined && d.stage !== existing.stage) {
+      await logActivity({ taskId: id, taskTitle: existing.title, userId: user.id, action: "stage_change", oldStage: existing.stage, newStage: d.stage }).catch(() => {});
+    }
+    if (canManageAll && d.assigneeId !== undefined && d.assigneeId !== null && d.assigneeId !== existing.assigneeId) {
+      await logActivity({ taskId: id, taskTitle: existing.title, userId: user.id, action: "assigned" }).catch(() => {});
+    }
 
     // Notify on assignee change
     if (

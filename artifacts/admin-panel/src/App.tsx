@@ -37,6 +37,7 @@ const EquipoPage = lazy(() => import("./pages/equipo"));
 const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
 const AjustesPage = lazy(() => import("./pages/ajustes"));
 const EjecutivoPage = lazy(() => import("./pages/ejecutivo"));
+const MiDiaPage = lazy(() => import("./pages/mi-dia"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -364,6 +365,11 @@ function Router() {
       <Route path="/ajustes">
         <AreaGuard path="/ajustes">
           <RouteShell name="ajustes"><AjustesPage /></RouteShell>
+        </AreaGuard>
+      </Route>
+      <Route path="/mi-dia">
+        <AreaGuard path="/mi-dia">
+          <RouteShell name="mi-dia"><MiDiaPage /></RouteShell>
         </AreaGuard>
       </Route>
       <Route path="/ejecutivo">

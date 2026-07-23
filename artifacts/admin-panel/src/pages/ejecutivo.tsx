@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp,
 } from "lucide-react";
 import "./ejecutivo.css";
 
@@ -49,7 +50,7 @@ interface TeamMember {
   approvalStatus: string | null;
 }
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive";
+type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive" | "team";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
@@ -97,6 +98,7 @@ const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cli
 const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
 const PRIO_W: Record<string, number> = { crítica: -1, alta: 0, media: 1, baja: 2 };
 const TAB_TITLES: Record<Tab, [string, string]> = {
+  team: ["Equipo hoy", "Centro de comando · cargas · semáforo · actividad"],
   dash: ["Dashboard", "Resumen ejecutivo en vivo"],
   proj: ["Proyectos", "Kanban · Lista · Scrumban"],
   clients: ["Clientes", "Cartera y contactos"],
@@ -2558,7 +2560,206 @@ function HubDriveView() {
 /* ============================================================
    TAB ICONS
    ============================================================ */
+/* ============================================================
+   TEAM VIEW — Equipo hoy (CEO/ejecutivo)
+   ============================================================ */
+
+interface TeamTask {
+  id: number; title: string; stage: string; priority: string;
+  dueDate: string | null; stageSinceMs: number; stagnant: boolean; overdue: boolean; dueToday: boolean;
+}
+interface TeamMemberCard {
+  id: number; name: string | null; picture: string | null; email: string | null; teamRole: string | null;
+  semaphore: "green" | "yellow" | "red"; activeTasks: TeamTask[]; activeCount: number;
+}
+interface TeamActivityItem {
+  id: number; taskId: number; taskTitle: string; action: string;
+  oldStage: string | null; newStage: string | null; createdAt: string; actorName: string | null;
+}
+
+const TV_STAGE: Record<string, string> = { backlog: "Backlog", sprint: "Sprint", doing: "Progreso", qa_sent: "QA→", qa_rev: "QA✓", done: "Listo" };
+const TV_PRIO: Record<string, string> = { "crítica": "text-red-400", "alta": "text-orange-400", "media": "text-blue-400", "baja": "text-foreground/40" };
+const SEM_DOT: Record<string, string> = { green: "bg-emerald-500", yellow: "bg-yellow-400", red: "bg-red-500" };
+const SEM_RING: Record<string, string> = { green: "ring-emerald-500/30", yellow: "ring-yellow-400/30", red: "ring-red-500/30" };
+const SEM_BORDER: Record<string, string> = { green: "border-foreground/10", yellow: "border-yellow-400/25", red: "border-red-500/25" };
+
+function fmtMs(ms: number): string {
+  const h = Math.floor(ms / 3600000);
+  if (h < 1) return `${Math.floor(ms / 60000)}m`;
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+function TeamView({ teamMembers, showToast, onRefreshTasks }: {
+  teamMembers: TeamMember[];
+  showToast: (msg: string, undo?: () => void) => void;
+  onRefreshTasks: () => void;
+}) {
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickAssignee, setQuickAssignee] = useState<number | null>(null);
+  const [quickPriority, setQuickPriority] = useState<"crítica" | "alta" | "media" | "baja">("media");
+  const [quickDate, setQuickDate] = useState("");
+  const [composing, setComposing] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data: tvData, isLoading: tvLoading, refetch: tvRefetch } = useQuery<{ members: TeamMemberCard[] }>({
+    queryKey: ["hub-team-view"],
+    queryFn: async () => {
+      const r = await fetch(`${HUB_API_BASE}/hub/tasks/team-view`, { credentials: "include" });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+
+  const { data: actData } = useQuery<{ items: TeamActivityItem[] }>({
+    queryKey: ["hub-activity", expandedId, today],
+    queryFn: async () => {
+      const r = await fetch(`${HUB_API_BASE}/hub/tasks/activity?userId=${expandedId}&date=${today}`, { credentials: "include" });
+      if (!r.ok) return { items: [] };
+      return r.json();
+    },
+    enabled: expandedId !== null,
+    staleTime: 30_000,
+  });
+
+  const handleCompose = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickTitle.trim()) return;
+    setComposing(true);
+    try {
+      const r = await fetch(`${HUB_API_BASE}/hub/tasks`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: quickTitle.trim(), ...(quickAssignee ? { assigneeId: quickAssignee } : {}), priority: quickPriority, ...(quickDate ? { dueDate: quickDate } : {}) }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setQuickTitle(""); setQuickDate(""); setQuickAssignee(null); setQuickPriority("media");
+      showToast("Tarea creada y asignada");
+      tvRefetch(); onRefreshTasks();
+      setTimeout(() => titleRef.current?.focus(), 80);
+    } catch (err: any) { showToast(err.message || "Error al crear tarea"); }
+    finally { setComposing(false); }
+  };
+
+  const members = tvData?.members ?? [];
+  const PRIOS: ("crítica" | "alta" | "media" | "baja")[] = ["crítica", "alta", "media", "baja"];
+
+  return (
+    <div className="main-scroll p-4 md:p-6 space-y-5 max-w-4xl mx-auto">
+      {/* Quick composer */}
+      <form onSubmit={handleCompose} className="bg-card border border-foreground/10 rounded-2xl p-4 space-y-3">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Asignar tarea rápida</p>
+        <div className="flex flex-wrap gap-2">
+          <input ref={titleRef} type="text" value={quickTitle} onChange={e => setQuickTitle(e.target.value)}
+            placeholder="Título de la tarea..." className="flex-1 min-w-[180px] bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          <select value={quickAssignee ?? ""} onChange={e => setQuickAssignee(e.target.value ? parseInt(e.target.value) : null)}
+            className="bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+            <option value="">Sin asignar</option>
+            {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name ?? m.email}</option>)}
+          </select>
+          <select value={quickPriority} onChange={e => setQuickPriority(e.target.value as typeof quickPriority)}
+            className="bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
+            {PRIOS.map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <input type="date" value={quickDate} onChange={e => setQuickDate(e.target.value)}
+            className="bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          <button type="submit" disabled={composing || !quickTitle.trim()}
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity">
+            <Send className="w-3.5 h-3.5" />{composing ? "Enviando…" : "Asignar"}
+          </button>
+        </div>
+      </form>
+
+      {/* Member cards */}
+      {tvLoading && <p className="text-center text-sm text-muted-foreground py-8">Cargando equipo…</p>}
+      <div className="space-y-3">
+        {members.map(member => {
+          const sem = member.semaphore;
+          const isExp = expandedId === member.id;
+          return (
+            <div key={member.id} className={`bg-card border rounded-2xl overflow-hidden ${SEM_BORDER[sem]}`}>
+              {/* Header */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="relative flex-shrink-0">
+                  {member.picture
+                    ? <img src={member.picture} alt="" className={`w-9 h-9 rounded-full ring-2 ${SEM_RING[sem]}`} />
+                    : <div className={`w-9 h-9 rounded-full bg-foreground/10 flex items-center justify-center text-sm font-bold ring-2 ${SEM_RING[sem]}`}>{(member.name ?? "?")[0]?.toUpperCase()}</div>}
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card ${SEM_DOT[sem]}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate">{member.name ?? member.email}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{member.teamRole ?? "—"} · <span className={sem === "red" ? "text-red-400" : sem === "yellow" ? "text-yellow-400" : "text-emerald-400"}>{member.activeCount} tarea{member.activeCount !== 1 ? "s" : ""} activa{member.activeCount !== 1 ? "s" : ""}</span></p>
+                </div>
+                <button onClick={() => setExpandedId(isExp ? null : member.id)}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors" title={isExp ? "Colapsar" : "Ver actividad del día"}>
+                  {isExp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {/* Active tasks */}
+              {member.activeTasks.length > 0 && (
+                <div className="px-4 pb-3 space-y-1">
+                  {member.activeTasks.map(t => (
+                    <div key={t.id} className={`flex items-center gap-2 text-xs rounded-lg px-2.5 py-1.5 ${t.stagnant || t.overdue ? "bg-red-500/8" : t.dueToday ? "bg-yellow-400/8" : "bg-foreground/4"}`}>
+                      <span className={`flex-shrink-0 text-[8px] ${TV_PRIO[t.priority] ?? "text-foreground/40"}`}>●</span>
+                      <span className="flex-1 text-foreground/80 truncate">{t.title}</span>
+                      <span className="flex-shrink-0 text-muted-foreground">{TV_STAGE[t.stage] ?? t.stage}</span>
+                      {t.stageSinceMs > 0 && (
+                        <span className={`flex-shrink-0 flex items-center gap-0.5 ${t.stagnant ? "text-red-400" : "text-muted-foreground"}`}>
+                          <Clock3 className="w-2.5 h-2.5" />{fmtMs(t.stageSinceMs)}
+                          {t.stagnant && <AlertTriangle className="w-2.5 h-2.5" />}
+                        </span>
+                      )}
+                      {t.overdue && <span className="flex-shrink-0 text-red-400 font-medium">Vencida</span>}
+                      {t.dueToday && !t.overdue && <span className="flex-shrink-0 text-yellow-400">Hoy</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {member.activeTasks.length === 0 && (
+                <p className="px-4 pb-3 text-xs text-muted-foreground">Sin tareas activas — disponible para asignar</p>
+              )}
+
+              {/* Activity log */}
+              <AnimatePresence initial={false}>
+                {isExp && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
+                    <div className="border-t border-foreground/8 mx-4 pt-3 pb-4 space-y-1.5">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Actividad de hoy</p>
+                      {(actData?.items ?? []).length === 0
+                        ? <p className="text-xs text-muted-foreground">Sin actividad registrada hoy.</p>
+                        : (actData?.items ?? []).map(a => {
+                            const time = new Date(a.createdAt).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+                            const desc = a.action === "stage_change"
+                              ? `movió "${a.taskTitle}" a ${TV_STAGE[a.newStage ?? ""] ?? a.newStage}`
+                              : a.action === "created" ? `creó "${a.taskTitle}"` : `reasignó "${a.taskTitle}"`;
+                            return (
+                              <div key={a.id} className="flex gap-2 text-xs text-muted-foreground">
+                                <span className="flex-shrink-0 font-mono text-[10px]">{time}</span>
+                                <span className="text-foreground/60">{desc}</span>
+                              </div>
+                            );
+                          })
+                      }
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
+  team: Users2,
   dash: LayoutDashboard,
   proj: Briefcase,
   clients: Users2,
@@ -2572,6 +2773,7 @@ const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
 const HUB_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 const TabIcons: Record<Tab, React.ReactNode> = {
+  team: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg>,
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
   proj: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M3 6h18M3 12h18M3 18h12"/></svg>,
   clients: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg>,
@@ -2649,7 +2851,7 @@ export default function EjecutivoPage() {
   }, [storageKey]);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
-    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive"].includes(s)) return s as Tab; } catch { /* ignore */ }
+    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive","team"].includes(s)) return s as Tab; } catch { /* ignore */ }
     return "dash";
   });
 
@@ -2721,6 +2923,7 @@ export default function EjecutivoPage() {
 
   const [tt, tsub] = TAB_TITLES[tab] || TAB_TITLES.dash;
   const TABS: { id: Tab; cnt?: number }[] = [
+    { id: "team" },
     { id: "dash" },
     { id: "proj", cnt: state.projects.length },
     { id: "clients", cnt: state.clients.length },
@@ -2730,7 +2933,7 @@ export default function EjecutivoPage() {
     { id: "drive" },
     ...(isAdmin ? [{ id: "svc" as Tab }] : []),
   ];
-  const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
+  const TAB_LABELS: Record<Tab, string> = { team: "Equipo", dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
 
   return (
     <>
@@ -2839,6 +3042,7 @@ export default function EjecutivoPage() {
             {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "drive" && <HubDriveView />}
+            {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} />}
             {tab === "svc" && isAdmin && <SvcView />}
           </div>
 

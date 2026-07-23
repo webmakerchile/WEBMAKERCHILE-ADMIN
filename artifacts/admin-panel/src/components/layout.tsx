@@ -23,6 +23,7 @@ import {
   Menu,
   X,
   Languages,
+  CheckSquare2,
   LayoutGrid,
   ChevronRight,
   type LucideIcon,
@@ -56,6 +57,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       label: t.navSectionContent,
       items: [
         { href: "/", icon: LayoutDashboard, label: t.navHome, tour: "nav-inicio" },
+        { href: "/mi-dia", icon: CheckSquare2, label: t.navMyDay, tour: "nav-mi-dia" },
         { href: "/schedule", icon: CalendarClock, label: t.navPosts, tour: "nav-schedule" },
         { href: "/cuentas", icon: Users2, label: t.navAccounts, tour: "nav-cuentas" },
         { href: "/videos", icon: Video, label: t.navVideos, tour: "nav-videos" },

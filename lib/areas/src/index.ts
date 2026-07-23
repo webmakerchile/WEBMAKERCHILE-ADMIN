@@ -38,10 +38,10 @@ export const AREA_BADGE: Record<Area, { bg: string; text: string }> = {
  */
 export const AREA_PAGES: Record<Area, string[] | "*"> = {
   ceo:       "*",
-  ejecutivo: ["/ejecutivo", "/ayuda"],
-  edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/ayuda"],
-  marketing: ["/insights", "/historias", "/descripciones", "/schedule", "/cuentas", "/ayuda"],
-  rrhh:      ["/ejecutivo", "/equipo", "/", "/ayuda"],
+  ejecutivo: ["/ejecutivo", "/mi-dia", "/ayuda"],
+  edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/mi-dia", "/ayuda"],
+  marketing: ["/insights", "/historias", "/descripciones", "/schedule", "/cuentas", "/mi-dia", "/ayuda"],
+  rrhh:      ["/ejecutivo", "/equipo", "/", "/mi-dia", "/ayuda"],
 };
 
 /**
