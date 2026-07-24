@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { getCalendarCallbackURL } from "../auth";
 
 const router: IRouter = Router();
 
@@ -33,13 +34,23 @@ function getCalendarAuth(user: any) {
   return oauth2Client;
 }
 
-/** GET /api/calendar/status — returns { connected: bool, reason? } */
+/** GET /api/calendar/status — returns { connected, reason?, configured, callbackUrl } */
 router.get("/calendar/status", async (req: Request, res: Response) => {
   const user = req.user as any;
   if (!user?.id) { res.status(401).json({ error: "No autenticado" }); return; }
 
+  // Datos para la tarjeta de configuración guiada en la UI: si Google rechaza
+  // la conexión (p. ej. redirect_uri_mismatch), esta es la URI exacta a registrar.
+  const configured = Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+  const callbackUrl = getCalendarCallbackURL();
+
+  if (!configured) {
+    res.json({ connected: false, reason: "not_configured", configured, callbackUrl });
+    return;
+  }
+
   if (!user.googleCalendarAccessToken) {
-    res.json({ connected: false, reason: "no_token" });
+    res.json({ connected: false, reason: "no_token", configured, callbackUrl });
     return;
   }
 
@@ -47,10 +58,13 @@ router.get("/calendar/status", async (req: Request, res: Response) => {
     const auth = getCalendarAuth(user);
     const calendar = google.calendar({ version: "v3", auth });
     await calendar.calendarList.list({ maxResults: 1 });
-    res.json({ connected: true });
+    res.json({ connected: true, configured, callbackUrl });
   } catch (err: any) {
-    const isScope = err?.code === 403 || err?.message?.includes("insufficient") || err?.message?.includes("Request had insufficient authentication scopes");
-    res.json({ connected: false, reason: isScope ? "no_scope" : "error" });
+    const raw = `${err?.message || ""} ${JSON.stringify(err?.response?.data || {})}`;
+    const isExpired = raw.includes("invalid_grant");
+    const isScope = err?.code === 403 || raw.includes("insufficient") || raw.includes("Request had insufficient authentication scopes");
+    const reason = isExpired ? "expired" : isScope ? "no_scope" : "error";
+    res.json({ connected: false, reason, configured, callbackUrl });
   }
 });
 
@@ -60,7 +74,7 @@ router.get("/calendar/events", async (req: Request, res: Response) => {
   if (!user?.id) { res.status(401).json({ error: "No autenticado" }); return; }
 
   if (!user.googleCalendarAccessToken) {
-    res.status(403).json({ error: "no_token", message: "Google Calendar no está conectado. Vuelve a iniciar sesión para autorizar el acceso." });
+    res.status(403).json({ error: "no_token", message: "Google Calendar no está conectado. Conéctalo con el botón 'Conectar Calendar' en Reuniones." });
     return;
   }
 
@@ -99,7 +113,7 @@ router.get("/calendar/events", async (req: Request, res: Response) => {
       || err?.message?.includes("insufficient")
       || err?.message?.includes("access_denied");
     if (isScope) {
-      res.status(403).json({ error: "no_scope", message: "Permiso de Calendar no autorizado. Vuelve a iniciar sesión para conceder acceso." });
+      res.status(403).json({ error: "no_scope", message: "Permiso de Calendar no autorizado. Usa 'Conectar Calendar' en Reuniones para conceder acceso." });
     } else {
       console.error("[Calendar] events error:", err?.message);
       res.status(500).json({ error: err?.message || "Error al obtener eventos" });

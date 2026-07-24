@@ -779,13 +779,17 @@ export default function CuentasPage() {
       if (calConnected) fetchCalendarStatus();
       if (calError) {
         const msg = params.get("msg") || "error_desconocido";
+        const detail = (params.get("detail") || "").slice(0, 140) || null;
         const label: Record<string, string> = {
           csrf_mismatch: "La sesión de autorización expiró o hubo un problema de seguridad. Intenta conectar de nuevo.",
           token_failed: "No se pudo obtener el token de acceso de Calendar.",
           access_denied: "Acceso denegado por Google.",
+          oauth_error: "Google rechazó la conexión.",
           no_code: "La plataforma no devolvió un código de autorización.",
+          server_error: "Error interno al conectar Calendar. Intenta de nuevo.",
+          not_configured: "Faltan las credenciales de Google en el servidor.",
         };
-        setCalendarError(label[msg] || msg);
+        setCalendarError((label[msg] || msg) + (detail ? ` Detalle: ${detail}` : ""));
       }
     }
   }, [fetchCalendarStatus]);
@@ -1242,7 +1246,7 @@ export default function CuentasPage() {
                   </div>
                 )}
                 <a
-                  href={`${API_BASE}/auth/google-calendar`}
+                  href={`${API_BASE}/auth/google-calendar?from=cuentas`}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary/90 hover:bg-primary text-primary-foreground font-medium text-sm transition"
                 >
                   <Link2 className="w-4 h-4" />
