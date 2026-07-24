@@ -3819,7 +3819,7 @@ function AttendanceView() {
       {/* Matriz semanal */}
       {data && members.length > 0 && (
         <>
-          <div className="subhead" style={{ marginTop: 24 }}><Clock3 className="w-3.5 h-3.5" /> Horas de la semana <span className="n">(lun → dom)</span></div>
+          <div className="subhead" style={{ marginTop: 40 }}><Clock3 className="w-3.5 h-3.5" /> Horas de la semana <span className="n">(lun → dom)</span></div>
           <div className="att-mx-wrap">
             <table className="att-mx">
               <thead>
