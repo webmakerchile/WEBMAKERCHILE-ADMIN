@@ -10,7 +10,7 @@ import { PushEnableBanner } from "@/components/push-enable-banner";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, Pin,
 } from "lucide-react";
 import "./ejecutivo.css";
 
@@ -61,7 +61,7 @@ type ProjView = "board" | "list" | "scrum";
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
 interface Client { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number; }
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
-interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; updatedAt: number; }
+interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
 type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
 interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; }
@@ -100,6 +100,7 @@ const TASK_STAGES = [
   { id: "done",     label: "Hecho",        color: "var(--done)" },
 ];
 const NOTE_CATS: Record<NoteCat, string> = { proyecto: "Proyecto", cliente: "Cliente", vision: "Visión", equipo: "Equipo", otro: "Otra" };
+const NOTE_CAT_COLORS: Record<NoteCat, string> = { proyecto: "#6aa0c0", cliente: "#4faf6a", vision: "#b06ad0", equipo: "#c9a44a", otro: "#8a8f98" };
 const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
 const PRIO_W: Record<string, number> = { crítica: -1, alta: 0, media: 1, baja: 2 };
 const TAB_TITLES: Record<Tab, [string, string]> = {
@@ -164,6 +165,78 @@ function blankState(): HubState { return { projects: [], clients: [], notes: [],
 const CONTRACT_STATUS_IDS: readonly ContractStatus[] = ["borrador", "activo", "vencido", "cancelado"];
 function isContractStatus(v: unknown): v is ContractStatus { return typeof v === "string" && (CONTRACT_STATUS_IDS as readonly string[]).includes(v); }
 function contractExpired(c: Contract) { return !!c.expiresAt && new Date(c.expiresAt + "T23:59:59").getTime() < Date.now(); }
+
+/* ---- Notas: resaltado de búsqueda y formato ligero ---- */
+/** Resalta las coincidencias de `q` (ya en minúsculas) dentro de `text` con <mark>. */
+function hlText(text: string, q: string | undefined, keyBase: string): React.ReactNode {
+  if (!q || !text) return text;
+  const lower = text.toLowerCase();
+  if (!lower.includes(q)) return text;
+  const out: React.ReactNode[] = [];
+  let pos = 0, k = 0;
+  for (;;) {
+    const i = lower.indexOf(q, pos);
+    if (i < 0) { if (pos < text.length) out.push(text.slice(pos)); break; }
+    if (i > pos) out.push(text.slice(pos, i));
+    out.push(<mark key={`${keyBase}-${k++}`}>{text.slice(i, i + q.length)}</mark>);
+    pos = i + q.length;
+  }
+  return out;
+}
+const NOTE_CHECK_RE = /^\s*(?:[-*]\s*)?\[([ xX])\]\s?(.*)$/;
+/** Render de formato ligero: `# título`, `- viñeta`, `[ ] checklist`. Si se pasa onToggleLine, los checks son clicables. */
+function renderNoteFmt(body: string, q?: string, onToggleLine?: (lineIdx: number) => void): React.ReactNode {
+  if (!body) return null;
+  return body.split("\n").map((ln, i) => {
+    const h = /^#{1,3}\s+(.+)$/.exec(ln);
+    if (h) return <span key={i} className="nf-h">{hlText(h[1], q, `h${i}`)}</span>;
+    const c = NOTE_CHECK_RE.exec(ln);
+    if (c) {
+      const done = c[1].toLowerCase() === "x";
+      return (
+        <span key={i} className={`nf-c${done ? " done" : ""}`} role={onToggleLine ? "checkbox" : undefined} aria-checked={onToggleLine ? done : undefined}
+          onClick={onToggleLine ? e => { e.stopPropagation(); onToggleLine(i); } : undefined}>
+          <span className="cbx">{done ? "✓" : ""}</span><span className="ctx">{hlText(c[2], q, `c${i}`)}</span>
+        </span>
+      );
+    }
+    const b = /^\s*[-*•]\s+(.+)$/.exec(ln);
+    if (b) return <span key={i} className="nf-b"><span className="bdot">▪</span><span>{hlText(b[1], q, `b${i}`)}</span></span>;
+    if (!ln.trim()) return <span key={i} className="nf-sp" aria-hidden="true" />;
+    return <span key={i}>{hlText(ln, q, `p${i}`)}</span>;
+  });
+}
+/** Progreso de checklist dentro del cuerpo de una nota. */
+function noteChecklist(body: string): { done: number; total: number } {
+  let done = 0, total = 0;
+  if (!body) return { done, total };
+  for (const ln of body.split("\n")) {
+    const c = NOTE_CHECK_RE.exec(ln);
+    if (c) { total++; if (c[1].toLowerCase() === "x") done++; }
+  }
+  return { done, total };
+}
+/** Alterna `[ ]` ↔ `[x]` en la línea idx del cuerpo. */
+function toggleChecklistLine(body: string, idx: number): string {
+  const lines = body.split("\n");
+  const ln = lines[idx];
+  if (ln == null || !NOTE_CHECK_RE.test(ln)) return body;
+  lines[idx] = /\[ \]/.test(ln) ? ln.replace("[ ]", "[x]") : ln.replace(/\[[xX]\]/, "[ ]");
+  return lines.join("\n");
+}
+/** Inserta un snippet de formato al inicio de línea, en la posición del cursor. */
+function insertNoteSnippet(el: HTMLTextAreaElement | null, snippet: string) {
+  if (!el) return;
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? start;
+  const before = el.value.slice(0, start);
+  const after = el.value.slice(end);
+  const ins = (before && !before.endsWith("\n") ? "\n" : "") + snippet;
+  el.value = before + ins + after;
+  const pos = (before + ins).length;
+  el.focus();
+  el.setSelectionRange(pos, pos);
+}
 
 /* ============================================================
    PERSISTENCIA LOCAL (clave por usuario)
@@ -869,6 +942,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{ name: string; client: string; pendingPrefill: Record<string, string> } | null>(null);
   const newProjFromContractIdRef = useRef<string | null>(null);
   const lastScrumProjIdRef = useRef<string | null>(null);
+  // Editor de notas: categoría/pin como estado (chips), vista previa del formato ligero
+  const [noteDraftCat, setNoteDraftCat] = useState<NoteCat>("proyecto");
+  const [noteDraftPinned, setNoteDraftPinned] = useState(false);
+  const [notePreviewOn, setNotePreviewOn] = useState(false);
+  const [noteBodyTick, setNoteBodyTick] = useState(0);
+  const noteInitKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -898,7 +977,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     }
     if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
     if (sheet?.kind === "new-contract-meeting") { setMeetingNotes(""); setMeetingExtracting(false); }
-  }, [sheet, state.projects, state.contracts]);
+    // Draft de nota: inicializa solo cuando cambia la identidad del sheet (no cuando state.notes
+    // muta con el sheet abierto, p.ej. pin/unpin desde una tarjeta), para no perder cambios en curso.
+    const noteKey = sheet?.kind === "new-note" ? "new-note" : sheet?.kind === "note" ? `note:${sheet.id}` : null;
+    if (noteKey !== noteInitKeyRef.current) {
+      noteInitKeyRef.current = noteKey;
+      if (noteKey === "new-note") {
+        setNoteDraftCat("proyecto"); setNoteDraftPinned(false); setNotePreviewOn(false); setNoteBodyTick(0);
+      } else if (noteKey && sheet?.kind === "note") {
+        const n = state.notes.find(x => x.id === sheet.id);
+        setNoteDraftCat(n?.cat ?? "proyecto"); setNoteDraftPinned(!!n?.pinned); setNotePreviewOn(false); setNoteBodyTick(0);
+      }
+    }
+  }, [sheet, state.projects, state.contracts, state.notes]);
 
   useEffect(() => {
     if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); setCotJson(""); setCotHtml(null); setCotError(null); setCotLoading(false); setCotShowJson(false); }
@@ -1314,17 +1405,62 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     </>);
   }
 
+  /* ---- Editor de notas (compartido nueva/detalle) ---- */
+  const noteEditorBody = (defaultBody: string) => (
+    <div className="field">
+      <label>Contenido</label>
+      <div className="note-tools">
+        <button type="button" className="note-ins" title="Insertar título" onClick={() => { insertNoteSnippet(r.current["bo"] as HTMLTextAreaElement | null, "# "); setNoteBodyTick(t => t + 1); }}># Título</button>
+        <button type="button" className="note-ins" title="Insertar viñeta" onClick={() => { insertNoteSnippet(r.current["bo"] as HTMLTextAreaElement | null, "- "); setNoteBodyTick(t => t + 1); }}>• Viñeta</button>
+        <button type="button" className="note-ins" title="Insertar tarea" onClick={() => { insertNoteSnippet(r.current["bo"] as HTMLTextAreaElement | null, "[ ] "); setNoteBodyTick(t => t + 1); }}>☑ Tarea</button>
+        <span className="grow" />
+        <div className="seg seg-mini" role="tablist" aria-label="Modo de edición">
+          <button type="button" className={!notePreviewOn ? "on" : ""} onClick={() => setNotePreviewOn(false)}>Escribir</button>
+          <button type="button" className={notePreviewOn ? "on" : ""} onClick={() => { setNoteBodyTick(t => t + 1); setNotePreviewOn(true); }}>Vista</button>
+        </div>
+      </div>
+      <textarea ref={R("bo") as React.Ref<HTMLTextAreaElement>} rows={10} defaultValue={defaultBody}
+        placeholder={"Escribe libre, o dale estructura:\n# Título de sección\n- una viñeta\n[ ] tarea pendiente"}
+        style={notePreviewOn ? { display: "none" } : undefined} />
+      {notePreviewOn && (
+        <div className="note-preview note-fmt clickable" key={noteBodyTick}>
+          {((r.current["bo"] as HTMLTextAreaElement | null)?.value || "").trim()
+            ? renderNoteFmt((r.current["bo"] as HTMLTextAreaElement).value, undefined, idx => {
+                const el = r.current["bo"] as HTMLTextAreaElement | null;
+                if (el) { el.value = toggleChecklistLine(el.value, idx); setNoteBodyTick(t => t + 1); }
+              })
+            : <span style={{ color: "var(--faint)", fontSize: 12.5 }}>Nada que previsualizar todavía.</span>}
+        </div>
+      )}
+      {!notePreviewOn && <p className="note-hint">Formato: <b>#</b> título · <b>-</b> viñeta · <b>[ ]</b> tarea (en Vista puedes marcarlas)</p>}
+    </div>
+  );
+  const noteCatPicker = (
+    <div className="field"><label>Categoría</label>
+      <div className="fchips" role="group" aria-label="Categoría de la nota">
+        {(Object.entries(NOTE_CATS) as [NoteCat, string][]).map(([k, v]) => (
+          <button key={k} type="button" className={`fchip${noteDraftCat === k ? " on" : ""}`} aria-pressed={noteDraftCat === k} onClick={() => setNoteDraftCat(k)}>
+            <span className="fdot" style={{ background: NOTE_CAT_COLORS[k] }} />{v}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   /* ---- Nueva nota ---- */
   if (sheet.kind === "new-note") {
     return (<>
-      <div className="sheet-head"><h2>Nueva nota</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="field"><label>Título</label><input type="text" ref={R("ti")} /></div>
-      <div className="field"><label>Categoría</label><select ref={R("ca")}>{(Object.entries(NOTE_CATS) as [NoteCat,string][]).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-      <div className="field"><label>Contenido</label><textarea ref={R("bo") as React.Ref<HTMLTextAreaElement>} rows={6} /></div>
+      <div className="sheet-head"><h2>Nueva nota</h2><button className="close-btn" onClick={onClose} aria-label="Cerrar">✕</button></div>
+      <div className="field"><label>Título</label><input type="text" ref={R("ti")} placeholder="Ej: Acuerdos kickoff · ideas branding" /></div>
+      {noteCatPicker}
+      {noteEditorBody("")}
+      <button type="button" className={`pin-toggle${noteDraftPinned ? " on" : ""}`} aria-pressed={noteDraftPinned} onClick={() => setNoteDraftPinned(p => !p)}>
+        <Pin className="w-3.5 h-3.5" style={noteDraftPinned ? { fill: "currentColor" } : undefined} />{noteDraftPinned ? "Fijada arriba" : "Fijar arriba"}
+      </button>
       <button className="add-btn" onClick={() => {
         const title = V("ti").trim(); if (!title) { onToast("Ponle un título a la nota"); return; }
         const now = Date.now();
-        onSave({ ...state, notes: [...state.notes, { id: uid(), title, cat: V("ca") as NoteCat, body: V("bo"), createdAt: now, updatedAt: now }] });
+        onSave({ ...state, notes: [...state.notes, { id: uid(), title, cat: noteDraftCat, body: V("bo"), pinned: noteDraftPinned || undefined, createdAt: now, updatedAt: now }] });
         onClose(); onNavigate("notes"); onToast("Nota creada");
       }}>Crear nota</button>
     </>);
@@ -1334,14 +1470,18 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   if (sheet.kind === "note") {
     const n = state.notes.find(x => x.id === sheet.id); if (!n) return null;
     return (<>
-      <div className="sheet-head"><h2>Nota</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <div className="sheet-head"><h2>Nota</h2><button className="close-btn" onClick={onClose} aria-label="Cerrar">✕</button></div>
       <div className="field"><label>Título</label><input type="text" ref={R("ti")} defaultValue={n.title} /></div>
-      <div className="field"><label>Categoría</label><select ref={R("ca")} defaultValue={n.cat}>{(Object.entries(NOTE_CATS) as [NoteCat,string][]).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-      <div className="field"><label>Contenido</label><textarea ref={R("bo") as React.Ref<HTMLTextAreaElement>} rows={8} defaultValue={n.body || ""} /></div>
+      {noteCatPicker}
+      {noteEditorBody(n.body || "")}
+      <button type="button" className={`pin-toggle${noteDraftPinned ? " on" : ""}`} aria-pressed={noteDraftPinned} onClick={() => setNoteDraftPinned(p => !p)}>
+        <Pin className="w-3.5 h-3.5" style={noteDraftPinned ? { fill: "currentColor" } : undefined} />{noteDraftPinned ? "Fijada arriba" : "Fijar arriba"}
+      </button>
       <button className="save" onClick={() => {
-        onSave({ ...state, notes: state.notes.map(x => x.id !== n.id ? x : { ...x, title: V("ti").trim() || x.title, cat: V("ca") as NoteCat, body: V("bo"), updatedAt: Date.now() }) });
+        onSave({ ...state, notes: state.notes.map(x => x.id !== n.id ? x : { ...x, title: V("ti").trim() || x.title, cat: noteDraftCat, body: V("bo"), pinned: noteDraftPinned || undefined, updatedAt: Date.now() }) });
         onClose(); onToast("Nota actualizada");
       }}>Guardar cambios</button>
+      <p className="note-hint" style={{ marginTop: 10 }}>Creada {fmtDate(n.createdAt)}{n.updatedAt && n.updatedAt !== n.createdAt ? ` · editada ${fmtDate(n.updatedAt)}` : ""}</p>
       <button className="del-link" onClick={() => {
         const snap = [...state.notes];
         onSave({ ...state, notes: state.notes.filter(x => x.id !== n.id) });
@@ -1496,33 +1636,45 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const c = state.contracts.find(x => x.id === sheet.id); if (!c) return null;
     const previewFileId = pdfData ? extractDriveFileId(pdfData.url) : null;
     return (<>
-      <div className="sheet-head"><h2>Contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} defaultValue={c.title} /></div>
-      <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={c.client} /></div>
-      <div className="field"><label>Valor</label><input type="text" ref={R("va")} defaultValue={c.value} /></div>
-      <div className="field"><label>Estado</label>
-        <select ref={R("st")} defaultValue={c.status}>
-          <option value="borrador">Borrador</option>
-          <option value="activo">Activo</option>
-          <option value="vencido">Vencido</option>
-          <option value="cancelado">Cancelado</option>
-        </select>
-      </div>
-      <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
-      <div className="field"><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} defaultValue={c.expiresAt} /></div>
-      <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} /></div>
-      <div className="field"><label>Documento PDF</label>
-        <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
-      </div>
-      {previewFileId && (
-        <div className="field">
-          <label>Vista previa</label>
-          <div className="pdf-preview-wrap">
-            <iframe src={`https://drive.google.com/file/d/${previewFileId}/preview`} className="pdf-preview-frame" allow="autoplay" title="Vista previa del contrato" />
-            <a href={pdfData!.url} target="_blank" rel="noopener noreferrer" className="pdf-preview-ext">Abrir en Drive ↗</a>
+      <div className="sheet-head"><h2>Contrato</h2><button className="close-btn" onClick={onClose} aria-label="Cerrar">✕</button></div>
+      <div className="sheet-sec"><h4>Datos del contrato</h4>
+        <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} defaultValue={c.title} /></div>
+        <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={c.client} /></div>
+        <div className="two field">
+          <div><label>Valor</label><input type="text" ref={R("va")} defaultValue={c.value} /></div>
+          <div><label>Estado</label>
+            <select ref={R("st")} defaultValue={c.status}>
+              <option value="borrador">Borrador</option>
+              <option value="activo">Activo</option>
+              <option value="vencido">Vencido</option>
+              <option value="cancelado">Cancelado</option>
+            </select>
           </div>
         </div>
-      )}
+      </div>
+      <div className="sheet-sec"><h4>Vigencia</h4>
+        <div className="two field">
+          <div><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
+          <div><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} defaultValue={c.expiresAt} /></div>
+        </div>
+      </div>
+      <div className="sheet-sec"><h4>Notas</h4>
+        <div className="field"><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} aria-label="Notas del contrato" /></div>
+      </div>
+      <div className="sheet-sec"><h4>Documento PDF</h4>
+        <div className="field">
+          <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
+        </div>
+        {previewFileId && (
+          <div className="field">
+            <label>Vista previa</label>
+            <div className="pdf-preview-wrap">
+              <iframe src={`https://drive.google.com/file/d/${previewFileId}/preview`} className="pdf-preview-frame" allow="autoplay" title="Vista previa del contrato" />
+              <a href={pdfData!.url} target="_blank" rel="noopener noreferrer" className="pdf-preview-ext">Abrir en Drive ↗</a>
+            </div>
+          </div>
+        )}
+      </div>
       <button className="save" onClick={() => {
         onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
@@ -2064,8 +2216,11 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
           />
         </div>
       </div>
-      <div style={{ marginTop: 8, fontFamily: "IBM Plex Mono,monospace", fontSize: 9, color: "var(--faint)", letterSpacing: 1.2, textTransform: "uppercase" }}>
-        {STATUS.map((s, i) => <span key={s.id}>{i > 0 && " · "}{s.label} · {state.projects.filter(p => p.status === s.id).length}</span>)}
+      <div className="dstats">
+        {STATUS.map(s => {
+          const n = state.projects.filter(p => p.status === s.id).length;
+          return <span key={s.id} className={n === 0 ? "z" : ""}><i style={{ background: s.color }} />{s.label} <b>{n}</b></span>;
+        })}
       </div>
       <div className="dash-grid">
         <div className="panel">
@@ -2317,12 +2472,14 @@ function GoogleCalendarSection() {
 
   return (
     <div style={{ marginBottom: "1.5rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-        <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} style={{ color: "var(--orange)", flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        <span style={{ fontFamily: "var(--font-mono,monospace)", fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--orange)" }}>Google Calendar</span>
+      <div className="subhead" style={{ marginTop: 18 }}>
+        <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Google Calendar
+        {status === "connected" && !eventsLoading && events.length > 0 && <span className="n">{events.length} evento{events.length !== 1 ? "s" : ""} · 30 días</span>}
+        <span className="grow" />
         {status === "connected" && (
           <button onClick={handleDisconnect} disabled={disconnecting}
-            style={{ marginLeft: "auto", fontSize: "11px", background: "none", border: "1px solid var(--line)", borderRadius: "6px", color: "var(--faint)", padding: "2px 8px", cursor: "pointer" }}>
+            style={{ fontSize: "11px", background: "none", border: "1px solid var(--line)", borderRadius: "6px", color: "var(--faint)", padding: "2px 8px", cursor: "pointer", textTransform: "none", letterSpacing: 0 }}>
             {disconnecting ? "…" : "Desconectar"}
           </button>
         )}
@@ -2415,7 +2572,7 @@ function GoogleCalendarSection() {
             <div style={{ padding: "8px 0", color: "var(--faint)", fontSize: "12px" }}>Sin eventos en los próximos 30 días.</div>
           )}
           {!eventsLoading && events.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div className="gcal-list">
               {events.map(ev => (
                 <div key={ev.id} style={{ background: "var(--card2)", border: "1px solid var(--line)", borderRadius: "9px", padding: "10px 12px", display: "flex", gap: "10px", alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -2442,52 +2599,106 @@ function GoogleCalendarSection() {
 function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
   // Mediodía local para evitar que la medianoche UTC retroceda un día en Chile
   const meetTs = (m: Meeting) => m.date ? new Date(m.date + "T12:00:00").getTime() : m.createdAt;
-  const list = [...state.meetings].sort((a, b) => meetTs(b) - meetTs(a));
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const upcoming = state.meetings.filter(m => !!m.date && meetTs(m) >= todayStart.getTime()).sort((a, b) => meetTs(a) - meetTs(b));
+  const past = state.meetings.filter(m => !m.date || meetTs(m) < todayStart.getTime()).sort((a, b) => meetTs(b) - meetTs(a));
+  const card = (m: Meeting, isUpcoming: boolean) => (
+    <div key={m.id} className="gcard" onClick={() => onOpen(m.id)}>
+      <div className="gt">{m.client || "Reunión"}</div>
+      <div className="gsub">{m.date ? fmtDate(new Date(m.date + "T12:00:00").getTime()) : fmtDate(m.createdAt)}</div>
+      {(m.summary || "").trim() !== "" && <div className="gbody">{m.summary}</div>}
+      <div className="gfoot">
+        {isUpcoming && <span className="badge">Próxima</span>}
+        <span className="gdate">{fmtDate(m.createdAt)}</span>
+      </div>
+    </div>
+  );
   return (
     <div className="wrap">
       <GoogleCalendarSection />
-      <div style={{ fontFamily: "var(--font-mono,monospace)", fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--dim)", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-        <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Reuniones manuales
-      </div>
-      {state.meetings.length === 0 && <div className="empty-all">Sin reuniones aún. <strong>+ Nuevo</strong> para comenzar.</div>}
-      <div className="cardlist">
-        {list.map(m => (
-          <div key={m.id} className="gcard" onClick={() => onOpen(m.id)}>
-            <div className="gt">{m.client || "Reunión"}</div>
-            <div className="gsub">{m.date ? fmtDate(new Date(m.date + "T12:00:00").getTime()) : fmtDate(m.createdAt)}</div>
-            <div className="gbody">{m.summary || ""}</div>
-            <div className="gfoot"><span className="gdate">{fmtDate(m.createdAt)}</span></div>
-          </div>
-        ))}
-      </div>
+      <div className="subhead"><FileText className="w-3.5 h-3.5" />Reuniones manuales <span className="n">{state.meetings.length || ""}</span></div>
+      {state.meetings.length === 0 && (
+        <div className="empty-all"><span className="eicon">🗓️</span><span className="etitle">Sin reuniones aún</span><span>Registra resúmenes y acuerdos con <strong>+ Nuevo</strong>, o conecta Google Calendar arriba.</span></div>
+      )}
+      {upcoming.length > 0 && (<>
+        <div className="subhead"><CalendarClock className="w-3 h-3" />Próximas <span className="n">{upcoming.length}</span></div>
+        <div className="cardlist">{upcoming.map(m => card(m, true))}</div>
+      </>)}
+      {past.length > 0 && (<>
+        {upcoming.length > 0 && <div className="subhead">Anteriores <span className="n">{past.length}</span></div>}
+        <div className="cardlist">{past.map(m => card(m, false))}</div>
+      </>)}
     </div>
   );
 }
 
-function NotesView({ state, onOpen, filterCat, setFilterCat, searchQ, setSearchQ }: { state: HubState; onOpen: (id: string) => void; filterCat: string; setFilterCat: (v: string) => void; searchQ: string; setSearchQ: (v: string) => void }) {
+function NotesView({ state, onSave, onOpen, onToast, filterCat, setFilterCat, searchQ, setSearchQ }: { state: HubState; onSave: (n: HubState) => void; onOpen: (id: string) => void; onToast: (m: string) => void; filterCat: string; setFilterCat: (v: string) => void; searchQ: string; setSearchQ: (v: string) => void }) {
+  const q = searchQ.trim();
   const list = state.notes
-    .filter(n => (!filterCat || n.cat === filterCat) && (!searchQ || (n.title + " " + (n.body || "")).toLowerCase().includes(searchQ)))
+    .filter(n => (!filterCat || n.cat === filterCat) && (!q || (n.title + " " + (n.body || "")).toLowerCase().includes(q)))
     .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  const pinned = list.filter(n => n.pinned);
+  const rest = list.filter(n => !n.pinned);
+  const togglePin = (e: React.MouseEvent, n: Note) => {
+    e.stopPropagation();
+    onSave({ ...state, notes: state.notes.map(x => x.id === n.id ? { ...x, pinned: !x.pinned || undefined } : x) });
+    onToast(n.pinned ? "Nota desfijada" : "Nota fijada arriba");
+  };
+  const noteCard = (n: Note) => {
+    const cl = noteChecklist(n.body || "");
+    const color = NOTE_CAT_COLORS[n.cat] || "#8a8f98";
+    return (
+      <div key={n.id} className="gcard ncard" style={{ "--nc": color } as React.CSSProperties} onClick={() => onOpen(n.id)}>
+        <button className={`npin${n.pinned ? " on" : ""}`} title={n.pinned ? "Desfijar" : "Fijar arriba"} aria-label={n.pinned ? "Desfijar nota" : "Fijar nota arriba"} aria-pressed={!!n.pinned} onClick={e => togglePin(e, n)}>
+          <Pin className="w-3.5 h-3.5" style={n.pinned ? { fill: "currentColor" } : undefined} />
+        </button>
+        <div className="gt">{hlText(n.title, q || undefined, "t")}</div>
+        <div className="gsub ncat"><span className="fdot" style={{ background: color }} />{NOTE_CATS[n.cat] || "Otra"}</div>
+        {(n.body || "").trim() !== "" && <div className="gbody note-fmt">{renderNoteFmt(n.body, q || undefined)}</div>}
+        <div className="gfoot">
+          {cl.total > 0 && <span className={`chip${cl.done === cl.total ? " chip-done" : ""}`}>☑ {cl.done}/{cl.total}</span>}
+          <span className="gdate">{fmtDate(n.updatedAt || n.createdAt)}</span>
+        </div>
+      </div>
+    );
+  };
   return (
     <div className="wrap">
       <div className="toolbar">
-        <div className="tsearch"><span>🔍</span><input value={searchQ} onChange={e => setSearchQ(e.target.value.toLowerCase())} placeholder="Buscar nota…" /></div>
-        <select className="filter" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
-          <option value="">Todas las categorías</option>
-          {(Object.entries(NOTE_CATS) as [NoteCat,string][]).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        <div className="tsearch"><span>🔍</span><input value={searchQ} onChange={e => setSearchQ(e.target.value.toLowerCase())} placeholder="Buscar nota…" aria-label="Buscar nota" /></div>
+        <div className="fchips" role="group" aria-label="Filtrar por categoría">
+          <button className={`fchip${!filterCat ? " on" : ""}`} aria-pressed={!filterCat} onClick={() => setFilterCat("")}>Todas <span className="fn">{state.notes.length}</span></button>
+          {(Object.entries(NOTE_CATS) as [NoteCat, string][]).map(([k, v]) => {
+            const cnt = state.notes.filter(n => n.cat === k).length;
+            if (cnt === 0 && filterCat !== k) return null;
+            return (
+              <button key={k} className={`fchip${filterCat === k ? " on" : ""}`} aria-pressed={filterCat === k} onClick={() => setFilterCat(filterCat === k ? "" : k)}>
+                <span className="fdot" style={{ background: NOTE_CAT_COLORS[k] }} />{v} <span className="fn">{cnt}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-      {state.notes.length === 0 && <div className="empty-all">Sin notas aún. <strong>+ Nuevo</strong> para comenzar.</div>}
-      <div className="cardlist">
-        {list.map(n => (
-          <div key={n.id} className="gcard" onClick={() => onOpen(n.id)}>
-            <div className="gt">{n.title}</div><div className="gsub">{NOTE_CATS[n.cat] || "Otra"}</div>
-            <div className="gbody">{n.body || ""}</div>
-            <div className="gfoot"><span className="gdate">{fmtDate(n.updatedAt || n.createdAt)}</span></div>
-          </div>
-        ))}
-      </div>
+      {state.notes.length === 0 ? (
+        <div className="empty-all">
+          <span className="eicon">🗒️</span><span className="etitle">Sin notas aún</span>
+          <span>Captura ideas, acuerdos y visión con <strong>+ Nuevo</strong>.</span>
+          <span>Tip: usa <code>#</code> para títulos, <code>-</code> para viñetas y <code>[ ]</code> para checklists.</span>
+        </div>
+      ) : list.length === 0 ? (
+        <div className="empty-all"><span className="eicon">🔍</span><span className="etitle">Sin resultados</span><span>Nada coincide con tu búsqueda o filtro actual.</span></div>
+      ) : (
+        <>
+          {pinned.length > 0 && (<>
+            <div className="subhead"><Pin className="w-3 h-3" style={{ fill: "currentColor" }} />Fijadas <span className="n">{pinned.length}</span></div>
+            <div className="cardlist">{pinned.map(noteCard)}</div>
+          </>)}
+          {rest.length > 0 && (<>
+            {pinned.length > 0 && <div className="subhead"><FileText className="w-3 h-3" />Recientes <span className="n">{rest.length}</span></div>}
+            <div className="cardlist">{rest.map(noteCard)}</div>
+          </>)}
+        </>
+      )}
     </div>
   );
 }
@@ -2503,35 +2714,75 @@ const CONTRACT_STATUSES: Record<ContractStatus, { label: string; color: string }
 };
 
 function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
-  const list = [...state.contracts].sort((a, b) => b.createdAt - a.createdAt);
+  const [q, setQ] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  // Estado efectivo: "vencido" derivado de la fecha real de vencimiento (salvo cancelados)
+  const effStatus = (c: Contract): ContractStatus => (c.status !== "cancelado" && contractExpired(c)) ? "vencido" : c.status;
+  const all = state.contracts;
+  const counts: Record<string, number> = {};
+  all.forEach(c => { const s = effStatus(c); counts[s] = (counts[s] || 0) + 1; });
+  const list = all
+    .filter(c => (!fStatus || effStatus(c) === fStatus) && (!q || (c.title + " " + (c.client || "") + " " + (c.value || "") + " " + (c.notes || "")).toLowerCase().includes(q)))
+    .sort((a, b) => b.createdAt - a.createdAt);
   return (
     <div className="wrap">
-      {state.contracts.length === 0 && <div className="empty-all">Sin contratos aún. <strong>+ Nuevo</strong> para agregar uno.</div>}
-      <div className="cardlist">
-        {list.map(c => {
-          // Badge "vencido" derivado de la fecha real de vencimiento (salvo cancelados)
-          const expired = c.status !== "cancelado" && contractExpired(c);
-          const s = expired ? CONTRACT_STATUSES.vencido : (CONTRACT_STATUSES[c.status] || CONTRACT_STATUSES.borrador);
-          return (
-            <div key={c.id} className="gcard" onClick={() => onOpen(c.id)}>
-              <div className="gt">{c.title}</div>
-              <div className="gsub">{c.client || "—"}</div>
-              <div className="meta" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
-                <span className="chip" style={{ color: s.color, borderColor: s.color + "55", background: s.color + "18" }}>{s.label}</span>
-                {c.value && <span className="chip">{c.value}</span>}
-                {c.expiresAt && <span className="chip" style={expired ? { color: "#e0795a", borderColor: "rgba(224,121,90,.4)" } : undefined}>Vence: {c.expiresAt}</span>}
-                {c.pdfUrl && (
-                  <a className="chip pdf-badge" href={c.pdfUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
-                    📄 {c.pdfTitle || "PDF"}{c.pdfUploadedAt ? ` · ${new Date(c.pdfUploadedAt).toLocaleDateString("es-CL")}` : ""}
-                  </a>
-                )}
+      {all.length > 0 && (
+        <div className="toolbar">
+          <div className="tsearch"><span>🔍</span><input value={q} onChange={e => setQ(e.target.value.toLowerCase())} placeholder="Buscar contrato…" aria-label="Buscar contrato" /></div>
+          <div className="fchips" role="group" aria-label="Filtrar por estado">
+            <button className={`fchip${!fStatus ? " on" : ""}`} aria-pressed={!fStatus} onClick={() => setFStatus("")}>Todos <span className="fn">{all.length}</span></button>
+            {(Object.entries(CONTRACT_STATUSES) as [ContractStatus, { label: string; color: string }][]).map(([k, v]) => {
+              if (!counts[k]) return null;
+              return (
+                <button key={k} className={`fchip${fStatus === k ? " on" : ""}`} aria-pressed={fStatus === k} onClick={() => setFStatus(fStatus === k ? "" : k)}>
+                  <span className="fdot" style={{ background: v.color }} />{v.label} <span className="fn">{counts[k]}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {all.length === 0 ? (
+        <div className="empty-all">
+          <span className="eicon">📑</span><span className="etitle">Sin contratos aún</span>
+          <span>Con <strong>+ Nuevo</strong> puedes generar una cotización, extraer desde una reunión o subir un PDF existente.</span>
+        </div>
+      ) : list.length === 0 ? (
+        <div className="empty-all"><span className="eicon">🔍</span><span className="etitle">Sin resultados</span><span>Nada coincide con tu búsqueda o filtro actual.</span></div>
+      ) : (
+        <div className="cardlist">
+          {list.map(c => {
+            const st = effStatus(c);
+            const expired = c.status !== "cancelado" && contractExpired(c);
+            const s = CONTRACT_STATUSES[st] || CONTRACT_STATUSES.borrador;
+            const nproj = state.projects.filter(p => p.contractId === c.id).length;
+            const dleft = c.expiresAt ? Math.ceil((new Date(c.expiresAt + "T23:59:59").getTime() - Date.now()) / 86400000) : null;
+            return (
+              <div key={c.id} className="gcard ccard" style={{ "--cc": s.color } as React.CSSProperties} onClick={() => onOpen(c.id)}>
+                <div className="gt">{hlText(c.title, q || undefined, "ct")}</div>
+                <div className="gsub">{c.client ? hlText(c.client, q || undefined, "cl") : "—"}</div>
+                <div className="meta" style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                  <span className="chip" style={{ color: s.color, borderColor: s.color + "55", background: s.color + "18" }}>{s.label}</span>
+                  {c.value && <span className="chip">{c.value}</span>}
+                  {c.expiresAt && (
+                    <span className="chip" style={expired ? { color: "#e0795a", borderColor: "rgba(224,121,90,.4)" } : dleft != null && dleft <= 30 ? { color: "var(--gold)", borderColor: "rgba(201,164,74,.45)" } : undefined}>
+                      {expired ? `Venció ${c.expiresAt}` : dleft != null && dleft <= 30 ? `Vence en ${dleft} día${dleft !== 1 ? "s" : ""}` : `Vence: ${c.expiresAt}`}
+                    </span>
+                  )}
+                  {nproj > 0 && <span className="chip">🗂 {nproj} proyecto{nproj !== 1 ? "s" : ""}</span>}
+                  {c.pdfUrl && (
+                    <a className="chip pdf-badge" href={c.pdfUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}>
+                      📄 {c.pdfTitle || "PDF"}{c.pdfUploadedAt ? ` · ${new Date(c.pdfUploadedAt).toLocaleDateString("es-CL")}` : ""}
+                    </a>
+                  )}
+                </div>
+                {(c.notes || "").trim() !== "" && <div className="gbody" style={{ marginTop: "8px" }}>{hlText(c.notes, q || undefined, "cn")}</div>}
+                <div className="gfoot"><span className="gdate">{fmtDate(c.createdAt)}</span></div>
               </div>
-              <div className="gbody" style={{ marginTop: "6px" }}>{c.notes || ""}</div>
-              <div className="gfoot"><span className="gdate">{fmtDate(c.createdAt)}</span></div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2886,9 +3137,12 @@ function HubDriveView() {
 
   const isLoading = filesLoading || foldersLoading;
 
+  const itemCount = (foldersData?.length || 0) + (filesData?.files?.length || 0);
+
   return (
     <div className="wrap">
-      <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden", marginTop: 20 }}>
+      <div className="subhead"><FolderTree className="w-3.5 h-3.5" />Drive del Hub {!isLoading && <span className="n">{itemCount} elemento{itemCount !== 1 ? "s" : ""}</span>}</div>
+      <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
         {/* Breadcrumbs & back */}
         <div style={{ padding: "12px 16px", background: "var(--card2)", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={navigateBack} disabled={folderHistory.length <= 1}
@@ -2969,10 +3223,13 @@ interface TeamActivityItem {
 }
 
 const TV_STAGE: Record<string, string> = { backlog: "Backlog", sprint: "Sprint", doing: "Progreso", qa_sent: "QA→", qa_rev: "QA✓", done: "Listo" };
+const TV_STAGE_CLS: Record<string, string> = { backlog: "bg-foreground/10 text-foreground/50", sprint: "bg-sky-400/10 text-sky-400", doing: "bg-primary/15 text-primary", qa_sent: "bg-purple-400/10 text-purple-400", qa_rev: "bg-purple-400/10 text-purple-300", done: "bg-emerald-500/10 text-emerald-400" };
 const TV_PRIO: Record<string, string> = { "crítica": "text-red-400", "alta": "text-orange-400", "media": "text-blue-400", "baja": "text-foreground/40" };
 const SEM_DOT: Record<string, string> = { green: "bg-emerald-500", yellow: "bg-yellow-400", red: "bg-red-500" };
 const SEM_RING: Record<string, string> = { green: "ring-emerald-500/30", yellow: "ring-yellow-400/30", red: "ring-red-500/30" };
 const SEM_BORDER: Record<string, string> = { green: "border-foreground/10", yellow: "border-yellow-400/25", red: "border-red-500/25" };
+const SEM_LABEL: Record<string, string> = { green: "Al día", yellow: "Con carga", red: "Atención" };
+const SEM_PILL: Record<string, string> = { green: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25", yellow: "bg-yellow-400/10 text-yellow-400 border-yellow-400/25", red: "bg-red-500/10 text-red-400 border-red-500/25" };
 
 function fmtMs(ms: number): string {
   const h = Math.floor(ms / 3600000);
@@ -3075,7 +3332,7 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
   const PRIO_ON: Record<string, string> = { "crítica": "bg-red-500/15 text-red-400", "alta": "bg-orange-400/15 text-orange-400", "media": "bg-blue-400/15 text-blue-400", "baja": "bg-foreground/10 text-foreground/70" };
 
   return (
-    <div className="main-scroll p-4 md:p-6 space-y-5 max-w-4xl mx-auto">
+    <div className="main-scroll p-4 md:p-6 space-y-5 max-w-5xl mx-auto">
       {/* Panel de asignación */}
       <form onSubmit={handleAssign} className="bg-card border border-foreground/10 rounded-2xl p-4 space-y-3">
         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Asignar tarea</p>
@@ -3140,7 +3397,12 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
 
       {/* Member cards */}
       {tvLoading && <p className="text-center text-sm text-muted-foreground py-8">Cargando equipo…</p>}
-      <div className="space-y-3">
+      {!tvLoading && members.length === 0 && (
+        <div className="text-center py-10 text-sm text-muted-foreground border border-dashed border-foreground/15 rounded-2xl">
+          Sin integrantes visibles todavía — cuando el equipo inicie sesión aparecerá aquí.
+        </div>
+      )}
+      <div className="grid gap-3 lg:grid-cols-2 items-start">
         {members.map(member => {
           const sem = member.semaphore;
           const isExp = expandedId === member.id;
@@ -3156,8 +3418,9 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">{member.name ?? member.email}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{member.teamRole ?? "—"} · <span className={sem === "red" ? "text-red-400" : sem === "yellow" ? "text-yellow-400" : "text-emerald-400"}>{member.activeCount} tarea{member.activeCount !== 1 ? "s" : ""} activa{member.activeCount !== 1 ? "s" : ""}</span></p>
+                  <p className="text-xs text-muted-foreground capitalize">{member.teamRole ?? "—"} · {member.activeCount} tarea{member.activeCount !== 1 ? "s" : ""} activa{member.activeCount !== 1 ? "s" : ""}</p>
                 </div>
+                <span className={`flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide border rounded-full px-2 py-0.5 ${SEM_PILL[sem]}`}>{SEM_LABEL[sem]}</span>
                 <button onClick={() => setExpandedId(isExp ? null : member.id)}
                   className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors" title={isExp ? "Colapsar" : "Ver actividad del día"}>
                   {isExp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -3171,7 +3434,7 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
                     <div key={t.id} className={`flex items-center gap-2 text-xs rounded-lg px-2.5 py-1.5 ${t.stagnant || t.overdue ? "bg-red-500/8" : t.dueToday ? "bg-yellow-400/8" : "bg-foreground/4"}`}>
                       <span className={`flex-shrink-0 text-[8px] ${TV_PRIO[t.priority] ?? "text-foreground/40"}`}>●</span>
                       <span className="flex-1 text-foreground/80 truncate">{t.title}</span>
-                      <span className="flex-shrink-0 text-muted-foreground">{TV_STAGE[t.stage] ?? t.stage}</span>
+                      <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${TV_STAGE_CLS[t.stage] ?? "text-muted-foreground"}`}>{TV_STAGE[t.stage] ?? t.stage}</span>
                       {t.stageSinceMs > 0 && (
                         <span className={`flex-shrink-0 flex items-center gap-0.5 ${t.stagnant ? "text-red-400" : "text-muted-foreground"}`}>
                           <Clock3 className="w-2.5 h-2.5" />{fmtMs(t.stageSinceMs)}
@@ -3548,7 +3811,7 @@ export default function EjecutivoPage() {
             {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
-            {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
+            {tab === "notes" && <NotesView state={state} onSave={setState} onOpen={id => openSheet({ kind: "note", id })} onToast={showToast} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "drive" && <HubDriveView />}
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
