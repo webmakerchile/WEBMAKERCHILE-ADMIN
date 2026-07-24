@@ -625,4 +625,31 @@ router.patch("/jornada/discord/map", async (req: Request, res: Response) => {
   }
 });
 
+/** PATCH /jornada/user/:id/name — renombrar un integrante desde el panel. */
+router.patch("/jornada/user/:id/name", async (req: Request, res: Response) => {
+  if (!canOversee(req)) {
+    res.status(403).json({ error: "Sin acceso" });
+    return;
+  }
+  const userId = Number(req.params.id);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "ID inválido" });
+    return;
+  }
+  const raw = (req.body?.name ?? "").toString().trim();
+  if (!raw || raw.length > 120) {
+    res.status(400).json({ error: "El nombre debe tener entre 1 y 120 caracteres" });
+    return;
+  }
+  const [updated] = await db.update(users)
+    .set({ name: raw })
+    .where(eq(users.id, userId))
+    .returning({ id: users.id, name: users.name });
+  if (!updated) {
+    res.status(404).json({ error: "Integrante no encontrado" });
+    return;
+  }
+  res.json({ user: updated });
+});
+
 export default router;

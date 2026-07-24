@@ -3542,6 +3542,8 @@ function AttendanceView() {
   const [histDays, setHistDays] = useState<7 | 30 | 92>(7);
   const [showDc, setShowDc] = useState(false);
   const [mapErr, setMapErr] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<number | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
   const qc = useQueryClient();
   const isToday = selDate === attToday();
 
@@ -3579,15 +3581,35 @@ function AttendanceView() {
     staleTime: 60000,
   });
 
-  const { data: dcMembers } = useQuery({
+  const { data: dcMembers, isLoading: dcMembersLoading } = useQuery({
     queryKey: ["jornada-discord-members"],
-    enabled: showDc && dc?.membersAccess === "ok",
+    enabled: dc?.membersAccess === "ok",
     queryFn: async () => {
       const res = await fetch(`${HUB_API_BASE}/jornada/discord/members`, { credentials: "include" });
       if (!res.ok) throw new Error("No se pudieron cargar los miembros");
       return res.json() as Promise<{ ok: boolean; members: AttDiscordMember[] }>;
     },
     staleTime: 60000,
+  });
+
+  const renameMut = useMutation({
+    mutationFn: async ({ userId, name }: { userId: number; name: string }) => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/user/${userId}/name`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo renombrar");
+      }
+    },
+    onSuccess: () => {
+      setEditingName(null);
+      setNameDraft("");
+      qc.invalidateQueries({ queryKey: ["jornada-overview"] });
+    },
   });
 
   const mapMut = useMutation({
@@ -3663,11 +3685,36 @@ function AttendanceView() {
                 <div className="att-dc-map">
                   {members.map((m) => (
                     <div key={m.id} className="att-dc-row">
-                      <span className="att-dc-name">{m.name || m.email}</span>
+                      {editingName === m.id ? (
+                        <form
+                          className="att-dc-rename"
+                          onSubmit={(e) => { e.preventDefault(); if (nameDraft.trim()) renameMut.mutate({ userId: m.id, name: nameDraft.trim() }); }}
+                        >
+                          <input
+                            className="att-dc-rename-input"
+                            value={nameDraft}
+                            autoFocus
+                            onChange={(e) => setNameDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Escape") { setEditingName(null); setNameDraft(""); } }}
+                            disabled={renameMut.isPending}
+                          />
+                          <button type="submit" className="att-dc-rename-ok" disabled={renameMut.isPending || !nameDraft.trim()}>✓</button>
+                          <button type="button" className="att-dc-rename-cancel" onClick={() => { setEditingName(null); setNameDraft(""); }}>✕</button>
+                        </form>
+                      ) : (
+                        <span className="att-dc-name">
+                          {m.name || m.email}
+                          <button
+                            className="att-dc-edit"
+                            title="Cambiar nombre"
+                            onClick={() => { setEditingName(m.id); setNameDraft(m.name || ""); }}
+                          >✏️</button>
+                        </span>
+                      )}
                       <select
                         className="att-dc-sel"
                         value={m.discordUserId ?? ""}
-                        disabled={mapMut.isPending}
+                        disabled={mapMut.isPending || editingName === m.id}
                         onChange={(e) => {
                           const v = e.target.value || null;
                           const gm = dcMembers?.members.find((x) => x.id === v);
@@ -3675,9 +3722,12 @@ function AttendanceView() {
                         }}
                       >
                         <option value="">— Sin emparejar —</option>
-                        {(dcMembers?.members ?? []).map((gm) => (
-                          <option key={gm.id} value={gm.id}>{gm.name} (@{gm.username})</option>
-                        ))}
+                        {dcMembersLoading
+                          ? <option disabled>Cargando miembros…</option>
+                          : (dcMembers?.members ?? []).map((gm) => (
+                            <option key={gm.id} value={gm.id}>{gm.name} (@{gm.username})</option>
+                          ))
+                        }
                       </select>
                       {m.discordUserId ? <span className="att-dc-ok">✓</span> : <span className="att-dc-ok off">·</span>}
                     </div>
@@ -3716,7 +3766,14 @@ function AttendanceView() {
                     ? <img src={m.picture} alt="" className="att-ava" referrerPolicy="no-referrer" />
                     : <div className="att-ava att-ava-f">{(m.name || m.email)[0].toUpperCase()}</div>}
                   <div className="att-who">
-                    <strong>{m.name || m.email}</strong>
+                    <strong>
+                      {m.name || m.email}
+                      <button
+                        className="att-dc-edit"
+                        title="Cambiar nombre"
+                        onClick={(e) => { e.stopPropagation(); setEditingName(m.id); setNameDraft(m.name || ""); setShowDc(true); }}
+                      >✏️</button>
+                    </strong>
                     <small>{m.teamRole || "—"}</small>
                   </div>
                   <div className="att-times" title="Llegada → salida">

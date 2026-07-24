@@ -568,4 +568,15 @@
 .hub-root .att-dpct.hi{color:#34d399;border-color:rgba(52,211,153,.4);}
 .hub-root .att-dpct.mid{color:#fbbf24;border-color:rgba(251,191,36,.4);}
 .hub-root .att-dpct.lo{color:#f87171;border-color:rgba(248,113,113,.4);}
+/* Edición inline de nombre */
+.hub-root .att-dc-edit{background:none;border:none;cursor:pointer;font-size:11px;padding:0 3px;opacity:0;transition:opacity .15s;line-height:1;vertical-align:middle;}
+.hub-root .att-dc-name:hover .att-dc-edit,
+.hub-root strong:hover .att-dc-edit{opacity:.7;}
+.hub-root .att-dc-edit:hover{opacity:1!important;}
+.hub-root .att-dc-rename{display:flex;align-items:center;gap:4px;flex:1;min-width:0;}
+.hub-root .att-dc-rename-input{flex:1;min-width:0;background:var(--card);border:1px solid var(--orange);border-radius:6px;color:#fff;font-size:12.5px;padding:3px 8px;outline:none;}
+.hub-root .att-dc-rename-ok,.hub-root .att-dc-rename-cancel{background:none;border:none;cursor:pointer;font-size:13px;padding:2px 4px;line-height:1;}
+.hub-root .att-dc-rename-ok{color:#34d399;}
+.hub-root .att-dc-rename-cancel{color:#f87171;}
+.hub-root .att-dc-rename-ok:disabled{opacity:.4;cursor:not-allowed;}
 .hub-root .att-disc.dim{color:var(--faint);}
