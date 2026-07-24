@@ -1,7 +1,7 @@
 import type { TikTokTokenJson, TikTokInitJson, IgContainerJson, IgStatusJson, IgPublishJson } from "./lib/platform-types";
 import { db } from "@workspace/db";
-import { videos, users, publishAttempts } from "@workspace/db/schema";
-import { eq, and, lte, or, isNull, isNotNull, inArray, sql } from "drizzle-orm";
+import { videos, users, publishAttempts, hubTasks } from "@workspace/db/schema";
+import { eq, and, lte, or, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { randomBytes } from "crypto";
@@ -1230,6 +1230,65 @@ export async function retryPlatformForVideo(
   }
 }
 
+/* ---------- Recordatorios de vencimiento de tareas del Hub ---------- */
+
+/** Fecha local de Santiago (YYYY-MM-DD). Los dueDate del Hub son fechas locales. */
+function santiagoDateString(offsetDays = 0): string {
+  return new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000)
+    .toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+}
+
+let lastDueReminderCheck = 0;
+
+/**
+ * Notifica "vence hoy" / "vence mañana" al asignado de cada tarea pendiente.
+ * Dedupe por columna dueReminderSentFor ("<dueDate>:<kind>"): si cambia el
+ * dueDate el marcador deja de coincidir y se vuelve a recordar. Corre como
+ * máximo cada 10 minutos.
+ */
+async function checkHubTaskDueReminders(): Promise<void> {
+  const nowMs = Date.now();
+  if (nowMs - lastDueReminderCheck < 10 * 60 * 1000) return;
+  lastDueReminderCheck = nowMs;
+
+  const today = santiagoDateString(0);
+  const tomorrow = santiagoDateString(1);
+
+  const candidates = await db
+    .select({
+      id: hubTasks.id,
+      title: hubTasks.title,
+      dueDate: hubTasks.dueDate,
+      assigneeId: hubTasks.assigneeId,
+      dueReminderSentFor: hubTasks.dueReminderSentFor,
+    })
+    .from(hubTasks)
+    .where(and(
+      isNotNull(hubTasks.assigneeId),
+      ne(hubTasks.stage, "done"),
+      inArray(hubTasks.dueDate, [today, tomorrow]),
+    ));
+
+  for (const t of candidates) {
+    if (!t.assigneeId || !t.dueDate) continue;
+    const kind = t.dueDate === today ? "today" : "tomorrow";
+    const marker = `${t.dueDate}:${kind}`;
+    if (t.dueReminderSentFor === marker) continue;
+    try {
+      await createNotification({
+        userId: t.assigneeId,
+        type: "schedule_reminder",
+        title: kind === "today" ? "⏰ Tarea vence hoy" : "📅 Tarea vence mañana",
+        body: t.title,
+        link: "/mi-dia",
+      });
+      await db.update(hubTasks).set({ dueReminderSentFor: marker }).where(eq(hubTasks.id, t.id));
+    } catch (err: any) {
+      console.error(`[Scheduler] due reminder failed for task #${t.id}:`, err?.message || err);
+    }
+  }
+}
+
 async function tick() {
   await processScheduledVideos();
   // Poll TikTok for any videos stuck in "uploaded" — runs every tick (60s).
@@ -1243,6 +1302,12 @@ async function tick() {
     await checkConnectionsForAdmin();
   } catch (err: any) {
     console.error("[Scheduler] checkConnectionsForAdmin failed:", err?.message || err);
+  }
+  // Recordatorios de vencimiento del Hub (auto-throttled a 10 min).
+  try {
+    await checkHubTaskDueReminders();
+  } catch (err: any) {
+    console.error("[Scheduler] checkHubTaskDueReminders failed:", err?.message || err);
   }
 }
 

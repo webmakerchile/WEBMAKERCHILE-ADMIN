@@ -15,6 +15,9 @@ export type HubStage = (typeof VALID_STAGES)[number];
 export const VALID_PRIORITIES = ["crítica", "alta", "media", "baja"] as const;
 export type HubPriority = (typeof VALID_PRIORITIES)[number];
 
+/** Subtarea embebida en la tarea (checklist). */
+export type HubChecklistItem = { id: string; text: string; done: boolean };
+
 export const hubTasks = pgTable(
   "hub_tasks",
   {
@@ -37,6 +40,13 @@ export const hubTasks = pgTable(
     /** Human priority: crítica | alta | media | baja */
     priority: text("priority").notNull().default("media"),
     dueDate: text("due_date"),
+    /** Checklist embebido: [{ id, text, done }] */
+    checklist: jsonb("checklist").$type<HubChecklistItem[]>().notNull().default([]),
+    /**
+     * Dedupe de recordatorios de vencimiento: "<dueDate>:today" | "<dueDate>:tomorrow".
+     * Si cambia dueDate el marcador deja de coincidir y se vuelve a recordar.
+     */
+    dueReminderSentFor: text("due_reminder_sent_for"),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     orderIndex: integer("order_index").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })

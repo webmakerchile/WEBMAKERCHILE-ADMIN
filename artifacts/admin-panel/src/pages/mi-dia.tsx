@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
-import { CheckSquare2, Square, ChevronDown, ChevronUp, AlertTriangle, CalendarDays, Clock3, CalendarX, CheckCheck, Loader2 } from "lucide-react";
+import { CheckSquare2, Square, ChevronDown, ChevronUp, AlertTriangle, CalendarDays, Clock3, CalendarX, CheckCheck, Loader2, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/App";
+import { PushEnableBanner } from "@/components/push-enable-banner";
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 type Priority = "crítica" | "alta" | "media" | "baja";
@@ -17,6 +19,7 @@ interface DayTask {
   projectRef: string | null;
   notes: string | null;
   stageSince: string | null;
+  checklist?: { id: string; text: string; done: boolean }[];
 }
 
 interface MyDayResponse {
@@ -57,12 +60,14 @@ async function patchTask(id: number, stage: string) {
   return r.json();
 }
 
-function TaskRow({ task, onToggle, pending }: { task: DayTask; onToggle: () => void; pending?: boolean }) {
+function TaskRow({ task, onToggle, pending, onDelete }: { task: DayTask; onToggle: () => void; pending?: boolean; onDelete?: () => void }) {
   const done = task.stage === "done";
   const prio = task.priority in PRIO_COLOR ? task.priority as Priority : "media";
+  const cl = task.checklist ?? [];
+  const clDone = cl.filter(i => i.done).length;
 
   return (
-    <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border transition-all ${done ? "border-foreground/8 opacity-50" : "border-foreground/10 hover:border-foreground/20"} bg-card/60`}>
+    <div className={`group flex items-start gap-3 px-4 py-3 rounded-xl border transition-all ${done ? "border-foreground/8 opacity-50" : "border-foreground/10 hover:border-foreground/20"} bg-card/60`}>
       <button
         onClick={onToggle}
         disabled={pending}
@@ -88,6 +93,9 @@ function TaskRow({ task, onToggle, pending }: { task: DayTask; onToggle: () => v
           {task.projectRef && (
             <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{task.projectRef}</span>
           )}
+          {cl.length > 0 && (
+            <span className={`text-[10px] ${clDone === cl.length ? "text-emerald-400" : "text-muted-foreground"}`}>☑ {clDone}/{cl.length}</span>
+          )}
           {task.dueDate && !done && (
             <span className="text-[10px] text-muted-foreground">{task.dueDate}</span>
           )}
@@ -98,6 +106,16 @@ function TaskRow({ task, onToggle, pending }: { task: DayTask; onToggle: () => v
           )}
         </div>
       </div>
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="mt-0.5 flex-shrink-0 p-1 rounded-md text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10 transition-colors md:opacity-0 md:group-hover:opacity-100"
+          aria-label="Eliminar tarea"
+          title="Eliminar tarea"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }
@@ -110,6 +128,7 @@ function Group({
   defaultCollapsed = false,
   pendingIds,
   onToggle,
+  onDelete,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -118,6 +137,7 @@ function Group({
   defaultCollapsed?: boolean;
   pendingIds: Set<number>;
   onToggle: (task: DayTask) => void;
+  onDelete?: (task: DayTask) => void;
 }) {
   const [open, setOpen] = useState(!defaultCollapsed);
   if (tasks.length === 0) return null;
@@ -146,7 +166,7 @@ function Group({
           >
             <div className="space-y-2">
               {tasks.map((t) => (
-                <TaskRow key={t.id} task={t} pending={pendingIds.has(t.id)} onToggle={() => onToggle(t)} />
+                <TaskRow key={t.id} task={t} pending={pendingIds.has(t.id)} onToggle={() => onToggle(t)} onDelete={onDelete ? () => onDelete(t) : undefined} />
               ))}
             </div>
           </motion.div>
@@ -158,6 +178,8 @@ function Group({
 
 export default function MiDiaPage() {
   const queryClient = useQueryClient();
+  const authUser = useAuth();
+  const canDelete = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
 
   const today = new Date().toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" });
@@ -223,6 +245,15 @@ export default function MiDiaPage() {
     }
   };
 
+  const handleDelete = async (task: DayTask) => {
+    if (!window.confirm(`¿Eliminar "${task.title}"? No se puede deshacer.`)) return;
+    try {
+      const r = await fetch(`${API}/hub/tasks/${task.id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) return;
+      queryClient.invalidateQueries({ queryKey: ["my-day"] });
+    } catch { /* ignore */ }
+  };
+
   const g = data?.groups;
   const pct = data ? (data.progress.total === 0 ? 0 : Math.round((data.progress.done / data.progress.total) * 100)) : 0;
   const totalPending = g ? g.vencidas.length + g.hoy.length + g.semana.length + g.sinFecha.length : 0;
@@ -235,6 +266,8 @@ export default function MiDiaPage() {
           <h1 className="text-2xl font-bold text-foreground">Mi día</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{todayCapitalized}</p>
         </div>
+
+        <PushEnableBanner />
 
         {/* Progress bar */}
         {data && data.progress.total > 0 && (
@@ -273,6 +306,7 @@ export default function MiDiaPage() {
               tasks={g.vencidas}
               pendingIds={pendingIds}
               onToggle={handleToggle}
+              onDelete={canDelete ? handleDelete : undefined}
             />
             <Group
               icon={<CalendarDays className="w-3.5 h-3.5" />}
@@ -281,6 +315,7 @@ export default function MiDiaPage() {
               tasks={g.hoy}
               pendingIds={pendingIds}
               onToggle={handleToggle}
+              onDelete={canDelete ? handleDelete : undefined}
             />
             <Group
               icon={<CalendarDays className="w-3.5 h-3.5" />}
@@ -289,6 +324,7 @@ export default function MiDiaPage() {
               tasks={g.semana}
               pendingIds={pendingIds}
               onToggle={handleToggle}
+              onDelete={canDelete ? handleDelete : undefined}
             />
             <Group
               icon={<Clock3 className="w-3.5 h-3.5" />}
@@ -297,6 +333,7 @@ export default function MiDiaPage() {
               tasks={g.sinFecha}
               pendingIds={pendingIds}
               onToggle={handleToggle}
+              onDelete={canDelete ? handleDelete : undefined}
             />
 
             {totalPending === 0 && g.completedToday.length === 0 && (
@@ -316,6 +353,7 @@ export default function MiDiaPage() {
                 defaultCollapsed={true}
                 pendingIds={pendingIds}
                 onToggle={handleToggle}
+                onDelete={canDelete ? handleDelete : undefined}
               />
             )}
           </div>

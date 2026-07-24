@@ -1,13 +1,13 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { hubTasks, users, hubTaskActivity, type HubTaskRow, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
+import { hubTasks, users, hubTaskActivity, hubTaskComments, type HubTaskRow, type HubChecklistItem, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
 import { eq, and, asc, desc, sql, gte, lte, isNull, or, ne } from "drizzle-orm";
 import { z } from "zod";
 import { createNotification } from "../../lib/notifications";
 
 const router: IRouter = Router();
 
-type AuthUser = { id: number; role?: string; teamRole?: string };
+type AuthUser = { id: number; role?: string; teamRole?: string; name?: string; email?: string };
 
 function me(req: Request): AuthUser {
   return req.user as AuthUser;
@@ -23,6 +23,36 @@ function isCeoOrSuperAdmin(req: Request): boolean {
   return u.role === "superadmin" || u.teamRole === "ceo";
 }
 
+/**
+ * Regla del dueño: nadie excepto el propio dueño (role=superadmin) puede
+ * asignarle tareas. Devuelve { status, error } si la asignación es inválida,
+ * o null si está permitida.
+ */
+async function assigneeForbidden(
+  req: Request,
+  assigneeId: number | null | undefined,
+): Promise<{ status: number; error: string } | null> {
+  if (assigneeId == null) return null;
+  const actor = me(req);
+  if (actor.id === assigneeId) return null;
+  const [target] = await db
+    .select({ id: users.id, role: users.role })
+    .from(users)
+    .where(eq(users.id, assigneeId))
+    .limit(1);
+  if (!target) return { status: 400, error: "El usuario asignado no existe" };
+  if (target.role === "superadmin" && actor.role !== "superadmin") {
+    return { status: 403, error: "No puedes asignar tareas al dueño de la cuenta" };
+  }
+  return null;
+}
+
+const checklistItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  text: z.string().min(1).max(300),
+  done: z.boolean(),
+});
+
 const createSchema = z.object({
   title: z.string().min(1).max(500),
   notes: z.string().max(5000).optional(),
@@ -32,6 +62,7 @@ const createSchema = z.object({
   assigneeId: z.number().int().positive().optional(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   orderIndex: z.number().int().optional().default(0),
+  checklist: z.array(checklistItemSchema).max(50).optional(),
 });
 
 const updateSchema = z.object({
@@ -43,6 +74,11 @@ const updateSchema = z.object({
   assigneeId: z.number().int().positive().nullable().optional(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   orderIndex: z.number().int().optional(),
+  checklist: z.array(checklistItemSchema).max(50).optional(),
+});
+
+const commentSchema = z.object({
+  body: z.string().trim().min(1).max(2000),
 });
 
 const batchCreateSchema = z.object({
@@ -53,6 +89,7 @@ const batchCreateSchema = z.object({
     projectRef: z.string().max(100).optional(),
     assigneeId: z.number().int().positive().optional(),
     dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    checklist: z.array(checklistItemSchema).max(50).optional(),
   })).min(1).max(50),
 });
 
@@ -77,7 +114,7 @@ async function logActivity(entry: {
   taskId: number;
   taskTitle: string;
   userId: number;
-  action: "stage_change" | "created" | "assigned";
+  action: "stage_change" | "created" | "assigned" | "commented";
   oldStage?: string | null;
   newStage?: string | null;
 }): Promise<void> {
@@ -109,6 +146,7 @@ async function fetchTaskWithUsers(taskId: number) {
       assigneeId: hubTasks.assigneeId,
       createdAt: hubTasks.createdAt,
       updatedAt: hubTasks.updatedAt,
+      checklist: hubTasks.checklist,
       createdByName: sql<string | null>`cb.name`,
       createdByPicture: sql<string | null>`cb.picture`,
       assigneeName: sql<string | null>`asgn.name`,
@@ -137,6 +175,7 @@ async function fetchTaskWithUsers(taskId: number) {
     assigneeId: r.assigneeId,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
+    checklist: r.checklist ?? [],
     createdBy: { id: r.createdById, name: r.createdByName, picture: r.createdByPicture },
     assignee: r.assigneeId
       ? { id: r.assigneeId, name: r.assigneeName, picture: r.assigneePicture }
@@ -145,8 +184,14 @@ async function fetchTaskWithUsers(taskId: number) {
 }
 
 /* GET /hub/tasks/team-members — approved users for the assignee picker */
-router.get("/hub/tasks/team-members", async (_req: Request, res: Response) => {
+router.get("/hub/tasks/team-members", async (req: Request, res: Response) => {
   try {
+    // Regla del dueño: el dueño (superadmin) no aparece como asignable para
+    // el resto del equipo — solo él puede asignarse tareas.
+    const requester = me(req);
+    const where = requester.role === "superadmin"
+      ? eq(users.approvalStatus, "approved")
+      : and(eq(users.approvalStatus, "approved"), ne(users.role, "superadmin"));
     const rows = await db
       .select({
         id: users.id,
@@ -156,7 +201,7 @@ router.get("/hub/tasks/team-members", async (_req: Request, res: Response) => {
         teamRole: users.teamRole,
       })
       .from(users)
-      .where(eq(users.approvalStatus, "approved"))
+      .where(where)
       .orderBy(asc(users.name));
     res.json({ users: rows });
   } catch (err) {
@@ -206,6 +251,7 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
         assigneeId: hubTasks.assigneeId,
         createdAt: hubTasks.createdAt,
         updatedAt: hubTasks.updatedAt,
+        checklist: hubTasks.checklist,
         assigneeName: users.name,
         assigneePicture: users.picture,
         assigneeEmail: users.email,
@@ -233,6 +279,7 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
       assigneeId: r.assigneeId,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
+      checklist: r.checklist ?? [],
       assignee: r.assigneeId
         ? { id: r.assigneeId, name: r.assigneeName, picture: r.assigneePicture, email: r.assigneeEmail }
         : null,
@@ -259,6 +306,11 @@ router.post("/hub/tasks", async (req: Request, res: Response) => {
   try {
     const user = me(req);
     const d = parsed.data;
+    const forbidden = await assigneeForbidden(req, d.assigneeId);
+    if (forbidden) {
+      res.status(forbidden.status).json({ error: forbidden.error });
+      return;
+    }
     const now = new Date();
     const [inserted] = await db
       .insert(hubTasks)
@@ -275,6 +327,7 @@ router.post("/hub/tasks", async (req: Request, res: Response) => {
         dueDate: d.dueDate ?? null,
         completedAt: d.stage === "done" ? now : null,
         orderIndex: d.orderIndex,
+        checklist: d.checklist ?? [],
       })
       .returning();
     if (!inserted) {
@@ -313,6 +366,16 @@ router.post("/hub/tasks/batch", async (req: Request, res: Response) => {
   }
   try {
     const user = me(req);
+    const uniqueAssignees = [...new Set(
+      parsed.data.tasks.map((t) => t.assigneeId).filter((x): x is number => x != null),
+    )];
+    for (const aid of uniqueAssignees) {
+      const forbidden = await assigneeForbidden(req, aid);
+      if (forbidden) {
+        res.status(forbidden.status).json({ error: forbidden.error });
+        return;
+      }
+    }
     const now = new Date();
     const rows = parsed.data.tasks.map((t, i) => ({
       title: t.title,
@@ -327,6 +390,7 @@ router.post("/hub/tasks/batch", async (req: Request, res: Response) => {
       dueDate: t.dueDate ?? null,
       completedAt: null as Date | null,
       orderIndex: i,
+      checklist: t.checklist ?? [],
     }));
     const inserted = await db.insert(hubTasks).values(rows).returning();
     const notifyTargets = new Set(
@@ -419,6 +483,7 @@ router.get("/hub/tasks/my-day", async (req: Request, res: Response) => {
       projectRef: hubTasks.projectRef,
       notes: hubTasks.notes,
       stageSince: hubTasks.stageSince,
+      checklist: hubTasks.checklist,
     }).from(hubTasks).where(
       and(eq(hubTasks.assigneeId, user.id), or(ne(hubTasks.stage, "done"), gte(hubTasks.completedAt, todayStart))),
     ).orderBy(asc(hubTasks.dueDate), asc(hubTasks.orderIndex));
@@ -507,10 +572,10 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
       res.status(403).json({ error: "Sin acceso" }); return;
     }
 
-    // Non-CEO/ejecutivo can only move stage on their own tasks
+    // Non-CEO/ejecutivo can only move stage / tick checklist on their own tasks
     let bodyToValidate: Record<string, unknown> = req.body as Record<string, unknown>;
     if (!canManageAll) {
-      bodyToValidate = { stage: bodyToValidate["stage"] };
+      bodyToValidate = { stage: bodyToValidate["stage"], checklist: bodyToValidate["checklist"] };
     }
 
     const parsed = updateSchema.safeParse(bodyToValidate);
@@ -519,6 +584,15 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
     }
 
     const d = parsed.data;
+
+    if ("assigneeId" in d && d.assigneeId !== undefined) {
+      const forbidden = await assigneeForbidden(req, d.assigneeId);
+      if (forbidden) {
+        res.status(forbidden.status).json({ error: forbidden.error });
+        return;
+      }
+    }
+
     const now = new Date();
     const updates: Record<string, unknown> = { updatedAt: now };
 
@@ -529,6 +603,7 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
     if ("assigneeId" in d && d.assigneeId !== undefined) updates["assigneeId"] = d.assigneeId;
     if ("dueDate" in d && d.dueDate !== undefined) updates["dueDate"] = d.dueDate;
     if (d.orderIndex !== undefined) updates["orderIndex"] = d.orderIndex;
+    if (d.checklist !== undefined) updates["checklist"] = d.checklist;
 
     // Stage transition — accumulate stageTime, reset stageSince
     if (d.stage !== undefined && d.stage !== existing.stage) {
@@ -574,6 +649,21 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
         type: "system",
         title: "Tarea asignada",
         body: existing.title,
+        link: "/mi-dia",
+      }).catch(() => {});
+    }
+
+    // Notify creator when someone else completes their task
+    if (
+      d.stage === "done" &&
+      existing.stage !== "done" &&
+      existing.createdById !== user.id
+    ) {
+      await createNotification({
+        userId: existing.createdById,
+        type: "system",
+        title: "✅ Tarea completada",
+        body: `"${existing.title}" — completada por ${user.name || "un miembro del equipo"}`,
         link: "/ejecutivo",
       }).catch(() => {});
     }
@@ -583,6 +673,128 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[hub/tasks/:id PATCH]", err);
     res.status(500).json({ error: "Error al actualizar tarea" });
+  }
+});
+
+/** Carga una tarea y verifica acceso: gestión total, o ser asignado/creador. */
+async function loadTaskForMember(req: Request, res: Response, id: number) {
+  const [task] = await db
+    .select({ id: hubTasks.id, title: hubTasks.title, assigneeId: hubTasks.assigneeId, createdById: hubTasks.createdById })
+    .from(hubTasks)
+    .where(eq(hubTasks.id, id))
+    .limit(1);
+  if (!task) { res.status(404).json({ error: "Tarea no encontrada" }); return null; }
+  const user = me(req);
+  if (!isCeoOrEjecutivo(req) && task.assigneeId !== user.id && task.createdById !== user.id) {
+    res.status(403).json({ error: "Sin acceso" });
+    return null;
+  }
+  return task;
+}
+
+/* GET /hub/tasks/:id/activity — historial completo de una tarea */
+router.get("/hub/tasks/:id/activity", async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
+  try {
+    const task = await loadTaskForMember(req, res, id);
+    if (!task) return;
+    const rows = await db.select({
+      id: hubTaskActivity.id,
+      action: hubTaskActivity.action,
+      oldStage: hubTaskActivity.oldStage,
+      newStage: hubTaskActivity.newStage,
+      createdAt: hubTaskActivity.createdAt,
+      actorName: users.name,
+      actorPicture: users.picture,
+    }).from(hubTaskActivity)
+      .leftJoin(users, eq(users.id, hubTaskActivity.userId))
+      .where(eq(hubTaskActivity.taskId, id))
+      .orderBy(desc(hubTaskActivity.createdAt))
+      .limit(100);
+    res.json({ items: rows });
+  } catch (err) {
+    console.error("[hub/tasks/:id/activity GET]", err);
+    res.status(500).json({ error: "Error al obtener historial" });
+  }
+});
+
+/* GET /hub/tasks/:id/comments */
+router.get("/hub/tasks/:id/comments", async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
+  try {
+    const task = await loadTaskForMember(req, res, id);
+    if (!task) return;
+    const rows = await db.select({
+      id: hubTaskComments.id,
+      body: hubTaskComments.body,
+      createdAt: hubTaskComments.createdAt,
+      userId: hubTaskComments.userId,
+      authorName: users.name,
+      authorPicture: users.picture,
+    }).from(hubTaskComments)
+      .leftJoin(users, eq(users.id, hubTaskComments.userId))
+      .where(eq(hubTaskComments.taskId, id))
+      .orderBy(asc(hubTaskComments.createdAt))
+      .limit(200);
+    res.json({ comments: rows });
+  } catch (err) {
+    console.error("[hub/tasks/:id/comments GET]", err);
+    res.status(500).json({ error: "Error al obtener comentarios" });
+  }
+});
+
+/* POST /hub/tasks/:id/comments */
+router.post("/hub/tasks/:id/comments", async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
+  const parsed = commentSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
+  try {
+    const task = await loadTaskForMember(req, res, id);
+    if (!task) return;
+    const user = me(req);
+    const [inserted] = await db
+      .insert(hubTaskComments)
+      .values({ taskId: id, userId: user.id, body: parsed.data.body.trim() })
+      .returning();
+    await logActivity({ taskId: id, taskTitle: task.title, userId: user.id, action: "commented" }).catch(() => {});
+    // Aviso al interlocutor natural: asignado si comenta otro; creador si comenta el asignado.
+    const counterpart = task.assigneeId && task.assigneeId !== user.id
+      ? task.assigneeId
+      : (task.createdById !== user.id ? task.createdById : null);
+    if (counterpart) {
+      await createNotification({
+        userId: counterpart,
+        type: "system",
+        title: "💬 Nuevo comentario",
+        body: `${user.name || "Alguien"} comentó en "${task.title}"`,
+        link: "/mi-dia",
+      }).catch(() => {});
+    }
+    res.status(201).json({ comment: inserted });
+  } catch (err) {
+    console.error("[hub/tasks/:id/comments POST]", err);
+    res.status(500).json({ error: "Error al comentar" });
+  }
+});
+
+/* POST /hub/tasks/clear-completed — elimina todas las tareas en "done" */
+router.post("/hub/tasks/clear-completed", async (req: Request, res: Response) => {
+  if (!isCeoOrSuperAdmin(req)) {
+    res.status(403).json({ error: "Solo el CEO puede limpiar tareas completadas" });
+    return;
+  }
+  try {
+    const deleted = await db
+      .delete(hubTasks)
+      .where(eq(hubTasks.stage, "done"))
+      .returning({ id: hubTasks.id });
+    res.json({ ok: true, deleted: deleted.length });
+  } catch (err) {
+    console.error("[hub/tasks/clear-completed POST]", err);
+    res.status(500).json({ error: "Error al limpiar tareas" });
   }
 });
 

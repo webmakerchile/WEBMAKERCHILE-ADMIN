@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { PushEnableBanner } from "@/components/push-enable-banner";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
@@ -20,6 +21,9 @@ type Prio = "crítica" | "alta" | "media" | "baja";
 type ProjStatus = "lead" | "disc" | "dev" | "rev" | "done";
 type TaskStage = "backlog" | "sprint" | "doing" | "qa_sent" | "qa_rev" | "done";
 type TaskStatus = "pendiente" | "en_progreso" | "hecha";
+interface ChecklistItem { id: string; text: string; done: boolean }
+interface TaskComment { id: number; body: string; createdAt: string; userId: number; authorName: string | null; authorPicture: string | null }
+interface TaskHistoryItem { id: number; action: string; oldStage: string | null; newStage: string | null; createdAt: string; actorName: string | null; actorPicture: string | null }
 interface HubTask {
   id: number;
   title: string;
@@ -39,6 +43,7 @@ interface HubTask {
   assigneeId: number | null;
   createdAt: string;
   updatedAt: string;
+  checklist?: ChecklistItem[];
   assignee: { id: number; name: string | null; picture: string | null; email?: string | null } | null;
 }
 interface TeamMember {
@@ -435,16 +440,28 @@ function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; t
   );
 }
 
-function TaskCard({ t, projects, onClick, onDragStart, onDragEnd }: { t: HubTask; projects: Project[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
+function TaskCard({ t, projects, onClick, onDragStart, onDragEnd, onDelete }: { t: HubTask; projects: Project[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void; onDelete?: () => void }) {
   const proj = projects.find(p => p.id === t.projectRef);
+  const cl = t.checklist ?? [];
+  const clDone = cl.filter(i => i.done).length;
   return (
     <div className="pcard tcard tcard--compact" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}
-      style={{ borderLeft: `3px solid ${CRIT_COLOR[t.priority] || "var(--line)"}` }}>
-      <div className="tcard-title">{t.title}</div>
+      style={{ borderLeft: `3px solid ${CRIT_COLOR[t.priority] || "var(--line)"}`, position: "relative" }}>
+      {onDelete && (
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(); }}
+          title="Eliminar tarea"
+          style={{ position: "absolute", top: 6, right: 6, background: "none", border: "none", color: "var(--faint)", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 3, borderRadius: 4 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#cc4444"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--faint)"; }}
+        >✕</button>
+      )}
+      <div className="tcard-title" style={onDelete ? { paddingRight: 16 } : undefined}>{t.title}</div>
       <div className="tcard-meta">
         <span className={`chip prio-${t.priority}`}>{t.priority}</span>
         <span className="tcard-proj">{proj ? proj.name : "—"}</span>
         {t.assignee && <span className="tcard-timer" title={`Asignada a ${t.assignee.name || ""}`}>👤 {(t.assignee.name || "").split(" ")[0]}</span>}
+        {cl.length > 0 && <span className="tcard-timer" title="Checklist" style={clDone === cl.length ? { color: "#1db87b" } : undefined}>☑ {clDone}/{cl.length}</span>}
         {t.dueDate && <span className="tcard-timer">{t.dueDate}</span>}
       </div>
     </div>
@@ -678,14 +695,157 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
 }
 
 /* ============================================================
+   TAREAS: CHECKLIST, COMENTARIOS E HISTORIAL
+   ============================================================ */
+function ChecklistEditor({ items, onChange }: { items: ChecklistItem[]; onChange: (next: ChecklistItem[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const done = items.filter(i => i.done).length;
+  const add = () => {
+    const text = draft.trim(); if (!text) return;
+    onChange([...items, { id: uid(), text, done: false }]);
+    setDraft("");
+  };
+  return (
+    <div className="field">
+      <label>Checklist{items.length > 0 ? ` · ${done}/${items.length}` : ""}</label>
+      {items.length > 0 && (
+        <div style={{ height: 4, borderRadius: 2, background: "var(--line)", overflow: "hidden", margin: "2px 0 8px" }}>
+          <div style={{ height: "100%", width: `${Math.round((done / items.length) * 100)}%`, background: done === items.length ? "#1db87b" : "var(--orange)", transition: "width .25s" }} />
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map(it => (
+          <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
+            <input type="checkbox" checked={it.done} onChange={() => onChange(items.map(x => x.id === it.id ? { ...x, done: !x.done } : x))} style={{ flexShrink: 0, width: 14, height: 14, accentColor: "var(--orange)", cursor: "pointer" }} />
+            <span style={{ flex: 1, fontSize: "0.82em", color: it.done ? "var(--faint)" : "var(--text)", textDecoration: it.done ? "line-through" : "none" }}>{it.text}</span>
+            <button onClick={() => onChange(items.filter(x => x.id !== it.id))} title="Quitar" style={{ background: "none", border: "none", color: "var(--faint)", cursor: "pointer", fontSize: 11, padding: 2, lineHeight: 1 }}>✕</button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: items.length ? 6 : 0 }}>
+        <input type="text" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add(); } }} placeholder="Agregar subtarea…" style={{ flex: 1 }} />
+        <button onClick={add} disabled={!draft.trim()} style={{ flexShrink: 0, padding: "0 14px", borderRadius: 8, border: "1px solid var(--orange-line)", background: "transparent", color: "var(--orange2)", cursor: draft.trim() ? "pointer" : "default", opacity: draft.trim() ? 1 : 0.4, fontSize: 14 }}>+</button>
+      </div>
+    </div>
+  );
+}
+
+function fmtCommentDate(x: string): string {
+  try { return new Date(x).toLocaleString("es-CL", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
+  catch { return x; }
+}
+
+function TaskComments({ taskId, onToast }: { taskId: number; onToast: (msg: string) => void }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const { data, isLoading } = useQuery<{ comments: TaskComment[] }>({
+    queryKey: ["hub-task-comments", taskId],
+    queryFn: async () => {
+      const r = await fetch(`${DRIVE_API_BASE}/hub/tasks/${taskId}/comments`, { credentials: "include" });
+      if (!r.ok) throw new Error("comments");
+      return r.json();
+    },
+    staleTime: 15_000,
+  });
+  const comments = data?.comments ?? [];
+  const send = async () => {
+    const body = draft.trim(); if (!body || sending) return;
+    setSending(true);
+    try {
+      const r = await fetch(`${DRIVE_API_BASE}/hub/tasks/${taskId}/comments`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body }),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al comentar"); return; }
+      setDraft("");
+      queryClient.invalidateQueries({ queryKey: ["hub-task-comments", taskId] });
+    } catch { onToast("Error de conexión"); }
+    finally { setSending(false); }
+  };
+  return (
+    <div className="field" style={{ marginTop: 14 }}>
+      <label>Comentarios{comments.length > 0 ? ` · ${comments.length}` : ""}</label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {isLoading && <div style={{ fontSize: "0.78em", color: "var(--faint)" }}>Cargando…</div>}
+        {!isLoading && comments.length === 0 && <div style={{ fontSize: "0.78em", color: "var(--faint)" }}>Sin comentarios aún.</div>}
+        {comments.map(c => (
+          <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderRadius: 8, border: "1px solid var(--line)" }}>
+            {c.authorPicture
+              ? <img src={c.authorPicture} alt="" referrerPolicy="no-referrer" style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, marginTop: 1 }} />
+              : <div style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, background: "var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--muted)", marginTop: 1 }}>{(c.authorName || "?").charAt(0).toUpperCase()}</div>}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                <strong style={{ fontSize: "0.78em" }}>{c.authorName || "—"}</strong>
+                <span style={{ fontSize: "0.68em", color: "var(--faint)" }}>{fmtCommentDate(c.createdAt)}</span>
+              </div>
+              <div style={{ fontSize: "0.82em", whiteSpace: "pre-wrap", overflowWrap: "anywhere", marginTop: 2 }}>{c.body}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        <input type="text" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void send(); } }} placeholder="Escribe un comentario…" style={{ flex: 1 }} />
+        <button onClick={() => void send()} disabled={!draft.trim() || sending} style={{ flexShrink: 0, padding: "0 12px", borderRadius: 8, border: "1px solid var(--orange-line)", background: "transparent", color: "var(--orange2)", cursor: draft.trim() && !sending ? "pointer" : "default", opacity: draft.trim() && !sending ? 1 : 0.4, display: "flex", alignItems: "center" }} title="Enviar"><Send size={13} /></button>
+      </div>
+    </div>
+  );
+}
+
+function historyLabel(a: TaskHistoryItem): string {
+  const stageLabel = (id: string | null) => TASK_STAGES.find(s => s.id === id)?.label ?? id ?? "";
+  if (a.action === "created") return "creó la tarea";
+  if (a.action === "assigned") return "reasignó la tarea";
+  if (a.action === "commented") return "comentó";
+  if (a.action === "stage_change") return `movió a ${stageLabel(a.newStage)}`;
+  return a.action;
+}
+
+function TaskHistory({ taskId }: { taskId: number }) {
+  const [open, setOpen] = useState(false);
+  const { data, isLoading } = useQuery<{ items: TaskHistoryItem[] }>({
+    queryKey: ["hub-task-history", taskId],
+    queryFn: async () => {
+      const r = await fetch(`${DRIVE_API_BASE}/hub/tasks/${taskId}/activity`, { credentials: "include" });
+      if (!r.ok) throw new Error("history");
+      return r.json();
+    },
+    enabled: open,
+    staleTime: 15_000,
+  });
+  const items = data?.items ?? [];
+  return (
+    <div style={{ marginTop: 10 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: "0.78em", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Historial
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+          {isLoading && <div style={{ fontSize: "0.74em", color: "var(--faint)" }}>Cargando…</div>}
+          {!isLoading && items.length === 0 && <div style={{ fontSize: "0.74em", color: "var(--faint)" }}>Sin movimientos registrados.</div>}
+          {items.map(a => (
+            <div key={a.id} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: "0.74em", color: "var(--muted)" }}>
+              <span style={{ color: "var(--faint)", flexShrink: 0 }}>{fmtCommentDate(a.createdAt)}</span>
+              <span style={{ overflowWrap: "anywhere" }}><strong style={{ color: "var(--text)" }}>{a.actorName || "—"}</strong> {historyLabel(a)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================
    SHEET CONTENT
    ============================================================ */
 interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; apiTasks: HubTask[]; teamMembers: TeamMember[]; onRefreshTasks: () => void; }
 
 function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, apiTasks, teamMembers, onRefreshTasks }: SheetProps) {
+  const authUser = useAuth();
+  const canDeleteTasks = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
+  const [taskChecklist, setTaskChecklist] = useState<ChecklistItem[]>([]);
   const [driveFolderLink, setDriveFolderLink] = useState("");
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
@@ -749,6 +909,17 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); setCotJson(""); setCotHtml(null); setCotError(null); setCotLoading(false); setCotShowJson(false); }
   }, [sheet?.kind]);
 
+  // Sincroniza el checklist local al abrir una tarea (o resetear en tarea nueva).
+  useEffect(() => {
+    if (sheet?.kind === "task") {
+      const t = apiTasks.find(x => x.id === (sheet as { kind: "task"; id: number }).id);
+      setTaskChecklist(t?.checklist ?? []);
+    } else if (sheet?.kind === "new-task") {
+      setTaskChecklist([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheet]);
+
   const extractFromMeeting = async (notes: string, onFill: (data: Record<string, string>) => void) => {
     setMeetingExtracting(true);
     try {
@@ -784,6 +955,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div className="field"><label>Asignar a</label><select ref={R("assignee")}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
       )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
+      <ChecklistEditor items={taskChecklist} onChange={setTaskChecklist} />
       <button className="add-btn" onClick={async () => {
         const title = V("t").trim(); if (!title) { onToast("Ponle un título a la tarea"); return; }
         const assigneeRaw = V("assignee");
@@ -792,6 +964,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const body: Record<string, unknown> = { title, notes: V("notes") || undefined, priority: V("crit") || "media", stage: V("stage") || "backlog", projectRef: V("proj") || undefined };
         if (assigneeId && !isNaN(assigneeId)) body["assigneeId"] = assigneeId;
         if (dueRaw) body["dueDate"] = dueRaw;
+        if (taskChecklist.length) body["checklist"] = taskChecklist;
         try {
           const res = await fetch(`${DRIVE_API_BASE}/hub/tasks`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
           if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al crear tarea"); return; }
@@ -821,24 +994,29 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div className="field"><label>Asignar a</label><select ref={R("assignee")} defaultValue={t.assigneeId != null ? String(t.assigneeId) : ""}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
       )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={5} defaultValue={t.notes || ""} /></div>
+      <ChecklistEditor items={taskChecklist} onChange={setTaskChecklist} />
       {t.assignee && <div style={{ fontSize: "0.78em", color: "var(--muted)", marginBottom: 8 }}>Asignada a: <strong>{t.assignee.name}</strong></div>}
       <button className="save" onClick={async () => {
         const assigneeRaw = V("assignee");
         const assigneeId = assigneeRaw ? parseInt(assigneeRaw, 10) : null;
         const dueRaw = V("due");
-        const body: Record<string, unknown> = { title: V("t").trim() || t.title, notes: V("notes") || null, priority: V("crit"), stage: V("stage"), projectRef: V("proj") || null, assigneeId: assigneeId && !isNaN(assigneeId) ? assigneeId : null, dueDate: dueRaw || null };
+        const body: Record<string, unknown> = { title: V("t").trim() || t.title, notes: V("notes") || null, priority: V("crit"), stage: V("stage"), projectRef: V("proj") || null, assigneeId: assigneeId && !isNaN(assigneeId) ? assigneeId : null, dueDate: dueRaw || null, checklist: taskChecklist };
         try {
           const res = await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
           if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string, unknown>)); onToast((e as { error?: string }).error || "Error al guardar"); return; }
           onRefreshTasks(); onClose(); onToast("Tarea actualizada");
         } catch { onToast("Error de conexión"); }
       }}>Guardar cambios</button>
-      <button className="del-link" onClick={() => onConfirm("¿Eliminar esta tarea? No se puede deshacer.", async () => {
-        try {
-          await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "DELETE", credentials: "include" });
-          onRefreshTasks(); onClose(); onToast("Tarea eliminada");
-        } catch { onToast("Error al eliminar"); }
-      })}>Eliminar tarea</button>
+      {canDeleteTasks && (
+        <button className="del-link" onClick={() => onConfirm("¿Eliminar esta tarea? No se puede deshacer.", async () => {
+          try {
+            await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "DELETE", credentials: "include" });
+            onRefreshTasks(); onClose(); onToast("Tarea eliminada");
+          } catch { onToast("Error al eliminar"); }
+        })}>Eliminar tarea</button>
+      )}
+      <TaskComments taskId={t.id} onToast={onToast} />
+      <TaskHistory taskId={t.id} />
     </>);
   }
 
@@ -1914,11 +2092,12 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
   );
 }
 
-function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks }: {
+function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted }: {
   state: HubState; onSave: (n: HubState) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
   onToast: (m: string) => void; projView: ProjView; setProjView: (v: ProjView) => void;
   searchQ: string; setSearchQ: (v: string) => void; filterPrio: string; setFilterPrio: (v: string) => void;
   apiTasks: HubTask[]; onRefreshTasks: () => void;
+  canManage: boolean; onDeleteTask: (id: number) => void; onClearCompleted: () => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -1962,6 +2141,17 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
         <select className="filter" value={filterPrio} onChange={e => setFilterPrio(e.target.value)}>
           <option value="">Prioridad</option><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
         </select>
+        {projView === "scrum" && canManage && (() => {
+          const doneCount = apiTasks.filter(t => t.stage === "done").length;
+          return (
+            <button
+              onClick={onClearCompleted}
+              disabled={doneCount === 0}
+              title={doneCount === 0 ? "No hay tareas completadas" : `Eliminar ${doneCount} tarea${doneCount !== 1 ? "s" : ""} completada${doneCount !== 1 ? "s" : ""}`}
+              style={{ padding: "8px 12px", borderRadius: 9, border: "1px solid var(--line)", background: "transparent", color: doneCount === 0 ? "var(--faint)" : "var(--dim)", cursor: doneCount === 0 ? "default" : "pointer", fontSize: "0.78em", whiteSpace: "nowrap", opacity: doneCount === 0 ? 0.5 : 1 }}
+            >🧹 Limpiar completadas{doneCount > 0 ? ` (${doneCount})` : ""}</button>
+          );
+        })()}
       </div>
       {projView === "board" && (
         <div className="board">
@@ -2002,7 +2192,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
                 onDragLeave={() => setDragOver(null)}
                 onDrop={() => void dropTask(s.id)}>
                 <h3><span className="top"><span className="dot" style={{ background: s.color }} />{s.label}</span><span className="n">{items.length}</span></h3>
-                {items.length ? items.map(t => <TaskCard key={t.id} t={t} projects={state.projects} onClick={() => onOpenTask(t.id)} onDragStart={e => { setDragId(String(t.id)); e.dataTransfer.setData("text/plain", String(t.id)); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
+                {items.length ? items.map(t => <TaskCard key={t.id} t={t} projects={state.projects} onClick={() => onOpenTask(t.id)} onDragStart={e => { setDragId(String(t.id)); e.dataTransfer.setData("text/plain", String(t.id)); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} onDelete={canManage ? () => onDeleteTask(t.id) : undefined} />) : <div className="col-empty">—</div>}
               </div>
             );
           })}
@@ -2432,15 +2622,22 @@ function fmtMs(ms: number): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-function TeamView({ teamMembers, showToast, onRefreshTasks }: {
+function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
   teamMembers: TeamMember[];
   showToast: (msg: string, undo?: () => void) => void;
   onRefreshTasks: () => void;
+  onConfirm: (msg: string, onYes: () => void) => void;
 }) {
-  const [quickTitle, setQuickTitle] = useState("");
-  const [quickAssignee, setQuickAssignee] = useState<number | null>(null);
-  const [quickPriority, setQuickPriority] = useState<"crítica" | "alta" | "media" | "baja">("media");
-  const [quickDate, setQuickDate] = useState("");
+  const authUser = useAuth();
+  const canDelete = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
+  const [title, setTitle] = useState("");
+  const [desc, setDesc] = useState("");
+  const [assigneeId, setAssigneeId] = useState<number | null>(null);
+  const [priority, setPriority] = useState<"crítica" | "alta" | "media" | "baja">("media");
+  const [dueDate, setDueDate] = useState("");
+  const [clItems, setClItems] = useState<ChecklistItem[]>([]);
+  const [clDraft, setClDraft] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
   const [composing, setComposing] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -2468,52 +2665,118 @@ function TeamView({ teamMembers, showToast, onRefreshTasks }: {
     staleTime: 30_000,
   });
 
-  const handleCompose = async (e: React.FormEvent) => {
+  const members = tvData?.members ?? [];
+  // Selector de asignación: cards del team-view (traen carga actual) filtradas
+  // por la lista team-members, que el servidor ya limita según la regla del
+  // dueño (solo el dueño puede asignarse tareas a sí mismo).
+  const allowedIds = new Set(teamMembers.map(m => m.id));
+  const selectable: Array<{ id: number; name: string | null; email: string | null; picture: string | null; teamRole: string | null; activeCount: number | null }> =
+    members.length > 0
+      ? members.filter(m => allowedIds.has(m.id)).map(m => ({ id: m.id, name: m.name, email: m.email, picture: m.picture, teamRole: m.teamRole, activeCount: m.activeCount }))
+      : teamMembers.map(m => ({ id: m.id, name: m.name, email: m.email, picture: m.picture, teamRole: m.teamRole, activeCount: null }));
+
+  const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!quickTitle.trim()) return;
+    if (!title.trim() || composing) return;
     setComposing(true);
     try {
+      const body: Record<string, unknown> = { title: title.trim(), priority };
+      if (assigneeId) body["assigneeId"] = assigneeId;
+      if (dueDate) body["dueDate"] = dueDate;
+      if (desc.trim()) body["notes"] = desc.trim();
+      if (clItems.length) body["checklist"] = clItems;
       const r = await fetch(`${HUB_API_BASE}/hub/tasks`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: quickTitle.trim(), ...(quickAssignee ? { assigneeId: quickAssignee } : {}), priority: quickPriority, ...(quickDate ? { dueDate: quickDate } : {}) }),
+        body: JSON.stringify(body),
       });
-      if (!r.ok) throw new Error(await r.text());
-      setQuickTitle(""); setQuickDate(""); setQuickAssignee(null); setQuickPriority("media");
-      showToast("Tarea creada y asignada");
+      if (!r.ok) {
+        const e2 = await r.json().catch(() => ({} as Record<string, unknown>));
+        throw new Error((e2 as { error?: string }).error || "Error al crear tarea");
+      }
+      const assigned = selectable.find(m => m.id === assigneeId);
+      setTitle(""); setDesc(""); setDueDate(""); setClItems([]); setClDraft(""); setPriority("media"); setShowDetails(false);
+      showToast(assigned ? `Tarea asignada a ${(assigned.name ?? assigned.email ?? "").split(" ")[0]} ✓` : "Tarea creada");
       tvRefetch(); onRefreshTasks();
       setTimeout(() => titleRef.current?.focus(), 80);
     } catch (err: any) { showToast(err.message || "Error al crear tarea"); }
     finally { setComposing(false); }
   };
 
-  const members = tvData?.members ?? [];
+  const deleteTask = async (id: number) => {
+    try {
+      const r = await fetch(`${HUB_API_BASE}/hub/tasks/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) { const e2 = await r.json().catch(() => ({} as Record<string, unknown>)); showToast((e2 as { error?: string }).error || "Error al eliminar"); return; }
+      showToast("Tarea eliminada");
+      tvRefetch(); onRefreshTasks();
+    } catch { showToast("Error de conexión"); }
+  };
+
   const PRIOS: ("crítica" | "alta" | "media" | "baja")[] = ["crítica", "alta", "media", "baja"];
+  const PRIO_ON: Record<string, string> = { "crítica": "bg-red-500/15 text-red-400", "alta": "bg-orange-400/15 text-orange-400", "media": "bg-blue-400/15 text-blue-400", "baja": "bg-foreground/10 text-foreground/70" };
 
   return (
     <div className="main-scroll p-4 md:p-6 space-y-5 max-w-4xl mx-auto">
-      {/* Quick composer */}
-      <form onSubmit={handleCompose} className="bg-card border border-foreground/10 rounded-2xl p-4 space-y-3">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Asignar tarea rápida</p>
-        <div className="flex flex-wrap gap-2">
-          <input ref={titleRef} type="text" value={quickTitle} onChange={e => setQuickTitle(e.target.value)}
-            placeholder="Título de la tarea..." className="flex-1 min-w-[180px] bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
-          <select value={quickAssignee ?? ""} onChange={e => setQuickAssignee(e.target.value ? parseInt(e.target.value) : null)}
-            className="bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-            <option value="">Sin asignar</option>
-            {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name ?? m.email}</option>)}
-          </select>
-          <select value={quickPriority} onChange={e => setQuickPriority(e.target.value as typeof quickPriority)}
-            className="bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary">
-            {PRIOS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-          <input type="date" value={quickDate} onChange={e => setQuickDate(e.target.value)}
+      {/* Panel de asignación */}
+      <form onSubmit={handleAssign} className="bg-card border border-foreground/10 rounded-2xl p-4 space-y-3">
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Asignar tarea</p>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {selectable.length === 0 && <p className="text-xs text-muted-foreground py-1">Cargando equipo…</p>}
+          {selectable.map(m => {
+            const on = assigneeId === m.id;
+            return (
+              <button key={m.id} type="button" onClick={() => setAssigneeId(on ? null : m.id)}
+                className={`flex items-center gap-2 flex-shrink-0 rounded-xl border px-3 py-2 transition-colors ${on ? "border-primary bg-primary/10" : "border-foreground/10 bg-background hover:border-foreground/30"}`}>
+                {m.picture
+                  ? <img src={m.picture} alt="" referrerPolicy="no-referrer" className="w-7 h-7 rounded-full" />
+                  : <div className="w-7 h-7 rounded-full bg-foreground/10 flex items-center justify-center text-xs font-bold">{(m.name ?? m.email ?? "?")[0]?.toUpperCase()}</div>}
+                <span className="text-left">
+                  <span className="block text-xs font-semibold leading-tight">{(m.name ?? m.email ?? "—").split(" ")[0]}</span>
+                  <span className="block text-[10px] text-muted-foreground leading-tight capitalize">{m.teamRole ?? "—"}{m.activeCount != null ? ` · ${m.activeCount} activa${m.activeCount !== 1 ? "s" : ""}` : ""}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <input ref={titleRef} type="text" value={title} onChange={e => setTitle(e.target.value)}
+          placeholder="¿Qué hay que hacer?" className="w-full bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-foreground/15 overflow-hidden">
+            {PRIOS.map(p => (
+              <button type="button" key={p} onClick={() => setPriority(p)}
+                className={`px-2.5 py-1.5 text-xs capitalize transition-colors ${priority === p ? PRIO_ON[p] : "text-muted-foreground hover:text-foreground"}`}>{p}</button>
+            ))}
+          </div>
+          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
             className="bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
-          <button type="submit" disabled={composing || !quickTitle.trim()}
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity">
-            <Send className="w-3.5 h-3.5" />{composing ? "Enviando…" : "Asignar"}
+          <button type="button" onClick={() => setShowDetails(v => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1">
+            {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            Detalles{(desc.trim() || clItems.length > 0) ? " ●" : ""}
+          </button>
+          <button type="submit" disabled={composing || !title.trim()}
+            className="ml-auto flex items-center gap-1.5 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-opacity">
+            <Send className="w-3.5 h-3.5" />{composing ? "Enviando…" : assigneeId ? "Asignar tarea" : "Crear tarea"}
           </button>
         </div>
+        {showDetails && (
+          <div className="space-y-2 pt-1">
+            <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={2} placeholder="Descripción / contexto (opcional)"
+              className="w-full bg-background border border-foreground/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary resize-y" />
+            <div className="space-y-1">
+              {clItems.map(it => (
+                <div key={it.id} className="flex items-center gap-2 text-xs bg-foreground/4 rounded-lg px-2.5 py-1.5">
+                  <span className="text-muted-foreground">☐</span>
+                  <span className="flex-1 text-foreground/80">{it.text}</span>
+                  <button type="button" onClick={() => setClItems(clItems.filter(x => x.id !== it.id))} className="text-muted-foreground/60 hover:text-red-400 transition-colors" title="Quitar"><X className="w-3 h-3" /></button>
+                </div>
+              ))}
+              <input type="text" value={clDraft} onChange={e => setClDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); const t2 = clDraft.trim(); if (t2) { setClItems([...clItems, { id: uid(), text: t2, done: false }]); setClDraft(""); } } }}
+                placeholder="Paso del checklist + Enter" className="w-full bg-background border border-foreground/15 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary" />
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Member cards */}
@@ -2558,6 +2821,12 @@ function TeamView({ teamMembers, showToast, onRefreshTasks }: {
                       )}
                       {t.overdue && <span className="flex-shrink-0 text-red-400 font-medium">Vencida</span>}
                       {t.dueToday && !t.overdue && <span className="flex-shrink-0 text-yellow-400">Hoy</span>}
+                      {canDelete && (
+                        <button onClick={() => onConfirm(`¿Eliminar "${t.title}"? No se puede deshacer.`, () => { void deleteTask(t.id); })}
+                          className="flex-shrink-0 p-0.5 rounded text-muted-foreground/40 hover:text-red-400 transition-colors" title="Eliminar tarea">
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2579,7 +2848,9 @@ function TeamView({ teamMembers, showToast, onRefreshTasks }: {
                             const time = new Date(a.createdAt).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
                             const desc = a.action === "stage_change"
                               ? `movió "${a.taskTitle}" a ${TV_STAGE[a.newStage ?? ""] ?? a.newStage}`
-                              : a.action === "created" ? `creó "${a.taskTitle}"` : `reasignó "${a.taskTitle}"`;
+                              : a.action === "created" ? `creó "${a.taskTitle}"`
+                              : a.action === "commented" ? `comentó en "${a.taskTitle}"`
+                              : `reasignó "${a.taskTitle}"`;
                             return (
                               <div key={a.id} className="flex gap-2 text-xs text-muted-foreground">
                                 <span className="flex-shrink-0 font-mono text-[10px]">{time}</span>
@@ -2724,6 +2995,38 @@ export default function EjecutivoPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), undo ? 6000 : 2200);
   }, []);
+
+  const canManageTasks = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
+
+  const handleDeleteTask = useCallback((id: number) => {
+    setConfirm({
+      msg: "¿Eliminar esta tarea? No se puede deshacer.",
+      onYes: async () => {
+        try {
+          const r = await fetch(`${HUB_API_BASE}/hub/tasks/${id}`, { method: "DELETE", credentials: "include" });
+          if (!r.ok) { const e = await r.json().catch(() => ({} as Record<string, unknown>)); showToast((e as { error?: string }).error || "Error al eliminar"); return; }
+          showToast("Tarea eliminada");
+          onRefreshTasks();
+        } catch { showToast("Error de conexión"); }
+      },
+    });
+  }, [showToast, onRefreshTasks]);
+
+  const handleClearCompleted = useCallback(() => {
+    setConfirm({
+      msg: "¿Eliminar todas las tareas completadas del tablero? No se puede deshacer.",
+      onYes: async () => {
+        try {
+          const r = await fetch(`${HUB_API_BASE}/hub/tasks/clear-completed`, { method: "POST", credentials: "include" });
+          if (!r.ok) { const e = await r.json().catch(() => ({} as Record<string, unknown>)); showToast((e as { error?: string }).error || "Error al limpiar"); return; }
+          const d = await r.json().catch(() => ({ deleted: 0 }));
+          const n = (d as { deleted?: number }).deleted ?? 0;
+          showToast(`${n} tarea${n !== 1 ? "s" : ""} completada${n !== 1 ? "s" : ""} eliminada${n !== 1 ? "s" : ""}`);
+          onRefreshTasks();
+        } catch { showToast("Error de conexión"); }
+      },
+    });
+  }, [showToast, onRefreshTasks]);
 
   const openSheet = useCallback((s: SheetKind) => setSheet(s), []);
 
@@ -2878,14 +3181,15 @@ export default function EjecutivoPage() {
               <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
               <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
             </div>
+            <div style={{ padding: "10px 18px 0" }}><PushEnableBanner /></div>
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} apiTasks={apiTasks} />}
-            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} />}
+            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onOpen={id => openSheet({ kind: "note", id })} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "drive" && <HubDriveView />}
-            {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} />}
+            {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
             {tab === "svc" && isAdmin && <SvcView />}
           </div>
 

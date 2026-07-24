@@ -99,6 +99,13 @@
       "when": 1753056000000,
       "tag": "0015_hub_state",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784851200000,
+      "tag": "0016_hub_tasks_v2",
+      "breakpoints": true
     }
   ]
 }
