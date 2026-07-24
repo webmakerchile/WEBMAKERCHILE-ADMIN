@@ -27,6 +27,7 @@ import credentialsRouter from "./credentials";
 import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hubTasksRouter from "./hub/tasks";
+import hubServicesRouter from "./hub/services";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
 import { requireArea } from "../lib/require-area";
@@ -72,9 +73,11 @@ router.use(credentialsRouter);
 router.use(calendarRouter);
 
 // Hub routes: ejecutivo area only
-// hubTasksRouter must be before hubRouter so /hub/tasks/* is NOT caught by the CEO middleware
+// hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y
+// /hub/services/* NO queden bajo el middleware CEO (gestión gateada por ruta).
 router.use("/hub", requireArea("ceo", "ejecutivo", "rrhh"));
 router.use(hubTasksRouter);
+router.use(hubServicesRouter);
 router.use(hubRouter);
 
 // Cotizaciones: generador de cotizaciones PDF (hub ejecutivo)

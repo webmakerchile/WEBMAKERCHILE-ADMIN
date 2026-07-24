@@ -14,6 +14,7 @@ export * from "./publish-attempts";
 export * from "./brand-tone";
 export * from "./credentials";
 export * from "./hub-state";
+export * from "./hub-services";
 export * from "./hub-tasks";
 export * from "./hub-task-activity";
 export * from "./hub-task-comments";
