@@ -4,6 +4,7 @@ import { hubDayLogs, hubWorkSessions, users } from "@workspace/db/schema";
 import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import {
+  reportToChannel,
   discordConfigured,
   getBotApp,
   inviteUrl,
@@ -165,7 +166,7 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
       return;
     }
     // Verificación automática de voz (si el usuario está emparejado y hay bot).
-    const [u] = await db.select({ discordUserId: users.discordUserId }).from(users)
+    const [u] = await db.select({ discordUserId: users.discordUserId, name: users.name }).from(users)
       .where(eq(users.id, user.id))
       .limit(1);
     let verified: boolean | null = null;
@@ -188,6 +189,11 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
     }
     const [session] = await db.insert(hubWorkSessions).values(values).returning();
     res.status(201).json({ session, discordVerified: verified });
+    // Reporte al canal de Discord (fire-and-forget).
+    const displayName = u?.name || user.email;
+    const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago" });
+    const dcIcon = verified === true ? " 🎧" : "";
+    reportToChannel(`✅ **${displayName}** marcó **entrada** a las ${hora}${dcIcon}`).catch(() => {});
   } catch (err) {
     if (isUniqueViolation(err)) {
       res.status(409).json({ error: "Ya tienes una jornada abierta" });
@@ -210,11 +216,20 @@ router.post("/jornada/check-out", async (req: Request, res: Response) => {
       res.status(409).json({ error: "No tienes una jornada abierta" });
       return;
     }
+    const now = new Date();
     const [session] = await db.update(hubWorkSessions)
-      .set({ checkOut: new Date() })
+      .set({ checkOut: now })
       .where(eq(hubWorkSessions.id, open.id))
       .returning();
-    res.json({ session, minutes: session ? sessionMinutes(session) : 0 });
+    const mins = session ? sessionMinutes(session) : 0;
+    res.json({ session, minutes: mins });
+    // Reporte al canal de Discord (fire-and-forget).
+    const [uRow] = await db.select({ name: users.name }).from(users).where(eq(users.id, user.id)).limit(1);
+    const displayName = uRow?.name || user.email;
+    const hora = now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago" });
+    const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+    const duracion = h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+    reportToChannel(`⏹️ **${displayName}** marcó **salida** a las ${hora} — jornada de ${duracion}`).catch(() => {});
   } catch (err) {
     console.error("[jornada/check-out POST]", err);
     res.status(500).json({ error: "Error al marcar la salida" });

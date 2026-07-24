@@ -61,6 +61,30 @@ const GUILD_MISS_TTL_MS = 45_000;
 const MEMBERS_TTL_MS = 60_000;
 const VOICE_TTL_MS = 45_000;
 
+/**
+ * Envía un mensaje de texto a un canal de Discord configurado en
+ * DISCORD_REPORT_CHANNEL_ID. Fire-and-forget: nunca bloquea ni lanza excepciones.
+ */
+export async function reportToChannel(message: string): Promise<void> {
+  const channelId = process.env["DISCORD_REPORT_CHANNEL_ID"]?.trim();
+  if (!channelId || !discordConfigured()) return;
+  const token = process.env["DISCORD_BOT_TOKEN"]?.trim();
+  if (!token) return;
+  try {
+    await fetch(`${API}/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bot ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ content: message }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    // No interrumpir la asistencia por un fallo de reporte
+  }
+}
+
 /** Solo para tests. */
 export function _resetDiscordCache(): void {
   appCache = null;

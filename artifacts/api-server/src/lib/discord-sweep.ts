@@ -9,7 +9,7 @@ import { hubWorkSessions, users } from "@workspace/db/schema";
 import { eq, isNull, sql } from "drizzle-orm";
 import { discordConfigured, voiceStatus } from "./discord";
 
-const SWEEP_INTERVAL_MS = 10 * 60_000;
+const SWEEP_INTERVAL_MS = 2 * 60_000; // cada 2 min — bajo consumo para equipos pequeños
 /** Sesiones pasadas del tope de 16 h ya no suman horas: tampoco se verifican. */
 const SESSION_CAP_MS = 16 * 3_600_000;
 
@@ -64,5 +64,5 @@ export function startDiscordSweep(): void {
   setTimeout(() => {
     sweepOnce().catch((e) => console.error("[DiscordSweep]", e));
   }, 60_000);
-  console.log("[DiscordSweep] verificación de voz programada cada 10 min");
+  console.log("[DiscordSweep] verificación de voz programada cada 2 min");
 }
