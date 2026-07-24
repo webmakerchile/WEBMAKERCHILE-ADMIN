@@ -543,3 +543,29 @@
   .hub-root .att-times{display:none;}
   .hub-root .att-date{font-size:11px;}
 }
+
+/* ===== Asistencia · Discord ===== */
+.hub-root .att-dcbtn{width:auto;padding:0 10px;gap:6px;font-size:11px;font-family:'IBM Plex Mono',monospace;letter-spacing:.5px;}
+.hub-root .att-dcbtn.on{border-color:var(--orange);color:var(--orange);}
+.hub-root .att-dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none;}
+.hub-root .att-dot.ok{background:#34d399;}
+.hub-root .att-dot.warn{background:#fbbf24;}
+.hub-root .att-dc{cursor:default;margin-bottom:16px;}
+.hub-root .att-dc-head{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);margin-bottom:8px;}
+.hub-root .att-dc-txt{font-size:12.5px;color:var(--dim);margin:4px 0;line-height:1.5;}
+.hub-root .att-dc-txt b{color:#fff;font-weight:600;}
+.hub-root .att-dc-txt.warn{color:#fbbf24;}
+.hub-root .att-dc-link{color:var(--orange);text-decoration:none;font-weight:600;}
+.hub-root .att-dc-link:hover{text-decoration:underline;}
+.hub-root .att-dc-map{margin-top:10px;display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:10px;}
+.hub-root .att-dc-row{display:flex;align-items:center;gap:10px;}
+.hub-root .att-dc-name{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hub-root .att-dc-sel{background:var(--card);border:1px solid var(--line);border-radius:8px;color:#fff;font-size:11.5px;padding:4px 8px;max-width:230px;}
+.hub-root .att-dc-sel:disabled{opacity:.5;}
+.hub-root .att-dc-ok{color:#34d399;font-size:12px;width:14px;text-align:center;flex:none;}
+.hub-root .att-dc-ok.off{color:var(--faint);}
+.hub-root .att-dpct{font-family:'IBM Plex Mono',monospace;font-size:10px;flex:none;padding:1px 6px;border-radius:8px;border:1px solid var(--line);cursor:default;}
+.hub-root .att-dpct.hi{color:#34d399;border-color:rgba(52,211,153,.4);}
+.hub-root .att-dpct.mid{color:#fbbf24;border-color:rgba(251,191,36,.4);}
+.hub-root .att-dpct.lo{color:#f87171;border-color:rgba(248,113,113,.4);}
+.hub-root .att-disc.dim{color:var(--faint);}

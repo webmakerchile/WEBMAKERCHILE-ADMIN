@@ -24,6 +24,8 @@ export interface JornadaOpenSession {
   workDate: string;
   checkIn: string;
   onDiscord: boolean;
+  /** Verificación automática al marcar entrada: true/false, o null si no se pudo verificar. */
+  discordCheckin: boolean | null;
   stale: boolean;
 }
 
@@ -41,6 +43,8 @@ export interface JornadaMe {
   todaySessions: { id: number; checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number }[];
   week: { start: string; days: { date: string; minutes: number }[]; total: number };
   logs: JornadaLogItem[];
+  /** true si un admin emparejó esta cuenta con Discord (verificación automática). */
+  discordLinked: boolean;
 }
 
 /* ============================== Helpers ================================== */
@@ -114,7 +118,8 @@ export function JornadaCard() {
   const onErr = (e: unknown) => setErr(e instanceof Error ? e.message : "Error inesperado");
 
   const checkIn = useMutation({
-    mutationFn: () => jfetch("/jornada/check-in", { method: "POST", body: JSON.stringify({ onDiscord: discord }) }),
+    // Si la cuenta está emparejada, la verificación es automática: no se autodeclara.
+    mutationFn: () => jfetch("/jornada/check-in", { method: "POST", body: JSON.stringify({ onDiscord: data?.discordLinked ? false : discord }) }),
     onSuccess: () => { setErr(null); inv(); },
     onError: onErr,
   });
@@ -172,11 +177,18 @@ export function JornadaCard() {
           <h2 className="text-sm font-semibold leading-tight">Mi jornada</h2>
           <p className="text-[11px] text-muted-foreground">Hoy {fmtMin(todayMin)} · Semana {fmtMin(data.week.total)}</p>
         </div>
-        {open?.onDiscord && (
+        {open && data.discordLinked && open.discordCheckin !== null ? (
+          <span className={cn("hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border",
+            open.discordCheckin
+              ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+              : "bg-amber-500/10 text-amber-500 border-amber-500/20")}>
+            <Headphones className="w-3 h-3" /> {open.discordCheckin ? "Discord verificado" : "Sin voz al marcar"}
+          </span>
+        ) : open?.onDiscord ? (
           <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
             <Headphones className="w-3 h-3" /> En Discord
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Estado / acciones */}
@@ -216,18 +228,25 @@ export function JornadaCard() {
               <p className="text-sm font-medium">
                 {data.todaySessions.length > 0 ? "Jornada terminada por hoy" : "Aún no marcas tu entrada"}
               </p>
-              <label className="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground cursor-pointer select-none">
-                <button
-                  type="button"
-                  onClick={() => setDiscord((v) => !v)}
-                  className={cn("w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
-                    discord ? "bg-primary border-primary text-primary-foreground" : "border-foreground/30")}
-                  aria-pressed={discord}
-                >
-                  {discord && <CheckSquare2 className="w-3 h-3" />}
-                </button>
-                <Headphones className="w-3.5 h-3.5" /> Estoy conectado en Discord
-              </label>
+              {data.discordLinked ? (
+                <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground select-none">
+                  <Headphones className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                  Tu conexión a Discord se verifica automáticamente
+                </p>
+              ) : (
+                <label className="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground cursor-pointer select-none">
+                  <button
+                    type="button"
+                    onClick={() => setDiscord((v) => !v)}
+                    className={cn("w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0",
+                      discord ? "bg-primary border-primary text-primary-foreground" : "border-foreground/30")}
+                    aria-pressed={discord}
+                  >
+                    {discord && <CheckSquare2 className="w-3 h-3" />}
+                  </button>
+                  <Headphones className="w-3.5 h-3.5" /> Estoy conectado en Discord
+                </label>
+              )}
             </div>
             <button
               onClick={() => checkIn.mutate()}

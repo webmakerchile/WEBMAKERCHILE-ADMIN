@@ -2,6 +2,7 @@ import { initSentry } from "./lib/sentry";
 initSentry();
 import app from "./app";
 import { startScheduler } from "./scheduler";
+import { startDiscordSweep } from "./lib/discord-sweep";
 import { db } from "@workspace/db";
 import { users, hubState, hubTasks } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -128,4 +129,5 @@ app.listen(port, async () => {
     console.error("[DataMigration] failed:", e),
   );
   startScheduler();
+  startDiscordSweep();
 });

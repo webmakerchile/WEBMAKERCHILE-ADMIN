@@ -30,6 +30,17 @@ export const hubWorkSessions = pgTable(
     checkOut: timestamp("check_out", { withTimezone: true }),
     /** Autodeclaración al marcar entrada: "estoy conectado en Discord". */
     onDiscord: boolean("on_discord").notNull().default(false),
+    /**
+     * Verificación automática (bot) al marcar entrada: true/false = resultado
+     * real en canal de voz; null = no verificable (sin bot o sin emparejar).
+     */
+    discordCheckin: boolean("discord_checkin"),
+    /** Nº de verificaciones automáticas de voz durante la sesión. */
+    discordChecks: integer("discord_checks").notNull().default(0),
+    /** Verificaciones en que SÍ estaba en un canal de voz. */
+    discordHits: integer("discord_hits").notNull().default(0),
+    /** Última vez visto en un canal de voz durante esta sesión. */
+    discordLastSeenAt: timestamp("discord_last_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

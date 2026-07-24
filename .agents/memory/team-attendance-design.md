@@ -19,3 +19,11 @@ Mi Día's tasks API lives under the area-gated /hub prefix while the page itself
 
 ## Date param validation
 Format regex alone is not enough for YYYY-MM-DD params: well-formed but impossible dates (month 13, Feb 30) survive the regex and make date math throw (500). Always roundtrip-validate (`new Date(s+"T12:00:00Z")` → back to string) before any date arithmetic.
+
+## Discord voice verification (July 2026)
+- Verification = "connected to a VOICE channel of the team's guild", checked via bot-token REST only (`GET /guilds/{gid}/voice-states/{uid}`: 200+channel_id → in voice, 404 → not). No gateway, no presence intent.
+**Why:** presence (online status) needs a persistent gateway connection + privileged intent; voice states are readable over plain REST with just "View Channels". Replit's Discord connector was evaluated and rejected (single-account OAuth proxy, no bot token) — the client owns a bot app instead.
+- Pairing is admin-driven (panel user ↔ guild member dropdown), NOT per-member OAuth — the team is small and members shouldn't need to authorize anything.
+- Verification NEVER blocks check-in; unverifiable (no token/guild/network) must degrade to null, and unlinked users keep the self-declared checkbox. Live "%" honesty comes from a 10-min sweep accumulating checks/hits per session (skips sessions past the 16h cap).
+- Listing guild members requires the "Server Members Intent" toggle (403 → surface as reason "intent" so the UI can explain it).
+- Gotcha: the Discord app's hex "Public Key" looks like a credential and users paste it as the bot token; a real bot token has 3 dot-separated segments. Detect (no dots / all-hex) and re-ask.

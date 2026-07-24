@@ -3,6 +3,14 @@ import { db } from "@workspace/db";
 import { hubDayLogs, hubWorkSessions, users } from "@workspace/db/schema";
 import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { z } from "zod";
+import {
+  discordConfigured,
+  getBotApp,
+  inviteUrl,
+  listGuildMembers,
+  resolveGuild,
+  voiceStatus,
+} from "../lib/discord";
 
 /**
  * Jornada / asistencia del equipo.
@@ -89,7 +97,7 @@ router.get("/jornada/me", async (req: Request, res: Response) => {
     const weekStart = weekStartOf(today);
     const weekEnd = addDays(weekStart, 6);
 
-    const [sessions, openRows, logs] = await Promise.all([
+    const [sessions, openRows, logs, meRows] = await Promise.all([
       db.select().from(hubWorkSessions)
         .where(and(
           eq(hubWorkSessions.userId, user.id),
@@ -104,6 +112,9 @@ router.get("/jornada/me", async (req: Request, res: Response) => {
       db.select().from(hubDayLogs)
         .where(and(eq(hubDayLogs.userId, user.id), eq(hubDayLogs.logDate, today)))
         .orderBy(asc(hubDayLogs.createdAt)),
+      db.select({ discordUserId: users.discordUserId }).from(users)
+        .where(eq(users.id, user.id))
+        .limit(1),
     ]);
 
     const now = new Date();
@@ -119,8 +130,9 @@ router.get("/jornada/me", async (req: Request, res: Response) => {
     res.json({
       date: today,
       open: open
-        ? { id: open.id, workDate: open.workDate, checkIn: open.checkIn, onDiscord: open.onDiscord, stale: open.workDate !== today }
+        ? { id: open.id, workDate: open.workDate, checkIn: open.checkIn, onDiscord: open.onDiscord, discordCheckin: open.discordCheckin ?? null, stale: open.workDate !== today }
         : null,
+      discordLinked: !!meRows[0]?.discordUserId,
       todayMinutes: days.find((d) => d.date === today)?.minutes ?? 0,
       todaySessions: sessions
         .filter((s) => s.workDate === today)
@@ -152,10 +164,30 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
       res.status(409).json({ error: "Ya tienes una jornada abierta" });
       return;
     }
-    const [session] = await db.insert(hubWorkSessions)
-      .values({ userId: user.id, workDate: localDate(), onDiscord: parsed.data.onDiscord })
-      .returning();
-    res.status(201).json({ session });
+    // Verificación automática de voz (si el usuario está emparejado y hay bot).
+    const [u] = await db.select({ discordUserId: users.discordUserId }).from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+    let verified: boolean | null = null;
+    if (u?.discordUserId && discordConfigured()) {
+      verified = await voiceStatus(u.discordUserId, { fresh: true });
+    }
+    const values: typeof hubWorkSessions.$inferInsert = {
+      userId: user.id,
+      workDate: localDate(),
+      // La autodeclaración se conserva; una verificación positiva también la marca.
+      onDiscord: parsed.data.onDiscord || verified === true,
+    };
+    if (verified !== null) {
+      values.discordCheckin = verified;
+      values.discordChecks = 1;
+      if (verified) {
+        values.discordHits = 1;
+        values.discordLastSeenAt = new Date();
+      }
+    }
+    const [session] = await db.insert(hubWorkSessions).values(values).returning();
+    res.status(201).json({ session, discordVerified: verified });
   } catch (err) {
     if (isUniqueViolation(err)) {
       res.status(409).json({ error: "Ya tienes una jornada abierta" });
@@ -299,6 +331,8 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
       email: users.email,
       picture: users.picture,
       teamRole: users.teamRole,
+      discordUserId: users.discordUserId,
+      discordTag: users.discordTag,
     }).from(users)
       .where(eq(users.approvalStatus, "approved"))
       .orderBy(asc(users.name));
@@ -322,6 +356,18 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
     const now = new Date();
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
+    // Verificación EN VIVO (solo al mirar HOY): ¿está en un canal de voz ahora?
+    const liveVoice = new Map<number, boolean | null>();
+    if (date === today && discordConfigured()) {
+      const candidates = members.filter((m) =>
+        m.discordUserId &&
+        sessions.some((s) => s.userId === m.id && s.workDate === date && !s.checkOut),
+      );
+      await Promise.all(candidates.map(async (m) => {
+        liveVoice.set(m.id, await voiceStatus(m.discordUserId!));
+      }));
+    }
+
     const result = members.map((m) => {
       const mySessions = sessions.filter((s) => s.userId === m.id);
       const daySessions = mySessions.filter((s) => s.workDate === date);
@@ -344,6 +390,25 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
               minutes: weekByDay.find((d) => d.date === date)?.minutes ?? 0,
               open: date === today && daySessions.some((s) => !s.checkOut),
             }
+          : null,
+        discord: m.discordUserId
+          ? (() => {
+              const checks = daySessions.reduce((a, s) => a + (s.discordChecks ?? 0), 0);
+              const hits = daySessions.reduce((a, s) => a + (s.discordHits ?? 0), 0);
+              const seen = daySessions
+                .map((s) => (s.discordLastSeenAt ? new Date(s.discordLastSeenAt).getTime() : 0))
+                .filter((t) => t > 0);
+              return {
+                linked: true,
+                tag: m.discordTag ?? null,
+                checkin: first?.discordCheckin ?? null,
+                pct: checks > 0 ? Math.round((hits / checks) * 100) : null,
+                lastSeenMin: seen.length > 0
+                  ? Math.max(0, Math.round((now.getTime() - Math.max(...seen)) / 60000))
+                  : null,
+                inVoiceNow: liveVoice.get(m.id) ?? null,
+              };
+            })()
           : null,
         weekByDay,
         weekTotal: weekByDay.reduce((a, d) => a + d.minutes, 0),
@@ -433,7 +498,16 @@ router.get("/jornada/history", async (req: Request, res: Response) => {
         .reduce((a, s) => a + sessionMinutes(s, now), 0),
       sessions: sessions
         .filter((s) => s.workDate === d)
-        .map((s) => ({ id: s.id, checkIn: s.checkIn, checkOut: s.checkOut, onDiscord: s.onDiscord, minutes: sessionMinutes(s, now) })),
+        .map((s) => ({
+          id: s.id,
+          checkIn: s.checkIn,
+          checkOut: s.checkOut,
+          onDiscord: s.onDiscord,
+          discordPct: (s.discordChecks ?? 0) > 0
+            ? Math.round(((s.discordHits ?? 0) / s.discordChecks) * 100)
+            : null,
+          minutes: sessionMinutes(s, now),
+        })),
       logs: logs
         .filter((l) => l.logDate === d)
         .map((l) => ({ id: l.id, text: l.text, done: l.done })),
@@ -449,6 +523,105 @@ router.get("/jornada/history", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[jornada/history GET]", err);
     res.status(500).json({ error: "Error obteniendo el historial" });
+  }
+});
+
+/* ============== Discord: estado del bot y emparejamiento ================= */
+
+/** GET /jornada/discord/status — estado de la integración (para el panel). */
+router.get("/jornada/discord/status", async (req: Request, res: Response) => {
+  if (!canOversee(req)) {
+    res.status(403).json({ error: "Sin acceso" });
+    return;
+  }
+  try {
+    const linkRows = await db.select({ id: users.id, discordUserId: users.discordUserId })
+      .from(users)
+      .where(eq(users.approvalStatus, "approved"));
+    const linked = linkRows.filter((r) => r.discordUserId).length;
+    if (!discordConfigured()) {
+      res.json({
+        configured: false, app: null, guild: null, inviteUrl: null,
+        membersAccess: "unconfigured", linked, total: linkRows.length,
+      });
+      return;
+    }
+    const [app, guild, membersRes] = await Promise.all([
+      getBotApp(),
+      resolveGuild(),
+      listGuildMembers(),
+    ]);
+    res.json({
+      configured: true,
+      app,
+      guild,
+      inviteUrl: app ? inviteUrl(app.id) : null,
+      membersAccess: membersRes.ok ? "ok" : membersRes.reason,
+      linked,
+      total: linkRows.length,
+    });
+  } catch (err) {
+    console.error("[jornada/discord/status GET]", err);
+    res.status(500).json({ error: "Error consultando el estado de Discord" });
+  }
+});
+
+/** GET /jornada/discord/members — miembros humanos del servidor (para emparejar). */
+router.get("/jornada/discord/members", async (req: Request, res: Response) => {
+  if (!canOversee(req)) {
+    res.status(403).json({ error: "Sin acceso" });
+    return;
+  }
+  try {
+    const result = await listGuildMembers();
+    if (!result.ok) {
+      res.json({ ok: false, reason: result.reason, members: [] });
+      return;
+    }
+    res.json({ ok: true, members: result.members });
+  } catch (err) {
+    console.error("[jornada/discord/members GET]", err);
+    res.status(500).json({ error: "Error obteniendo los miembros del servidor" });
+  }
+});
+
+const mapSchema = z.object({
+  userId: z.number().int().positive(),
+  /** null = quitar el emparejamiento. */
+  discordUserId: z.string().regex(/^\d{5,25}$/).nullable(),
+  discordTag: z.string().trim().min(1).max(100).nullable().optional(),
+});
+
+/** PATCH /jornada/discord/map — empareja un integrante con su cuenta de Discord. */
+router.patch("/jornada/discord/map", async (req: Request, res: Response) => {
+  if (!canOversee(req)) {
+    res.status(403).json({ error: "Sin acceso" });
+    return;
+  }
+  const parsed = mapSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Cuerpo inválido" });
+    return;
+  }
+  try {
+    const { userId, discordUserId } = parsed.data;
+    const discordTag = discordUserId ? (parsed.data.discordTag ?? null) : null;
+    const [updated] = await db.update(users)
+      .set({ discordUserId, discordTag })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id, discordUserId: users.discordUserId, discordTag: users.discordTag });
+    if (!updated) {
+      res.status(404).json({ error: "Integrante no encontrado" });
+      return;
+    }
+    res.json({ user: updated });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      res.status(409).json({ error: "Esa cuenta de Discord ya está emparejada con otra persona" });
+      return;
+    }
+    console.error("[jornada/discord/map PATCH]", err);
+    res.status(500).json({ error: "Error al emparejar la cuenta" });
   }
 });
 

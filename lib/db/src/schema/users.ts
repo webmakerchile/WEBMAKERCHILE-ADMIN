@@ -1,4 +1,5 @@
-import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -49,4 +50,13 @@ export const users = pgTable("users", {
   approvalStatus: text("approval_status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
-});
+  /** ID de la cuenta de Discord emparejada (verificación de asistencia por canal de voz). */
+  discordUserId: text("discord_user_id"),
+  /** Nombre visible de Discord cacheado al emparejar (solo para UI). */
+  discordTag: text("discord_tag"),
+}, (t) => ({
+  /** Una cuenta de Discord solo puede estar emparejada con UNA persona. */
+  discordUniq: uniqueIndex("users_discord_user_id_uniq")
+    .on(t.discordUserId)
+    .where(sql`${t.discordUserId} IS NOT NULL`),
+}));

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -3505,11 +3505,26 @@ const ATT_DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 
 interface AttMember {
   id: number; name: string | null; email: string; picture: string | null; teamRole: string | null;
+  discordUserId: string | null; discordTag: string | null;
   today: { checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean } | null;
+  discord: {
+    linked: boolean; tag: string | null; checkin: boolean | null;
+    pct: number | null; lastSeenMin: number | null; inVoiceNow: boolean | null;
+  } | null;
   weekByDay: { date: string; minutes: number }[];
   weekTotal: number;
   logs: { id: number; text: string; done: boolean }[];
 }
+interface AttDiscordStatus {
+  configured: boolean;
+  app: { id: string; name: string } | null;
+  guild: { id: string; name: string | null } | null;
+  inviteUrl: string | null;
+  membersAccess: "ok" | "unconfigured" | "noguild" | "intent" | "error";
+  linked: number;
+  total: number;
+}
+interface AttDiscordMember { id: string; name: string; username: string; avatarUrl: string | null }
 interface AttOverview {
   date: string; today: string; weekStart: string; days: string[];
   members: AttMember[];
@@ -3517,7 +3532,7 @@ interface AttOverview {
 }
 interface AttHistDay {
   date: string; minutes: number;
-  sessions: { id: number; checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number }[];
+  sessions: { id: number; checkIn: string; checkOut: string | null; onDiscord: boolean; discordPct: number | null; minutes: number }[];
   logs: { id: number; text: string; done: boolean }[];
 }
 
@@ -3525,6 +3540,9 @@ function AttendanceView() {
   const [selDate, setSelDate] = useState<string>(attToday());
   const [histUser, setHistUser] = useState<{ id: number; name: string | null; email: string } | null>(null);
   const [histDays, setHistDays] = useState<7 | 30 | 92>(7);
+  const [showDc, setShowDc] = useState(false);
+  const [mapErr, setMapErr] = useState<string | null>(null);
+  const qc = useQueryClient();
   const isToday = selDate === attToday();
 
   const { data, isLoading, isError } = useQuery({
@@ -3551,6 +3569,49 @@ function AttendanceView() {
     staleTime: 30000,
   });
 
+  const { data: dc } = useQuery({
+    queryKey: ["jornada-discord-status"],
+    queryFn: async () => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/discord/status`, { credentials: "include" });
+      if (!res.ok) throw new Error("No se pudo consultar Discord");
+      return res.json() as Promise<AttDiscordStatus>;
+    },
+    staleTime: 60000,
+  });
+
+  const { data: dcMembers } = useQuery({
+    queryKey: ["jornada-discord-members"],
+    enabled: showDc && dc?.membersAccess === "ok",
+    queryFn: async () => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/discord/members`, { credentials: "include" });
+      if (!res.ok) throw new Error("No se pudieron cargar los miembros");
+      return res.json() as Promise<{ ok: boolean; members: AttDiscordMember[] }>;
+    },
+    staleTime: 60000,
+  });
+
+  const mapMut = useMutation({
+    mutationFn: async (p: { userId: number; discordUserId: string | null; discordTag: string | null }) => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/discord/map`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo emparejar");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setMapErr(null);
+      qc.invalidateQueries({ queryKey: ["jornada-overview"] });
+      qc.invalidateQueries({ queryKey: ["jornada-discord-status"] });
+    },
+    onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al emparejar"),
+  });
+
   const members = data?.members ?? [];
   const sum = data?.summary;
 
@@ -3561,8 +3622,73 @@ function AttendanceView() {
         <button className="att-nav" onClick={() => setSelDate(attAddDays(selDate, -1))} aria-label="Día anterior"><ChevronLeft className="w-4 h-4" /></button>
         <button className={cn("att-nav att-hoy", isToday && "on")} onClick={() => setSelDate(attToday())}>Hoy</button>
         <button className="att-nav" onClick={() => setSelDate(attAddDays(selDate, 1))} disabled={isToday} aria-label="Día siguiente"><ChevronRight className="w-4 h-4" /></button>
+        <button className={cn("att-nav att-dcbtn", showDc && "on")} onClick={() => setShowDc((v) => !v)}>
+          <Headphones className="w-3.5 h-3.5" /> Discord
+          <span className={cn("att-dot", dc?.configured && dc?.guild ? "ok" : dc?.configured ? "warn" : "off")} />
+        </button>
         <span className="att-date">{attFmtLong(selDate)}</span>
       </div>
+
+      {/* Panel de configuración de Discord (verificación por canal de voz) */}
+      {showDc && (
+        <div className="gcard att-dc">
+          <div className="att-dc-head">Verificación automática · canal de voz</div>
+          {!dc && <div className="att-empty">Cargando estado…</div>}
+          {dc && !dc.configured && (
+            <p className="att-dc-txt warn">Falta el token del bot. Pídemelo por el chat del agente y te guío paso a paso.</p>
+          )}
+          {dc?.configured && !dc.app && (
+            <p className="att-dc-txt warn">
+              El token guardado no es válido. En el portal de Discord (pestaña Bot) usa "Reset Token" y entrégame el nuevo.
+            </p>
+          )}
+          {dc?.app && !dc.guild && dc.inviteUrl && (
+            <p className="att-dc-txt">
+              El bot <b>{dc.app.name}</b> aún no está en tu servidor.{" "}
+              <a className="att-dc-link" href={dc.inviteUrl} target="_blank" rel="noreferrer">Invitar al servidor →</a>
+              {" "}Luego vuelve y recarga.
+            </p>
+          )}
+          {dc?.guild && (
+            <>
+              <p className="att-dc-txt">
+                Bot <b>{dc.app?.name ?? "—"}</b> conectado a <b>{dc.guild.name ?? `servidor ${dc.guild.id}`}</b> · {dc.linked}/{dc.total} integrantes emparejados
+              </p>
+              {dc.membersAccess === "intent" && (
+                <p className="att-dc-txt warn">
+                  Falta activar "Server Members Intent" en el portal de Discord (pestaña Bot → Privileged Gateway Intents) para elegir miembros de la lista.
+                </p>
+              )}
+              {dc.membersAccess === "ok" && (
+                <div className="att-dc-map">
+                  {members.map((m) => (
+                    <div key={m.id} className="att-dc-row">
+                      <span className="att-dc-name">{m.name || m.email}</span>
+                      <select
+                        className="att-dc-sel"
+                        value={m.discordUserId ?? ""}
+                        disabled={mapMut.isPending}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          const gm = dcMembers?.members.find((x) => x.id === v);
+                          mapMut.mutate({ userId: m.id, discordUserId: v, discordTag: gm ? gm.name : null });
+                        }}
+                      >
+                        <option value="">— Sin emparejar —</option>
+                        {(dcMembers?.members ?? []).map((gm) => (
+                          <option key={gm.id} value={gm.id}>{gm.name} (@{gm.username})</option>
+                        ))}
+                      </select>
+                      {m.discordUserId ? <span className="att-dc-ok">✓</span> : <span className="att-dc-ok off">·</span>}
+                    </div>
+                  ))}
+                  {mapErr && <p className="att-dc-txt warn">{mapErr}</p>}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* Resumen del día */}
       {sum && (
@@ -3599,7 +3725,23 @@ function AttendanceView() {
                     <span>{m.today ? (m.today.open ? "…" : attHHMM(m.today.checkOut)) : "—"}</span>
                   </div>
                   <span className="att-min">{m.today ? attFmtMin(m.today.minutes) : "0m"}</span>
-                  {m.today?.onDiscord && <Headphones className="w-3.5 h-3.5 att-disc" aria-label="En Discord" />}
+                  {(() => {
+                    const d = m.discord;
+                    if (d?.inVoiceNow)
+                      return <Headphones className="w-3.5 h-3.5 att-disc" aria-label="En canal de voz ahora" />;
+                    if (d?.linked && m.today && d.pct !== null)
+                      return (
+                        <span
+                          className={cn("att-dpct", d.pct >= 70 ? "hi" : d.pct >= 30 ? "mid" : "lo")}
+                          title={`${d.pct}% de la jornada en canal de voz${d.lastSeenMin !== null ? ` · visto hace ${d.lastSeenMin} min` : ""}`}
+                        >
+                          🎧{d.pct}%
+                        </span>
+                      );
+                    if (!d?.linked && m.today?.onDiscord)
+                      return <Headphones className="w-3.5 h-3.5 att-disc dim" aria-label="Autodeclarado en Discord" />;
+                    return null;
+                  })()}
                   <span className={cn("att-st", st)}>{st === "work" ? "Trabajando" : st === "done" ? "Terminó" : "Sin marcar"}</span>
                 </div>
                 {m.logs.length > 0 && (
@@ -3680,7 +3822,8 @@ function AttendanceView() {
                         <div className="att-hsess">
                           {d.sessions.map((s) => (
                             <span key={s.id} className="att-sess">
-                              {attHHMM(s.checkIn)} → {s.checkOut ? attHHMM(s.checkOut) : "…"}{s.onDiscord ? " 🎧" : ""}
+                              {attHHMM(s.checkIn)} → {s.checkOut ? attHHMM(s.checkOut) : "…"}
+                              {s.discordPct !== null ? ` · 🎧${s.discordPct}%` : s.onDiscord ? " 🎧" : ""}
                             </span>
                           ))}
                           {d.sessions.length === 0 && <span className="att-sess none">Sin jornada marcada</span>}
