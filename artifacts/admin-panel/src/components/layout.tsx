@@ -38,6 +38,7 @@ import { GlobalShortcutsProvider } from "@/components/global-shortcuts-provider"
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { InstallBanner } from "@/components/install-banner";
+import { JornadaChip } from "@/components/jornada-card";
 import { useLang } from "@/lib/lang";
 import { areaCanAccessPage, toArea } from "@workspace/areas";
 
@@ -216,6 +217,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-4 border-t border-foreground/10 space-y-3">
+          <JornadaChip />
           {user && (
             <div className="flex items-center gap-3 px-1">
               {user.picture ? (

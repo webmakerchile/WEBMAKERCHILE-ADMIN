@@ -10,7 +10,7 @@ import { PushEnableBanner } from "@/components/push-enable-banner";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, Pin,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones,
 } from "lucide-react";
 import "./ejecutivo.css";
 
@@ -55,7 +55,7 @@ interface TeamMember {
   approvalStatus: string | null;
 }
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive" | "team";
+type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive" | "team" | "att";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
@@ -105,6 +105,7 @@ const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a
 const PRIO_W: Record<string, number> = { crítica: -1, alta: 0, media: 1, baja: 2 };
 const TAB_TITLES: Record<Tab, [string, string]> = {
   team: ["Equipo hoy", "Centro de comando · cargas · semáforo · actividad"],
+  att: ["Asistencia", "Pase de lista · horas trabajadas · registro diario"],
   dash: ["Dashboard", "Resumen ejecutivo en vivo"],
   proj: ["Proyectos", "Kanban · Lista · Scrumban"],
   clients: ["Clientes", "Cartera y contactos"],
@@ -3493,8 +3494,219 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
   );
 }
 
+/* ═══════════════════ ASISTENCIA (jornada + registro diario) ═══════════════════ */
+
+function attToday(): string { return new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" }); }
+function attAddDays(dateStr: string, n: number): string { const d = new Date(dateStr + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function attFmtMin(min: number): string { const h = Math.floor(min / 60); const m = Math.round(min % 60); return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`; }
+function attHHMM(iso: string | null): string { return iso ? new Date(iso).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago" }) : "—"; }
+function attFmtLong(dateStr: string): string { const s = new Date(dateStr + "T12:00:00Z").toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }); return s.charAt(0).toUpperCase() + s.slice(1); }
+const ATT_DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
+
+interface AttMember {
+  id: number; name: string | null; email: string; picture: string | null; teamRole: string | null;
+  today: { checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean } | null;
+  weekByDay: { date: string; minutes: number }[];
+  weekTotal: number;
+  logs: { id: number; text: string; done: boolean }[];
+}
+interface AttOverview {
+  date: string; today: string; weekStart: string; days: string[];
+  members: AttMember[];
+  summary: { working: number; finished: number; absent: number; totalMinutes: number };
+}
+interface AttHistDay {
+  date: string; minutes: number;
+  sessions: { id: number; checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number }[];
+  logs: { id: number; text: string; done: boolean }[];
+}
+
+function AttendanceView() {
+  const [selDate, setSelDate] = useState<string>(attToday());
+  const [histUser, setHistUser] = useState<{ id: number; name: string | null; email: string } | null>(null);
+  const [histDays, setHistDays] = useState<7 | 30 | 92>(7);
+  const isToday = selDate === attToday();
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["jornada-overview", selDate],
+    queryFn: async () => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/overview?date=${selDate}`, { credentials: "include" });
+      if (!res.ok) throw new Error("No se pudo cargar la asistencia");
+      return res.json() as Promise<AttOverview>;
+    },
+    refetchInterval: isToday ? 60000 : false,
+    staleTime: 30000,
+  });
+
+  const { data: hist, isFetching: histLoading } = useQuery({
+    queryKey: ["jornada-history", histUser?.id, histDays],
+    enabled: !!histUser,
+    queryFn: async () => {
+      const to = attToday();
+      const from = attAddDays(to, -(histDays - 1));
+      const res = await fetch(`${HUB_API_BASE}/jornada/history?userId=${histUser!.id}&from=${from}&to=${to}`, { credentials: "include" });
+      if (!res.ok) throw new Error("No se pudo cargar el historial");
+      return res.json() as Promise<{ days: AttHistDay[]; totalMinutes: number }>;
+    },
+    staleTime: 30000,
+  });
+
+  const members = data?.members ?? [];
+  const sum = data?.summary;
+
+  return (
+    <>
+      {/* Navegación por día */}
+      <div className="att-bar">
+        <button className="att-nav" onClick={() => setSelDate(attAddDays(selDate, -1))} aria-label="Día anterior"><ChevronLeft className="w-4 h-4" /></button>
+        <button className={cn("att-nav att-hoy", isToday && "on")} onClick={() => setSelDate(attToday())}>Hoy</button>
+        <button className="att-nav" onClick={() => setSelDate(attAddDays(selDate, 1))} disabled={isToday} aria-label="Día siguiente"><ChevronRight className="w-4 h-4" /></button>
+        <span className="att-date">{attFmtLong(selDate)}</span>
+      </div>
+
+      {/* Resumen del día */}
+      {sum && (
+        <div className="att-sum">
+          <div className="att-as work"><b>{sum.working}</b><span>Trabajando</span></div>
+          <div className="att-as done"><b>{sum.finished}</b><span>Terminaron</span></div>
+          <div className="att-as abs"><b>{sum.absent}</b><span>Sin marcar</span></div>
+          <div className="att-as tot"><b>{attFmtMin(sum.totalMinutes)}</b><span>Horas del día</span></div>
+        </div>
+      )}
+
+      {isLoading && <div className="att-empty">Cargando asistencia…</div>}
+      {isError && <div className="att-empty">No se pudo cargar la asistencia. Reintenta en unos segundos.</div>}
+
+      {/* Pase de lista */}
+      {!isLoading && !isError && (
+        <div className="att-list">
+          {members.map((m) => {
+            const st = m.today ? (m.today.open ? "work" : "done") : "abs";
+            return (
+              <div key={m.id} className="gcard att-card" onClick={() => setHistUser(m)} role="button" tabIndex={0}
+                onKeyDown={(e) => { if (e.key === "Enter") setHistUser(m); }}>
+                <div className="att-row">
+                  {m.picture
+                    ? <img src={m.picture} alt="" className="att-ava" referrerPolicy="no-referrer" />
+                    : <div className="att-ava att-ava-f">{(m.name || m.email)[0].toUpperCase()}</div>}
+                  <div className="att-who">
+                    <strong>{m.name || m.email}</strong>
+                    <small>{m.teamRole || "—"}</small>
+                  </div>
+                  <div className="att-times" title="Llegada → salida">
+                    <span>{m.today ? attHHMM(m.today.checkIn) : "—"}</span>
+                    <span className="att-arw">→</span>
+                    <span>{m.today ? (m.today.open ? "…" : attHHMM(m.today.checkOut)) : "—"}</span>
+                  </div>
+                  <span className="att-min">{m.today ? attFmtMin(m.today.minutes) : "0m"}</span>
+                  {m.today?.onDiscord && <Headphones className="w-3.5 h-3.5 att-disc" aria-label="En Discord" />}
+                  <span className={cn("att-st", st)}>{st === "work" ? "Trabajando" : st === "done" ? "Terminó" : "Sin marcar"}</span>
+                </div>
+                {m.logs.length > 0 && (
+                  <div className="att-logs">
+                    {m.logs.slice(0, 3).map((l) => (
+                      <span key={l.id} className={cn("att-log", l.done && "ok")}>{l.done ? "✓" : "○"} {l.text}</span>
+                    ))}
+                    {m.logs.length > 3 && <span className="att-log more">+{m.logs.length - 3} más</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {members.length === 0 && <div className="att-empty">No hay integrantes aprobados.</div>}
+        </div>
+      )}
+
+      {/* Matriz semanal */}
+      {data && members.length > 0 && (
+        <>
+          <div className="subhead" style={{ marginTop: 24 }}><Clock3 className="w-3.5 h-3.5" /> Horas de la semana <span className="n">(lun → dom)</span></div>
+          <div className="att-mx-wrap">
+            <table className="att-mx">
+              <thead>
+                <tr>
+                  <th>Integrante</th>
+                  {data.days.map((d, i) => (
+                    <th key={d} className={cn(d === data.today && "today")}>{ATT_DAY_LETTERS[i]}<small>{d.slice(8)}</small></th>
+                  ))}
+                  <th className="tot">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((m) => (
+                  <tr key={m.id}>
+                    <td className="who">{m.name || m.email}</td>
+                    {m.weekByDay.map((d) => (
+                      <td key={d.date} className={cn(d.date === data.today && "today", d.minutes === 0 && "z")}>
+                        {d.minutes > 0 ? attFmtMin(d.minutes) : "—"}
+                      </td>
+                    ))}
+                    <td className="tot">{attFmtMin(m.weekTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Historial por integrante */}
+      {histUser && (
+        <>
+          <div className="subhead" style={{ marginTop: 24 }}>
+            Historial · <span className="n">{histUser.name || histUser.email}</span>
+            <span className="grow" />
+            {([7, 30, 92] as const).map((n) => (
+              <button key={n} className={cn("att-nav sm", histDays === n && "on")} onClick={() => setHistDays(n)}>
+                {n === 7 ? "7 días" : n === 30 ? "30 días" : "3 meses"}
+              </button>
+            ))}
+            <button className="att-nav sm" onClick={() => setHistUser(null)} aria-label="Cerrar historial"><X className="w-3 h-3" /></button>
+          </div>
+          {histLoading && <div className="att-empty">Cargando historial…</div>}
+          {hist && !histLoading && (
+            hist.days.length === 0
+              ? <div className="att-empty">Sin registros en este rango.</div>
+              : (
+                <>
+                  <div className="att-htot">Total del rango: <b>{attFmtMin(hist.totalMinutes)}</b></div>
+                  <div className="att-hlist">
+                    {hist.days.map((d) => (
+                      <div key={d.date} className="gcard att-hday">
+                        <div className="att-hhead">
+                          <strong>{attFmtLong(d.date)}</strong>
+                          <span className="att-min">{attFmtMin(d.minutes)}</span>
+                        </div>
+                        <div className="att-hsess">
+                          {d.sessions.map((s) => (
+                            <span key={s.id} className="att-sess">
+                              {attHHMM(s.checkIn)} → {s.checkOut ? attHHMM(s.checkOut) : "…"}{s.onDiscord ? " 🎧" : ""}
+                            </span>
+                          ))}
+                          {d.sessions.length === 0 && <span className="att-sess none">Sin jornada marcada</span>}
+                        </div>
+                        {d.logs.length > 0 && (
+                          <ul className="att-hlogs">
+                            {d.logs.map((l) => (
+                              <li key={l.id} className={cn(l.done && "ok")}>{l.done ? "✓" : "○"} {l.text}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
   team: Users2,
+  att: Clock3,
   dash: LayoutDashboard,
   proj: Briefcase,
   clients: Users2,
@@ -3509,6 +3721,7 @@ const HUB_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 const TabIcons: Record<Tab, React.ReactNode> = {
   team: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg>,
+  att: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
   proj: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M3 6h18M3 12h18M3 18h12"/></svg>,
   clients: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg>,
@@ -3695,6 +3908,7 @@ export default function EjecutivoPage() {
   const [tt, tsub] = TAB_TITLES[tab] || TAB_TITLES.dash;
   const TABS: { id: Tab; cnt?: number }[] = [
     { id: "team" },
+    { id: "att" },
     { id: "dash" },
     { id: "proj", cnt: state.projects.length },
     { id: "clients", cnt: state.clients.length },
@@ -3704,7 +3918,7 @@ export default function EjecutivoPage() {
     { id: "drive" },
     ...(isAdmin ? [{ id: "svc" as Tab }] : []),
   ];
-  const TAB_LABELS: Record<Tab, string> = { team: "Equipo", dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
+  const TAB_LABELS: Record<Tab, string> = { team: "Equipo", att: "Asistencia", dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
 
   return (
     <>
@@ -3815,6 +4029,7 @@ export default function EjecutivoPage() {
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "drive" && <HubDriveView />}
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
+            {tab === "att" && <AttendanceView />}
             {tab === "svc" && isAdmin && <SvcView canManage={canManageSvc} showToast={showToast} />}
           </div>
 

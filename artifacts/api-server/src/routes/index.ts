@@ -28,6 +28,7 @@ import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hubTasksRouter from "./hub/tasks";
 import hubServicesRouter from "./hub/services";
+import jornadaRouter from "./jornada";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
 import { requireArea } from "../lib/require-area";
@@ -71,6 +72,11 @@ router.use(connectionsRouter);
 router.use(settingsRouter);
 router.use(credentialsRouter);
 router.use(calendarRouter);
+
+// Jornada / asistencia: self-service (check-in/out + checklist diario) para
+// TODAS las áreas aprobadas — por eso va FUERA del gate de /hub. La
+// supervisión (overview/historial de terceros) se gatea por rol en el router.
+router.use(jornadaRouter);
 
 // Hub routes: ejecutivo area only
 // hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y

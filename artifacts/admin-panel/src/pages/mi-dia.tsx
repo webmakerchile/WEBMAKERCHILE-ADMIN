@@ -5,6 +5,7 @@ import { CheckSquare2, Square, ChevronDown, ChevronUp, AlertTriangle, CalendarDa
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/App";
 import { PushEnableBanner } from "@/components/push-enable-banner";
+import { JornadaCard } from "@/components/jornada-card";
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 type Priority = "crítica" | "alta" | "media" | "baja";
@@ -268,6 +269,8 @@ export default function MiDiaPage() {
         </div>
 
         <PushEnableBanner />
+
+        <JornadaCard />
 
         {/* Progress bar */}
         {data && data.progress.total > 0 && (
