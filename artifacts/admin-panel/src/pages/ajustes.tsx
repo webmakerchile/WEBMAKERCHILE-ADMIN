@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import {
   ShieldCheck,
@@ -384,6 +384,8 @@ function UsersPanel({
   isCeo: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
 
   const { data: users, isLoading: loading } = useQuery<ManagedUser[]>({
     queryKey: ["admin-users"],
@@ -397,6 +399,22 @@ function UsersPanel({
   const invalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["admin-users"] });
   }, [queryClient]);
+
+  const renameMut = useMutation({
+    mutationFn: async ({ id, name }: { id: number; name: string }) => {
+      await apiFetch(`/jornada/user/${id}/name`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+    },
+    onSuccess: () => {
+      showToast("Nombre actualizado", "ok");
+      setEditingId(null);
+      setNameDraft("");
+      invalidate();
+    },
+    onError: (e: any) => showToast(e.message || "No se pudo renombrar", "err"),
+  });
 
   const setApproval = async (id: number, status: string) => {
     try {
@@ -457,7 +475,7 @@ function UsersPanel({
         <div>
           <p className="text-sm font-semibold">Gestión de usuarios</p>
           <p className="text-xs text-muted-foreground">
-            {isSuperAdmin ? "Aprueba, rechaza y asigna roles al equipo" : "Asigna roles al equipo"}
+            {isSuperAdmin ? "Aprueba, rechaza, renombra y asigna roles al equipo" : "Asigna roles al equipo"}
           </p>
         </div>
         {!loading && pending.length > 0 && (
@@ -492,22 +510,65 @@ function UsersPanel({
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium truncate">{u.name || u.email}</p>
-                  {statusBadge(u.approvalStatus)}
-                  <TeamRoleBadge teamRole={u.teamRole} />
-                </div>
-                <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                {editingId === u.id ? (
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (nameDraft.trim()) renameMut.mutate({ id: u.id, name: nameDraft.trim() });
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") { setEditingId(null); setNameDraft(""); } }}
+                      disabled={renameMut.isPending}
+                      placeholder="Nombre visible"
+                      className="flex-1 min-w-0 text-sm bg-foreground/8 border border-foreground/20 rounded-lg px-2 py-1 outline-none focus:border-primary/60 transition"
+                    />
+                    <button
+                      type="submit"
+                      disabled={renameMut.isPending || !nameDraft.trim()}
+                      className="w-7 h-7 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 flex items-center justify-center transition disabled:opacity-40"
+                    >
+                      {renameMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingId(null); setNameDraft(""); }}
+                      className="w-7 h-7 rounded-lg bg-foreground/5 hover:bg-foreground/10 text-muted-foreground flex items-center justify-center transition"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium truncate">{u.name || u.email}</p>
+                    {statusBadge(u.approvalStatus)}
+                    <TeamRoleBadge teamRole={u.teamRole} />
+                    {(isCeo || isSuperAdmin) && (
+                      <button
+                        onClick={() => { setEditingId(u.id); setNameDraft(u.name || ""); }}
+                        title="Cambiar nombre"
+                        className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition opacity-40 hover:opacity-100"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {editingId !== u.id && <p className="text-xs text-muted-foreground truncate">{u.email}</p>}
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {(isCeo || isSuperAdmin) && (
+                {(isCeo || isSuperAdmin) && editingId !== u.id && (
                   <TeamRoleSelector
                     userId={u.id}
                     currentRole={u.teamRole}
                     onChanged={invalidate}
                   />
                 )}
-                {isSuperAdmin && u.approvalStatus !== "approved" && (
+                {isSuperAdmin && u.approvalStatus !== "approved" && editingId !== u.id && (
                   <button
                     onClick={() => setApproval(u.id, "approved")}
                     title="Aprobar acceso"
@@ -516,7 +577,7 @@ function UsersPanel({
                     <UserCheck className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {isSuperAdmin && u.approvalStatus !== "rejected" && (
+                {isSuperAdmin && u.approvalStatus !== "rejected" && editingId !== u.id && (
                   <button
                     onClick={() => setApproval(u.id, "rejected")}
                     title="Rechazar acceso"
@@ -525,7 +586,7 @@ function UsersPanel({
                     <UserX className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {isSuperAdmin && (
+                {isSuperAdmin && editingId !== u.id && (
                   <button
                     onClick={() => deleteUser(u.id, u.email)}
                     title="Eliminar usuario"

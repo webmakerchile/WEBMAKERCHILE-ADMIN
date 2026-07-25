@@ -3638,7 +3638,7 @@ function AttendanceView() {
   const sum = data?.summary;
 
   return (
-    <>
+    <div className="wrap">
       {/* Navegación por día */}
       <div className="att-bar">
         <button className="att-nav" onClick={() => setSelDate(attAddDays(selDate, -1))} aria-label="Día anterior"><ChevronLeft className="w-4 h-4" /></button>
@@ -3900,7 +3900,7 @@ function AttendanceView() {
           )}
         </>
       )}
-    </>
+    </div>
   );
 }
 
