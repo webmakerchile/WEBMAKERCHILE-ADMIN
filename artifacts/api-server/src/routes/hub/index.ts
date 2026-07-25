@@ -326,8 +326,56 @@ Reglas:
   res.json(result);
 });
 
+/* ------------------------------------------------------------------
+   Chat IA sobre un contrato.
+
+   Además de la "ficha" (título, cliente, valor, fechas…) el contrato
+   puede traer `doc`: los datos estructurados de la cotización con los
+   que se generó el PDF (módulos, precios, alcance, forma de pago). Si
+   viene `doc`, la IA también lo modifica para que el panel pueda
+   regenerar el PDF con los cambios aplicados.
+   ------------------------------------------------------------------ */
+const contractFicha = z
+  .object({
+    title: z.string(),
+    client: z.string(),
+    value: z.string(),
+    status: z.enum(["borrador", "activo", "vencido", "cancelado"]),
+    signedAt: z.string(),
+    expiresAt: z.string(),
+    notes: z.string(),
+  })
+  .partial();
+
+const docModuleSchema = z.object({
+  id: z.string().optional(),
+  name: z.coerce.string().default(""),
+  desc: z.coerce.string().default(""),
+  price: z.coerce.number().catch(0).default(0),
+});
+
+const contractDocSchema = z
+  .object({
+    client: z.coerce.string(),
+    project: z.coerce.string(),
+    scope: z.coerce.string(),
+    date: z.coerce.string(),
+    advisor: z.coerce.string(),
+    modules: z.array(docModuleSchema),
+    downPct: z.coerce.number().catch(50),
+    notes: z.coerce.string(),
+    monthly: z.coerce.string(),
+    monthlyPrice: z.coerce.string(),
+    validityDays: z.coerce.number().catch(15),
+  })
+  .partial();
+
 router.post("/hub/contracts/ai-chat", async (req: Request, res: Response) => {
-  const { contract, instruction } = req.body as { contract?: Record<string, string>; instruction?: string };
+  const { contract, doc, instruction } = req.body as {
+    contract?: Record<string, unknown>;
+    doc?: Record<string, unknown> | null;
+    instruction?: string;
+  };
   if (!instruction || instruction.trim().length < 3) {
     res.status(400).json({ error: "Instrucción requerida" });
     return;
@@ -338,33 +386,78 @@ router.post("/hub/contracts/ai-chat", async (req: Request, res: Response) => {
     baseURL: process.env.OPENAI_API_BASE || undefined,
   });
 
+  const hasDoc = !!doc && typeof doc === "object" && !Array.isArray(doc);
   const contractStr = JSON.stringify(contract || {}, null, 2);
+  const docStr = hasDoc ? JSON.stringify(doc, null, 2) : "";
+
+  const docBlock = hasDoc
+    ? `
+Documento de la cotización (es la fuente del PDF que se le entrega al cliente):
+${docStr}
+
+Campos del documento:
+- client (string), project (string, nombre del servicio), scope (string, alcance)
+- date (YYYY-MM-DD, emisión), advisor (string)
+- modules: array de { name, desc, price } — price es el NETO en pesos chilenos, número sin puntos ni símbolos (el IVA 19% se calcula aparte)
+- downPct (number 0-100, % de pago al iniciar)
+- monthly (string, nombre de la mensualidad o vacío), monthlyPrice (string numérico neto o vacío)
+- validityDays (number, días de vigencia), notes (string, notas de cierre)
+
+Aplica la instrucción SOBRE EL DOCUMENTO cuando corresponda: agregar/quitar/renombrar módulos,
+cambiar precios, ajustar el alcance, la forma de pago o la vigencia. Mantén los módulos que no
+se mencionan tal cual están (mismo id, nombre, descripción y precio).`
+    : `
+Este contrato no tiene documento estructurado: modifica solo la ficha.`;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-4.1",
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
-        content: "Eres un asistente de contratos de marketing digital. El usuario quiere modificar un contrato según sus instrucciones. Devuelve el contrato actualizado como JSON con los mismos campos, aplicando solo los cambios solicitados. Responde SOLO con JSON válido.",
+        content:
+          "Eres un asistente de contratos y cotizaciones de una agencia digital chilena. El usuario te pide cambios en lenguaje natural y tú devuelves el contrato actualizado en JSON, aplicando SOLO los cambios pedidos y conservando el resto intacto. Responde SOLO con JSON válido, sin markdown.",
       },
       {
         role: "user",
-        content: `Contrato actual:
+        content: `Ficha del contrato:
 ${contractStr}
+${docBlock}
 
 Instrucción del usuario: ${instruction}
 
-Devuelve el contrato completo con los cambios aplicados. Campos: title, client, value, status (borrador/activo/vencido/cancelado), signedAt (YYYY-MM-DD o vacío), expiresAt (YYYY-MM-DD o vacío), notes (máx 200 chars).`,
+Responde con este JSON exacto:
+{
+  "contract": { "title": "", "client": "", "value": "", "status": "borrador|activo|vencido|cancelado", "signedAt": "YYYY-MM-DD o vacío", "expiresAt": "YYYY-MM-DD o vacío", "notes": "máx 200 chars" },
+  ${hasDoc ? '"doc": { …el documento completo con los cambios aplicados… },' : '"doc": null,'}
+  "summary": "una frase corta en español describiendo qué cambiaste"
+}`,
       },
     ],
   });
 
   const raw = completion.choices[0]?.message?.content || "{}";
-  let updated: Record<string, string> = {};
-  try { updated = JSON.parse(raw); } catch { /* leave empty */ }
+  let parsed: Record<string, unknown> = {};
+  try { parsed = JSON.parse(raw); } catch { /* leave empty */ }
 
-  res.json(updated);
+  // La IA a veces devuelve los campos de la ficha en la raíz en vez de
+  // dentro de "contract": aceptamos ambas formas.
+  const rawContract = (parsed.contract && typeof parsed.contract === "object" ? parsed.contract : parsed) as Record<string, unknown>;
+  const contractOut = contractFicha.safeParse(rawContract);
+
+  let docOut: Record<string, unknown> | null = null;
+  if (hasDoc) {
+    const rawDoc = parsed.doc && typeof parsed.doc === "object" ? parsed.doc : null;
+    const parsedDoc = rawDoc ? contractDocSchema.safeParse(rawDoc) : null;
+    // Merge sobre el documento original: lo que la IA no devuelve se conserva.
+    if (parsedDoc?.success) docOut = { ...doc, ...parsedDoc.data };
+  }
+
+  res.json({
+    contract: contractOut.success ? contractOut.data : {},
+    doc: docOut,
+    summary: typeof parsed.summary === "string" ? parsed.summary : "",
+  });
 });
 
 export default router;

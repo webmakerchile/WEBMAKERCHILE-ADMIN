@@ -28,7 +28,10 @@ interface Meeting { id: string; client: string; date: string; summary: string; n
 interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
 type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
-interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; }
+// `doc` guarda los datos estructurados con los que se generó el PDF (módulos,
+// precios, alcance, forma de pago). Es la fuente del documento: si cambia, el
+// PDF se puede regenerar. Los contratos antiguos o subidos a mano no lo tienen.
+interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; doc?: WizData; }
 interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
 interface WizModule { id: string; name: string; desc: string; price: number; }
 interface WizData { client: string; project: string; scope: string; date: string; advisor: string; modules: WizModule[]; downPct: number; notes: string; monthly: string; monthlyPrice: string; validityDays: number; }
@@ -454,6 +457,67 @@ const fmtCLP = (n: number) => "$" + Math.round(n).toLocaleString("es-CL");
 function extractDriveFileId(url: string): string | null {
   const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   return m ? m[1] : null;
+}
+
+const DOC_IVA = 0.19;
+
+/** Suma los módulos con nombre del documento (neto) y calcula IVA + total. */
+function docTotals(d: WizData) {
+  const neto = (d.modules || []).filter(m => (m.name || "").trim() !== "").reduce((a, m) => a + (Number(m.price) || 0), 0);
+  const iva = Math.round(neto * DOC_IVA);
+  return { neto, iva, total: neto + iva };
+}
+
+/** "$1.234.567" → 1234567 */
+function parseCLP(v: string): number {
+  const n = Number(String(v || "").replace(/[^\d]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Fecha de vencimiento derivada de emisión + vigencia. */
+function docExpiry(d: WizData): string {
+  if (!d.validityDays || d.validityDays <= 0) return "";
+  const base = d.date || new Date().toISOString().slice(0, 10);
+  const exp = new Date(base + "T12:00:00");
+  if (isNaN(exp.getTime())) return "";
+  exp.setDate(exp.getDate() + d.validityDays);
+  return exp.toISOString().slice(0, 10);
+}
+
+/** Documento base para contratos sin `doc` (creados antes o subidos como PDF externo). */
+function docFromContract(c: Contract): WizData {
+  const totalConIva = parseCLP(c.value);
+  const neto = totalConIva > 0 ? Math.round(totalConIva / (1 + DOC_IVA)) : 0;
+  return {
+    client: c.client || "",
+    project: c.title || "",
+    scope: c.notes || "",
+    date: c.signedAt || new Date().toISOString().slice(0, 10),
+    advisor: "",
+    modules: [{ id: uid(), name: c.title || "Servicio", desc: c.notes || "", price: neto }],
+    downPct: 50, notes: "", monthly: "", monthlyPrice: "", validityDays: 15,
+  };
+}
+
+/** Mezcla los cambios que devuelve la IA sobre el documento actual y sanea tipos. */
+function normalizeDoc(base: WizData, incoming?: Partial<WizData> | null): WizData {
+  const d = { ...base, ...(incoming || {}) } as WizData;
+  const mods = Array.isArray(d.modules) ? d.modules : [];
+  d.modules = mods.map(m => ({
+    id: m?.id || uid(),
+    name: String(m?.name ?? ""),
+    desc: String(m?.desc ?? ""),
+    price: Number(m?.price) || 0,
+  }));
+  if (d.modules.length === 0) d.modules = [{ id: uid(), name: "", desc: "", price: 0 }];
+  d.downPct = Math.min(100, Math.max(0, Number(d.downPct) || 0));
+  d.validityDays = Math.max(0, Number(d.validityDays) || 0);
+  d.monthlyPrice = String(d.monthlyPrice ?? "");
+  d.client = String(d.client ?? ""); d.project = String(d.project ?? "");
+  d.scope = String(d.scope ?? ""); d.notes = String(d.notes ?? "");
+  d.advisor = String(d.advisor ?? ""); d.monthly = String(d.monthly ?? "");
+  d.date = String(d.date ?? "");
+  return d;
 }
 
 async function buildContractPdf(wiz: WizData): Promise<Blob> {
@@ -938,6 +1002,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{ name: string; client: string; pendingPrefill: Record<string, string> } | null>(null);
   const newProjFromContractIdRef = useRef<string | null>(null);
   const lastScrumProjIdRef = useRef<string | null>(null);
+  // Documento (cotización) del contrato abierto: borrador editable por el chat IA.
+  const [docDraft, setDocDraft] = useState<WizData | null>(null);
+  const [docDirty, setDocDirty] = useState(false);
+  const [regeneratingDoc, setRegeneratingDoc] = useState(false);
+  const lastContractSheetIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -959,11 +1028,21 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       projPreFillRef.current = {}; // clear after reading so next fresh open starts blank
     }
     if (sheet?.kind === "contract") {
-      const c = state.contracts.find(x => x.id === (sheet as { id: string }).id);
-      if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
-      else setPdfData(null);
-      setChatHistory([]); setChatInput(""); setExtractingProject(false);
-      setDuplicateProjectWarning(null);
+      // Solo reiniciamos chat/documento al abrir OTRO contrato: al guardar
+      // (regenerar PDF) el estado cambia y el sheet sigue abierto.
+      const id = (sheet as { id: string }).id;
+      const c = state.contracts.find(x => x.id === id);
+      if (lastContractSheetIdRef.current !== id) {
+        lastContractSheetIdRef.current = id;
+        if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
+        else setPdfData(null);
+        setChatHistory([]); setChatInput(""); setExtractingProject(false);
+        setDuplicateProjectWarning(null);
+        setDocDraft(c?.doc ? normalizeDoc(c.doc) : null);
+        setDocDirty(false); setRegeneratingDoc(false);
+      }
+    } else {
+      lastContractSheetIdRef.current = null;
     }
     if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
     if (sheet?.kind === "new-contract-meeting") { setMeetingNotes(""); setMeetingExtracting(false); }
@@ -987,6 +1066,62 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       onToast("Información extraída de la reunión ✓");
     } catch { onToast("Error de conexión"); }
     finally { setMeetingExtracting(false); }
+  };
+
+  /**
+   * Regenera el PDF del contrato a partir del documento (`d`), lo sube a Drive
+   * y persiste documento + ficha + nuevo enlace. Es lo que hace que los cambios
+   * del chat IA lleguen al documento que ve el cliente.
+   */
+  const regenerateContractDoc = async (c: Contract, d: WizData) => {
+    setRegeneratingDoc(true);
+    try {
+      const blob = await buildContractPdf(d);
+      const stamp = new Date();
+      const cliente = (d.client || c.client || "cliente").replace(/\s+/g, "-");
+      const fname = `Cotizacion-${cliente}-${stamp.toISOString().slice(0, 10)}-${stamp.getTime().toString().slice(-5)}.pdf`;
+      const fd = new FormData();
+      fd.append("file", new File([blob], fname, { type: "application/pdf" }));
+      fd.append("parentId", HUB_DRIVE_ROOT);
+
+      let nextPdf: PdfData | null = pdfData;
+      const upRes = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
+      if (upRes.ok) {
+        const up = await upRes.json() as { webViewLink: string; name: string; uploadedAt: number };
+        nextPdf = { url: up.webViewLink, title: up.name, uploadedAt: up.uploadedAt };
+        setPdfData(nextPdf);
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+        onToast("PDF regenerado y descargado (Drive no disponible)");
+      }
+
+      const totals = docTotals(d);
+      const exp = docExpiry(d);
+      onSave({
+        ...state,
+        contracts: state.contracts.map(x => x.id !== c.id ? x : {
+          ...x,
+          title: (V("ti").trim() || d.project || x.title),
+          client: d.client || V("cl"),
+          value: totals.total > 0 ? fmtCLP(totals.total) : V("va"),
+          status: (V("st") || x.status) as ContractStatus,
+          signedAt: d.date || V("si"),
+          expiresAt: exp || V("ex"),
+          notes: V("no") || d.scope,
+          doc: d,
+          pdfUrl: nextPdf?.url, pdfTitle: nextPdf?.title, pdfUploadedAt: nextPdf?.uploadedAt,
+          updatedAt: Date.now(),
+        }),
+      });
+      setDocDirty(false);
+      if (upRes.ok) onToast("Documento regenerado con los cambios ✓");
+    } catch (e: unknown) {
+      onToast("Error regenerando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
+    } finally {
+      setRegeneratingDoc(false);
+    }
   };
 
   if (!sheet) return null;
@@ -1559,10 +1694,78 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
         </div>
       )}
-      <button className="save" onClick={() => {
-        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
+      <button className="save" disabled={regeneratingDoc} onClick={async () => {
+        // Si el documento tiene cambios pendientes (chat IA / edición), guardar
+        // implica regenerar el PDF para que el documento refleje la ficha.
+        if (docDirty && docDraft) { await regenerateContractDoc(c, docDraft); onClose(); return; }
+        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
-      }}>Guardar cambios</button>
+      }}>{docDirty ? (regeneratingDoc ? "⏳ Regenerando documento…" : "Guardar y regenerar documento") : "Guardar cambios"}</button>
+
+      {/* ---- Documento de la cotización (fuente del PDF) ---- */}
+      <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: "1em" }}>📄</span>
+          <strong style={{ fontSize: "0.92em" }}>Documento</strong>
+          {docDirty && (
+            <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(255,180,0,0.15)", color: "#e0a52a" }}>
+              cambios sin aplicar al PDF
+            </span>
+          )}
+        </div>
+
+        {docDraft ? (() => {
+          const totals = docTotals(docDraft);
+          const mods = docDraft.modules.filter(m => (m.name || "").trim() !== "");
+          const abono = Math.round(totals.total * docDraft.downPct / 100);
+          return (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                {mods.length === 0 && <div style={{ fontSize: "0.78em", color: "var(--muted)" }}>Sin módulos definidos.</div>}
+                {mods.map(m => (
+                  <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 11px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "0.83em", fontWeight: 600 }}>{m.name}</div>
+                      {m.desc && <div style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 2 }}>{m.desc}</div>}
+                    </div>
+                    <div style={{ fontSize: "0.8em", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtCLP(m.price)}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: "0.76em", color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+                <span>Neto {fmtCLP(totals.neto)} · IVA {fmtCLP(totals.iva)} · <strong style={{ color: "var(--fg)" }}>Total {fmtCLP(totals.total)}</strong></span>
+                <span>Pago: {docDraft.downPct}% al iniciar ({fmtCLP(abono)}) · {100 - docDraft.downPct}% a la entrega</span>
+                {docDraft.monthly && <span>Mensualidad: {docDraft.monthly} {docDraft.monthlyPrice ? `· ${fmtCLP(Number(docDraft.monthlyPrice) || 0)} neto/mes` : ""}</span>}
+                {docDraft.validityDays > 0 && <span>Vigencia: {docDraft.validityDays} días{docExpiry(docDraft) ? ` (hasta ${docExpiry(docDraft)})` : ""}</span>}
+              </div>
+              <button
+                disabled={regeneratingDoc}
+                onClick={() => regenerateContractDoc(c, docDraft)}
+                style={{
+                  width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)",
+                  background: docDirty ? "rgba(255,120,0,0.14)" : "var(--card-bg)",
+                  color: docDirty ? "var(--accent, #ff7800)" : "var(--fg)",
+                  fontWeight: 600, fontSize: "0.86em", cursor: regeneratingDoc ? "not-allowed" : "pointer",
+                }}
+              >{regeneratingDoc ? "⏳ Generando PDF…" : "🔄 Regenerar PDF del documento"}</button>
+              <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 5 }}>
+                Genera el PDF con estos datos y lo sube a Drive, reemplazando el enlace del contrato.
+              </p>
+            </>
+          );
+        })() : (
+          <>
+            <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>
+              Este contrato no tiene un documento estructurado (se creó a mano o el PDF se subió desde fuera),
+              así que la IA sólo puede editar la ficha. Crea uno para que el chat pueda modificar el PDF.
+            </p>
+            <button
+              onClick={() => { setDocDraft(docFromContract(c)); setDocDirty(true); onToast("Documento creado desde la ficha — ajústalo con el chat"); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--fg)", fontWeight: 600, fontSize: "0.86em", cursor: "pointer" }}
+            >📄 Crear documento desde la ficha</button>
+          </>
+        )}
+      </div>
 
       {/* ---- Proyectos vinculados ---- */}
       {(() => {
@@ -1687,7 +1890,9 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <span style={{ fontSize: "1.1em" }}>✨</span>
           <strong style={{ fontSize: "0.92em" }}>Modificar con IA</strong>
-          <span style={{ fontSize: "0.75em", color: "var(--muted)", fontWeight: 400 }}>Dile a la IA qué cambiar y aplicará los cambios al formulario</span>
+          <span style={{ fontSize: "0.75em", color: "var(--muted)", fontWeight: 400 }}>
+            {docDraft ? "Cambia la ficha y el documento (módulos, precios, alcance, pago)" : "Dile a la IA qué cambiar y aplicará los cambios al formulario"}
+          </span>
         </div>
 
         {chatHistory.length > 0 && (
@@ -1744,10 +1949,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/ai-chat`, {
                   method: "POST", credentials: "include",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ contract: currentContract, instruction }),
+                  body: JSON.stringify({ contract: currentContract, doc: docDraft, instruction }),
                 });
                 if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string,string>)); setChatHistory(h => [...h, { role: "ai", text: (e as {error?:string}).error || "Error al procesar" }]); return; }
-                const data = await res.json() as Record<string, string>;
+                const payload = await res.json() as { contract?: Record<string, string>; doc?: Partial<WizData> | null; summary?: string };
+                const data = payload.contract || {};
                 if (r.current["ti"] && data.title) r.current["ti"].value = data.title;
                 if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
                 if (r.current["va"] && data.value) r.current["va"].value = data.value;
@@ -1755,7 +1961,26 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
                 if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
                 if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
-                setChatHistory(h => [...h, { role: "ai", text: "✓ Cambios aplicados. Revisa los campos arriba y guarda cuando estés listo." }]);
+
+                // Documento: aplicamos los cambios y recalculamos ficha desde el
+                // documento (valor, fechas) para que PDF y ficha no se separen.
+                let docUpdated = false;
+                if (payload.doc && docDraft) {
+                  const nd = normalizeDoc(docDraft, payload.doc);
+                  setDocDraft(nd); setDocDirty(true); docUpdated = true;
+                  const totals = docTotals(nd);
+                  if (r.current["ti"] && nd.project) r.current["ti"].value = nd.project;
+                  if (r.current["cl"] && nd.client) r.current["cl"].value = nd.client;
+                  if (r.current["va"] && totals.total > 0) r.current["va"].value = fmtCLP(totals.total);
+                  if (r.current["si"] && nd.date) r.current["si"].value = nd.date;
+                  const exp = docExpiry(nd);
+                  if (r.current["ex"] && exp) r.current["ex"].value = exp;
+                }
+
+                const summary = payload.summary ? `✓ ${payload.summary}` : "✓ Cambios aplicados.";
+                setChatHistory(h => [...h, { role: "ai", text: docUpdated
+                  ? `${summary} Revisa el documento más arriba y pulsa "Regenerar PDF" para actualizarlo en Drive.`
+                  : `${summary} Revisa los campos arriba y guarda cuando estés listo.` }]);
               } catch { setChatHistory(h => [...h, { role: "ai", text: "Error de conexión" }]); }
               finally { setChatLoading(false); }
             }}
@@ -1950,7 +2175,9 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   exp.setDate(exp.getDate() + wiz.validityDays);
                   expiresAt = exp.toISOString().slice(0, 10);
                 }
-                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
+                // Guardamos también `doc`: es la fuente del PDF, y permite que el
+                // chat IA modifique el documento y lo regenere después.
+                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, doc: wiz, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
                 onToast(pdfUrl ? "Contrato creado y PDF subido a Drive ✓" : "Contrato creado");
               } catch (e: unknown) {
