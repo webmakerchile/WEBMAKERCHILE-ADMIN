@@ -1205,7 +1205,11 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
  * Bloque de la versión técnica del contrato. Es lo único del contrato que ve
  * quien construye, así que aquí no se renderiza ningún dato comercial.
  */
-function BriefView({ brief, briefUrl, doc }: { brief?: ContractBrief; briefUrl?: string; doc?: WizData }) {
+function BriefView({ brief, briefUrl, doc, onGenerate, generating }: {
+  brief?: ContractBrief; briefUrl?: string; doc?: WizData;
+  /** Solo se pasa cuando el rol puede escribir contratos: genera o rehace el brief. */
+  onGenerate?: () => void; generating?: boolean;
+}) {
   const mods = brief?.alcance ?? [];
   return (
     <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
@@ -1220,10 +1224,23 @@ function BriefView({ brief, briefUrl, doc }: { brief?: ContractBrief; briefUrl?:
       </div>
 
       {!brief ? (
-        <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: 0 }}>
-          Todavía no hay brief técnico. Se genera solo al crear el contrato desde el wizard
-          o al regenerar los documentos.
-        </p>
+        <>
+          <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>
+            Este contrato todavía no tiene versión técnica. Genérala para que el equipo vea
+            los requerimientos sin acceder a la información comercial.
+          </p>
+          {onGenerate && (
+            <button
+              disabled={generating}
+              onClick={onGenerate}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)",
+                background: "rgba(255,120,0,0.1)", color: "var(--accent, #ff7800)",
+                fontWeight: 600, fontSize: "0.86em", cursor: generating ? "not-allowed" : "pointer",
+              }}
+            >{generating ? "⏳ Redactando el brief con IA…" : "🛠️ Generar brief técnico"}</button>
+          )}
+        </>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: "0.8em" }}>
           {brief.objetivo && (
@@ -1272,6 +1289,17 @@ function BriefView({ brief, briefUrl, doc }: { brief?: ContractBrief; briefUrl?:
             </div>
           )}
           {doc?.scope && !brief.objetivo && <div style={{ color: "var(--muted)" }}>{doc.scope}</div>}
+          {onGenerate && (
+            <button
+              disabled={generating}
+              onClick={onGenerate}
+              style={{
+                marginTop: 2, padding: "8px 0", borderRadius: 8, border: "1px solid var(--border)",
+                background: "transparent", color: "var(--fg)", fontWeight: 500, fontSize: "0.95em",
+                cursor: generating ? "not-allowed" : "pointer",
+              }}
+            >{generating ? "⏳ Rehaciendo el brief…" : "↻ Rehacer brief técnico"}</button>
+          )}
         </div>
       )}
     </div>
@@ -1309,6 +1337,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [docDraft, setDocDraft] = useState<WizData | null>(null);
   const [docDirty, setDocDirty] = useState(false);
   const [regeneratingDoc, setRegeneratingDoc] = useState(false);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
   const lastContractSheetIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1432,6 +1461,39 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       onToast("Error regenerando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
     } finally {
       setRegeneratingDoc(false);
+    }
+  };
+
+  /**
+   * Genera (o rehace) solo la versión técnica de un contrato, sin tocar la
+   * cotización comercial ni su PDF. Sirve para los contratos que ya existían
+   * antes de que el brief fuera automático.
+   */
+  const generateBriefFor = async (c: Contract) => {
+    // Si el contrato no tiene documento estructurado (PDF externo o carga
+    // manual), se arma uno desde la ficha para tener algo que describir.
+    const source = docDraft ?? c.doc ?? docFromContract(c);
+    setGeneratingBrief(true);
+    try {
+      const tech = await buildTechnicalVersion(source, { title: c.title, client: c.client, notes: c.notes });
+      if (!tech) { onToast("No se pudo generar el brief técnico"); return; }
+      onSave({
+        ...state,
+        contracts: state.contracts.map(x => x.id !== c.id ? x : {
+          ...x,
+          doc: x.doc ?? source,
+          brief: tech.brief,
+          briefUrl: tech.briefUrl ?? x.briefUrl,
+          briefTitle: tech.briefTitle ?? x.briefTitle,
+          briefUploadedAt: tech.briefUploadedAt ?? x.briefUploadedAt,
+          updatedAt: Date.now(),
+        }),
+      });
+      onToast(tech.briefUrl ? "Brief técnico generado y subido a Drive ✓" : "Brief técnico generado");
+    } catch (e: unknown) {
+      onToast("Error generando el brief: " + (e instanceof Error ? e.message : "desconocido"));
+    } finally {
+      setGeneratingBrief(false);
     }
   };
 
@@ -2218,7 +2280,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       </div>
 
       {/* ---- Versión técnica (brief) ---- */}
-      <BriefView brief={c.brief} briefUrl={c.briefUrl} doc={c.doc} />
+      <BriefView
+        brief={c.brief}
+        briefUrl={c.briefUrl}
+        doc={c.doc}
+        onGenerate={readOnlyContract ? undefined : () => void generateBriefFor(c)}
+        generating={generatingBrief}
+      />
 
       {/* ---- Chat IA para modificar el contrato ---- */}
       <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
