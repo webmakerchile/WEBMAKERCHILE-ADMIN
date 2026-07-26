@@ -1,3 +1,6 @@
+// PRIMER import: registra las fuentes (efecto secundario) antes de que ningún
+// otro módulo del árbol cargue Sharp/librsvg.
+import "./lib/fonts-boot";
 import { initSentry } from "./lib/sentry";
 initSentry();
 import app from "./app";

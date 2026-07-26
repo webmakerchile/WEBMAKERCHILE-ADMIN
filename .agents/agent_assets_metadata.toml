@@ -72,3 +72,21 @@ id = "YefsTYt8mpGaM3RJ7u8wh"
 uri = "file://attached_assets/render-tests/historia-prueba-v3.png"
 type = "image"
 title = "Historia v3 — layout corregido (1080×1920 forzado)"
+
+[[outputs]]
+id = "CtPIblnfNgNyvWkPkM7EG"
+uri = "file://artifacts/api-server/public/uploads/covers/demo-1.png"
+type = "image"
+title = "Demo 1 · Estudio spotlight — 3 errores que matan tus ventas"
+
+[[outputs]]
+id = "hftWDxQa1gNNHr71O_-Ma"
+uri = "file://artifacts/api-server/public/uploads/covers/demo-2.png"
+type = "image"
+title = "Demo 2 · Taller de papel — El secreto del marketing"
+
+[[outputs]]
+id = "9uvXrw3CWjcXn2Skk2EdR"
+uri = "file://artifacts/api-server/public/uploads/covers/demo-3.png"
+type = "image"
+title = "Demo 3 · Atardecer retro — Crea tu página web en 7 días"

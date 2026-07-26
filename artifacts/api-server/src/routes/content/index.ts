@@ -34,6 +34,7 @@ import { getValidXToken } from "../x";
 import { retryPlatformForVideo } from "../../scheduler";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
+import { prepararPortada, generateFoxIllustration, composeVerticalCover } from "../../lib/cover-style";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
 import { generateDescriptionsForVideo } from "../../lib/generate-descriptions";
 import { google } from "googleapis";
@@ -137,16 +138,33 @@ async function generateCoverForVideo(videoId: number, network?: string) {
 
   if (!video) throw new Error("Video not found");
 
-  const prompt = buildCoverPrompt(video.title, video.description || "", video.coverPrompt);
-  const referenceImageBase64 = getReferenceImageBase64();
   const size = networkToSize(network);
+  // Formatos verticales (TikTok y portada general) usan el pipeline moderno:
+  // dirección de arte rotativa + zorro master + titular compuesto con Sharp.
+  // Un coverPrompt personalizado del usuario conserva el flujo clásico intacto.
+  const esVertical = network === "tiktok" || network === undefined;
 
-  const { b64_json, mimeType } = await generateImage({
-    prompt,
-    referenceImageBase64,
-    referenceImageMimeType: "image/jpeg",
-    size,
-  });
+  let b64_json: string;
+  let mimeType: string;
+  if (esVertical && !video.coverPrompt) {
+    const tema = `${video.title}. ${video.description || ""}`.trim();
+    const { direccion, prompt } = prepararPortada(tema);
+    const illustration = await generateFoxIllustration(prompt);
+    const finalImage = await composeVerticalCover(illustration, video.title, direccion);
+    b64_json = finalImage.toString("base64");
+    mimeType = "image/png";
+  } else {
+    const prompt = buildCoverPrompt(video.title, video.description || "", video.coverPrompt);
+    const referenceImageBase64 = getReferenceImageBase64();
+    const generated = await generateImage({
+      prompt,
+      referenceImageBase64,
+      referenceImageMimeType: "image/jpeg",
+      size,
+    });
+    b64_json = generated.b64_json;
+    mimeType = generated.mimeType;
+  }
 
   type VideoUpdate = Parameters<ReturnType<typeof db.update<typeof videos>>["set"]>[0];
 

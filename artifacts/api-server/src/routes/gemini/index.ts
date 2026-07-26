@@ -11,7 +11,7 @@ import {
   GenerateCoverBody,
 } from "@workspace/api-zod";
 import { toFile } from "openai";
-import { seleccionarPosePortada, bloquePoseRequerida } from "../../lib/pose-bank.js";
+import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit } from "../../lib/cover-style.js";
 
 const router: IRouter = Router();
 
@@ -144,63 +144,8 @@ router.post("/gemini/generate-image", async (req, res) => {
 router.post("/gemini/generate-cover", async (req, res) => {
   const body = GenerateCoverBody.parse(req.body);
 
-  const temaParaEmocion = `${body.title} ${body.description || ""}`;
-  const poseElegida = seleccionarPosePortada(temaParaEmocion);
-  const selectedPose = poseElegida.descripcion;
-  console.log(`[PORTADA] Pose seleccionada: ${poseElegida.id} (emoción: ${poseElegida.emocion || "ninguna"}) | tema: "${body.title}"`);
-  console.log(`[PORTADA] Descripción: ${poseElegida.descripcion}`);
-
-  const basePrompt = `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
-
-REGLA ABSOLUTA - SIN TEXTO:
-NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel, texto en pantallas, texto en objetos, ni NINGÚN tipo de escritura en la imagen. CERO caracteres alfanuméricos. Si hay una pantalla o monitor, debe mostrar formas abstractas de colores o gráficos abstractos, JAMÁS texto legible. Esta regla no tiene excepciones.
-
-PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
-- Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta/polera verde oscuro
-- SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado ni parcialmente visible
-- El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario
-- Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
-- El zorro DEBE mantener el estilo FLAT CARTOON de la referencia: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas. El zorro es un cartoon simple y limpio
-- POSE Y EXPRESIÓN OBLIGATORIA para esta imagen: ${selectedPose}
-
-CONTEXTO DE LA ESCENA (usar como referencia visual, NO como texto):
-TÍTULO: "${body.title}"
-${body.description ? `DESCRIPCIÓN: "${body.description}"` : ""}
-${body.style ? `ESTILO ADICIONAL: ${body.style}` : ""}
-Adapta la escena al contexto del título y descripción. Los objetos y elementos deben ser RELEVANTES al tema y contar una historia visual clara. NO escribas el título ni la descripción como texto en la imagen.
-
-ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
-- El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE fondo oscuro limpio sin elementos
-- NADA puede existir en esa zona: ni el zorro, ni objetos, ni sombras, ni líneas, ni bordes
-- Toda la acción visual comienza DEBAJO del píxel 670
-
-COMPOSICIÓN (CRÍTICA - LIMPIA Y MINIMALISTA):
-- El zorro y los objetos ocupan el 65% INFERIOR de la imagen
-- MÁXIMO 3 elementos visuales de apoyo alrededor del zorro. NUNCA más de 3.
-- Los elementos de apoyo deben estar AGRUPADOS A UN SOLO LADO del zorro (izquierda O derecha), dejando el otro lado con fondo limpio.
-- PROHIBIDO rodear al zorro con objetos por todos lados (saturación visual). PROHIBIDO collage de iconos.
-- El zorro debe ser SIEMPRE el protagonista visualmente claro, no "uno más" entre elementos.
-- Si dudas si añadir un objeto extra, NO lo añadas. Menos es más.
-
-CONTRASTE DE ESTILOS (IMPORTANTE):
-- El ZORRO y los OBJETOS/ICONOS se dibujan en estilo FLAT CARTOON: líneas de contorno gruesas negras, colores planos y vibrantes, sin degradados, sin sombras realistas
-- El FONDO es premium y oscuro con efectos de iluminación elegantes (ver abajo)
-- Este contraste entre personaje cartoon sobre fondo premium es intencional y crea un look moderno y llamativo
-
-FONDO PREMIUM (solo el fondo, NO el personaje):
-- Color base: gradiente vertical muy sutil de #0F172A (slate 900) en la parte inferior a #1E293B (slate 800) en el centro
-- Elementos de fondo: grid geométrico muy sutil (líneas blancas al 3-5% de opacidad)
-- Un glow ambiental suave y difuso detrás del zorro en tono naranja cálido (#E86A30 al 15-20% de opacidad) con blur amplio, como un halo de luz
-- La zona superior (35%) mantiene el mismo tono oscuro limpio sin elementos
-
-PALETA:
-- Fondo: tonos slate oscuros (#0F172A, #1E293B) con glow naranja difuso
-- Zorro: naranja vibrante PLANO (como la referencia), verde sólido en la camiseta, líneas gruesas negras
-- Objetos: colores planos y vibrantes estilo flat icon (naranja, verde, blanco, azul, rojo), con contornos gruesos negros
-
-RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), pero sobre un fondo oscuro premium elegante.
-
-${bloquePoseRequerida(poseElegida)}`;
+  const tema = `${body.title} ${body.description || ""}`.trim();
+  const { direccion, prompt: basePrompt } = prepararPortada(tema, body.style);
 
   const MAX_RETRIES = 4;
   const RETRY_DELAYS = [5000, 15000, 30000];
@@ -225,9 +170,8 @@ ${bloquePoseRequerida(poseElegida)}`;
         const b64_json = response.data?.[0]?.b64_json ?? "";
         if (!b64_json) throw new Error("No se recibió imagen en la respuesta");
         return { b64_json, mimeType: "image/png" };
-      } else {
-        return await generateImage(basePrompt);
       }
+      throw new Error("attemptGenerate requiere imagen de referencia");
     } catch (err: any) {
       const rateLimited = isRateLimitError(err);
       console.warn(`[CoverGen] Attempt ${attempt} failed (rate_limit=${rateLimited}): ${err.message}`);
@@ -245,79 +189,21 @@ ${bloquePoseRequerida(poseElegida)}`;
   }
 
   try {
-    const result = await attemptGenerate(1);
-    console.log(`[CoverGen] Cover generated, compositing title overlay...`);
-
-    const sharp = (await import("sharp")).default;
-
-    const COVER_WIDTH = 1080;
-    const COVER_HEIGHT = 1920;
-    const TEXT_ZONE_TOP = 150;
-    const TEXT_ZONE_BOTTOM = 430;
-    const TEXT_ZONE_HEIGHT = TEXT_ZONE_BOTTOM - TEXT_ZONE_TOP;
-    const TEXT_ZONE_SIDE_PADDING = 60;
-
-    function splitLines(text: string, max: number): string[] {
-      const words = text.split(/\s+/);
-      const lines: string[] = [];
-      let cur = "";
-      for (const w of words) {
-        if (!cur) cur = w;
-        else if ((cur + " " + w).length <= max) cur += " " + w;
-        else { lines.push(cur); cur = w; }
-      }
-      if (cur) lines.push(cur);
-      return lines;
+    // Con referencia del usuario → gpt-image-1 (edit). Sin referencia →
+    // pipeline compartido Gemini con el master del zorro (reintentos internos).
+    let result: { b64_json: string; mimeType: string };
+    if (body.referenceImageBase64) {
+      result = await attemptGenerate(1);
+    } else {
+      const buf = await generateFoxIllustration(basePrompt);
+      result = { b64_json: buf.toString("base64"), mimeType: "image/png" };
     }
-
-    function escXml(s: string) {
-      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-    }
-
-    const cleanTitle = body.title.replace(/\*\*/g, "").trim();
-    const lines = splitLines(cleanTitle, 18).slice(0, 5);
-    const lineCount = lines.length;
-
-    let fontSize = lineCount <= 2 ? 115 : lineCount <= 3 ? 100 : lineCount <= 4 ? 85 : 72;
-    const maxTextWidth = COVER_WIDTH - TEXT_ZONE_SIDE_PADDING * 2;
-    const maxLineChars = Math.max(...lines.map(l => l.length));
-    const estimatedWidth = maxLineChars * fontSize * 0.55;
-    if (estimatedWidth > maxTextWidth) fontSize = Math.floor(fontSize * (maxTextWidth / estimatedWidth));
-
-    const lineHeight = fontSize * 1.12;
-    const totalTextHeight = lineCount * lineHeight;
-    const startY = TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalTextHeight) / 2 + fontSize * 0.85;
-
-    const fontFamily = "'Inter','Helvetica Neue','Arial',sans-serif";
-    const fontWeight = 800;
-    const strokeWidth = Math.max(5, Math.round(fontSize * 0.055));
-    const shadowOff = Math.max(3, Math.round(fontSize * 0.035));
-    const textEls = lines.map((line, i) => {
-      const y = startY + i * lineHeight;
-      const esc = escXml(line);
-      return [
-        `<text x="${COVER_WIDTH / 2 + shadowOff}" y="${y + shadowOff}" text-anchor="middle" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}" fill="rgba(0,0,0,0.45)">${esc}</text>`,
-        `<text x="${COVER_WIDTH / 2}" y="${y}" text-anchor="middle" font-family="${fontFamily}" font-weight="${fontWeight}" font-size="${fontSize}" fill="white" stroke="white" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill">${esc}</text>`,
-      ].join("\n    ");
-    }).join("\n    ");
-
-    const svgOverlay = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    ${textEls}
-  </svg>`;
-
-    const baseImgBuf = Buffer.from(result.b64_json, "base64");
-    const composited = await sharp(baseImgBuf)
-      .resize(COVER_WIDTH, COVER_HEIGHT, { fit: "cover" })
-      .composite([{ input: Buffer.from(svgOverlay), top: 0, left: 0 }])
-      .png()
-      .toBuffer();
-
-    const finalB64 = composited.toString("base64");
-    console.log(`[CoverGen] Cover with title overlay generated successfully`);
-    res.json({ b64_json: finalB64, mimeType: "image/png" });
+    console.log(`[CoverGen] Cover generado, componiendo titular (${direccion.id})...`);
+    const composited = await composeVerticalCover(Buffer.from(result.b64_json, "base64"), body.title, direccion);
+    res.json({ b64_json: composited.toString("base64"), mimeType: "image/png" });
   } catch (error: any) {
     console.error(`[CoverGen] All ${MAX_RETRIES} attempts failed: ${error.message}`);
-    if (error.message === "RATE_LIMIT") {
+    if (esErrorRateLimit(error)) {
       res.status(429).json({ error: "El servicio de IA está saturado en este momento. Espera 1-2 minutos e intenta de nuevo." });
     } else {
       res.status(500).json({ error: "No se pudo generar la portada. Intenta de nuevo en unos momentos." });
