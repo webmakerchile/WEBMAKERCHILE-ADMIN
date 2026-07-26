@@ -12,6 +12,8 @@ import { resolveBoard, saveBoard } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
 import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
 import { handoffContractClosed, handoffProjectDelivered } from "../../lib/handoffs";
+import { diffHubEntities, entityLabel, entityState } from "../../lib/hub-diff";
+import { notifyCeos } from "../../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -157,46 +159,79 @@ router.patch("/hub", async (req: Request, res: Response) => {
 
   const saved = await saveBoard(board.boardUserId, merged);
 
-  // Bitácora: contratos y proyectos nuevos o con cambio de estado/etapa.
-  // El tablero es un blob, así que el "diff" se hace aquí comparando lo
-  // almacenado antes del merge con lo que quedó guardado.
+  // Bitácora + avisos a dirección: contratos y proyectos nuevos, con cambio de
+  // estado o eliminados. El tablero es un blob, así que el "diff" se hace aquí
+  // comparando lo almacenado antes del merge con lo que quedó guardado.
   try {
+    const actorName = String(me.name || me.email || "Alguien").slice(0, 80);
+    const esDireccion = role === "ceo";
     for (const scope of ["contracts", "projects"] as const) {
       if (!writeScopes.includes(scope)) continue;
       const before = Array.isArray(stored[scope]) ? (stored[scope] as HubEntity[]) : [];
       const after = Array.isArray(saved.data[scope]) ? (saved.data[scope] as HubEntity[]) : [];
-      const beforeById = new Map(before.map((e) => [String(e?.id ?? ""), e]));
       const entityType = scope === "contracts" ? "contract" : "project";
-      const label = (e: HubEntity) =>
-        String(e?.title ?? e?.name ?? e?.nombre ?? e?.client ?? e?.id ?? "").slice(0, 200) || "(sin título)";
-      const stateOf = (e: HubEntity) => String(e?.status ?? e?.stage ?? e?.etapa ?? "");
-      for (const e of after) {
-        const id = String(e?.id ?? "");
-        if (!id) continue;
-        const old = beforeById.get(id);
-        if (!old) {
-          recordActivity({ actorId: me.id, entityType, entityId: id, entityLabel: label(e), action: "created" });
-        } else if (stateOf(old) !== stateOf(e)) {
-          recordActivity({
-            actorId: me.id,
-            entityType,
-            entityId: id,
-            entityLabel: label(e),
-            action: "status_change",
-            detail: { from: stateOf(old), to: stateOf(e) },
-          });
-        }
-        // Handoffs automáticos entre áreas (idempotentes vía handoff_log):
-        // venta cerrada → proyecto+tareas; proyecto entregado → cobranza.
-        const becameNow = (target: string) => stateOf(e) === target && (!old || stateOf(old) !== target);
-        if (scope === "contracts" && becameNow("activo")) {
+      const diff = diffHubEntities(before, after);
+
+      for (const e of diff.created) {
+        recordActivity({ actorId: me.id, entityType, entityId: String(e.id), entityLabel: entityLabel(e), action: "created" });
+      }
+      for (const c of diff.statusChanged) {
+        recordActivity({
+          actorId: me.id,
+          entityType,
+          entityId: String(c.entity.id),
+          entityLabel: entityLabel(c.entity),
+          action: "status_change",
+          detail: { from: c.from, to: c.to },
+        });
+      }
+      for (const e of diff.deleted) {
+        recordActivity({ actorId: me.id, entityType, entityId: String(e.id), entityLabel: entityLabel(e), action: "deleted" });
+      }
+
+      // Handoffs automáticos entre áreas (idempotentes vía handoff_log):
+      // venta cerrada → proyecto+tareas; proyecto entregado → cobranza.
+      const becameNow = (target: string): HubEntity[] => [
+        ...diff.created.filter((e) => entityState(e) === target),
+        ...diff.statusChanged.filter((c) => c.to === target).map((c) => c.entity),
+      ];
+      if (scope === "contracts") {
+        for (const e of becameNow("activo")) {
           void handoffContractClosed(e as Record<string, unknown>, me.id).catch((err) =>
             console.error("[handoff venta_cerrada]", err),
           );
         }
-        if (scope === "projects" && becameNow("done")) {
+      }
+      if (scope === "projects") {
+        for (const e of becameNow("done")) {
           void handoffProjectDelivered(e as Record<string, unknown>, me.id).catch((err) =>
             console.error("[handoff proyecto_entregado]", err),
+          );
+        }
+      }
+
+      // Dirección informada sin ser cuello de botella: cuando alguien que NO es
+      // CEO toca contratos, el CEO recibe el aviso (panel + push + DM si lo
+      // activó). Fire-and-forget: jamás frena el guardado del tablero. Los
+      // títulos usan el nombre de la entidad, que no lleva montos.
+      if (scope === "contracts" && !esDireccion) {
+        const avisos = [
+          ...diff.created.map((e) => ({
+            title: `Nuevo contrato: ${entityLabel(e)}`,
+            body: `${actorName} lo creó en el Hub.`,
+          })),
+          ...diff.statusChanged.map((c) => ({
+            title: `Contrato ${entityLabel(c.entity)}: ${c.from || "sin estado"} → ${c.to || "sin estado"}`,
+            body: `${actorName} cambió el estado.`,
+          })),
+          ...diff.deleted.map((e) => ({
+            title: `Contrato eliminado: ${entityLabel(e)}`,
+            body: `${actorName} lo quitó del tablero.`,
+          })),
+        ];
+        for (const aviso of avisos) {
+          void notifyCeos({ ...aviso, link: "/ejecutivo", excludeUserId: me.id }).catch((err) =>
+            console.error("[hub PATCH] aviso a dirección falló", err),
           );
         }
       }

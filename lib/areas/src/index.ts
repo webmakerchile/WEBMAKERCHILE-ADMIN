@@ -51,7 +51,7 @@ export const AREA_PAGES: Record<Area, string[] | "*"> = {
  */
 export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
   ceo: "*",
-  ejecutivo: ["/hub"],
+  ejecutivo: ["/hub", "/cotizaciones"],
   edicion:   [
     "/content", "/studio", "/youtube", "/tiktok", "/instagram",
     "/linkedin", "/x", "/facebook", "/drive", "/library",

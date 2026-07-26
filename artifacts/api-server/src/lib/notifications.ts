@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { db } from "@workspace/db";
 import { notifications, pushSubscriptions, users, type InsertNotification } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { normalizeRole } from "@workspace/roles";
 import { sendDirectMessage } from "./discord";
 
 /**
@@ -87,6 +88,46 @@ export async function createNotification(input: CreateNotificationInput) {
     console.error("[Notifications] Discord DM failed:", err?.message || err),
   );
   return row;
+}
+
+/**
+ * Avisa a la dirección: crea la notificación (panel + push + DM de Discord si
+ * lo activó) para cada cuenta aprobada cuyo rol normalizado es CEO.
+ * `excludeUserId` evita el auto-aviso cuando quien actúa es la propia dirección.
+ * Devuelve cuántos avisos se crearon; un destinatario que falla no bloquea al resto.
+ */
+export async function notifyCeos(input: {
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  type?: NotificationType;
+  excludeUserId?: number;
+}): Promise<number> {
+  const team = await db
+    .select({ id: users.id, role: users.role, teamRole: users.teamRole, approvalStatus: users.approvalStatus })
+    .from(users);
+  const ceos = team.filter(
+    (u) =>
+      u.approvalStatus === "approved" &&
+      u.id !== input.excludeUserId &&
+      normalizeRole(u.teamRole, u.role === "superadmin") === "ceo",
+  );
+  let sent = 0;
+  for (const ceo of ceos) {
+    try {
+      await createNotification({
+        userId: ceo.id,
+        type: input.type ?? "system",
+        title: input.title,
+        body: input.body ?? null,
+        link: input.link ?? null,
+      });
+      sent++;
+    } catch (err: any) {
+      console.error("[Notifications] notifyCeos failed for user", ceo.id, err?.message || err);
+    }
+  }
+  return sent;
 }
 
 /** Punto único de envío del DM. Exportado para tests. */

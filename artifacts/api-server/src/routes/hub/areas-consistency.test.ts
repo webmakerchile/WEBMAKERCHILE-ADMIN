@@ -6,6 +6,8 @@
  * All area-related records MUST have an entry for every value in AREAS.
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   AREAS,
   AREA_LABELS,
@@ -102,5 +104,27 @@ describe("@workspace/areas — single source of truth invariants", () => {
     for (const area of AREAS) {
       expect(toArea(area)).toBe(area);
     }
+  });
+});
+
+/**
+ * Invariantes del flujo de ventas: si alguien cambia los gates de área en
+ * routes/index.ts y deja al rol ventas (área ejecutivo) fuera del wizard de
+ * contratos, estos tests fallan antes de que el bloqueo llegue a producción.
+ */
+describe("gates de área del flujo de ventas (routes/index.ts)", () => {
+  const routesSrc = readFileSync(fileURLToPath(new URL("../index.ts", import.meta.url)), "utf8");
+
+  it("/cotizaciones permite al área ejecutivo — autonomía del rol ventas", () => {
+    expect(routesSrc).toContain('router.use("/cotizaciones", requireArea("ceo", "ejecutivo"))');
+  });
+
+  it("el gate de /hub incluye al área ejecutivo", () => {
+    expect(routesSrc).toContain('requireArea("ceo", "ejecutivo", "rrhh")');
+  });
+
+  it("AREA_API_PREFIXES.ejecutivo documenta /hub y /cotizaciones", () => {
+    expect(AREA_API_PREFIXES.ejecutivo).toContain("/hub");
+    expect(AREA_API_PREFIXES.ejecutivo).toContain("/cotizaciones");
   });
 });
