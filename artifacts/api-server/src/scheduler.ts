@@ -15,6 +15,7 @@ import { createNotification } from "./lib/notifications";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
 import { getCredential } from "./lib/credentials";
 import { checkSlaBreaches } from "./lib/sla";
+import { checkDocumentExpiryAlerts } from "./lib/hr-ops";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -1291,8 +1292,18 @@ async function checkHubTaskDueReminders(): Promise<void> {
 }
 
 let lastSlaCheck = 0;
+let lastDocExpiryCheck = 0;
 
 async function tick() {
+  // Vencimiento de documentos de ficha: cada 6 h basta (dedupe por marcador en DB).
+  if (Date.now() - lastDocExpiryCheck >= 6 * 60 * 60 * 1000) {
+    lastDocExpiryCheck = Date.now();
+    try {
+      await checkDocumentExpiryAlerts();
+    } catch (err: any) {
+      console.error("[Scheduler] checkDocumentExpiryAlerts failed:", err?.message || err);
+    }
+  }
   await processScheduledVideos();
   // SLA por etapa: como máximo cada 10 minutos; dedupe por episodio en DB.
   if (Date.now() - lastSlaCheck >= 10 * 60 * 1000) {

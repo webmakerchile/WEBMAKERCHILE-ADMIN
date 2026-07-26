@@ -22,6 +22,7 @@ const TYPE_META: Record<string, { label: string; icon: typeof Activity }> = {
   task: { label: "Tarea", icon: ClipboardList },
   ticket: { label: "Ticket", icon: MessageSquare },
   goal: { label: "Meta", icon: Flag },
+  persona: { label: "Persona", icon: Activity },
   video: { label: "Video", icon: Film },
   contract: { label: "Contrato", icon: FileText },
   project: { label: "Proyecto", icon: FolderKanban },

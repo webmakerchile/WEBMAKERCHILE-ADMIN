@@ -4,6 +4,7 @@ import { employeeProfiles, users } from "@workspace/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { canManagePeople, normalizeRole } from "@workspace/roles";
 import { z } from "zod";
+import { assignOnboarding } from "./ops";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,8 @@ const profileSchema = z.object({
   emergencyPhone: z.string().trim().max(40).default(""),
   documentsUrl: z.string().trim().max(500).default(""),
   notes: z.string().trim().max(4000).default(""),
+  /** Días hábiles de vacaciones al año (saldo anual). */
+  vacationDaysPerYear: z.coerce.number().int().min(0).max(90).default(15),
 });
 
 router.get("/hr/people", async (req: Request, res: Response) => {
@@ -166,6 +169,12 @@ router.patch("/hr/people/:userId/approval", async (req: Request, res: Response) 
     .set({ approvalStatus: status })
     .where(eq(users.id, userId))
     .returning({ id: users.id, email: users.email, approvalStatus: users.approvalStatus });
+
+  // Al aprobar el acceso, se asigna solo el onboarding según su rol (si no
+  // tiene uno). Fallo aquí no bloquea la aprobación.
+  if (row?.approvalStatus === "approved") {
+    await assignOnboarding(userId, me.id).catch((err) => console.error("[hr approval] assignOnboarding failed", err));
+  }
 
   res.json(row);
 });

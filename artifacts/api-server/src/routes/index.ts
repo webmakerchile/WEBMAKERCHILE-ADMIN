@@ -27,6 +27,8 @@ import credentialsRouter from "./credentials";
 import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hrRouter from "./hr";
+import hrOpsRouter from "./hr/ops";
+import hrSelfRouter from "./hr/self";
 import ticketsRouter from "./tickets";
 import goalsRouter from "./goals";
 import hubTasksRouter from "./hub/tasks";
@@ -85,6 +87,11 @@ router.use(calendarRouter);
 // supervisión (overview/historial de terceros) se gatea por rol en el router.
 router.use(jornadaRouter);
 
+// RRHH self-service (vacaciones/permisos, onboarding y evaluaciones PROPIAS):
+// para todas las áreas aprobadas — por eso va fuera de los gates de área,
+// igual que jornada. La gestión de terceros vive en hrOpsRouter (/hr/*).
+router.use(hrSelfRouter);
+
 // Bitácora de actividad: la propia para todos; la global gateada por rol
 // dentro del router (dirección/ventas/rrhh) — mismo patrón que jornada.
 router.use(activityRouter);
@@ -106,6 +113,7 @@ router.use(hubPlaybooksRouter);
 router.use(slaRouter);
 router.use(hubRouter);
 router.use(hrRouter);
+router.use(hrOpsRouter);
 router.use(ticketsRouter);
 router.use(goalsRouter);
 

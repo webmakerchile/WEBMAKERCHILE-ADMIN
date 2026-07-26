@@ -7,6 +7,7 @@ import { useAuth } from "@/App";
 import { PushEnableBanner } from "@/components/push-enable-banner";
 import { JornadaCard } from "@/components/jornada-card";
 import { ActivityFeed } from "@/components/activity-feed";
+import { LeaveCard, OnboardingCard } from "@/components/mi-rrhh";
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 type Priority = "crítica" | "alta" | "media" | "baja";
@@ -361,6 +362,10 @@ export default function MiDiaPage() {
         <PushEnableBanner />
 
         <JornadaCard />
+
+        <OnboardingCard />
+
+        <LeaveCard />
 
         <SlaBreachesCard />
 

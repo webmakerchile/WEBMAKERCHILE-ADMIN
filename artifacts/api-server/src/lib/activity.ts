@@ -11,7 +11,7 @@ import { stripMoneyFromText } from "./contract-view";
  * error se loguea a consola y se traga.
  */
 
-export type ActivityEntityType = "task" | "ticket" | "goal" | "video" | "contract" | "project";
+export type ActivityEntityType = "task" | "ticket" | "goal" | "video" | "contract" | "project" | "persona";
 export type ActivityAction =
   | "created"
   | "stage_change"

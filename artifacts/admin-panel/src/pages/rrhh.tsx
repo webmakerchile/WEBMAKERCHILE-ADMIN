@@ -13,6 +13,7 @@ import {
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
 import { useAsistencia, formatMinutes, type AsistenciaMiembro } from "@/lib/asistencia";
+import { EvaluationsManager, LeaveManager, OnboardingManager, PersonDocuments } from "@/components/rrhh-ops";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -45,6 +46,7 @@ interface Profile {
   emergencyPhone: string;
   documentsUrl: string;
   notes: string;
+  vacationDaysPerYear: number;
 }
 
 interface Person {
@@ -64,6 +66,7 @@ const emptyProfile = (): Profile => ({
   position: "", area: "", contractType: "indefinido", employmentStatus: "activo",
   startDate: "", endDate: "", monthlySalary: null, phone: "",
   emergencyContact: "", emergencyPhone: "", documentsUrl: "", notes: "",
+  vacationDaysPerYear: 15,
 });
 
 const fmtCLP = (n: number) => "$" + Math.round(n).toLocaleString("es-CL");
@@ -324,6 +327,13 @@ export default function RrhhPage() {
               </CardContent>
             </Card>
 
+            <LeaveManager />
+
+            <div className="grid lg:grid-cols-2 gap-4 items-start">
+              <OnboardingManager people={equipo} />
+              <EvaluationsManager people={equipo} />
+            </div>
+
             <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-2 sm:p-4">
                 <p className="text-sm font-semibold mb-3 px-2 sm:px-0">Equipo ({equipo.length})</p>
@@ -409,6 +419,11 @@ export default function RrhhPage() {
                                 {field("Teléfono", <input className={inputClass} value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="+56 9 ..." />)}
                                 {field("Contacto de emergencia", <input className={inputClass} value={draft.emergencyContact} onChange={e => setDraft(d => ({ ...d, emergencyContact: e.target.value }))} />)}
                                 {field("Teléfono de emergencia", <input className={inputClass} value={draft.emergencyPhone} onChange={e => setDraft(d => ({ ...d, emergencyPhone: e.target.value }))} />)}
+                                {field("Días de vacaciones al año", (
+                                  <input type="number" min={0} max={90} className={inputClass}
+                                    value={draft.vacationDaysPerYear}
+                                    onChange={e => setDraft(d => ({ ...d, vacationDaysPerYear: Math.max(0, Number(e.target.value) || 0) }))} />
+                                ))}
                               </div>
                               {field("Carpeta de documentos (Drive)", <input className={inputClass} value={draft.documentsUrl} onChange={e => setDraft(d => ({ ...d, documentsUrl: e.target.value }))} placeholder="https://drive.google.com/..." />)}
                               {field("Notas internas", (
@@ -416,6 +431,9 @@ export default function RrhhPage() {
                                   value={draft.notes} onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
                                   placeholder="Vacaciones, evaluaciones, acuerdos…" />
                               ))}
+                              <div className="pt-2 border-t border-foreground/10">
+                                <PersonDocuments userId={p.id} />
+                              </div>
                               <div className="flex gap-2">
                                 <Button size="sm" disabled={saveProfile.isPending}
                                   onClick={() => saveProfile.mutate({ userId: p.id, profile: draft })}>
