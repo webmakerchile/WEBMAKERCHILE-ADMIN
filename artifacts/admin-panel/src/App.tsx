@@ -8,6 +8,7 @@ import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
+import { canAccessRoute, roleHome, type TeamRole } from "@workspace/roles";
 import { useEffect } from "react";
 
 // Eager: dashboard is the landing page; login pages are tiny and unauthed.
@@ -36,6 +37,9 @@ const EquipoPage = lazy(() => import("./pages/equipo"));
 const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
 const AjustesPage = lazy(() => import("./pages/ajustes"));
 const EjecutivoPage = lazy(() => import("./pages/ejecutivo"));
+const ReportesPage = lazy(() => import("./pages/reportes"));
+const VentasPage = lazy(() => import("./pages/ventas"));
+const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -88,7 +92,7 @@ type AuthUser = {
   name: string | null;
   picture: string | null;
   role: string;
-  teamRole?: string;
+  teamRole?: TeamRole;
   approvalStatus?: string;
 };
 
@@ -106,7 +110,24 @@ function PageLoader() {
   );
 }
 
+/**
+ * Envuelve cada ruta con su error boundary y el control de acceso por rol:
+ * si el rol del usuario no puede ver esta ruta, lo mandamos a su pantalla de
+ * inicio en vez de mostrarle una página vacía o un 404.
+ */
 function RouteShell({ name, children }: { name: string; children: ReactNode }) {
+  const user = useAuth();
+  const [location, setLocation] = useLocation();
+  const isSuperAdmin = user?.role === "superadmin";
+  const allowed = !user || canAccessRoute(user.teamRole, location, isSuperAdmin);
+  const home = roleHome(user?.teamRole, isSuperAdmin);
+
+  useEffect(() => {
+    if (!allowed && location !== home) setLocation(home, { replace: true });
+  }, [allowed, location, home, setLocation]);
+
+  if (!allowed) return <PageLoader />;
+
   return (
     <RouteErrorBoundary routeName={name}>
       <Suspense fallback={<PageLoader />}>{children}</Suspense>
@@ -287,6 +308,15 @@ function Router() {
       </Route>
       <Route path="/ejecutivo">
         <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
+      </Route>
+      <Route path="/reportes">
+        <RouteShell name="reportes"><ReportesPage /></RouteShell>
+      </Route>
+      <Route path="/ventas">
+        <RouteShell name="ventas"><VentasPage /></RouteShell>
+      </Route>
+      <Route path="/mis-tareas">
+        <RouteShell name="mis-tareas"><MisTareasPage /></RouteShell>
       </Route>
       <Route component={NotFound} />
     </Switch>

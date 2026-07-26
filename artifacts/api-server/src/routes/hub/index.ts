@@ -1,7 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { hubState } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { hubState, users } from "@workspace/db/schema";
+import { asc, eq } from "drizzle-orm";
+import { hubScopesFor, normalizeRole } from "@workspace/roles";
 import { google } from "googleapis";
 import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
@@ -84,6 +85,59 @@ router.patch("/hub", async (req: Request, res: Response) => {
     .returning();
 
   res.json({ data: row!.data });
+});
+
+/* ------------------------------------------------------------------
+   Vista de solo lectura del Hub para el resto del equipo.
+
+   El Hub Ejecutivo vive en un blob por usuario (el de la dirección). Los
+   demás roles necesitan ver su parte (ventas: contratos/clientes/reuniones,
+   programador: proyectos/tareas, contador: contratos) sin poder escribir
+   sobre el tablero — así no hay dos personas pisándose el blob.
+   ------------------------------------------------------------------ */
+
+/** Dueño del tablero: el superadmin, o en su defecto el CEO más antiguo. */
+async function findHubOwner() {
+  const rows = await db
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role, teamRole: users.teamRole })
+    .from(users)
+    .orderBy(asc(users.id));
+  return rows.find(u => u.role === "superadmin")
+    ?? rows.find(u => normalizeRole(u.teamRole) === "ceo")
+    ?? null;
+}
+
+router.get("/hub/owner", async (req: Request, res: Response) => {
+  const user = getUser(req);
+  const [meRow] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+  if (!meRow) { res.status(401).json({ error: "No autenticado" }); return; }
+
+  const role = normalizeRole(meRow.teamRole, meRow.role === "superadmin");
+  const scopes = hubScopesFor(role);
+  if (scopes.length === 0) {
+    res.status(403).json({ error: "Tu rol no tiene acceso a los datos del Hub" });
+    return;
+  }
+
+  const owner = await findHubOwner();
+  if (!owner) { res.json({ data: {}, owner: null, updatedAt: null, scopes }); return; }
+
+  const [row] = await db
+    .select()
+    .from(hubState)
+    .where(eq(hubState.userId, owner.id))
+    .limit(1);
+
+  const full = (row?.data ?? {}) as Record<string, unknown>;
+  const data: Record<string, unknown> = {};
+  for (const scope of scopes) data[scope] = Array.isArray(full[scope]) ? full[scope] : [];
+
+  res.json({
+    data,
+    owner: { name: owner.name, email: owner.email },
+    updatedAt: row?.updatedAt ?? null,
+    scopes,
+  });
 });
 
 router.post("/hub/contracts/extract-pdf", async (req: Request, res: Response) => {

@@ -72,6 +72,17 @@ artifacts-monorepo/
   - **Descripciones (Carruseles)**: Multi-slide carrusel generation with per-slide retry, ZIP download, granular regenerate controls
   - **Historias (Stories 9:16)**: Single frame ("única") or narrative series (2–5 frames). Series use role-based structure: 2=[hook,cta], 3=[hook,desarrollo,cta], 4=[hook,problema,solucion,cta], 5=[hook,contexto,problema,solucion,cta]. Each role has its own pose+visualHint and CTA style (microCTA "Sigue viendo" for intermediate frames, conversion CTA with WhatsApp for final). "Auto" mode calls OpenAI gpt-4.1 (`/community/historias/detectar-formato`) to recommend formato + cantidad based on the concept (e.g., "N tips" → N+2 frames). Frames are generated in parallel via `Promise.allSettled` so partial failures surface as per-frame retry buttons. UI shows carousel thumbnail strip with role labels, frame counter pill (N/Total) rendered top-right, ZIP download with textos.txt.
 
+### Roles del equipo y secciones por área
+Fuente única de verdad en `lib/roles` (`@workspace/roles`, paquete sin dependencias que consumen API y panel). Siete roles: `ceo`, `editora`, `social`, `ventas`, `dev`, `marketing`, `contador`. Cada `RoleDef` declara `home` (pantalla de entrada), `routes` (rutas permitidas, `"*"` = todas), `canManageTeam`, `canReview` y `hubScopes` (colecciones del Hub que puede leer).
+
+- **Normalización**: `normalizeRole(raw, isSuperAdmin)` mapea los roles antiguos (`reviewer` → `ceo`, `editor` → `editora`) y **fuerza `ceo` cuando `users.role === "superadmin"`** — salvaguarda para que el dueño nunca quede fuera del panel. `/api/auth/me` y `/api/team/members` devuelven siempre el rol normalizado.
+- **Backend**: `PATCH /api/team/members/:id/role` acepta los 7 roles (rechaza degradar al superadmin) y exige `canManageTeam`; las decisiones de revisión usan `canReview` en vez del antiguo `teamRole === "reviewer"`.
+- **Frontend**: `RouteShell` (App.tsx) redirige a `roleHome` si el rol no puede ver la ruta actual; el menú lateral, la barra inferior móvil y el FAB del Hub se filtran con `canAccessRoute`. `/equipo` asigna rol por persona y documenta qué ve cada uno.
+- **`GET /api/hub/owner`**: vista de **solo lectura** del blob del Hub de la dirección (superadmin, o el CEO más antiguo), recortada a los `hubScopes` del rol que consulta — 403 si el rol no tiene ninguno. Permite que ventas/programación/contabilidad vean datos reales sin poder pisar el blob del CEO (que es de un único escritor).
+- **Páginas por área**: `/reportes` (contador + CEO: KPIs de contratos, neto/IVA, facturación por mes, vencimientos, export CSV), `/ventas` (ventas + CEO: pipeline, cartera, reuniones, PDFs) y `/mis-tareas` (dev + CEO: tablero por etapa y avance de proyectos). Editora, redes y marketing no necesitan página nueva: su sección es el panel existente recortado por rol.
+- Tests: `src/lib/roles.test.ts` (invariantes de rutas/permisos) y `src/routes/hub/owner.test.ts` (recorte por rol).
+- **Pendiente**: escritura multiusuario sobre el Hub (hoy el blob tiene un solo escritor, la dirección); requiere control de concurrencia antes de dejar que otros roles editen.
+
 ### Hub Ejecutivo (`/ejecutivo`)
 Workspace ejecutivo autocontenido (`admin-panel/src/pages/ejecutivo.tsx` + `ejecutivo.css`) con pestañas Dashboard / Proyectos (Kanban·Lista·Scrumban) / Clientes / Reuniones / Notas / Contratos / Servicios / Drive. Todo el estado vive en un único blob JSON por usuario (`hub_state.data`, máx 2 MB) expuesto por `GET/PATCH /api/hub`, con espejo en localStorage (`wm_hub_v3`).
 

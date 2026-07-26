@@ -13,6 +13,9 @@
       "path": "./lib/api-zod"
     },
     {
+      "path": "./lib/roles"
+    },
+    {
       "path": "./lib/integrations-gemini-ai"
     }
   ]

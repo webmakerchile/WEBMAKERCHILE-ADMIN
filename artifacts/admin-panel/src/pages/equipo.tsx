@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/App";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Users2, ShieldCheck, Pencil, Loader2 } from "lucide-react";
+import { ROLES, TEAM_ROLES, canManageTeam, normalizeRole, type TeamRole } from "@workspace/roles";
+import { Users2, ShieldCheck, Loader2 } from "lucide-react";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -15,7 +15,18 @@ type Member = {
   email: string;
   name: string | null;
   picture: string | null;
-  teamRole: "editor" | "reviewer";
+  teamRole: TeamRole;
+};
+
+/** Color del chip por rol, para distinguir las áreas de un vistazo. */
+const ROLE_STYLE: Record<TeamRole, string> = {
+  ceo: "bg-primary/10 text-primary border-primary/20",
+  editora: "bg-purple-500/10 text-purple-400 border-purple-500/20",
+  social: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+  ventas: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+  dev: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  marketing: "bg-pink-500/10 text-pink-400 border-pink-500/20",
+  contador: "bg-teal-500/10 text-teal-400 border-teal-500/20",
 };
 
 export default function EquipoPage() {
@@ -34,7 +45,7 @@ export default function EquipoPage() {
   });
 
   const updateRole = useMutation({
-    mutationFn: async ({ id, teamRole }: { id: number; teamRole: "editor" | "reviewer" }) => {
+    mutationFn: async ({ id, teamRole }: { id: number; teamRole: TeamRole }) => {
       const r = await fetch(`${API_BASE}/team/members/${id}/role`, {
         method: "PATCH",
         credentials: "include",
@@ -57,7 +68,7 @@ export default function EquipoPage() {
     onSettled: () => setBusyId(null),
   });
 
-  const canEdit = me?.teamRole === "reviewer";
+  const canEdit = canManageTeam(me?.teamRole, me?.role === "superadmin");
 
   return (
     <Layout>
@@ -65,13 +76,13 @@ export default function EquipoPage() {
         <header>
           <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Equipo</h1>
           <p className="text-muted-foreground text-xs sm:text-base">
-            Gestiona quién puede crear contenido y quién puede aprobarlo antes de publicarse.
+            Cada persona entra directo a su área y solo ve las secciones de su rol.
           </p>
         </header>
 
         {!canEdit && (
           <div className="rounded-xl border border-foreground/10 bg-amber-500/10 text-amber-400 px-4 py-3 text-sm">
-            Solo los usuarios con rol <strong>Revisor</strong> pueden cambiar los roles del equipo.
+            Solo la <strong>dirección</strong> puede cambiar los roles del equipo.
           </div>
         )}
 
@@ -89,10 +100,11 @@ export default function EquipoPage() {
             ) : (
               <ul className="divide-y divide-foreground/5">
                 {members.map((m) => {
-                  const isReviewer = m.teamRole === "reviewer";
+                  const role = normalizeRole(m.teamRole);
+                  const def = ROLES[role];
                   const isMe = me?.id === m.id;
                   return (
-                    <li key={m.id} className="flex items-center gap-3 px-2 sm:px-3 py-3">
+                    <li key={m.id} className="flex flex-wrap items-center gap-3 px-2 sm:px-3 py-3">
                       {m.picture ? (
                         <img src={m.picture} alt={m.name || ""} className="w-9 h-9 rounded-full border border-foreground/15" referrerPolicy="no-referrer" />
                       ) : (
@@ -100,50 +112,36 @@ export default function EquipoPage() {
                           {(m.name || m.email)[0].toUpperCase()}
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-[10rem]">
                         <p className="text-sm font-medium truncate">
                           {m.name || m.email}
                           {isMe && <span className="text-[10px] text-muted-foreground ml-2">(tú)</span>}
                         </p>
                         <p className="text-[11px] text-muted-foreground truncate">{m.email}</p>
+                        <p className="text-[11px] text-muted-foreground/80 mt-0.5">{def.description}</p>
                       </div>
-                      <Badge
-                        className={
-                          isReviewer
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
-                        }
-                      >
-                        {isReviewer ? (
-                          <>
-                            <ShieldCheck className="w-3 h-3 mr-1" />
-                            Revisor
-                          </>
-                        ) : (
-                          <>
-                            <Pencil className="w-3 h-3 mr-1" />
-                            Editor
-                          </>
-                        )}
+                      <Badge className={ROLE_STYLE[role]}>
+                        {def.canManageTeam && <ShieldCheck className="w-3 h-3 mr-1" />}
+                        {def.label}
                       </Badge>
                       {canEdit && !isMe && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busyId === m.id}
-                          onClick={() => {
-                            setBusyId(m.id);
-                            updateRole.mutate({ id: m.id, teamRole: isReviewer ? "editor" : "reviewer" });
-                          }}
-                        >
-                          {busyId === m.id ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : isReviewer ? (
-                            "Quitar revisor"
-                          ) : (
-                            "Hacer revisor"
-                          )}
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={role}
+                            disabled={busyId === m.id}
+                            onChange={(e) => {
+                              setBusyId(m.id);
+                              updateRole.mutate({ id: m.id, teamRole: e.target.value as TeamRole });
+                            }}
+                            className="h-8 rounded-lg border border-foreground/15 bg-card/60 px-2 text-xs"
+                            aria-label={`Rol de ${m.name || m.email}`}
+                          >
+                            {TEAM_ROLES.map((r) => (
+                              <option key={r} value={r}>{ROLES[r].label}</option>
+                            ))}
+                          </select>
+                          {busyId === m.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
+                        </div>
                       )}
                     </li>
                   );
@@ -153,10 +151,28 @@ export default function EquipoPage() {
           </CardContent>
         </Card>
 
-        <p className="text-xs text-muted-foreground">
-          Los <strong>editores</strong> pueden crear y editar videos. Los <strong>revisores</strong> además
-          pueden aprobar videos en revisión y asignar roles.
-        </p>
+        <Card className="bg-card/40 border-foreground/10">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-3">Qué ve cada rol</p>
+            <ul className="space-y-2">
+              {TEAM_ROLES.map((r) => {
+                const def = ROLES[r];
+                return (
+                  <li key={r} className="flex flex-wrap items-baseline gap-2 text-xs">
+                    <Badge className={ROLE_STYLE[r]}>{def.label}</Badge>
+                    <span className="text-muted-foreground">
+                      entra en <code className="text-foreground">{def.home}</code>
+                      {def.routes.includes("*")
+                        ? " · acceso completo"
+                        : ` · ${def.routes.length} secciones`}
+                      {def.canReview && " · puede aprobar contenido"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
       </div>
     </Layout>
   );
