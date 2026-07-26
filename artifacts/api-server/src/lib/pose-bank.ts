@@ -73,6 +73,17 @@ export function detectarEmocion(tema: string): Emocion | null {
   return null;
 }
 
+/** Poses compatibles con un encuadre de PRIMER PLANO (cabeza y hombros):
+ *  gestos que viven cerca de la cara — nada de manos en caderas, brazos al
+ *  cielo ni cuerpo 3/4 señalando, que exigen ver el torso completo. */
+export const POSES_PRIMER_PLANO: PoseId[] = [
+  "shocked_front",
+  "thinking_hand_chin",
+  "worried_head_hold",
+  "whispering_secret",
+  "head_tilt_curious",
+];
+
 // Memoria FIFO en proceso (se reinicia con cada restart del server, suficiente
 // para evitar repetición dentro de una sesión normal de creación de contenido).
 const MEMORIA_MAX = 8;
@@ -84,11 +95,12 @@ export interface PoseSeleccionada {
   emocion: Emocion | null;
 }
 
-export function seleccionarPosePortada(tema: string): PoseSeleccionada {
+export function seleccionarPosePortada(tema: string, permitidas?: readonly PoseId[]): PoseSeleccionada {
   const emocion = detectarEmocion(tema);
-  const idsCompatibles = emocion
-    ? POSES_POR_EMOCION[emocion]
-    : PORTADA_POSES.map(p => p.id);
+  const porEmocion = emocion ? POSES_POR_EMOCION[emocion] : PORTADA_POSES.map(p => p.id);
+  // Si la plantilla restringe el encuadre, ese filtro manda sobre la emoción.
+  const filtradas = permitidas ? porEmocion.filter(id => permitidas.includes(id)) : porEmocion;
+  const idsCompatibles = filtradas.length > 0 ? filtradas : [...(permitidas ?? porEmocion)];
 
   // Excluir las usadas recientemente. Si todas están en memoria, igual elige.
   const disponibles = idsCompatibles.filter(id => !ultimasPosesPortada.includes(id));

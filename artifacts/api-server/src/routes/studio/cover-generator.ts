@@ -22,9 +22,9 @@ export async function generateCoverImage(videoTitle: string, videoDescription: s
   console.log(`[CoverGen] Generando portada para: "${videoTitle}"`);
 
   const tema = (videoDescription || videoTitle).trim();
-  const { direccion, prompt } = prepararPortada(tema);
+  const { direccion, plantilla, estiloTitular, prompt } = prepararPortada(tema);
   const illustration = await generateFoxIllustration(prompt);
-  const finalImage = await composeVerticalCover(illustration, videoTitle, direccion);
+  const finalImage = await composeVerticalCover(illustration, videoTitle, direccion, plantilla, estiloTitular);
 
   const mimeType = "image/png";
   await ensureCoversDir();

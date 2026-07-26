@@ -5,18 +5,24 @@ import {
   prepararMiniaturaYoutube,
   expresionYoutuber,
   validarFotoPersona,
+  validarFotosPersona,
   PERSON_IMG_MAX_BYTES,
+  MAX_FOTOS_PERSONA,
   YT_WIDTH,
   YT_HEIGHT,
 } from "./youtube-cover.js";
 import { DIRECCIONES_PORTADA } from "./cover-style.js";
+import { obtenerEstiloTitular } from "./title-style.js";
+import { obtenerPlantilla } from "./thumbnail-templates.js";
+import { POSES_PRIMER_PLANO } from "./pose-bank.js";
 
 const dir = DIRECCIONES_PORTADA[0]!;
+const plantillaClasica = obtenerPlantilla("yt_lateral_izquierda")!;
 
 describe("buildYoutubeThumbnailPrompt", () => {
   it("siempre exige encuadre horizontal 16:9 y cero texto", () => {
     for (const conPersona of [true, false]) {
-      const p = buildYoutubeThumbnailPrompt("tema de prueba", dir, "detalle x", { conPersona });
+      const p = buildYoutubeThumbnailPrompt("tema de prueba", dir, "detalle x", { conPersona, plantilla: plantillaClasica });
       expect(p).toContain("HORIZONTAL");
       expect(p).toContain("16:9");
       expect(p).toContain("SIN TEXTO");
@@ -25,7 +31,7 @@ describe("buildYoutubeThumbnailPrompt", () => {
   });
 
   it("con persona: exige rostro idéntico y fotorrealismo, sin cartoonizar", () => {
-    const p = buildYoutubeThumbnailPrompt("subimos los precios", dir, "detalle", { conPersona: true });
+    const p = buildYoutubeThumbnailPrompt("subimos los precios", dir, "detalle", { conPersona: true, plantilla: plantillaClasica });
     expect(p).toContain("PERSONA REAL DE LA FOTO ADJUNTA");
     expect(p).toContain("IDÉNTICO");
     expect(p).toContain("FOTORREALISTA");
@@ -34,9 +40,22 @@ describe("buildYoutubeThumbnailPrompt", () => {
     expect(p).not.toContain("ZORRO WEBI");
   });
 
+  it("con varias fotos: el bloque de identidad exige usar todos los ángulos", () => {
+    const p = buildYoutubeThumbnailPrompt("mi tema", dir, "detalle", {
+      conPersona: true,
+      plantilla: plantillaClasica,
+      numFotosPersona: 3,
+    });
+    expect(p).toContain("LAS FOTOS ADJUNTAS");
+    expect(p).toContain("las 3 fotos adjuntas");
+    expect(p).toContain("TODOS los ángulos");
+    expect(p).toContain("manda la PRIMERA foto");
+  });
+
   it("sin persona: protagonista es Webi flat cartoon con pose obligatoria", () => {
     const p = buildYoutubeThumbnailPrompt("tips de diseño", dir, "detalle", {
       conPersona: false,
+      plantilla: plantillaClasica,
       pose: { id: "senalando_arriba" as any, descripcion: "señalando hacia arriba con entusiasmo", emocion: null },
     });
     expect(p).toContain("ZORRO WEBI");
@@ -45,14 +64,23 @@ describe("buildYoutubeThumbnailPrompt", () => {
     expect(p).not.toContain("PERSONA REAL DE LA FOTO ADJUNTA");
   });
 
-  it("reserva la franja izquierda despejada para el titular", () => {
-    const p = buildYoutubeThumbnailPrompt("tema", dir, "detalle", { conPersona: true });
+  it("la plantilla clásica reserva la franja izquierda despejada", () => {
+    const p = buildYoutubeThumbnailPrompt("tema", dir, "detalle", { conPersona: true, plantilla: plantillaClasica });
     expect(p).toContain("FRANJA IZQUIERDA");
     expect(p).toContain("DESPEJADA");
   });
 
+  it("la plantilla espejo reserva la franja derecha", () => {
+    const p = buildYoutubeThumbnailPrompt("tema", dir, "detalle", {
+      conPersona: true,
+      plantilla: obtenerPlantilla("yt_lateral_derecha")!,
+    });
+    expect(p).toContain("FRANJA DERECHA");
+    expect(p).toContain("MITAD IZQUIERDA");
+  });
+
   it("mantiene las reglas anti-sticker y utilería física", () => {
-    const p = buildYoutubeThumbnailPrompt("tema", dir, "detalle", { conPersona: false });
+    const p = buildYoutubeThumbnailPrompt("tema", dir, "detalle", { conPersona: false, plantilla: plantillaClasica });
     expect(p).toContain("NO STICKERS");
     expect(p).toContain("NUNCA flotando");
     expect(p).toContain("flechas, signos, corazones");
@@ -61,6 +89,7 @@ describe("buildYoutubeThumbnailPrompt", () => {
   it("incluye la utilería y el estilo extra pedidos por el usuario", () => {
     const p = buildYoutubeThumbnailPrompt("tema", dir, "detalle", {
       conPersona: true,
+      plantilla: plantillaClasica,
       utileria: "un trofeo dorado, una torta con velas",
       extraEstilo: "ambiente festivo",
     });
@@ -94,11 +123,41 @@ describe("prepararMiniaturaYoutube", () => {
     expect(prep.pose).not.toBeNull();
     expect(prep.prompt).toContain("POSE Y EXPRESIÓN OBLIGATORIA");
   });
+
+  it("respeta plantilla y estilo tipográfico fijados", () => {
+    const prep = prepararMiniaturaYoutube("mi tema", null, {
+      conPersona: true,
+      plantillaId: "yt_cara_gigante",
+      estiloTitularId: "neon",
+    });
+    expect(prep.plantilla.id).toBe("yt_cara_gigante");
+    expect(prep.estiloTitular.id).toBe("neon");
+    expect(prep.prompt).toContain("CARA GIGANTE");
+  });
+
+  it("cara gigante con Webi solo usa poses de cabeza/hombros", () => {
+    for (let i = 0; i < 20; i++) {
+      const prep = prepararMiniaturaYoutube("celebramos un gran éxito con brazos arriba", null, {
+        conPersona: false,
+        plantillaId: "yt_cara_gigante",
+      });
+      expect(prep.pose).not.toBeNull();
+      expect(POSES_PRIMER_PLANO).toContain(prep.pose!.id);
+    }
+  });
+
+  it("una plantillaId vertical cae en rotación de youtube", () => {
+    const prep = prepararMiniaturaYoutube("mi tema", null, {
+      conPersona: false,
+      plantillaId: "v_titular_superior",
+    });
+    expect(prep.plantilla.formato).toBe("youtube");
+  });
 });
 
 describe("buildYoutubeTitleOverlaySvg", () => {
   it("genera un SVG 1280x720 con scrim lateral y el título en mayúsculas", () => {
-    const svg = buildYoutubeTitleOverlaySvg("Cómo duplicar tus ventas", dir).toString();
+    const svg = buildYoutubeTitleOverlaySvg("Cómo duplicar tus ventas", dir, plantillaClasica, obtenerEstiloTitular("impacto")).toString();
     expect(svg).toContain(`width="${YT_WIDTH}"`);
     expect(svg).toContain(`height="${YT_HEIGHT}"`);
     expect(svg).toContain("linearGradient");
@@ -108,15 +167,27 @@ describe("buildYoutubeTitleOverlaySvg", () => {
     expect(svg).not.toContain("**");
   });
 
-  it("alinea el texto a la izquierda (text-anchor start)", () => {
-    const svg = buildYoutubeTitleOverlaySvg("Título de prueba", dir).toString();
-    expect(svg).toContain('text-anchor="start"');
-    expect(svg).not.toContain('text-anchor="middle"');
+  it("plantilla espejo: el scrim nace desde la derecha", () => {
+    const svg = buildYoutubeTitleOverlaySvg("Título de prueba", dir, obtenerPlantilla("yt_lateral_derecha")!, obtenerEstiloTitular("impacto")).toString();
+    expect(svg).toContain('x1="1" y1="0" x2="0" y2="0"');
   });
 
-  it("funciona con todas las direcciones de arte (chips y limpio)", () => {
+  it("plantilla testimonio: dibuja las comillas decorativas", () => {
+    const svg = buildYoutubeTitleOverlaySvg("Cliente feliz", dir, obtenerPlantilla("yt_testimonio")!, obtenerEstiloTitular("placas")).toString();
+    expect(svg).toContain("&#8220;");
+  });
+
+  it("plantilla top número: separa el número inicial y lo dibuja gigante", () => {
+    const svg = buildYoutubeTitleOverlaySvg("5 errores que matan tus ventas", dir, obtenerPlantilla("yt_top_numero")!, obtenerEstiloTitular("titan")).toString();
+    // El número va en su propio bloque con Alfa Slab One; el resto del título sigue.
+    expect(svg).toContain(">5</text>");
+    expect(svg).toContain("ERRORES");
+    expect(svg).toContain("Alfa Slab One");
+  });
+
+  it("funciona con todas las direcciones de arte", () => {
     for (const d of DIRECCIONES_PORTADA) {
-      const svg = buildYoutubeTitleOverlaySvg("Un título cualquiera de prueba", d).toString();
+      const svg = buildYoutubeTitleOverlaySvg("Un título cualquiera de prueba", d, plantillaClasica, obtenerEstiloTitular("impacto")).toString();
       expect(svg).toContain("<svg");
       expect(svg).toContain("</svg>");
     }
@@ -154,6 +225,39 @@ describe("validarFotoPersona", () => {
     const r = validarFotoPersona(grande.toString("base64"));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("8 MB");
+  });
+});
+
+describe("validarFotosPersona (multi-foto)", () => {
+  const pngB64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]).toString("base64");
+  const jpgB64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]).toString("base64");
+
+  it("acepta hasta el máximo de fotos y conserva el orden", () => {
+    const r = validarFotosPersona([pngB64, jpgB64]);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.fotos).toHaveLength(2);
+      expect(r.fotos[0]!.mime).toBe("image/png");
+      expect(r.fotos[1]!.mime).toBe("image/jpeg");
+    }
+  });
+
+  it("rechaza más fotos que el máximo", () => {
+    const r = validarFotosPersona(Array.from({ length: MAX_FOTOS_PERSONA + 1 }, () => pngB64));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(`${MAX_FOTOS_PERSONA}`);
+  });
+
+  it("propaga el error de la foto inválida indicando cuál es", () => {
+    const r = validarFotosPersona([pngB64, "$$$corrupto$$$"]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("Foto 2");
+  });
+
+  it("lista vacía es válida (flujo Webi)", () => {
+    const r = validarFotosPersona([]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.fotos).toHaveLength(0);
   });
 });
 

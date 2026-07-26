@@ -6,9 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CoverDireccionOption } from "./coverDireccionOption";
+import type { CoverEstiloTitularOption } from "./coverEstiloTitularOption";
+import type { CoverPlantillaOption } from "./coverPlantillaOption";
 import type { CoverPoseOption } from "./coverPoseOption";
 
 export interface CoverOptionsResponse {
   direcciones: CoverDireccionOption[];
   poses: CoverPoseOption[];
+  plantillas: CoverPlantillaOption[];
+  estilosTitular: CoverEstiloTitularOption[];
 }

@@ -13,5 +13,7 @@ export interface GenerateCoverBody {
   style?: string;
   direccionId?: string;
   poseId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
   utileria?: string;
 }

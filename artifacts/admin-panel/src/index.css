@@ -1,4 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap');
+/* Fuentes display para las previews de estilos de titular del generador de portadas
+ * (el render real ocurre en el servidor con estas mismas familias empaquetadas). */
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&family=Bebas+Neue&family=Alfa+Slab+One&family=Montserrat:wght@900&display=swap');
 @import "tailwindcss";
 
 @plugin "tailwindcss-animate";

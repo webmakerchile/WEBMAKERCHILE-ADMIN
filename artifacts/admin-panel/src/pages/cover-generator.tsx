@@ -10,6 +10,48 @@ import { motion } from "framer-motion";
 const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
 
 type FormatoPortada = "vertical" | "youtube";
+
+/* Previews CSS de los estilos tipográficos del titular (el render real lo
+ * hace el servidor con estas mismas familias empaquetadas). */
+const PREVIEW_ESTILOS: Record<string, React.CSSProperties> = {
+  impacto: { fontFamily: "'Archivo Black','Arial Black',sans-serif", color: "#fff", WebkitTextStroke: "1.2px #000", textShadow: "2px 2px 0 rgba(0,0,0,.65)" },
+  titan: { fontFamily: "'Anton',Impact,sans-serif", color: "#141414", background: "#FB923C", padding: "0 5px", borderRadius: 3 },
+  slab_3d: { fontFamily: "'Alfa Slab One',serif", color: "#FFF6E3", textShadow: "1px 1px 0 #17110A, 2px 2px 0 #17110A, 3px 3px 0 #17110A" },
+  neon: { fontFamily: "'Bebas Neue',sans-serif", color: "#fff", textShadow: "0 0 5px #FB923C, 0 0 12px #FB923C, 0 0 20px #FB923C" },
+  fuego: { fontFamily: "'Anton',Impact,sans-serif", background: "linear-gradient(180deg,#FFE45C,#FF8A00)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(1px 1px 0 rgba(0,0,0,.7))" },
+  placas: { fontFamily: "'Montserrat',sans-serif", fontWeight: 900, color: "#fff", background: "rgba(8,8,10,.85)", padding: "0 5px", borderRadius: 3 },
+  clasico: { fontFamily: "'Montserrat',sans-serif", fontWeight: 900, color: "#fff", textShadow: "1px 1px 2px rgba(0,0,0,.6)" },
+};
+
+/* Esquema en miniatura de cada plantilla: dónde va el texto (barras naranjas)
+ * y dónde el protagonista (círculo claro). */
+function MiniPlantilla({ id }: { id: string }) {
+  const barra = "rounded-[1px] bg-primary/90";
+  const persona = "rounded-full bg-white/35";
+  const lienzo = id.startsWith("v_")
+    ? "relative w-[22px] h-[38px] rounded-[3px] bg-black/50 border border-white/15 shrink-0 overflow-hidden"
+    : "relative w-[42px] h-[24px] rounded-[3px] bg-black/50 border border-white/15 shrink-0 overflow-hidden";
+  switch (id) {
+    case "yt_lateral_izquierda":
+      return <span className={lienzo}><span className={`absolute left-[4px] top-[6px] w-[14px] h-[3px] ${barra}`} /><span className={`absolute left-[4px] top-[11px] w-[11px] h-[3px] ${barra}`} /><span className={`absolute left-[4px] top-[16px] w-[13px] h-[3px] ${barra}`} /><span className={`absolute right-[4px] top-[5px] w-[13px] h-[13px] ${persona}`} /></span>;
+    case "yt_lateral_derecha":
+      return <span className={lienzo}><span className={`absolute right-[4px] top-[6px] w-[14px] h-[3px] ${barra}`} /><span className={`absolute right-[4px] top-[11px] w-[11px] h-[3px] ${barra}`} /><span className={`absolute right-[4px] top-[16px] w-[13px] h-[3px] ${barra}`} /><span className={`absolute left-[4px] top-[5px] w-[13px] h-[13px] ${persona}`} /></span>;
+    case "yt_cara_gigante":
+      return <span className={lienzo}><span className={`absolute left-[3px] top-[4px] w-[12px] h-[3px] ${barra}`} /><span className={`absolute left-[3px] top-[9px] w-[9px] h-[3px] ${barra}`} /><span className={`absolute right-[2px] top-[2px] w-[19px] h-[19px] ${persona}`} /></span>;
+    case "yt_impacto_inferior":
+      return <span className={lienzo}><span className={`absolute left-[14px] top-[2px] w-[13px] h-[13px] ${persona}`} /><span className={`absolute left-[5px] bottom-[3px] w-[32px] h-[4px] ${barra}`} /></span>;
+    case "yt_testimonio":
+      return <span className={lienzo}><span className="absolute left-[3px] top-[1px] text-[8px] leading-none text-primary/90 font-black">“</span><span className={`absolute left-[4px] top-[10px] w-[13px] h-[3px] ${barra}`} /><span className={`absolute left-[4px] top-[15px] w-[10px] h-[3px] ${barra}`} /><span className={`absolute right-[4px] top-[5px] w-[13px] h-[13px] ${persona}`} /></span>;
+    case "yt_top_numero":
+      return <span className={lienzo}><span className="absolute left-[4px] top-[1px] text-[11px] leading-none text-primary font-black">5</span><span className={`absolute left-[4px] top-[14px] w-[14px] h-[3px] ${barra}`} /><span className={`absolute left-[4px] top-[19px] w-[11px] h-[3px] ${barra}`} /><span className={`absolute right-[4px] top-[5px] w-[13px] h-[13px] ${persona}`} /></span>;
+    case "v_titular_superior":
+      return <span className={lienzo}><span className={`absolute left-[3px] top-[4px] w-[16px] h-[3px] ${barra}`} /><span className={`absolute left-[3px] top-[9px] w-[12px] h-[3px] ${barra}`} /><span className={`absolute left-[5px] bottom-[3px] w-[12px] h-[12px] ${persona}`} /></span>;
+    case "v_titular_inferior":
+      return <span className={lienzo}><span className={`absolute left-[5px] top-[4px] w-[12px] h-[12px] ${persona}`} /><span className={`absolute left-[3px] bottom-[9px] w-[16px] h-[3px] ${barra}`} /><span className={`absolute left-[3px] bottom-[4px] w-[12px] h-[3px] ${barra}`} /></span>;
+    default:
+      return <span className={lienzo} />;
+  }
+}
 type MsgAjuste = { role: "user" | "ia"; text: string };
 type ImagenGenerada = { b64_json: string; mimeType: string };
 
@@ -20,6 +62,10 @@ export default function CoverGeneratorPage() {
   const [style, setStyle] = useState("");
   const [direccionId, setDireccionId] = useState<string | null>(null);
   const [poseId, setPoseId] = useState<string | null>(null);
+  // Plantilla de diseño (composición) y estilo tipográfico del titular:
+  // null = rotación automática para ir intercalando diseños.
+  const [plantillaId, setPlantillaId] = useState<string | null>(null);
+  const [estiloTitularId, setEstiloTitularId] = useState<string | null>(null);
   const [utileria, setUtileria] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(DEFAULT_REFERENCE_URL);
@@ -27,10 +73,12 @@ export default function CoverGeneratorPage() {
   const [customRefBase64, setCustomRefBase64] = useState<string | null>(null);
   const [defaultRefBase64, setDefaultRefBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Foto de la persona protagonista (solo miniaturas de YouTube).
-  const [personPreview, setPersonPreview] = useState<string | null>(null);
-  const [personBase64, setPersonBase64] = useState<string | null>(null);
+  // Fotos de la persona protagonista (solo miniaturas de YouTube): hasta 3
+  // ángulos de LA MISMA persona — más fotos = rostro más fiel.
+  const MAX_FOTOS = 3;
+  const [personFotos, setPersonFotos] = useState<Array<{ preview: string; base64: string }>>([]);
   const personInputRef = useRef<HTMLInputElement>(null);
+  const hayPersona = personFotos.length > 0;
   const [modalAjuste, setModalAjuste] = useState(false);
   const [ajusteTexto, setAjusteTexto] = useState("");
   const [intentos, setIntentos] = useState(0);
@@ -64,6 +112,9 @@ export default function CoverGeneratorPage() {
   // Lo que se muestra: el último ajuste del chat (si existe) o la generación original.
   const imagenMostrada: ImagenGenerada | null = imagenAjustada[formato] ?? activeGen.data ?? null;
   const direccionSeleccionada = coverOptions.data?.direcciones.find((d) => d.id === direccionId) ?? null;
+  const plantillasFormato = coverOptions.data?.plantillas.filter((p) => p.formato === (esYoutube ? "youtube" : "vertical")) ?? [];
+  const plantillaSeleccionada = plantillasFormato.find((p) => p.id === plantillaId) ?? null;
+  const estiloTitularSeleccionado = coverOptions.data?.estilosTitular.find((e) => e.id === estiloTitularId) ?? null;
 
   const cambiarChatTexto = (v: string) => {
     chatTextoRef.current = v;
@@ -119,8 +170,8 @@ export default function CoverGeneratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
   const ajustesActivos = esYoutube
-    ? [direccionId, utileria.trim() || null, style.trim() || null].filter(Boolean).length
-    : [direccionId, poseId, utileria.trim() || null, style.trim() || null, !isDefaultRef ? "ref" : null].filter(Boolean).length;
+    ? [direccionId, plantillaId, estiloTitularId, utileria.trim() || null, style.trim() || null].filter(Boolean).length
+    : [direccionId, poseId, plantillaId, estiloTitularId, utileria.trim() || null, style.trim() || null, !isDefaultRef ? "ref" : null].filter(Boolean).length;
 
   // Refs espejo para leer el valor MÁS RECIENTE cuando vuelve la respuesta de
   // la IA: si el usuario tocó un campo mientras tanto, ese campo no se pisa;
@@ -135,6 +186,10 @@ export default function CoverGeneratorPage() {
   styleRef.current = style;
   const direccionIdRef = useRef(direccionId);
   direccionIdRef.current = direccionId;
+  const plantillaIdRef = useRef(plantillaId);
+  plantillaIdRef.current = plantillaId;
+  const estiloTitularIdRef = useRef(estiloTitularId);
+  estiloTitularIdRef.current = estiloTitularId;
   const formatoRef = useRef(formato);
   formatoRef.current = formato;
   const improveSeqRef = useRef(0);
@@ -148,6 +203,8 @@ export default function CoverGeneratorPage() {
     const sentUtileria = utileria;
     const sentStyle = style;
     const sentDireccion = direccionId;
+    const sentPlantilla = plantillaId;
+    const sentEstiloTitular = estiloTitularId;
     const seq = ++improveSeqRef.current;
     improvingRef.current = true;
     improveIdea.mutate(
@@ -156,7 +213,7 @@ export default function CoverGeneratorPage() {
           title: sentTitle || undefined,
           idea: sentIdea || undefined,
           formato,
-          conPersona: esYoutube ? Boolean(personBase64) : undefined,
+          conPersona: esYoutube ? hayPersona : undefined,
         },
       },
       {
@@ -193,6 +250,14 @@ export default function CoverGeneratorPage() {
             setDireccionId(r.direccionId);
             setSugerido = true;
           }
+          if (r.plantillaId && plantillaIdRef.current === sentPlantilla) {
+            setPlantillaId(r.plantillaId);
+            setSugerido = true;
+          }
+          if (r.estiloTitularId && estiloTitularIdRef.current === sentEstiloTitular) {
+            setEstiloTitularId(r.estiloTitularId);
+            setSugerido = true;
+          }
           if (setSugerido) setShowAdvanced(true);
 
           setToast(
@@ -210,12 +275,16 @@ export default function CoverGeneratorPage() {
     );
   };
 
-  // Si el catálogo cambia y una selección ya no existe, volver a automático.
+  // Si el catálogo cambia (o se cambia de formato) y una selección ya no
+  // aplica, volver a automático. Las plantillas son específicas del formato.
   useEffect(() => {
     if (!coverOptions.data) return;
     if (direccionId && !coverOptions.data.direcciones.some((d) => d.id === direccionId)) setDireccionId(null);
     if (poseId && !coverOptions.data.poses.some((p) => p.id === poseId)) setPoseId(null);
-  }, [coverOptions.data, direccionId, poseId]);
+    const formatoActivo = formato === "youtube" ? "youtube" : "vertical";
+    if (plantillaId && !coverOptions.data.plantillas.some((p) => p.id === plantillaId && p.formato === formatoActivo)) setPlantillaId(null);
+    if (estiloTitularId && !coverOptions.data.estilosTitular.some((e) => e.id === estiloTitularId)) setEstiloTitularId(null);
+  }, [coverOptions.data, direccionId, poseId, plantillaId, estiloTitularId, formato]);
 
   useEffect(() => {
     fetch(DEFAULT_REFERENCE_URL)
@@ -256,20 +325,47 @@ export default function CoverGeneratorPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handlePersonFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPersonPreview(URL.createObjectURL(file));
-      fileToBase64(file).then(b64 => {
-        setPersonBase64(b64.split(",")[1]);
-      });
+  const handlePersonFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (personInputRef.current) personInputRef.current.value = "";
+    if (files.length === 0) return;
+    // Leer TODAS antes de agregar: conserva el orden de selección (la primera
+    // foto es la "principal" del prompt) aunque las lecturas resuelvan fuera
+    // de orden.
+    let nuevas: Array<{ preview: string; base64: string }>;
+    try {
+      nuevas = await Promise.all(
+        files.map(async (file) => ({
+          preview: URL.createObjectURL(file),
+          base64: (await fileToBase64(file)).split(",")[1],
+        })),
+      );
+    } catch {
+      setToast("⚠️ No se pudo leer una de las fotos. Intenta de nuevo.");
+      setTimeout(() => setToast(null), 3500);
+      return;
+    }
+    // Efectos (revocar URLs, toast) FUERA del updater de estado: en StrictMode
+    // los updaters corren dos veces y revocarían/avisarían doble.
+    const espacio = Math.max(0, MAX_FOTOS - personFotos.length);
+    const dentro = nuevas.slice(0, espacio);
+    const descartadas = nuevas.slice(espacio);
+    if (descartadas.length > 0) {
+      for (const f of descartadas) URL.revokeObjectURL(f.preview);
+      setToast(`Máximo ${MAX_FOTOS} fotos — descarté ${descartadas.length} de más`);
+      setTimeout(() => setToast(null), 3500);
+    }
+    if (dentro.length > 0) {
+      setPersonFotos(prev => [...prev, ...dentro].slice(0, MAX_FOTOS));
     }
   };
 
-  const handleRemovePerson = () => {
-    setPersonPreview(null);
-    setPersonBase64(null);
-    if (personInputRef.current) personInputRef.current.value = "";
+  const handleRemovePersonFoto = (index: number) => {
+    setPersonFotos(prev => {
+      const foto = prev[index];
+      if (foto) URL.revokeObjectURL(foto.preview);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleGenerate = async (ajuste?: string) => {
@@ -299,8 +395,10 @@ export default function CoverGeneratorPage() {
             title,
             description: descripcionExtendida || undefined,
             style: style.trim() || undefined,
-            personImageBase64: personBase64 ?? undefined,
+            personImagesBase64: hayPersona ? personFotos.map((f) => f.base64) : undefined,
             direccionId: direccionId ?? undefined,
+            plantillaId: plantillasFormato.some((p) => p.id === plantillaId) ? plantillaId! : undefined,
+            estiloTitularId: estiloTitularId ?? undefined,
             utileria: utileria.trim() || undefined,
           },
         },
@@ -326,6 +424,8 @@ export default function CoverGeneratorPage() {
           referenceImageBase64: base64,
           direccionId: direccionId ?? undefined,
           poseId: poseId ?? undefined,
+          plantillaId: plantillasFormato.some((p) => p.id === plantillaId) ? plantillaId! : undefined,
+          estiloTitularId: estiloTitularId ?? undefined,
           utileria: utileria.trim() || undefined,
         },
       },
@@ -485,35 +585,110 @@ export default function CoverGeneratorPage() {
                   <label className="text-sm font-medium text-foreground flex items-center gap-2">
                     <UserRound className="w-4 h-4 text-red-400" />
                     La persona de la miniatura
-                    <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                    <span className="text-xs text-muted-foreground font-normal">(opcional · hasta {MAX_FOTOS} fotos)</span>
                   </label>
-                  {personPreview ? (
-                    <div className="relative rounded-xl overflow-hidden border border-foreground/10">
-                      <img src={personPreview} alt="Persona de la miniatura" className="w-full h-28 object-cover" />
-                      <button
-                        type="button"
-                        onClick={handleRemovePerson}
-                        className="absolute top-2 right-2 z-10 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
-                      >
-                        <X className="w-4 h-4 text-white" />
-                      </button>
-                      <label className="absolute inset-0 cursor-pointer opacity-0 hover:opacity-100 bg-black/40 flex items-center justify-center transition-opacity">
-                        <span className="text-sm text-white font-medium">Cambiar foto</span>
-                        <input ref={personInputRef} type="file" className="hidden" accept="image/*" onChange={handlePersonFileChange} />
+                  <div className="grid grid-cols-3 gap-2">
+                    {personFotos.map((foto, i) => (
+                      <div key={foto.preview} className="relative rounded-xl overflow-hidden border border-foreground/10 aspect-square">
+                        <img src={foto.preview} alt={`Foto ${i + 1} de la persona`} className="w-full h-full object-cover" />
+                        {i === 0 && (
+                          <span className="absolute bottom-1 left-1 bg-black/70 text-[9px] text-white/90 px-1.5 py-0.5 rounded-full">
+                            Principal
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePersonFoto(i)}
+                          aria-label={`Quitar foto ${i + 1}`}
+                          className="absolute top-1 right-1 z-10 w-6 h-6 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                    {personFotos.length < MAX_FOTOS && (
+                      <label className={`flex flex-col items-center justify-center border-2 border-dashed border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5 rounded-xl cursor-pointer transition-all group aspect-square ${personFotos.length === 0 ? "col-span-3 aspect-auto h-24" : ""}`}>
+                        <Upload className="w-5 h-5 text-muted-foreground group-hover:text-red-400 mb-1 transition-colors" />
+                        <span className="text-xs text-muted-foreground font-medium text-center px-1">
+                          {personFotos.length === 0 ? "Subir tu foto (o la de alguien)" : "Agregar ángulo"}
+                        </span>
+                        <input ref={personInputRef} type="file" className="hidden" accept="image/*" multiple onChange={handlePersonFilesChange} />
                       </label>
-                    </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5 rounded-xl cursor-pointer transition-all group">
-                      <Upload className="w-6 h-6 text-muted-foreground group-hover:text-red-400 mb-1.5 transition-colors" />
-                      <span className="text-sm text-muted-foreground font-medium">Subir tu foto (o la de alguien)</span>
-                    <input ref={personInputRef} type="file" className="hidden" accept="image/*" onChange={handlePersonFileChange} />
-                    </label>
-                  )}
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground/70">
-                    La IA integra a la persona al set con el rostro idéntico y expresión de youtuber. Sin foto, Webi el zorro es el protagonista.
+                    {hayPersona
+                      ? "Sube 2-3 ángulos de LA MISMA persona: la IA usa todos para que el rostro quede idéntico. La primera foto manda."
+                      : "La IA integra a la persona al set con el rostro idéntico y expresión de youtuber. Sin foto, Webi el zorro es el protagonista."}
                   </p>
                 </div>
               )}
+
+              {/* Diseño de la portada: plantilla de composición + tipografía del titular.
+                  En "Automática" ambos rotan solos entre generaciones para intercalar diseños. */}
+              <div className="space-y-4 rounded-xl border border-foreground/10 bg-background/30 p-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Plantilla de diseño</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPlantillaId(null)}
+                      aria-pressed={plantillaId === null}
+                      className={`flex items-center gap-2 px-2 py-2 rounded-lg border text-[11px] font-medium transition text-left ${plantillaId === null ? "border-primary bg-primary/15 text-foreground" : "border-foreground/10 bg-background/40 text-muted-foreground hover:border-foreground/30"}`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 shrink-0 text-primary" />
+                      <span>Automática<span className="block text-[9px] text-muted-foreground">intercala diseños</span></span>
+                    </button>
+                    {plantillasFormato.map((pl) => (
+                      <button
+                        key={pl.id}
+                        type="button"
+                        onClick={() => setPlantillaId(plantillaId === pl.id ? null : pl.id)}
+                        aria-pressed={plantillaId === pl.id}
+                        title={pl.descripcion}
+                        className={`flex items-center gap-2 px-2 py-2 rounded-lg border text-[11px] font-medium transition text-left ${plantillaId === pl.id ? "border-primary bg-primary/15 text-foreground" : "border-foreground/10 bg-background/40 text-muted-foreground hover:border-foreground/30"}`}
+                      >
+                        <MiniPlantilla id={pl.id} />
+                        <span className="truncate">{pl.nombre}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground/70">
+                    {plantillaSeleccionada ? plantillaSeleccionada.descripcion : "Cada generación usa una plantilla distinta para variar el diseño (como los canales grandes)."}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Tipografía del titular</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEstiloTitularId(null)}
+                      aria-pressed={estiloTitularId === null}
+                      className={`flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border transition ${estiloTitularId === null ? "border-primary bg-primary/15" : "border-foreground/10 bg-background/40 hover:border-foreground/30"}`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-primary" />
+                      <span className="text-[9px] font-medium text-muted-foreground">Automática</span>
+                    </button>
+                    {coverOptions.data?.estilosTitular.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => setEstiloTitularId(estiloTitularId === e.id ? null : e.id)}
+                        aria-pressed={estiloTitularId === e.id}
+                        title={e.descripcion}
+                        className={`flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border transition overflow-hidden bg-[#1a1a1e] ${estiloTitularId === e.id ? "border-primary ring-1 ring-primary" : "border-foreground/10 hover:border-foreground/30"}`}
+                      >
+                        <span className="text-[13px] leading-none whitespace-nowrap" style={PREVIEW_ESTILOS[e.id] ?? {}}>ABC</span>
+                        <span className="text-[9px] font-medium text-muted-foreground truncate w-full text-center">{e.nombre}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground/70">
+                    {estiloTitularSeleccionado ? estiloTitularSeleccionado.descripcion : "Rota entre los estilos más impactantes; elige uno para fijarlo."}
+                  </p>
+                </div>
+              </div>
 
               <div className="border border-foreground/10 rounded-xl overflow-hidden">
                 <button
@@ -927,7 +1102,7 @@ export default function CoverGeneratorPage() {
                 onChange={(e) => setAjusteTexto(e.target.value)}
                 autoFocus
                 className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary outline-none min-h-[90px]"
-                placeholder={esYoutube && personBase64 ? "Ej: que la persona sonría más, menos objetos en el set…" : "Ej: que el zorro mire de frente, menos objetos en la mesa…"}
+                placeholder={esYoutube && hayPersona ? "Ej: que la persona sonría más, menos objetos en el set…" : "Ej: que el zorro mire de frente, menos objetos en la mesa…"}
               />
               <div className="flex gap-2 justify-end">
                 <button

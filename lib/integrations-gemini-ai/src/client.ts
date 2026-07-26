@@ -101,12 +101,20 @@ async function generateContentImpl(
     const size: SupportedImageSize = config?.imageSize ?? "1024x1536";
 
     if (imageParts.length > 0) {
-      const ref = imageParts[0].inlineData;
-      const refBuf = Buffer.from(ref.data, "base64");
-      // Respetar el MIME real de la referencia (foto de persona puede ser JPG/WebP).
-      const refMime = ref.mimeType || "image/png";
-      const ext = refMime.includes("jpeg") ? "jpg" : refMime.includes("webp") ? "webp" : "png";
-      const imageFile = await toFile(refBuf, `reference.${ext}`, { type: refMime });
+      // TODAS las referencias viajan al modelo (gpt-image-1 acepta varias
+      // imágenes en edits): varias fotos de la misma persona desde distintos
+      // ángulos mejoran mucho la fidelidad del rostro. La primera es la
+      // referencia principal.
+      const imageFiles = await Promise.all(
+        imageParts.map(async (p, i) => {
+          const refBuf = Buffer.from(p.inlineData.data, "base64");
+          // Respetar el MIME real de la referencia (foto de persona puede ser JPG/WebP).
+          const refMime = p.inlineData.mimeType || "image/png";
+          const ext = refMime.includes("jpeg") ? "jpg" : refMime.includes("webp") ? "webp" : "png";
+          return toFile(refBuf, `reference-${i}.${ext}`, { type: refMime });
+        }),
+      );
+      const image = imageFiles.length === 1 ? imageFiles[0] : imageFiles;
       // "high" hace que gpt-image-1 conserve el rostro/identidad de la foto.
       // Algunos modelos (p. ej. gpt-image-2) rechazan el parámetro con 400:
       // en ese caso se reintenta UNA vez sin él, en vez de fallar toda la
@@ -116,7 +124,7 @@ async function generateContentImpl(
       try {
         resp = await openai.images.edit({
           model,
-          image: imageFile,
+          image,
           prompt,
           size,
           input_fidelity: config?.inputFidelity,
@@ -126,7 +134,7 @@ async function generateContentImpl(
           console.warn(`[gemini-ai] ${model} no soporta input_fidelity; reintento sin el parámetro`);
           resp = await openai.images.edit({
             model,
-            image: imageFile,
+            image,
             prompt,
             size,
           });

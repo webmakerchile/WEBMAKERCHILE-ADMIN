@@ -12,4 +12,6 @@ export interface ImproveCoverIdeaResponse {
   utileria?: string;
   estiloExtra?: string;
   direccionId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
 }

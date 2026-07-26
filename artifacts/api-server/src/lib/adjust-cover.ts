@@ -13,15 +13,15 @@ export type FormatoAjuste = "vertical" | "youtube";
 /* ==================== Prompt de edición ================================== */
 
 export function buildAdjustPrompt(instruction: string, formato: FormatoAjuste): string {
-  const zonaTitular =
-    formato === "youtube"
-      ? "en la franja IZQUIERDA de la imagen"
-      : "en la franja SUPERIOR de la imagen";
+  // Con el sistema de plantillas el titular puede vivir en cualquier zona
+  // (izquierda, derecha, arriba o abajo según la plantilla usada), así que la
+  // regla lo protege esté donde esté. `formato` sigue definiendo el lienzo.
+  void formato;
   return `Edita la imagen adjunta aplicando ÚNICAMENTE el cambio pedido más abajo.
 
 REGLA MAESTRA — TODO LO DEMÁS QUEDA EXACTAMENTE IGUAL (CRÍTICO):
 - Mantén IDÉNTICOS la composición, el encuadre, el personaje o persona (rostro EXACTO), la pose, la ropa, los colores, la iluminación, el fondo y todos los objetos que el cambio no mencione
-- El TEXTO DEL TITULAR que está ${zonaTitular} queda INTACTO: mismas palabras, misma tipografía, mismo tamaño, misma posición y mismos colores. PROHIBIDO tocarlo, moverlo o redibujarlo
+- El TEXTO DEL TITULAR (y cualquier número gigante o comillas decorativas), esté donde esté en la imagen, queda INTACTO: mismas palabras, misma tipografía, mismo tamaño, misma posición y mismos colores. PROHIBIDO tocarlo, moverlo o redibujarlo
 - La imagen trae FRANJAS NEGRAS de relleno en dos bordes: déjalas EXACTAMENTE como están. No las elimines, no las rellenes con contenido y NO reencuadres ni hagas zoom — la escena debe quedar en la misma posición exacta
 - No agregues elementos que no se pidan, no elimines nada que no se pida, no cambies el estilo visual ni el nivel de detalle
 
