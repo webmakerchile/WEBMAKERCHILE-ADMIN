@@ -1,0 +1,60 @@
+CONTEXTO
+Soy el CEO de WebMaker Latam, agencia digital chilena. El panel es admin.webmakerlatam.com.
+Monorepo pnpm: artifacts/api-server (Express + Drizzle + Postgres), artifacts/admin-panel
+(React + Vite + wouter + TanStack Query), lib/roles (fuente única de roles), lib/areas, lib/db.
+Somos 8 roles: CEO, ventas, programador, editora, redes sociales, marketing, contador y RRHH.
+Ya existe: una pantalla propia por rol y con escritura, Hub compartido (contratos, clientes,
+reuniones, proyectos, tareas), tickets entre áreas, metas por período (diaria/semanal/mensual),
+jornada con asistencia verificada por presencia en voz de Discord, fichas laborales, censura de
+montos en el servidor según rol, brief técnico del contrato generado automáticamente, y cobranza
+para el contador.
+OBJETIVO
+Que cada persona pueda trabajar un día completo sin salir de su pantalla y sin preguntarle nada a
+nadie, y que yo pueda supervisar al equipo con datos reales del sistema, no con auto-reportes.
+INVARIANTES QUE NO SE NEGOCIAN
+1. lib/roles es la única fuente de verdad de permisos. Nada de comparar roles como texto crudo.
+2. La confidencialidad se aplica en el servidor, antes de responder: quien no tiene canSeeMoney
+   nunca recibe el dato. Nada de ocultarlo en el frontend.
+3. Todo lo nuevo se conecta con lo que ya existe (tickets, tareas, metas, jornada). Nada de módulos
+   sueltos que no hablen con el resto.
+4. Cada cambio va con tests, typecheck limpio y migración idempotente numerada.
+5. Los datos de supervisión salen del sistema (movimientos reales), nunca de que alguien los escriba.
+SISTEMAS TRANSVERSALES (construir primero, los usan todos)
+A. Bitácora de actividad unificada: quién hizo qué y cuándo, sobre cualquier entidad. Cada persona
+   ve la suya; yo veo la de todos. Es la base de la supervisión.
+B. Handoffs automáticos entre áreas: cuando una etapa termina, el trabajo de la siguiente área
+   aparece solo. Venta cerrada → proyecto + tareas desde el brief. Video aprobado → a la cola de
+   redes con fecha sugerida. Proyecto entregado → ticket de cobranza al contador.
+C. Carga de trabajo por persona: cuánto tiene abierto cada uno, para no asignarle a quien ya está
+   saturado. Visible al asignar.
+D. SLA por etapa: cada estado tiene un tiempo máximo esperado. Al pasarse, avisa al responsable y
+   a mí, con el motivo del atraso.
+E. Cierre de jornada con resumen automático: al cerrar el día, el sistema muestra qué avanzó
+   realmente (tareas movidas, videos, tickets cerrados, metas). Se guarda como historial.
+F. Notificaciones que llegan donde la persona está: dentro del panel y por Discord.
+G. Playbooks: plantillas de proceso por tipo de trabajo. Al crear un proyecto "Sitio Web" se
+   generan sus tareas estándar; lo mismo para una campaña o un video.
+POR ROL
+CEO: torre de control con semáforo por área, alertas de lo que está atrasado o trabado, metas de
+  empresa que bajan a metas por persona, y rentabilidad por proyecto (horas de jornada × costo hora
+  de la ficha, contra lo facturado).
+Ventas: pipeline por etapa con probabilidad y proyección del mes, recordatorios de seguimiento que
+  no dependan de la memoria, alerta de renovación antes del vencimiento del contrato, y comisiones
+  calculadas sobre lo efectivamente cobrado.
+Programador: estimación contra tiempo real por tarea, checklist de QA y de entrega que bloquee el
+  cierre si falta algo, enlaces de ambientes por proyecto, y registro de incidencias post-entrega
+  ligadas al proyecto que las originó.
+Editora: cola con tiempo estimado por pieza, guiones y plantillas reutilizables, versiones del video
+  con su historial de correcciones, y tiempos reales de producción por tipo de pieza.
+Redes: calendario editorial con horarios fijos por red, mejor hora sugerida según las métricas
+  propias, bandeja de comentarios y mensajes por responder, y aviso cuando una cuenta se desconecta.
+Marketing: campañas con objetivo, presupuesto y piezas asociadas; resultado real contra la meta de
+  la campaña; y comparación de copies para saber qué funcionó.
+Contador: flujo de caja proyectado con lo por cobrar y lo por pagar, gastos y remuneraciones,
+  alertas de vencimientos tributarios, y exportables para el F29.
+RRHH: onboarding con checklist por rol, vacaciones y permisos con saldo, evaluación de desempeño
+  alimentada por cumplimiento de metas y asistencia reales, y alertas de documentos por vencer.
+CÓMO QUIERO QUE LO ENTREGUES
+Por fases, cada una funcionando y subida antes de empezar la siguiente. Primero los sistemas
+transversales, después los roles. Si algo es mala idea o se puede resolver más simple, dímelo antes
+de construirlo. Al final de cada fase: qué migración tengo que correr y qué probar yo
