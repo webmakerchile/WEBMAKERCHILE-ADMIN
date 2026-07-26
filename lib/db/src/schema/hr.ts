@@ -42,6 +42,8 @@ export const employeeProfiles = pgTable("employee_profiles", {
   vacationDaysPerYear: integer("vacation_days_per_year").notNull().default(15),
   /** % de comisión sobre lo efectivamente cobrado (solo ejecutivos de venta). */
   commissionPct: real("commission_pct").notNull().default(0),
+  /** Costo hora en CLP para rentabilidad de proyectos. Null = no registrado. */
+  hourlyCost: integer("hourly_cost"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

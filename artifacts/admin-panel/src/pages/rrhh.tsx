@@ -48,6 +48,7 @@ interface Profile {
   notes: string;
   vacationDaysPerYear: number;
   commissionPct: number;
+  hourlyCost: number | null;
 }
 
 interface Person {
@@ -67,7 +68,7 @@ const emptyProfile = (): Profile => ({
   position: "", area: "", contractType: "indefinido", employmentStatus: "activo",
   startDate: "", endDate: "", monthlySalary: null, phone: "",
   emergencyContact: "", emergencyPhone: "", documentsUrl: "", notes: "",
-  vacationDaysPerYear: 15, commissionPct: 0,
+  vacationDaysPerYear: 15, commissionPct: 0, hourlyCost: null,
 });
 
 const fmtCLP = (n: number) => "$" + Math.round(n).toLocaleString("es-CL");
@@ -430,6 +431,13 @@ export default function RrhhPage() {
                                     value={draft.commissionPct}
                                     onChange={e => setDraft(d => ({ ...d, commissionPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }))}
                                     data-testid="input-commission-pct" />
+                                ))}
+                                {field("Costo hora (CLP, para rentabilidad)", (
+                                  <input type="number" min={0} className={inputClass}
+                                    value={draft.hourlyCost ?? ""}
+                                    onChange={e => setDraft(d => ({ ...d, hourlyCost: e.target.value === "" ? null : Math.max(0, Number(e.target.value) || 0) }))}
+                                    placeholder="Sin registrar"
+                                    data-testid="input-hourly-cost" />
                                 ))}
                               </div>
                               {field("Carpeta de documentos (Drive)", <input className={inputClass} value={draft.documentsUrl} onChange={e => setDraft(d => ({ ...d, documentsUrl: e.target.value }))} placeholder="https://drive.google.com/..." />)}

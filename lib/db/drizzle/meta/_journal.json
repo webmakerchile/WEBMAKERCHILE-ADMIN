@@ -183,6 +183,13 @@
       "when": 1786060800000,
       "tag": "0030_sales_tower",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786147200000,
+      "tag": "0031_ceo_tower",
+      "breakpoints": true
     }
   ]
 }

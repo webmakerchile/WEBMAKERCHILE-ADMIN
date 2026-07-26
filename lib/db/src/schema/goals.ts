@@ -14,6 +14,31 @@ import { users } from "./users";
  * evita recalcular rangos en cada consulta y hace que "las metas de esta
  * semana" sea una comparación de texto exacta.
  */
+/**
+ * Metas de empresa: la meta madre de un período que la dirección reparte en
+ * metas por persona (filas de `goals` con `companyGoalId`). El avance
+ * consolidado se calcula al leer, sumando el de las hijas — nunca se guarda
+ * duplicado.
+ */
+export const companyGoals = pgTable("company_goals", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  /** diaria | semanal | mensual */
+  period: text("period").notNull().default("mensual"),
+  /** Ventana concreta: 2026-07-28 | 2026-W31 | 2026-07 */
+  periodKey: text("period_key").notNull(),
+  /** Meta numérica total de la empresa; null = solo cumplir/no cumplir. */
+  target: integer("target"),
+  createdBy: integer("created_by")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  byPeriod: index("company_goals_period_idx").on(t.period, t.periodKey),
+}));
+
 export const goals = pgTable(
   "goals",
   {
@@ -35,6 +60,8 @@ export const goals = pgTable(
     /** Meta numérica opcional: "8 publicaciones". Null = solo cumplir/no cumplir. */
     target: integer("target"),
     progress: integer("progress").notNull().default(0),
+    /** Meta de empresa madre, si esta meta nació de un reparto. */
+    companyGoalId: integer("company_goal_id").references(() => companyGoals.id, { onDelete: "set null" }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

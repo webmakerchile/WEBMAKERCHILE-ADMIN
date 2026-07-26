@@ -64,6 +64,11 @@ const profileSchema = z.object({
   vacationDaysPerYear: z.coerce.number().int().min(0).max(90).default(15),
   /** % de comisión sobre lo cobrado (ejecutivos de venta). */
   commissionPct: z.coerce.number().min(0).max(100).default(0),
+  /** Costo hora en CLP para rentabilidad de proyectos. Null = no registrado. */
+  hourlyCost: z
+    .union([z.null(), z.literal(""), z.coerce.number().int().min(0).max(10_000_000)])
+    .default(null)
+    .transform(v => (v === "" ? null : v)),
 });
 
 router.get("/hr/people", async (req: Request, res: Response) => {
