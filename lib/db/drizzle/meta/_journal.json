@@ -155,6 +155,20 @@
       "when": 1785801600000,
       "tag": "0026_playbooks_handoffs",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1785888000000,
+      "tag": "0027_sla",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1785888100000,
+      "tag": "0028_sla_status_since",
+      "breakpoints": true
     }
   ]
 }

@@ -256,7 +256,7 @@ router.post("/content/videos/:videoId/reviews", async (req, res) => {
     .returning();
   await db
     .update(videos)
-    .set({ workflowStatus: "en_revision", updatedAt: new Date() })
+    .set({ workflowStatus: "en_revision", workflowStatusSince: new Date(), updatedAt: new Date() })
     .where(eq(videos.id, videoId));
 
   if (assignedTo !== me.id) {
@@ -326,7 +326,7 @@ router.post("/content/videos/:videoId/reviews/decision", async (req, res) => {
   const wf = decision === "approve" ? "aprobado" : "borrador";
   await db
     .update(videos)
-    .set({ workflowStatus: wf, updatedAt: new Date() })
+    .set({ workflowStatus: wf, workflowStatusSince: new Date(), updatedAt: new Date() })
     .where(eq(videos.id, videoId));
 
   if (decision === "approve") {

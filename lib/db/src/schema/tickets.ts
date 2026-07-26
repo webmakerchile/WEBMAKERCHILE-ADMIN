@@ -22,6 +22,8 @@ export const tickets = pgTable(
     area: text("area").notNull(),
     /** abierto | en_progreso | en_revision | resuelto | cerrado */
     status: text("status").notNull().default("abierto"),
+    /** Desde cuándo está en el estado actual (para SLA por etapa). */
+    statusSince: timestamp("status_since", { withTimezone: true }).defaultNow().notNull(),
     /** crítica | alta | media | baja */
     priority: text("priority").notNull().default("media"),
     createdBy: integer("created_by")

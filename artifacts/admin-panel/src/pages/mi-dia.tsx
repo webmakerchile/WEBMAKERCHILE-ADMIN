@@ -51,6 +51,95 @@ const STAGE_LABELS: Record<string, string> = {
   done:     "Listo",
 };
 
+interface SlaBreach {
+  id: number;
+  entityType: string;
+  stage: string;
+  stageLabel: string;
+  label: string;
+  notifiedAt: string;
+  reason: string | null;
+  responsible?: { id: number; name: string | null; email: string } | null;
+}
+
+const SLA_TYPE_LABELS: Record<string, string> = {
+  task: "Tarea", ticket: "Ticket", video: "Video", project: "Proyecto", contract: "Contrato",
+};
+
+/** Atrasos de SLA que esperan el motivo del responsable. */
+function SlaBreachesCard() {
+  const queryClient = useQueryClient();
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [sending, setSending] = useState<number | null>(null);
+
+  const { data } = useQuery<{ breaches: SlaBreach[]; isDireccion: boolean }>({
+    queryKey: ["sla-breaches-pending"],
+    queryFn: async () => {
+      const r = await fetch(`${API}/sla/breaches?pending=1`, { credentials: "include" });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    refetchInterval: 5 * 60_000,
+  });
+
+  const breaches = data?.breaches ?? [];
+  if (breaches.length === 0) return null;
+
+  const submit = async (b: SlaBreach) => {
+    const reason = (drafts[b.id] || "").trim();
+    if (reason.length < 3) return;
+    setSending(b.id);
+    try {
+      const r = await fetch(`${API}/sla/breaches/${b.id}/reason`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (r.ok) {
+        setDrafts(d => { const n = { ...d }; delete n[b.id]; return n; });
+        queryClient.invalidateQueries({ queryKey: ["sla-breaches-pending"] });
+      }
+    } finally {
+      setSending(null);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4 space-y-3">
+      <div className="flex items-center gap-2 text-amber-500 font-semibold text-sm">
+        <AlertTriangle className="w-4 h-4" />
+        Atrasos por explicar ({breaches.length})
+      </div>
+      {breaches.map(b => (
+        <div key={b.id} className="space-y-1.5">
+          <div className="text-sm text-foreground">
+            <span className="font-medium">{SLA_TYPE_LABELS[b.entityType] ?? b.entityType}</span> "{b.label}" lleva demasiado en <span className="font-medium">{b.stageLabel}</span>
+            {data?.isDireccion && b.responsible && (
+              <span className="text-muted-foreground"> · responsable: {b.responsible.name || b.responsible.email}</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-sm"
+              placeholder="Motivo del atraso…"
+              value={drafts[b.id] ?? ""}
+              onChange={e => setDrafts(d => ({ ...d, [b.id]: e.target.value }))}
+            />
+            <button
+              className="text-sm px-3 py-1 rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+              disabled={sending === b.id || (drafts[b.id] || "").trim().length < 3}
+              onClick={() => submit(b)}
+            >
+              {sending === b.id ? "…" : "Enviar"}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 async function patchTask(id: number, stage: string) {
   const r = await fetch(`${API}/hub/tasks/${id}`, {
     method: "PATCH",
@@ -272,6 +361,8 @@ export default function MiDiaPage() {
         <PushEnableBanner />
 
         <JornadaCard />
+
+        <SlaBreachesCard />
 
         {/* Progress bar */}
         {data && data.progress.total > 0 && (

@@ -1615,6 +1615,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     enabled: sheet?.kind === "new-proj",
     staleTime: 5 * 60_000,
   });
+  // Carga de trabajo por persona: semáforo al momento de asignar.
+  const { data: workloadData } = useQuery<{ members: Array<{ id: number; total: number; semaphore: "green" | "yellow" | "red" }> }>({
+    queryKey: ["team-workload"],
+    queryFn: async () => {
+      const r = await fetch(`${DRIVE_API_BASE}/team/workload`, { credentials: "include" });
+      if (!r.ok) throw new Error("workload");
+      return r.json();
+    },
+    enabled: sheet?.kind === "new-task" || sheet?.kind === "task",
+    staleTime: 60_000,
+  });
+  const workloadOf = (userId: number): string => {
+    const w = workloadData?.members.find(m => m.id === userId);
+    if (!w) return "";
+    const dot = w.semaphore === "red" ? "🔴" : w.semaphore === "yellow" ? "🟡" : "🟢";
+    return ` ${dot} ${w.total} abierta${w.total === 1 ? "" : "s"}`;
+  };
   const lastScrumProjIdRef = useRef<string | null>(null);
   // Documento (cotización) del contrato abierto: borrador editable por el chat IA.
   const [docDraft, setDocDraft] = useState<WizData | null>(null);
@@ -1826,7 +1843,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div><label>Vencimiento</label><input type="date" ref={R("due")} /></div>
       </div>
       {teamMembers.length > 0 && (
-        <div className="field"><label>Asignar a</label><select ref={R("assignee")}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
+        <div className="field"><label>Asignar a</label><select ref={R("assignee")}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{(m.name || m.email) + workloadOf(m.id)}</option>)}</select></div>
       )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
       <ChecklistEditor items={taskChecklist} onChange={setTaskChecklist} />
@@ -1865,7 +1882,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div><label>Vencimiento</label><input type="date" ref={R("due")} defaultValue={t.dueDate || ""} /></div>
       </div>
       {teamMembers.length > 0 && (
-        <div className="field"><label>Asignar a</label><select ref={R("assignee")} defaultValue={t.assigneeId != null ? String(t.assigneeId) : ""}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}</select></div>
+        <div className="field"><label>Asignar a</label><select ref={R("assignee")} defaultValue={t.assigneeId != null ? String(t.assigneeId) : ""}><option value="">— sin asignar —</option>{teamMembers.map(m => <option key={m.id} value={m.id}>{(m.name || m.email) + workloadOf(m.id)}</option>)}</select></div>
       )}
       <div className="field"><label>Notas</label><textarea ref={R("notes") as React.Ref<HTMLTextAreaElement>} rows={5} defaultValue={t.notes || ""} /></div>
       <ChecklistEditor items={taskChecklist} onChange={setTaskChecklist} />
@@ -3734,6 +3751,90 @@ const emptySvcDraft = (category: string): SvcDraft => ({
 /** Playbooks: plantillas de proceso por tipo de trabajo. Se administran junto al catálogo. */
 type PlaybookRow = { id: number; name: string; workType: string; description: string; archived: boolean; tasks: Array<{ title: string; notes?: string; priority?: string }> };
 
+type SlaPolicyRow = { id: number; entityType: string; stage: string; maxHours: number };
+
+const SLA_TYPE_LABELS: Record<string, string> = { task: "Tareas", ticket: "Tickets", video: "Videos", project: "Proyectos", contract: "Contratos" };
+const SLA_STAGE_LABELS: Record<string, string> = {
+  backlog: "Backlog", sprint: "Sprint", doing: "En curso", qa_sent: "QA enviado", qa_rev: "QA revisión",
+  abierto: "Abierto", en_progreso: "En progreso", en_revision: "En revisión",
+  borrador: "Borrador", aprobado: "Aprobado (sin programar)",
+  lead: "Lead", disc: "Descubrimiento", dev: "Desarrollo", rev: "Revisión",
+};
+
+/** SLA por etapa: horas máximas antes de avisar al responsable y a la dirección. */
+function SlaManager({ canManage, showToast }: { canManage: boolean; showToast: (msg: string) => void }) {
+  const [rows, setRows] = useState<SlaPolicyRow[] | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${HUB_API_BASE}/sla/policies`, { credentials: "include" });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setRows(Array.isArray(data.policies) ? data.policies : []);
+    } catch { setRows([]); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const savePolicy = async (p: SlaPolicyRow) => {
+    const raw = drafts[p.id];
+    if (raw === undefined) return;
+    const maxHours = parseInt(raw, 10);
+    if (isNaN(maxHours) || maxHours < 0) { showToast("Horas inválidas"); return; }
+    const res = await fetch(`${HUB_API_BASE}/sla/policies/${p.id}`, {
+      method: "PATCH", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ maxHours }),
+    });
+    if (res.ok) { showToast("SLA actualizado"); setDrafts(d => { const n = { ...d }; delete n[p.id]; return n; }); load(); }
+    else { const b = await res.json().catch(() => ({})); showToast(b.error || "No se pudo guardar"); }
+  };
+
+  const byType = new Map<string, SlaPolicyRow[]>();
+  for (const p of rows ?? []) {
+    if (!byType.has(p.entityType)) byType.set(p.entityType, []);
+    byType.get(p.entityType)!.push(p);
+  }
+
+  return (
+    <div className="svc-cat" style={{ marginTop: 28 }}>
+      <div className="svc-toolbar">
+        <div className="hint" style={{ flex: "1 1 240px" }}>
+          <b>SLA por etapa</b> — horas máximas esperadas en cada estado. Al pasarse, se avisa al responsable y a la dirección y se pide el motivo del atraso (0 = sin límite).
+        </div>
+      </div>
+      {rows === null && <div className="empty-all">Cargando SLAs…</div>}
+      {Array.from(byType.entries()).map(([type, policies]) => (
+        <div key={type} className="svc">
+          <div className="sh"><h3>{SLA_TYPE_LABELS[type] ?? type}</h3></div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 6 }}>
+            {policies.map(p => (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85em" }}>
+                <span style={{ color: "var(--muted)" }}>{SLA_STAGE_LABELS[p.stage] ?? p.stage}:</span>
+                {canManage ? (
+                  <>
+                    <input
+                      type="number" min={0} style={{ width: 70 }}
+                      value={drafts[p.id] ?? String(p.maxHours)}
+                      onChange={e => setDrafts(d => ({ ...d, [p.id]: e.target.value }))}
+                    />
+                    <span>h</span>
+                    {drafts[p.id] !== undefined && drafts[p.id] !== String(p.maxHours) && (
+                      <button className="svc-act" onClick={() => savePolicy(p)}>Guardar</button>
+                    )}
+                  </>
+                ) : (
+                  <b>{p.maxHours}h</b>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PlaybooksManager({ canManage, showToast }: { canManage: boolean; showToast: (msg: string) => void }) {
   const [rows, setRows] = useState<PlaybookRow[] | null>(null);
   const [editor, setEditor] = useState<{ id: number | null; name: string; workType: string; description: string; tasksText: string } | null>(null);
@@ -4099,6 +4200,7 @@ function SvcView({ canManage, showToast }: { canManage: boolean; showToast: (msg
       )}
 
       <PlaybooksManager canManage={canManage} showToast={showToast} />
+      <SlaManager canManage={canManage} showToast={showToast} />
     </div>
   );
 }

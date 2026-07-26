@@ -14,6 +14,7 @@ import { publishToFacebook } from "./routes/facebook";
 import { createNotification } from "./lib/notifications";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
 import { getCredential } from "./lib/credentials";
+import { checkSlaBreaches } from "./lib/sla";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -1289,13 +1290,30 @@ async function checkHubTaskDueReminders(): Promise<void> {
   }
 }
 
+let lastSlaCheck = 0;
+
 async function tick() {
   await processScheduledVideos();
+  // SLA por etapa: como máximo cada 10 minutos; dedupe por episodio en DB.
+  if (Date.now() - lastSlaCheck >= 10 * 60 * 1000) {
+    lastSlaCheck = Date.now();
+    try {
+      await checkSlaBreaches();
+    } catch (err: any) {
+      console.error("[Scheduler] checkSlaBreaches failed:", err?.message || err);
+    }
+  }
   // Poll TikTok for any videos stuck in "uploaded" — runs every tick (60s).
   try {
     await pollTikTokPendingVideos();
   } catch (err: any) {
     console.error("[Scheduler] pollTikTokPendingVideos failed:", err?.message || err);
+  }
+  // Recordatorios "vence hoy/mañana": auto-debounced a 10 min internamente.
+  try {
+    await checkHubTaskDueReminders();
+  } catch (err: any) {
+    console.error("[Scheduler] checkHubTaskDueReminders failed:", err?.message || err);
   }
   // Daily-debounced inside checkConnectionsForAdmin, safe to call every minute.
   try {

@@ -33,6 +33,7 @@ import hubTasksRouter from "./hub/tasks";
 import hubServicesRouter from "./hub/services";
 import hubPlaybooksRouter from "./hub/playbooks";
 import jornadaRouter from "./jornada";
+import slaRouter from "./sla";
 import activityRouter from "./activity";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
@@ -102,6 +103,7 @@ router.use("/hub", (req, res, next) => {
 router.use(hubTasksRouter);
 router.use(hubServicesRouter);
 router.use(hubPlaybooksRouter);
+router.use(slaRouter);
 router.use(hubRouter);
 router.use(hrRouter);
 router.use(ticketsRouter);

@@ -339,7 +339,7 @@ router.post("/content/videos/bulk-schedule", async (req, res) => {
   }
   const updated = await db
     .update(videos)
-    .set({ scheduledAt, status: "scheduled", workflowStatus: "programado", updatedAt: new Date() })
+    .set({ scheduledAt, status: "scheduled", workflowStatus: "programado", workflowStatusSince: new Date(), updatedAt: new Date() })
     .where(inArray(videos.id, ids))
     .returning({ id: videos.id });
   res.json({ scheduled: updated.length, ids: updated.map((u) => u.id) });
@@ -885,6 +885,11 @@ router.patch("/content/videos/:id", async (req, res) => {
   const [prev] = tracksStatus
     ? await db.select({ status: videos.status, workflowStatus: videos.workflowStatus }).from(videos).where(eq(videos.id, id)).limit(1)
     : [undefined];
+  // SLA por etapa: el reloj solo se reinicia cuando el estado de flujo cambia
+  // de verdad, no en cualquier edición (updatedAt sí cambia en cada edición).
+  if (body.workflowStatus !== undefined && prev && body.workflowStatus !== prev.workflowStatus) {
+    updateData.workflowStatusSince = new Date();
+  }
 
   const [row] = await db
     .update(videos)

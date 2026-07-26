@@ -206,6 +206,8 @@ router.patch("/tickets/:id", async (req: Request, res: Response) => {
   const d = parsed.data;
 
   const patch: Record<string, unknown> = { ...d, updatedAt: new Date() };
+  // SLA por etapa: el reloj se reinicia solo cuando el estado realmente cambia.
+  if (d.status && d.status !== current.status) patch.statusSince = new Date();
   if (d.status === "resuelto" && current.status !== "resuelto") patch.resolvedAt = new Date();
   if (d.status === "cerrado" && current.status !== "cerrado") patch.closedAt = new Date();
   if (d.status && d.status !== "resuelto" && d.status !== "cerrado") { patch.resolvedAt = null; patch.closedAt = null; }
