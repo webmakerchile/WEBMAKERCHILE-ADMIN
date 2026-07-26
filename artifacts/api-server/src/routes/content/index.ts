@@ -148,9 +148,9 @@ async function generateCoverForVideo(videoId: number, network?: string) {
   let mimeType: string;
   if (esVertical && !video.coverPrompt) {
     const tema = `${video.title}. ${video.description || ""}`.trim();
-    const { direccion, prompt } = prepararPortada(tema);
+    const { direccion, plantilla, estiloTitular, prompt } = prepararPortada(tema);
     const illustration = await generateFoxIllustration(prompt);
-    const finalImage = await composeVerticalCover(illustration, video.title, direccion);
+    const finalImage = await composeVerticalCover(illustration, video.title, direccion, plantilla, estiloTitular);
     b64_json = finalImage.toString("base64");
     mimeType = "image/png";
   } else {

@@ -17,7 +17,7 @@ import {
 import { toFile } from "openai";
 import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit, listarOpcionesPortada } from "../../lib/cover-style.js";
 import { buildImproveIdeaPrompt, parseImprovedIdea } from "../../lib/improve-cover-idea.js";
-import { prepararMiniaturaYoutube, composeYoutubeCover, validarFotoPersona } from "../../lib/youtube-cover.js";
+import { prepararMiniaturaYoutube, composeYoutubeCover, validarFotoPersona, validarFotosPersona } from "../../lib/youtube-cover.js";
 import { buildAdjustPrompt, prepararLienzoAjuste, recortarAjuste, buildImproveAdjustPrompt, parseImprovedInstruction } from "../../lib/adjust-cover.js";
 
 const router: IRouter = Router();
@@ -249,6 +249,8 @@ router.post("/gemini/improve-cover-idea", async (req, res) => {
 
   try {
     const catalogo = listarOpcionesPortada();
+    const formato = parsedBody.data.formato ?? "vertical";
+    const plantillasFormato = catalogo.plantillas.filter((p) => p.formato === formato);
     const resp = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [{
@@ -257,12 +259,19 @@ router.post("/gemini/improve-cover-idea", async (req, res) => {
           text: buildImproveIdeaPrompt(title, idea, catalogo.direcciones, {
             formato: parsedBody.data.formato,
             conPersona: parsedBody.data.conPersona,
+            plantillas: plantillasFormato,
+            estilosTitular: catalogo.estilosTitular,
           }),
         }],
       }],
       config: { maxOutputTokens: 900 },
     });
-    const parsed = parseImprovedIdea(resp.text ?? "", catalogo.direcciones.map((d) => d.id));
+    const parsed = parseImprovedIdea(
+      resp.text ?? "",
+      catalogo.direcciones.map((d) => d.id),
+      plantillasFormato.map((p) => p.id),
+      catalogo.estilosTitular.map((e) => e.id),
+    );
     if (!parsed) {
       res.status(502).json({ error: "La IA no devolvió una redacción válida. Intenta de nuevo." });
       return;
@@ -279,7 +288,14 @@ router.post("/gemini/improve-cover-idea", async (req, res) => {
 });
 
 router.post("/gemini/generate-cover", async (req, res) => {
-  const body = GenerateCoverBody.parse(req.body);
+  // safeParse: el handler global convierte los ZodError en 500 con el dump
+  // crudo — aquí queremos un 400 con mensaje amable para la UI.
+  const parsedCover = GenerateCoverBody.safeParse(req.body);
+  if (!parsedCover.success) {
+    res.status(400).json({ error: "Datos inválidos para la portada: revisa el título, la descripción y los campos del set." });
+    return;
+  }
+  const body = parsedCover.data;
 
   const catalogo = listarOpcionesPortada();
   if (body.direccionId && !catalogo.direcciones.some(d => d.id === body.direccionId)) {
@@ -288,6 +304,14 @@ router.post("/gemini/generate-cover", async (req, res) => {
   }
   if (body.poseId && !catalogo.poses.some(p => p.id === body.poseId)) {
     res.status(400).json({ error: `poseId inválido: ${body.poseId}` });
+    return;
+  }
+  if (body.plantillaId && !catalogo.plantillas.some(p => p.id === body.plantillaId && p.formato === "vertical")) {
+    res.status(400).json({ error: `plantillaId inválido para formato vertical: ${body.plantillaId}` });
+    return;
+  }
+  if (body.estiloTitularId && !catalogo.estilosTitular.some(e => e.id === body.estiloTitularId)) {
+    res.status(400).json({ error: `estiloTitularId inválido: ${body.estiloTitularId}` });
     return;
   }
 
@@ -303,9 +327,11 @@ router.post("/gemini/generate-cover", async (req, res) => {
   }
 
   const tema = `${body.title} ${body.description || ""}`.trim();
-  const { direccion, prompt: basePrompt } = prepararPortada(tema, body.style, {
+  const { direccion, plantilla, estiloTitular, prompt: basePrompt } = prepararPortada(tema, body.style, {
     direccionId: body.direccionId,
     poseId: body.poseId,
+    plantillaId: body.plantillaId,
+    estiloTitularId: body.estiloTitularId,
     utileria: body.utileria,
   });
 
@@ -361,8 +387,8 @@ router.post("/gemini/generate-cover", async (req, res) => {
       const buf = await generateFoxIllustration(basePrompt);
       result = { b64_json: buf.toString("base64"), mimeType: "image/png" };
     }
-    console.log(`[CoverGen] Cover generado, componiendo titular (${direccion.id})...`);
-    const composited = await composeVerticalCover(Buffer.from(result.b64_json, "base64"), body.title, direccion);
+    console.log(`[CoverGen] Cover generado, componiendo titular (${direccion.id}, plantilla ${plantilla.id}, estilo ${estiloTitular.id})...`);
+    const composited = await composeVerticalCover(Buffer.from(result.b64_json, "base64"), body.title, direccion, plantilla, estiloTitular);
     res.json({ b64_json: composited.toString("base64"), mimeType: "image/png" });
   } catch (error: any) {
     console.error(`[CoverGen] All ${MAX_RETRIES} attempts failed: ${error.message}`);
@@ -391,40 +417,60 @@ router.post("/gemini/generate-youtube-cover", async (req, res) => {
     res.status(400).json({ error: `direccionId inválido: ${body.direccionId}` });
     return;
   }
-
-  // Validar la foto ANTES de gastar una llamada de IA: 400 determinista para
-  // base64 corrupto, formato no soportado o fotos de más de 8 MB.
-  let fotoPersona: { base64: string; mime: string } | null = null;
-  if (body.personImageBase64) {
-    const v = validarFotoPersona(body.personImageBase64);
-    if (!v.ok) {
-      res.status(400).json({ error: v.error });
-      return;
-    }
-    fotoPersona = { base64: v.base64, mime: v.mime };
+  if (body.plantillaId && !catalogo.plantillas.some(p => p.id === body.plantillaId && p.formato === "youtube")) {
+    res.status(400).json({ error: `plantillaId inválido para formato youtube: ${body.plantillaId}` });
+    return;
+  }
+  if (body.estiloTitularId && !catalogo.estilosTitular.some(e => e.id === body.estiloTitularId)) {
+    res.status(400).json({ error: `estiloTitularId inválido: ${body.estiloTitularId}` });
+    return;
   }
 
+  // Validar las fotos ANTES de gastar una llamada de IA: 400 determinista para
+  // base64 corrupto, formato no soportado o fotos de más de 8 MB. Se aceptan
+  // hasta MAX_FOTOS_PERSONA fotos de LA MISMA persona (más ángulos = más
+  // fidelidad de rostro); `personImageBase64` queda como campo legado.
+  const listaFotos = body.personImagesBase64?.length
+    ? body.personImagesBase64
+    : body.personImageBase64
+      ? [body.personImageBase64]
+      : [];
+  const vFotos = validarFotosPersona(listaFotos);
+  if (!vFotos.ok) {
+    res.status(400).json({ error: vFotos.error });
+    return;
+  }
+  const fotosPersona = vFotos.fotos;
+
   const tema = `${body.title} ${body.description || ""}`.trim();
-  const conPersona = Boolean(fotoPersona);
-  const { direccion, prompt } = prepararMiniaturaYoutube(tema, body.style, {
-    direccionId: body.direccionId,
-    utileria: body.utileria,
-    conPersona,
-  });
+  const conPersona = fotosPersona.length > 0;
+  const { direccion, plantilla, estiloTitular, prompt } = prepararMiniaturaYoutube(
+    tema,
+    body.style,
+    {
+      direccionId: body.direccionId,
+      plantillaId: body.plantillaId,
+      estiloTitularId: body.estiloTitularId,
+      utileria: body.utileria,
+      conPersona,
+      numFotosPersona: fotosPersona.length,
+    },
+    body.title,
+  );
 
   try {
-    // Con foto → la persona es la imagen de referencia; sin foto → master del
-    // zorro (lo carga generateFoxIllustration por defecto). Lienzo horizontal.
+    // Con fotos → la persona es la referencia (todas viajan al modelo); sin
+    // foto → master del zorro (lo carga generateFoxIllustration por defecto).
     // Con persona, fidelidad "high" para que el rostro quede igual a la foto.
     const buf = await generateFoxIllustration(
       prompt,
-      fotoPersona?.base64,
+      conPersona ? fotosPersona.map(f => ({ base64: f.base64, mime: f.mime })) : undefined,
       "1536x1024",
-      fotoPersona?.mime,
-      fotoPersona ? "high" : undefined,
+      undefined,
+      conPersona ? "high" : undefined,
     );
-    console.log(`[MiniaturaYT] Ilustración lista, componiendo titular (${direccion.id})...`);
-    const composited = await composeYoutubeCover(buf, body.title, direccion);
+    console.log(`[MiniaturaYT] Ilustración lista, componiendo titular (${direccion.id}, plantilla ${plantilla.id}, estilo ${estiloTitular.id})...`);
+    const composited = await composeYoutubeCover(buf, body.title, direccion, plantilla, estiloTitular);
     res.json({ b64_json: composited.toString("base64"), mimeType: "image/png" });
   } catch (error: any) {
     console.error(`[MiniaturaYT] Falló la generación: ${error?.message}`);

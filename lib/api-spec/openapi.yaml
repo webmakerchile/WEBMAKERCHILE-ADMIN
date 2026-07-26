@@ -586,6 +586,10 @@ components:
           type: string
         poseId:
           type: string
+        plantillaId:
+          type: string
+        estiloTitularId:
+          type: string
         utileria:
           type: string
       required:
@@ -605,7 +609,18 @@ components:
           maxLength: 300
         personImageBase64:
           type: string
+          description: "Legado: una sola foto de la persona (usa personImagesBase64)"
+        personImagesBase64:
+          type: array
+          maxItems: 3
+          items:
+            type: string
+          description: Hasta 3 fotos de LA MISMA persona (más ángulos = más fidelidad de rostro)
         direccionId:
+          type: string
+        plantillaId:
+          type: string
+        estiloTitularId:
           type: string
         utileria:
           type: string
@@ -671,6 +686,10 @@ components:
           type: string
         direccionId:
           type: string
+        plantillaId:
+          type: string
+        estiloTitularId:
+          type: string
       required:
         - title
         - idea
@@ -700,6 +719,36 @@ components:
       required:
         - id
         - etiqueta
+    CoverPlantillaOption:
+      type: object
+      properties:
+        id:
+          type: string
+        formato:
+          type: string
+          enum: [vertical, youtube]
+        nombre:
+          type: string
+        descripcion:
+          type: string
+      required:
+        - id
+        - formato
+        - nombre
+        - descripcion
+    CoverEstiloTitularOption:
+      type: object
+      properties:
+        id:
+          type: string
+        nombre:
+          type: string
+        descripcion:
+          type: string
+      required:
+        - id
+        - nombre
+        - descripcion
     CoverOptionsResponse:
       type: object
       properties:
@@ -711,9 +760,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CoverPoseOption"
+        plantillas:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverPlantillaOption"
+        estilosTitular:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverEstiloTitularOption"
       required:
         - direcciones
         - poses
+        - plantillas
+        - estilosTitular
     DriveFile:
       type: object
       properties:

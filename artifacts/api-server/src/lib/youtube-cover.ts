@@ -1,30 +1,31 @@
 // Miniaturas de YouTube (16:9): mismo universo "Estudio Spotlight" de la marca
 // pero en encuadre HORIZONTAL y con protagonista distinto — la PERSONA REAL de
-// una foto (estilo youtuber: rostro idéntico, expresión de alta energía) o el
-// zorro Webi si no hay foto. El titular lo compone el servidor en la franja
-// izquierda, que el prompt exige dejar despejada y oscura.
+// una o varias fotos (estilo youtuber: rostro idéntico, expresión de alta
+// energía) o el zorro Webi si no hay foto. El titular lo compone el servidor
+// según la PLANTILLA elegida (formatos predeterminados que se intercalan) con
+// el motor de tipografía de impacto (title-style).
 
 import {
   resolverDireccion,
   elegirDetalle,
-  elegirPalabrasAcento,
-  splitTextIntoLines,
-  renderLineaTspans,
-  FUENTES,
   type DireccionArte,
 } from "./cover-style.js";
 import {
   seleccionarPosePortada,
   bloquePoseRequerida,
   detectarEmocion,
+  POSES_PRIMER_PLANO,
   type PoseSeleccionada,
 } from "./pose-bank.js";
+import {
+  construirOverlayTitular,
+  resolverEstiloTitular,
+  type EstiloTitular,
+} from "./title-style.js";
+import { resolverPlantilla, obtenerPlantilla, type PlantillaPortada } from "./thumbnail-templates.js";
 
 export const YT_WIDTH = 1280;
 export const YT_HEIGHT = 720;
-/** Franja izquierda reservada para el titular (el prompt la exige despejada). */
-const YT_TEXT_ZONE_WIDTH = 560;
-const YT_TEXT_LEFT = 72;
 
 /* ==================== Expresión youtuber según el tema =================== */
 
@@ -56,10 +57,16 @@ export function expresionYoutuber(tema: string): string {
 export interface OpcionesMiniaturaYoutube {
   /** Fija la variante de iluminación del estudio (id de DIRECCIONES_PORTADA). */
   direccionId?: string | null;
+  /** Fija la plantilla de composición (id de PLANTILLAS_PORTADA formato youtube). */
+  plantillaId?: string | null;
+  /** Fija el estilo tipográfico del titular (id de ESTILOS_TITULAR). */
+  estiloTitularId?: string | null;
   /** Utilería pedida por el usuario: props físicos del set. */
   utileria?: string | null;
   /** true si la miniatura lleva la foto de una persona real como protagonista. */
   conPersona: boolean;
+  /** Cuántas fotos de la persona se adjuntan (refuerza el bloque de identidad). */
+  numFotosPersona?: number;
 }
 
 export function buildYoutubeThumbnailPrompt(
@@ -68,25 +75,33 @@ export function buildYoutubeThumbnailPrompt(
   detalle: string,
   opts: {
     conPersona: boolean;
+    plantilla: PlantillaPortada;
     pose?: PoseSeleccionada | null;
     extraEstilo?: string | null;
     utileria?: string | null;
+    numFotosPersona?: number;
   },
 ): string {
+  const numFotos = Math.max(1, opts.numFotosPersona ?? 1);
+  const refFotos =
+    numFotos > 1
+      ? `las ${numFotos} fotos adjuntas — TODAS son LA MISMA persona vista desde distintos ángulos`
+      : "la foto adjunta";
+
   const bloqueProtagonista = opts.conPersona
-    ? `PROTAGONISTA - LA PERSONA REAL DE LA FOTO ADJUNTA (CRÍTICO - NO NEGOCIABLE):
-- El protagonista es LA MISMA PERSONA de la foto adjunta y debe ser reconocible AL INSTANTE por cualquiera que la conozca. Trátalo como un RETRATO de esa persona, no como "alguien parecido"
+    ? `PROTAGONISTA - LA PERSONA REAL DE ${numFotos > 1 ? "LAS FOTOS ADJUNTAS" : "LA FOTO ADJUNTA"} (CRÍTICO - NO NEGOCIABLE):
+- El protagonista es LA MISMA PERSONA de ${refFotos} y debe ser reconocible AL INSTANTE por cualquiera que la conozca. Trátalo como un RETRATO de esa persona, no como "alguien parecido"
 - Rostro IDÉNTICO al de la foto: misma forma de cara, misma nariz, mismos ojos y cejas, misma boca y mentón, mismo tono de piel, misma edad, mismo peinado y color de pelo, misma barba/maquillaje/lentes/accesorios si los tiene
-- PROHIBIDO inventar una cara nueva, "embellecerla", rejuvenecerla o cambiar su contextura. Lo ÚNICO que cambia respecto a la foto es: la EXPRESIÓN, la POSE, la ropa y la iluminación. Nada más
+- Conserva sus marcas personales tal cual (lunares, pecas, cicatrices, forma exacta de las cejas): son parte de la identidad
+${numFotos > 1 ? `- Usa TODOS los ángulos de las fotos para reconstruir el rostro con precisión (forma exacta de nariz, mandíbula y ojos); ante cualquier duda manda la PRIMERA foto\n` : ""}- PROHIBIDO inventar una cara nueva, "embellecerla", rejuvenecerla o cambiar su contextura. Lo ÚNICO que cambia respecto a la foto es: la EXPRESIÓN, la POSE, la ropa y la iluminación. Nada más
 - FOTORREALISTA — PROHIBIDO convertirla en cartoon, ilustración o pintura: piel con textura real, como fotografía de estudio tomada con cámara profesional
 - Recórtala de su fondo original (nada del fondo de la foto debe aparecer)
-- Encuádrala del pecho hacia arriba, MUY GRANDE y con presencia dominante, ocupando la mitad DERECHA del encuadre, cuerpo ligeramente inclinado hacia la cámara
 - EXPRESIÓN OBLIGATORIA de youtuber (exagerada, llevada al máximo SIN deformar sus rasgos): ${expresionYoutuber(tema)}
 - La luz del estudio la esculpe con drama: luz principal modelando la cara y un RIM LIGHT intenso del color de la variante recortando toda su silueta contra el fondo`
     : `PROTAGONISTA - ZORRO WEBI ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
 - Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta verde oscuro, IDÉNTICO a la referencia en proporciones, estilo de dibujo y nivel de detalle
 - Mantiene el estilo FLAT CARTOON de la referencia: contornos gruesos negros, colores PLANOS y sólidos, SIN degradados, SIN texturas, SIN sombras realistas en el personaje
-- De cuerpo completo (cabeza, torso, brazos, piernas, cola), GRANDE, ocupando aproximadamente la mitad DERECHA del encuadre
+- GRANDE y protagonista, siguiendo la composición indicada más abajo
 - POSE Y EXPRESIÓN OBLIGATORIA para esta imagen: ${opts.pose?.descripcion ?? "pose expresiva y segura acorde al tema"}`;
 
   return `Genera una MINIATURA DE YOUTUBE HORIZONTAL en formato 16:9 (lienzo apaisado, más ancho que alto).
@@ -96,11 +111,7 @@ NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel,
 
 ${bloqueProtagonista}
 
-COMPOSICIÓN HORIZONTAL DE MINIATURA (CRÍTICO - NO NEGOCIABLE):
-- MITAD DERECHA del encuadre: el protagonista, anclado al piso del estudio con su sombra coherente
-- CENTRO (entre el protagonista y la franja izquierda): 2 a 3 piezas de UTILERÍA física del tema, apoyadas en el piso del set o sobre una mesa baja, a escala real
-- PROFUNDIDAD DE CÁMARA REAL: una pieza de utilería asoma GRANDE en primer plano parcial (por la derecha o el centro-bajo, JAMÁS en la franja izquierda), ligeramente desenfocada; el protagonista queda perfectamente nítido y el fondo con desenfoque suave de lente
-- FRANJA IZQUIERDA (el 40% izquierdo del encuadre): SOLO el fondo de la dirección de arte en su versión más plana y OSCURA, totalmente DESPEJADA — ahí se montará el titular después. NADA puede existir en esa franja: ni objetos, ni brazos, ni haces protagonistas, ni sombras marcadas.
+${opts.plantilla.bloqueComposicion(opts.conPersona)}
 - MARGEN DE SEGURIDAD: el 8% superior e inferior del lienzo se recorta después — nada crítico (cabeza, ojos, objetos clave) puede quedar pegado al borde superior ni al inferior
 
 ENERGÍA DE MINIATURA VIRAL (CRÍTICO — debe dar GANAS DE HACER CLIC):
@@ -122,14 +133,14 @@ ${opts.utileria ? `
 UTILERÍA PEDIDA POR EL USUARIO (OBLIGATORIA): ${opts.utileria}
 Dibuja EXACTAMENTE esa utilería como los props del set — mismas reglas físicas de arriba — sin agregar otros objetos protagonistas por tu cuenta.
 ` : ""}
-DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" adaptada a encuadre HORIZONTAL (toda mención a "franja superior" aplícala aquí a la FRANJA IZQUIERDA) y AMPLIFICADA: más saturación, más contraste y luz más potente que en una portada normal, sin aclarar la franja izquierda:
+DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" adaptada a encuadre HORIZONTAL (toda mención a "franja superior" aplícala aquí a la zona que la composición exige dejar despejada) y AMPLIFICADA: más saturación, más contraste y luz más potente que en una portada normal, sin aclarar la zona despejada del titular:
 ${direccion.fondo}
 DETALLE ÚNICO DE ESTA MINIATURA: ${detalle}
 
 UTILERÍA — PALETA Y COMPORTAMIENTO BAJO LA LUZ:
 ${direccion.paletaObjetos}
 
-RECUERDA: CERO TEXTO en ninguna parte de la imagen. Encuadre HORIZONTAL 16:9 con la franja izquierda despejada y oscura, protagonista grande a la derecha con energía de miniatura de YouTube.
+RECUERDA: CERO TEXTO en ninguna parte de la imagen. Encuadre HORIZONTAL 16:9 respetando la composición de la plantilla, con su zona del titular despejada y oscura, y energía de miniatura de YouTube.
 ${!opts.conPersona && opts.pose ? `\n${bloquePoseRequerida(opts.pose)}` : ""}`;
 }
 
@@ -137,6 +148,8 @@ ${!opts.conPersona && opts.pose ? `\n${bloquePoseRequerida(opts.pose)}` : ""}`;
 
 export interface MiniaturaPreparada {
   direccion: DireccionArte;
+  plantilla: PlantillaPortada;
+  estiloTitular: EstiloTitular;
   detalle: string;
   pose: PoseSeleccionada | null;
   prompt: string;
@@ -146,111 +159,72 @@ export function prepararMiniaturaYoutube(
   tema: string,
   extraEstilo?: string | null,
   opciones?: OpcionesMiniaturaYoutube | null,
+  titulo?: string | null,
 ): MiniaturaPreparada {
   const direccion = resolverDireccion(opciones?.direccionId);
   const detalle = elegirDetalle(direccion);
   const conPersona = opciones?.conPersona ?? false;
+  const plantilla = resolverPlantilla(opciones?.plantillaId, "youtube", { titulo: titulo ?? tema });
+  const estiloTitular = resolverEstiloTitular(opciones?.estiloTitularId, plantilla.estiloTitularDefault);
   // La pose del banco es exclusiva de Webi: solo aplica sin foto de persona.
-  const pose = conPersona ? null : seleccionarPosePortada(tema);
+  // En plantillas de primer plano solo entran gestos de cabeza/hombros — las
+  // poses de cuerpo completo (manos en caderas, brazos arriba) contradirían
+  // el encuadre cerrado que la composición exige.
+  const pose = conPersona
+    ? null
+    : seleccionarPosePortada(tema, plantilla.encuadre === "primer_plano" ? POSES_PRIMER_PLANO : undefined);
   const utileria = opciones?.utileria?.trim() || null;
   const estilo = extraEstilo?.trim() || null;
   const prompt = buildYoutubeThumbnailPrompt(tema, direccion, detalle, {
     conPersona,
+    plantilla,
     pose,
     extraEstilo: estilo,
     utileria,
+    numFotosPersona: opciones?.numFotosPersona,
   });
   console.log(
-    `[MINIATURA-YT] Dirección: ${direccion.id}${opciones?.direccionId ? " (fijada)" : ""} · Protagonista: ${conPersona ? "persona (foto)" : `Webi (pose ${pose?.id})`}${utileria ? " · Utilería personalizada" : ""}`,
+    `[MINIATURA-YT] Dirección: ${direccion.id}${opciones?.direccionId ? " (fijada)" : ""} · Plantilla: ${plantilla.id}${opciones?.plantillaId ? " (fijada)" : ""} · Titular: ${estiloTitular.id} · Protagonista: ${conPersona ? `persona (${opciones?.numFotosPersona ?? 1} foto/s)` : `Webi (pose ${pose?.id})`}${utileria ? " · Utilería personalizada" : ""}`,
   );
-  return { direccion, detalle, pose, prompt };
+  return { direccion, plantilla, estiloTitular, detalle, pose, prompt };
 }
 
-/* ==================== Titular lateral (franja izquierda) ================== */
+/* ==================== Titular (overlay según plantilla) ================== */
 
-/** Overlay del titular para 16:9: scrim lateral (izquierda→derecha) + bloque
- *  de texto alineado a la izquierda, centrado verticalmente. Estilo youtuber:
- *  líneas cortas, tipografía enorme y 1-2 palabras en color de acento. */
-export function buildYoutubeTitleOverlaySvg(title: string, dir: DireccionArte): Buffer {
-  const estilo = dir.titular;
-  const fuente = FUENTES[estilo.fuente];
-
-  const cleanTitle = title.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().toUpperCase();
-  const lines = splitTextIntoLines(cleanTitle, 12).slice(0, 4);
-  const lineCount = lines.length;
-  const acentos = elegirPalabrasAcento(lines);
-
-  // Tamaños pensados para 720px de alto: más chicos que en vertical pero
-  // enormes en proporción, como las miniaturas de youtubers.
-  const sizes: [number, number, number] = estilo.fuente === "display" ? [104, 88, 72] : [84, 72, 60];
-  let fontSize = lineCount <= 2 ? sizes[0] : lineCount === 3 ? sizes[1] : sizes[2];
-  const maxTextWidth = YT_TEXT_ZONE_WIDTH - YT_TEXT_LEFT - (estilo.modo === "chips" ? 40 : 0);
-  const maxLineChars = Math.max(...lines.map((l) => l.length));
-  const estWidth = maxLineChars * fontSize * fuente.ratio;
-  if (estWidth > maxTextWidth) fontSize = Math.floor(fontSize * (maxTextWidth / estWidth));
-
-  const lineHeight = fontSize * fuente.lineHeight;
-  const chipPadX = fontSize * 0.3;
-  const chipH = lineHeight * (estilo.modo === "chips" ? 1.04 : 1);
-  const gap = estilo.modo === "chips" ? 8 : 0;
-  const totalH = lineCount * chipH + (lineCount - 1) * gap;
-  const blockTop = Math.max(40, (YT_HEIGHT - totalH) / 2);
-  const blockCenterY = blockTop + totalH / 2;
-
-  const piezas: string[] = [];
-  lines.forEach((line, i) => {
-    const lineTop = blockTop + i * (chipH + gap);
-    const baseline = lineTop + chipH / 2 + fontSize * 0.34;
-    const tspans = renderLineaTspans(line, acentos, estilo.colorTexto, estilo.colorAcento);
-    const offsetX = estilo.modo === "chips" && i % 2 === 1 ? 14 : 0;
-    const x = YT_TEXT_LEFT + offsetX;
-
-    if (estilo.modo === "chips") {
-      const w = Math.min(line.length * fontSize * fuente.ratio + chipPadX * 2, YT_TEXT_ZONE_WIDTH);
-      piezas.push(
-        `<rect x="${(x - chipPadX).toFixed(1)}" y="${lineTop.toFixed(1)}" width="${w.toFixed(1)}" height="${chipH.toFixed(1)}" rx="${(fontSize * 0.2).toFixed(1)}" fill="${estilo.chipFondo}"/>`,
-        `<text x="${x}" y="${baseline.toFixed(1)}" text-anchor="start" font-family="${fuente.familia}" font-weight="${fuente.peso}" font-size="${fontSize}" letter-spacing="1">${tspans}</text>`,
-      );
-    } else {
-      const sombra = Math.max(3, Math.round(fontSize * 0.045));
-      const tspansSombra = renderLineaTspans(line, acentos, "rgba(0,0,0,0.5)", "rgba(0,0,0,0.5)");
-      piezas.push(
-        `<text x="${x + sombra}" y="${(baseline + sombra).toFixed(1)}" text-anchor="start" font-family="${fuente.familia}" font-weight="${fuente.peso}" font-size="${fontSize}" letter-spacing="1" fill="rgba(0,0,0,0.5)">${tspansSombra}</text>`,
-        `<text x="${x}" y="${baseline.toFixed(1)}" text-anchor="start" font-family="${fuente.familia}" font-weight="${fuente.peso}" font-size="${fontSize}" letter-spacing="1">${tspans}</text>`,
-      );
-    }
+/** Overlay del titular para 16:9 con el motor de tipografía de impacto.
+ *  Sin plantilla/estilo explícitos usa la clásica lateral (compatibilidad). */
+export function buildYoutubeTitleOverlaySvg(
+  title: string,
+  dir: DireccionArte,
+  plantilla?: PlantillaPortada,
+  estilo?: EstiloTitular,
+): Buffer {
+  const plantillaFinal = plantilla ?? obtenerPlantilla("yt_lateral_izquierda")!;
+  const estiloFinal = estilo ?? resolverEstiloTitular(null, plantillaFinal.estiloTitularDefault);
+  return construirOverlayTitular({
+    canvas: { width: YT_WIDTH, height: YT_HEIGHT },
+    zona: plantillaFinal.zona,
+    scrim: plantillaFinal.scrim,
+    titulo: title,
+    estilo: estiloFinal,
+    paleta: { colorAcento: dir.titular.colorAcento, scrim: dir.titular.scrim },
+    extras: plantillaFinal.extras,
   });
-
-  const { r, g, b } = estilo.scrim;
-  const scrimWidth = Math.round(YT_WIDTH * 0.58);
-
-  const svg = `<svg width="${YT_WIDTH}" height="${YT_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="scrimYt" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="rgb(${r},${g},${b})" stop-opacity="0.95"/>
-      <stop offset="0.55" stop-color="rgb(${r},${g},${b})" stop-opacity="0.78"/>
-      <stop offset="1" stop-color="rgb(${r},${g},${b})" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="${scrimWidth}" height="${YT_HEIGHT}" fill="url(#scrimYt)"/>
-  <g transform="rotate(${estilo.inclinacion}, ${(YT_TEXT_LEFT + 240).toFixed(1)}, ${blockCenterY.toFixed(1)})">
-    ${piezas.join("\n    ")}
-  </g>
-</svg>`;
-
-  return Buffer.from(svg);
 }
 
 /* ==================== Composición final =================================== */
 
-/** Redimensiona la ilustración a 1280x720 y compone scrim lateral + titular. */
+/** Redimensiona la ilustración a 1280x720 y compone scrim + titular según la
+ *  plantilla y el estilo tipográfico. */
 export async function composeYoutubeCover(
   illustration: Buffer,
   title: string,
   dir: DireccionArte,
+  plantilla?: PlantillaPortada,
+  estilo?: EstiloTitular,
 ): Promise<Buffer> {
   const sharp = (await import("sharp")).default;
-  const overlay = buildYoutubeTitleOverlaySvg(title, dir);
+  const overlay = buildYoutubeTitleOverlaySvg(title, dir, plantilla, estilo);
 
   const finalImage = await sharp(illustration)
     .resize(YT_WIDTH, YT_HEIGHT, { fit: "cover" })
@@ -258,13 +232,17 @@ export async function composeYoutubeCover(
     .png({ quality: 95 })
     .toBuffer();
 
-  console.log(`[MiniaturaYT] Titular "${dir.nombre}" compuesto (${(finalImage.length / 1024).toFixed(0)}KB)`);
+  console.log(
+    `[MiniaturaYT] Titular "${dir.nombre}" compuesto (plantilla ${plantilla?.id ?? "clásica"}, ${(finalImage.length / 1024).toFixed(0)}KB)`,
+  );
   return finalImage;
 }
 
 /* ==================== Validación de la foto (antes de gastar IA) ========= */
 
 export const PERSON_IMG_MAX_BYTES = 8 * 1024 * 1024; // 8 MB decodificados
+/** Máximo de fotos de la persona por miniatura (gpt-image-1 acepta varias). */
+export const MAX_FOTOS_PERSONA = 3;
 
 export type FotoValidada =
   | { ok: true; base64: string; mime: "image/png" | "image/jpeg" | "image/webp" }
@@ -299,4 +277,22 @@ export function validarFotoPersona(input: string): FotoValidada {
     return { ok: true, base64: sinPrefijo, mime: "image/webp" };
   }
   return { ok: false, error: "El archivo no es una imagen compatible: usa JPG, PNG o WebP." };
+}
+
+/** Valida la lista de fotos de la persona (1 a MAX_FOTOS_PERSONA). */
+export function validarFotosPersona(
+  inputs: string[],
+): { ok: true; fotos: Array<{ base64: string; mime: string }> } | { ok: false; error: string } {
+  if (inputs.length > MAX_FOTOS_PERSONA) {
+    return { ok: false, error: `Máximo ${MAX_FOTOS_PERSONA} fotos de la persona por miniatura.` };
+  }
+  const fotos: Array<{ base64: string; mime: string }> = [];
+  for (const [i, input] of inputs.entries()) {
+    const v = validarFotoPersona(input);
+    if (!v.ok) {
+      return inputs.length > 1 ? { ok: false, error: `Foto ${i + 1}: ${v.error}` } : v;
+    }
+    fotos.push({ base64: v.base64, mime: v.mime });
+  }
+  return { ok: true, fotos };
 }

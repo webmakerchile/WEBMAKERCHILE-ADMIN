@@ -11,11 +11,11 @@ describe("buildAdjustPrompt", () => {
   it("exige mantener todo igual y proteger el titular según el formato", () => {
     const pv = buildAdjustPrompt("cambia la taza por un mate", "vertical");
     expect(pv).toContain("TODO LO DEMÁS QUEDA EXACTAMENTE IGUAL");
-    expect(pv).toContain("franja SUPERIOR");
+    expect(pv).toContain("esté donde esté en la imagen");
     expect(pv).toContain("cambia la taza por un mate");
 
     const py = buildAdjustPrompt("otro cambio", "youtube");
-    expect(py).toContain("franja IZQUIERDA");
+    expect(py).toContain("esté donde esté en la imagen");
     expect(py).toContain("PROHIBIDO tocarlo");
   });
 

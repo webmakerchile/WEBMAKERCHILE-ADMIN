@@ -22,12 +22,20 @@ import {
   detectarEmocion,
   type PoseSeleccionada,
 } from "./pose-bank";
+import {
+  construirOverlayTitular,
+  resolverEstiloTitular,
+  listarEstilosTitular,
+  elegirPalabrasAcento,
+  type EstiloTitular as EstiloTitularV2,
+} from "./title-style";
+import { resolverPlantilla, obtenerPlantilla, listarPlantillas, type PlantillaPortada } from "./thumbnail-templates";
+
+// El motor de tipografía vive en title-style; se re-exporta lo compartido.
+export { elegirPalabrasAcento };
 
 export const COVER_WIDTH = 1080;
 export const COVER_HEIGHT = 1920;
-const TEXT_ZONE_TOP = 150;
-const TEXT_ZONE_HEIGHT = 280;
-const TEXT_SIDE_PADDING = 60;
 
 /* ========================= Tipos ========================================= */
 
@@ -263,6 +271,8 @@ export function resolverDireccion(direccionId?: string | null): DireccionArte {
 
 export interface PortadaPreparada {
   direccion: DireccionArte;
+  plantilla: PlantillaPortada;
+  estiloTitular: EstiloTitularV2;
   detalle: string;
   pose: PoseSeleccionada;
   prompt: string;
@@ -275,7 +285,13 @@ export function buildCoverIllustrationPrompt(
   pose: PoseSeleccionada,
   extraEstilo?: string | null,
   utileria?: string | null,
+  plantilla?: PlantillaPortada,
 ): string {
+  const plantillaActiva = plantilla ?? obtenerPlantilla("v_titular_superior")!;
+  const bloqueZona = plantillaActiva.bloqueComposicion(false);
+  const posicionPersonaje =
+    plantillaActiva.personajeVertical ??
+    "SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado ni parcialmente visible\n- El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario";
   return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
 REGLA ABSOLUTA - SIN TEXTO:
@@ -283,8 +299,7 @@ NO incluyas NINGUNA letra, palabra, número, rótulo, etiqueta, título, cartel,
 
 PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
 - Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta/polera verde oscuro
-- SIEMPRE de cuerpo completo visible (cabeza, torso, brazos, piernas, cola). NUNCA cortado ni parcialmente visible
-- El zorro debe ocupar al menos 40% del área visual inferior. Es el PROTAGONISTA, no un elemento secundario
+- ${posicionPersonaje}
 - Debe verse IDÉNTICO al de la referencia en proporciones, estilo de dibujo y nivel de detalle
 - El zorro DEBE mantener el estilo FLAT CARTOON de la referencia: líneas de contorno GRUESAS negras, colores PLANOS y sólidos (naranja puro, verde sólido), SIN degradados en el personaje, SIN texturas, SIN sombras realistas. El zorro es un cartoon simple y limpio
 - POSE Y EXPRESIÓN OBLIGATORIA para esta imagen: ${pose.descripcion}
@@ -305,17 +320,14 @@ ${utileria ? `
 UTILERÍA PEDIDA POR EL USUARIO (OBLIGATORIA): ${utileria}
 Dibuja EXACTAMENTE esa utilería como los props protagonistas del set — mismas reglas físicas de arriba: apoyada, con volumen, iluminada por el foco y con sombras coherentes — sin agregar otros objetos protagonistas por tu cuenta.
 ` : ""}
-ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
-- El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE el fondo de la dirección de arte en su versión más plana y oscura, SIN elementos
-- NADA puede existir en esa zona: ni el zorro, ni objetos, ni sombras, ni líneas, ni bordes
-- Toda la acción visual comienza DEBAJO del píxel 670
+${bloqueZona}
 
 CONTRASTE DE ESTILOS (IMPORTANTE):
 - SOLO el ZORRO se dibuja en estilo FLAT CARTOON: contornos gruesos negros, colores planos y vibrantes, sin degradados
 - El FONDO y la UTILERÍA pertenecen al mundo del set: iluminación cinematográfica, volumen y sombreado suave, SIN contornos gruesos de cartoon en los objetos
 - Este contraste — la mascota cartoon parada dentro de un set fotográfico estilizado con props reales — es la firma visual de la marca
 
-DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" (solo el fondo, NO el personaje):
+DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" (solo el fondo, NO el personaje; toda mención a "franja superior" aplícala a la zona que la composición de arriba exige dejar despejada):
 ${direccion.fondo}
 DETALLE ÚNICO DE ESTA PORTADA: ${detalle}
 
@@ -333,11 +345,16 @@ export interface OpcionesPortada {
   direccionId?: string | null;
   /** Fija la pose del zorro (id del banco de poses). */
   poseId?: string | null;
+  /** Fija la plantilla de composición (id de PLANTILLAS_PORTADA formato vertical). */
+  plantillaId?: string | null;
+  /** Fija el estilo tipográfico del titular (id de ESTILOS_TITULAR). */
+  estiloTitularId?: string | null;
   /** Utilería pedida por el usuario: se dibuja como props físicos del set. */
   utileria?: string | null;
 }
 
-/** Direcciones y poses disponibles, en formato listo para una UI de selección. */
+/** Direcciones, poses, plantillas y estilos tipográficos disponibles, en
+ *  formato listo para una UI de selección. */
 export function listarOpcionesPortada() {
   return {
     direcciones: DIRECCIONES_PORTADA.map(d => ({
@@ -347,6 +364,8 @@ export function listarOpcionesPortada() {
       colorAcento: d.titular.colorAcento,
     })),
     poses: PORTADA_POSES.map(p => ({ id: p.id, etiqueta: p.etiqueta })),
+    plantillas: listarPlantillas(),
+    estilosTitular: listarEstilosTitular(),
   };
 }
 
@@ -360,6 +379,8 @@ export function prepararPortada(tema: string, extraEstilo?: string | null, opcio
   const direccion = resolverDireccion(opciones?.direccionId);
 
   const detalle = elegirDetalle(direccion);
+  const plantilla = resolverPlantilla(opciones?.plantillaId, "vertical", { titulo: tema });
+  const estiloTitular = resolverEstiloTitular(opciones?.estiloTitularId, plantilla.estiloTitularDefault);
 
   const poseFija = opciones?.poseId
     ? PORTADA_POSES.find(p => p.id === opciones.poseId)
@@ -371,9 +392,9 @@ export function prepararPortada(tema: string, extraEstilo?: string | null, opcio
   // Normalizar entradas de texto libre (clientes no-UI pueden mandar solo espacios).
   const utileria = opciones?.utileria?.trim() || null;
   const estilo = extraEstilo?.trim() || null;
-  const prompt = buildCoverIllustrationPrompt(tema, direccion, detalle, pose, estilo, utileria);
-  console.log(`[PORTADA] Dirección: ${direccion.id}${fijada ? " (fijada)" : ""} · Pose: ${pose.id}${poseFija ? " (fijada)" : ""} (emoción: ${pose.emocion || "ninguna"})${utileria ? " · Utilería personalizada" : ""}`);
-  return { direccion, detalle, pose, prompt };
+  const prompt = buildCoverIllustrationPrompt(tema, direccion, detalle, pose, estilo, utileria, plantilla);
+  console.log(`[PORTADA] Dirección: ${direccion.id}${fijada ? " (fijada)" : ""} · Plantilla: ${plantilla.id}${opciones?.plantillaId ? " (fijada)" : ""} · Titular: ${estiloTitular.id} · Pose: ${pose.id}${poseFija ? " (fijada)" : ""} (emoción: ${pose.emocion || "ninguna"})${utileria ? " · Utilería personalizada" : ""}`);
+  return { direccion, plantilla, estiloTitular, detalle, pose, prompt };
 }
 
 /* ==================== Generación Gemini (compartida) ===================== */
@@ -416,21 +437,32 @@ export function esErrorRateLimit(err: unknown): boolean {
 const MAX_RETRIES = 4;
 const RETRY_DELAYS = [5000, 15000, 30000];
 
-/** Genera la ilustración (sin texto) con reintentos y una imagen de referencia
- *  (el master del zorro por defecto, o p. ej. la foto de una persona).
+/** Imagen de referencia para la generación (varias = misma persona en
+ *  distintos ángulos; la primera es la principal). */
+export interface RefImagen {
+  base64: string;
+  mime?: string;
+}
+
+/** Genera la ilustración (sin texto) con reintentos y una o VARIAS imágenes de
+ *  referencia (el master del zorro por defecto, o las fotos de una persona —
+ *  más ángulos de la misma cara = más fidelidad de rostro).
  *  `imageSize` elige el lienzo soportado más cercano al aspecto final
  *  (vertical 1024x1536 por defecto; 1536x1024 para miniaturas horizontales). */
 export async function generateFoxIllustration(
   prompt: string,
-  refImageBase64?: string,
+  refImageBase64?: string | RefImagen[],
   imageSize: "1024x1536" | "1536x1024" = "1024x1536",
   refMimeType?: string,
   inputFidelity?: "high" | "low",
 ): Promise<Buffer> {
-  const refBase64 = refImageBase64 ?? (await loadFoxReference());
+  const refs: RefImagen[] = Array.isArray(refImageBase64)
+    ? refImageBase64
+    : [{ base64: refImageBase64 ?? (await loadFoxReference()), mime: refMimeType }];
+  if (refs.length === 0) refs.push({ base64: await loadFoxReference() });
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[CoverGen] Generando ilustración ${imageSize} (intento ${attempt}/${MAX_RETRIES})...`);
+    console.log(`[CoverGen] Generando ilustración ${imageSize} con ${refs.length} referencia/s (intento ${attempt}/${MAX_RETRIES})...`);
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
@@ -438,7 +470,7 @@ export async function generateFoxIllustration(
           {
             role: "user",
             parts: [
-              { inlineData: { data: refBase64, mimeType: refMimeType ?? "image/png" } },
+              ...refs.map(r => ({ inlineData: { data: r.base64, mimeType: r.mime ?? "image/png" } })),
               { text: prompt },
             ],
           },
@@ -470,44 +502,7 @@ export async function generateFoxIllustration(
   throw new Error("No se pudo generar la imagen");
 }
 
-/* ==================== Titular: acentos y overlay SVG ===================== */
-
-const PALABRAS_CLAVE = new Set([
-  "error", "errores", "secreto", "secretos", "gratis", "nunca", "siempre",
-  "clave", "claves", "truco", "trucos", "ia", "web", "ventas", "venta",
-  "exito", "éxito", "facil", "fácil", "rapido", "rápido", "peligro",
-  "millon", "millón", "millones", "dinero", "plata", "cliente", "clientes",
-  "hoy", "ya", "ahora", "prohibido", "urgente", "verdad", "mentira",
-  "mentiras", "gigante", "mejor", "peor", "todo", "nada", "nadie",
-]);
-
-function normalizar(w: string): string {
-  return w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-/**
- * Elige hasta 2 palabras del título para destacar en color de acento.
- * Prioridad: números > palabras "gatillo" > la palabra más larga (≥5).
- */
-export function elegirPalabrasAcento(lines: string[]): Set<string> {
-  type Cand = { word: string; score: number };
-  const cands: Cand[] = [];
-  const seen = new Set<string>();
-  for (const line of lines) {
-    for (const raw of line.split(/\s+/)) {
-      const word = raw.trim();
-      if (!word || seen.has(word)) continue;
-      seen.add(word);
-      const limpio = normalizar(word.replace(/[^\p{L}\p{N}]/gu, ""));
-      if (!limpio) continue;
-      if (/\d/.test(word)) cands.push({ word, score: 3 });
-      else if (PALABRAS_CLAVE.has(limpio) || PALABRAS_CLAVE.has(normalizar(word))) cands.push({ word, score: 2 });
-      else if (limpio.length >= 5) cands.push({ word, score: 1 + limpio.length / 100 });
-    }
-  }
-  cands.sort((a, b) => b.score - a.score);
-  return new Set(cands.slice(0, 2).map(c => c.word));
-}
+/* ==================== Titular: overlay (motor title-style) =============== */
 
 export function splitTextIntoLines(text: string, maxCharsPerLine: number): string[] {
   const words = text.split(/\s+/);
@@ -522,141 +517,43 @@ export function splitTextIntoLines(text: string, maxCharsPerLine: number): strin
   return lines;
 }
 
-function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-interface FuenteCfg {
-  familia: string;
-  peso: number;
-  /** Ancho aproximado de un carácter en mayúsculas relativo al font-size. */
-  ratio: number;
-  lineHeight: number;
-  /** Tamaños base por cantidad de líneas [1-2, 3, 4]. */
-  sizes: [number, number, number];
-}
-
-export const FUENTES: Record<EstiloTitular["fuente"], FuenteCfg> = {
-  display: {
-    familia: "'Oswald','Montserrat','DejaVu Sans',sans-serif",
-    peso: 700,
-    ratio: 0.52,
-    lineHeight: 1.08,
-    sizes: [150, 128, 108],
-  },
-  sans: {
-    familia: "'Montserrat','DejaVu Sans',sans-serif",
-    peso: 900,
-    ratio: 0.72,
-    lineHeight: 1.14,
-    sizes: [108, 92, 78],
-  },
-};
-
-export function renderLineaTspans(line: string, acentos: Set<string>, colorBase: string, colorAcento: string): string {
-  return line
-    .split(/\s+/)
-    .map((w, i) => {
-      const fill = acentos.has(w) ? colorAcento : colorBase;
-      const esc = escapeXml(w);
-      // &#160; (espacio no separable) entre palabras: librsvg recorta los
-      // espacios normales en los bordes de cada tspan y el titular quedaría
-      // con las palabras pegadas ("3ERRORESQUE").
-      return `${i > 0 ? "&#160;" : ""}<tspan fill="${fill}">${esc}</tspan>`;
-    })
-    .join("");
-}
-
 /**
- * Overlay del titular: scrim degradado (nunca franja sólida) + texto por
- * dirección de arte (chips o limpio, con palabras de acento y leve
- * inclinación). Devuelve el SVG listo para componer con Sharp.
+ * Overlay del titular vertical: delega en el motor de tipografía de impacto
+ * (title-style) usando la plantilla y el estilo elegidos — o la plantilla
+ * clásica "titular superior" con rotación de estilos si no se especifican.
  */
-export function buildTitleOverlaySvg(title: string, dir: DireccionArte): Buffer {
-  const estilo = dir.titular;
-  const fuente = FUENTES[estilo.fuente];
-
-  const cleanTitle = title.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().toUpperCase();
-  const lines = splitTextIntoLines(cleanTitle, 16).slice(0, 4);
-  const lineCount = lines.length;
-  const acentos = elegirPalabrasAcento(lines);
-
-  let fontSize = lineCount <= 2 ? fuente.sizes[0] : lineCount === 3 ? fuente.sizes[1] : fuente.sizes[2];
-  const maxTextWidth = COVER_WIDTH - TEXT_SIDE_PADDING * 2 - (estilo.modo === "chips" ? 70 : 0);
-  const maxLineChars = Math.max(...lines.map(l => l.length));
-  const estWidth = maxLineChars * fontSize * fuente.ratio;
-  if (estWidth > maxTextWidth) fontSize = Math.floor(fontSize * (maxTextWidth / estWidth));
-
-  const lineHeight = fontSize * fuente.lineHeight;
-  const chipPadX = fontSize * 0.34;
-  const chipH = lineHeight * (estilo.modo === "chips" ? 1.04 : 1);
-  const totalH = lineCount * chipH + (estilo.modo === "chips" ? (lineCount - 1) * 10 : 0);
-  const blockTop = totalH <= TEXT_ZONE_HEIGHT
-    ? TEXT_ZONE_TOP + (TEXT_ZONE_HEIGHT - totalH) / 2
-    : TEXT_ZONE_TOP;
-  const blockCenterY = blockTop + totalH / 2;
-
-  const piezas: string[] = [];
-  lines.forEach((line, i) => {
-    const lineTop = blockTop + i * (chipH + (estilo.modo === "chips" ? 10 : 0));
-    const baseline = lineTop + chipH / 2 + fontSize * 0.34;
-    const tspans = renderLineaTspans(line, acentos, estilo.colorTexto, estilo.colorAcento);
-
-    if (estilo.modo === "chips") {
-      const w = Math.min(line.length * fontSize * fuente.ratio + chipPadX * 2, COVER_WIDTH - 40);
-      const offsetX = i % 2 === 0 ? -12 : 12;
-      const x = (COVER_WIDTH - w) / 2 + offsetX;
-      piezas.push(
-        `<rect x="${x.toFixed(1)}" y="${lineTop.toFixed(1)}" width="${w.toFixed(1)}" height="${chipH.toFixed(1)}" rx="${(fontSize * 0.2).toFixed(1)}" fill="${estilo.chipFondo}"/>`,
-        `<text x="${(COVER_WIDTH / 2 + offsetX).toFixed(1)}" y="${baseline.toFixed(1)}" text-anchor="middle" font-family="${fuente.familia}" font-weight="${fuente.peso}" font-size="${fontSize}" letter-spacing="1">${tspans}</text>`,
-      );
-    } else {
-      const sombra = Math.max(4, Math.round(fontSize * 0.045));
-      // La sombra usa la MISMA estructura de tspans que el texto principal:
-      // si fuera texto plano tendría otro ancho y asomaría por los costados.
-      const tspansSombra = renderLineaTspans(line, acentos, "rgba(0,0,0,0.5)", "rgba(0,0,0,0.5)");
-      piezas.push(
-        `<text x="${COVER_WIDTH / 2 + sombra}" y="${(baseline + sombra).toFixed(1)}" text-anchor="middle" font-family="${fuente.familia}" font-weight="${fuente.peso}" font-size="${fontSize}" letter-spacing="1" fill="rgba(0,0,0,0.5)">${tspansSombra}</text>`,
-        `<text x="${COVER_WIDTH / 2}" y="${baseline.toFixed(1)}" text-anchor="middle" font-family="${fuente.familia}" font-weight="${fuente.peso}" font-size="${fontSize}" letter-spacing="1">${tspans}</text>`,
-      );
-    }
+export function buildTitleOverlaySvg(
+  title: string,
+  dir: DireccionArte,
+  plantilla?: PlantillaPortada,
+  estilo?: EstiloTitularV2,
+): Buffer {
+  const plantillaFinal = plantilla ?? obtenerPlantilla("v_titular_superior")!;
+  const estiloFinal = estilo ?? resolverEstiloTitular(null, plantillaFinal.estiloTitularDefault);
+  return construirOverlayTitular({
+    canvas: { width: COVER_WIDTH, height: COVER_HEIGHT },
+    zona: plantillaFinal.zona,
+    scrim: plantillaFinal.scrim,
+    titulo: title,
+    estilo: estiloFinal,
+    paleta: { colorAcento: dir.titular.colorAcento, scrim: dir.titular.scrim },
+    extras: plantillaFinal.extras,
   });
-
-  const { r, g, b } = estilo.scrim;
-  const scrimBottom = Math.max(640, blockTop + totalH + 120);
-
-  const svg = `<svg width="${COVER_WIDTH}" height="${COVER_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="scrim" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="rgb(${r},${g},${b})" stop-opacity="0.94"/>
-      <stop offset="0.6" stop-color="rgb(${r},${g},${b})" stop-opacity="0.82"/>
-      <stop offset="1" stop-color="rgb(${r},${g},${b})" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="${COVER_WIDTH}" height="${scrimBottom}" fill="url(#scrim)"/>
-  <g transform="rotate(${estilo.inclinacion}, ${COVER_WIDTH / 2}, ${blockCenterY.toFixed(1)})">
-    ${piezas.join("\n    ")}
-  </g>
-</svg>`;
-
-  return Buffer.from(svg);
 }
 
 /* ==================== Composición final ================================== */
 
-/** Redimensiona la ilustración a 1080x1920 y compone scrim + titular encima. */
+/** Redimensiona la ilustración a 1080x1920 y compone scrim + titular encima
+ *  según la plantilla y el estilo tipográfico elegidos. */
 export async function composeVerticalCover(
   illustration: Buffer,
   title: string,
   dir: DireccionArte,
+  plantilla?: PlantillaPortada,
+  estilo?: EstiloTitularV2,
 ): Promise<Buffer> {
   const sharp = (await import("sharp")).default;
-  const overlay = buildTitleOverlaySvg(title, dir);
+  const overlay = buildTitleOverlaySvg(title, dir, plantilla, estilo);
 
   const finalImage = await sharp(illustration)
     .resize(COVER_WIDTH, COVER_HEIGHT, { fit: "cover" })

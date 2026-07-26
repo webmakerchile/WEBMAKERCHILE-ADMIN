@@ -58,6 +58,8 @@ export interface GenerateCoverBody {
   style?: string;
   direccionId?: string;
   poseId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
   utileria?: string;
 }
 
@@ -68,8 +70,16 @@ export interface GenerateYoutubeCoverBody {
   description?: string;
   /** @maxLength 300 */
   style?: string;
+  /** Legado: una sola foto de la persona (usa personImagesBase64) */
   personImageBase64?: string;
+  /**
+   * Hasta 3 fotos de LA MISMA persona (más ángulos = más fidelidad de rostro)
+   * @maxItems 3
+   */
+  personImagesBase64?: string[];
   direccionId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
   /** @maxLength 300 */
   utileria?: string;
 }
@@ -133,6 +143,8 @@ export interface ImproveCoverIdeaResponse {
   utileria?: string;
   estiloExtra?: string;
   direccionId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
 }
 
 export interface CoverDireccionOption {
@@ -147,9 +159,32 @@ export interface CoverPoseOption {
   etiqueta: string;
 }
 
+export type CoverPlantillaOptionFormato =
+  (typeof CoverPlantillaOptionFormato)[keyof typeof CoverPlantillaOptionFormato];
+
+export const CoverPlantillaOptionFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
+export interface CoverPlantillaOption {
+  id: string;
+  formato: CoverPlantillaOptionFormato;
+  nombre: string;
+  descripcion: string;
+}
+
+export interface CoverEstiloTitularOption {
+  id: string;
+  nombre: string;
+  descripcion: string;
+}
+
 export interface CoverOptionsResponse {
   direcciones: CoverDireccionOption[];
   poses: CoverPoseOption[];
+  plantillas: CoverPlantillaOption[];
+  estilosTitular: CoverEstiloTitularOption[];
 }
 
 export interface DriveFile {

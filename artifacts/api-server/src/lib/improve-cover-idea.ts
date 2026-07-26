@@ -17,16 +17,34 @@ export interface DireccionResumen {
   descripcion: string;
 }
 
+/** Resumen de una plantilla de composición o de un estilo tipográfico. */
+export interface OpcionResumen {
+  id: string;
+  nombre: string;
+  descripcion: string;
+}
+
 export type FormatoPortada = "vertical" | "youtube";
 
 export function buildImproveIdeaPrompt(
   title: string,
   ideaBruta: string,
   direcciones: DireccionResumen[],
-  opts?: { formato?: FormatoPortada; conPersona?: boolean },
+  opts?: {
+    formato?: FormatoPortada;
+    conPersona?: boolean;
+    plantillas?: OpcionResumen[];
+    estilosTitular?: OpcionResumen[];
+  },
 ): string {
   const catalogoLuces = direcciones
     .map((d) => `  - "${d.id}": ${d.nombre} — ${d.descripcion}`)
+    .join("\n");
+  const catalogoPlantillas = (opts?.plantillas ?? [])
+    .map((p) => `  - "${p.id}": ${p.nombre} — ${p.descripcion}`)
+    .join("\n");
+  const catalogoEstilos = (opts?.estilosTitular ?? [])
+    .map((e) => `  - "${e.id}": ${e.nombre} — ${e.descripcion}`)
     .join("\n");
 
   const esYoutube = opts?.formato === "youtube";
@@ -53,7 +71,7 @@ export function buildImproveIdeaPrompt(
 Tu tarea: redactar mejor su idea, conservando SIEMPRE el tema que él quiso contar (no inventes un tema distinto), y proponer el set completo para que él solo revise y ajuste.
 
 Devuelve EXCLUSIVAMENTE JSON válido (sin markdown, sin backticks) con esta forma exacta:
-{ "title": "...", "idea": "...", "utileria": "...", "estiloExtra": "...", "direccionId": "..." }
+{ "title": "...", "idea": "...", "utileria": "...", "estiloExtra": "...", "direccionId": "..."${catalogoPlantillas ? `, "plantillaId": "..."` : ""}${catalogoEstilos ? `, "estiloTitularId": "..."` : ""} }
 
 Reglas:
 - "title": gancho corto para la miniatura, máximo ${esYoutube ? "5" : "6"} palabras, sin emojis, sin comillas internas y sin punto final. Si el compañero ya escribió un título, mejóralo sin cambiar su sentido.
@@ -62,7 +80,11 @@ ${reglaIdea}
 - "estiloExtra": una frase corta (máximo 12 palabras) con el tono o ambiente de la escena (ej: "tono dramático, ambiente de suspenso").
 - "direccionId": el id EXACTO de UNA de estas iluminaciones del estudio — elige la que mejor calce con la emoción del tema:
 ${catalogoLuces}
-
+${catalogoPlantillas ? `- "plantillaId": el id EXACTO de UNA de estas plantillas de composición — elige la que mejor cuente este tema${esYoutube ? ` (p. ej. "testimonio" para casos de clientes, "cara gigante" para reacciones fuertes, "top con número" si el título parte con un número)` : ""}:
+${catalogoPlantillas}
+` : ""}${catalogoEstilos ? `- "estiloTitularId": el id EXACTO de UNO de estos estilos tipográficos del titular — elige el que mejor calce con la energía del tema:
+${catalogoEstilos}
+` : ""}
 Material del compañero:
 Título (puede venir vacío): "${title}"
 Idea en bruto (puede venir vacía): "${ideaBruta}"`;
@@ -75,15 +97,21 @@ export type ImprovedIdea = {
   estiloExtra: string;
   /** id validado contra el catálogo; "" si la IA no propuso una luz válida. */
   direccionId: string;
+  /** id de plantilla validado contra el catálogo; "" si no propuso una válida. */
+  plantillaId: string;
+  /** id de estilo tipográfico validado contra el catálogo; "" si no propuso uno válido. */
+  estiloTitularId: string;
 };
 
 // Parseo defensivo del JSON de la IA: acepta fences de markdown y JSON
 // embebido en texto; null si no hay nada usable (el endpoint responde 502).
-// `allowedDireccionIds` filtra la luz sugerida: un id fuera del catálogo se
+// Las listas `allowed*` filtran las sugerencias: un id fuera del catálogo se
 // descarta en vez de propagarse a la UI.
 export function parseImprovedIdea(
   raw: string,
   allowedDireccionIds?: readonly string[],
+  allowedPlantillaIds?: readonly string[],
+  allowedEstiloTitularIds?: readonly string[],
 ): ImprovedIdea | null {
   const cleaned = String(raw)
     .trim()
@@ -111,17 +139,16 @@ export function parseImprovedIdea(
   const idea = str(rec.idea);
   if (!title && !idea) return null;
 
-  const direccionCruda = str(rec.direccionId);
-  const direccionId =
-    allowedDireccionIds && !allowedDireccionIds.includes(direccionCruda)
-      ? ""
-      : direccionCruda;
+  const validado = (crudo: string, allowed?: readonly string[]): string =>
+    allowed && !allowed.includes(crudo) ? "" : crudo;
 
   return {
     title: title.slice(0, IMPROVE_TITLE_MAX),
     idea: idea.slice(0, IMPROVE_IDEA_MAX),
     utileria: str(rec.utileria).slice(0, IMPROVE_UTILERIA_MAX),
     estiloExtra: str(rec.estiloExtra).slice(0, IMPROVE_ESTILO_MAX),
-    direccionId,
+    direccionId: validado(str(rec.direccionId), allowedDireccionIds),
+    plantillaId: validado(str(rec.plantillaId), allowedPlantillaIds),
+    estiloTitularId: validado(str(rec.estiloTitularId), allowedEstiloTitularIds),
   };
 }

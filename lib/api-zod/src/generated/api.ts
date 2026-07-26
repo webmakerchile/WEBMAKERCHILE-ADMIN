@@ -114,6 +114,8 @@ export const GenerateCoverBody = zod.object({
   style: zod.string().optional(),
   direccionId: zod.string().optional(),
   poseId: zod.string().optional(),
+  plantillaId: zod.string().optional(),
+  estiloTitularId: zod.string().optional(),
   utileria: zod.string().optional(),
 });
 
@@ -140,6 +142,21 @@ export const GetCoverOptionsResponse = zod.object({
       etiqueta: zod.string(),
     }),
   ),
+  plantillas: zod.array(
+    zod.object({
+      id: zod.string(),
+      formato: zod.enum(["vertical", "youtube"]),
+      nombre: zod.string(),
+      descripcion: zod.string(),
+    }),
+  ),
+  estilosTitular: zod.array(
+    zod.object({
+      id: zod.string(),
+      nombre: zod.string(),
+      descripcion: zod.string(),
+    }),
+  ),
 });
 
 /**
@@ -162,6 +179,8 @@ export const ImproveCoverIdeaResponse = zod.object({
   utileria: zod.string().optional(),
   estiloExtra: zod.string().optional(),
   direccionId: zod.string().optional(),
+  plantillaId: zod.string().optional(),
+  estiloTitularId: zod.string().optional(),
 });
 
 /**
@@ -173,6 +192,8 @@ export const generateYoutubeCoverBodyDescriptionMax = 2000;
 
 export const generateYoutubeCoverBodyStyleMax = 300;
 
+export const generateYoutubeCoverBodyPersonImagesBase64Max = 3;
+
 export const generateYoutubeCoverBodyUtileriaMax = 300;
 
 export const GenerateYoutubeCoverBody = zod.object({
@@ -182,8 +203,20 @@ export const GenerateYoutubeCoverBody = zod.object({
     .max(generateYoutubeCoverBodyDescriptionMax)
     .optional(),
   style: zod.string().max(generateYoutubeCoverBodyStyleMax).optional(),
-  personImageBase64: zod.string().optional(),
+  personImageBase64: zod
+    .string()
+    .optional()
+    .describe("Legado: una sola foto de la persona (usa personImagesBase64)"),
+  personImagesBase64: zod
+    .array(zod.string())
+    .max(generateYoutubeCoverBodyPersonImagesBase64Max)
+    .optional()
+    .describe(
+      "Hasta 3 fotos de LA MISMA persona (más ángulos = más fidelidad de rostro)",
+    ),
   direccionId: zod.string().optional(),
+  plantillaId: zod.string().optional(),
+  estiloTitularId: zod.string().optional(),
   utileria: zod.string().max(generateYoutubeCoverBodyUtileriaMax).optional(),
 });
 

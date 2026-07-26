@@ -13,8 +13,16 @@ export interface GenerateYoutubeCoverBody {
   description?: string;
   /** @maxLength 300 */
   style?: string;
+  /** Legado: una sola foto de la persona (usa personImagesBase64) */
   personImageBase64?: string;
+  /**
+   * Hasta 3 fotos de LA MISMA persona (más ángulos = más fidelidad de rostro)
+   * @maxItems 3
+   */
+  personImagesBase64?: string[];
   direccionId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
   /** @maxLength 300 */
   utileria?: string;
 }

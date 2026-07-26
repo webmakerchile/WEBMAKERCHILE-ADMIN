@@ -70,6 +70,8 @@ describe("parseImprovedIdea", () => {
       utileria: "",
       estiloExtra: "",
       direccionId: "",
+      plantillaId: "",
+      estiloTitularId: "",
     });
   });
 
@@ -117,6 +119,8 @@ describe("parseImprovedIdea", () => {
       utileria: "un notebook abierto, una taza de café",
       estiloExtra: "tono dramático",
       direccionId: "estudio_carmesi",
+      plantillaId: "",
+      estiloTitularId: "",
     });
   });
 
