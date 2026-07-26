@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Layout } from "@/components/layout";
 import {
   ShieldCheck,
@@ -19,11 +20,13 @@ import {
   UserCheck,
   UserX,
   Clock,
+  ChevronDown,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { useLang } from "@/lib/lang";
 import { useAuth } from "@/App";
+import { AREAS, AREA_LABELS, AREA_BADGE, type Area } from "@workspace/areas";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -291,23 +294,127 @@ type ManagedUser = {
   lastLoginAt: string;
 };
 
-function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err") => void }) {
-  const [users, setUsers] = useState<ManagedUser[] | null>(null);
-  const [loading, setLoading] = useState(true);
+function TeamRoleBadge({ teamRole }: { teamRole: string }) {
+  const badge = AREA_BADGE[teamRole as Area];
+  if (!badge) return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-foreground/10 text-muted-foreground border border-foreground/15">
+      {teamRole}
+    </span>
+  );
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border"
+      style={{ background: badge.bg, color: badge.text, borderColor: badge.text + "40" }}
+    >
+      {AREA_LABELS[teamRole as Area]}
+    </span>
+  );
+}
 
-  const load = useCallback(async () => {
-    setLoading(true);
+function TeamRoleSelector({
+  userId,
+  currentRole,
+  onChanged,
+}: {
+  userId: number;
+  currentRole: string;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleSelect = async (role: Area) => {
+    if (role === currentRole) { setOpen(false); return; }
+    setSaving(true);
     try {
-      const data = await apiFetch("/admin/users");
-      setUsers(data);
+      await apiFetch(`/admin/users/${userId}/team-role`, {
+        method: "PATCH",
+        body: JSON.stringify({ teamRole: role }),
+      });
+      onChanged();
     } catch {
-      setUsers([]);
     } finally {
-      setLoading(false);
+      setSaving(false);
+      setOpen(false);
     }
-  }, []);
+  };
 
-  useEffect(() => { load(); }, [load]);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={saving}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-dashed border-foreground/25 hover:border-primary/50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+      >
+        {saving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ChevronDown className="w-2.5 h-2.5" />}
+        Rol
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-popover text-popover-foreground border border-foreground/15 rounded-xl shadow-xl py-1 min-w-[150px]">
+          {AREAS.map((r) => {
+            const badge = AREA_BADGE[r];
+            return (
+              <button
+                key={r}
+                onClick={() => handleSelect(r)}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-foreground/8 transition-colors ${r === currentRole ? "font-semibold" : "font-normal"}`}
+              >
+                <span
+                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ background: badge.text }}
+                />
+                {AREA_LABELS[r]}
+                {r === currentRole && <CheckCircle2 className="w-3 h-3 ml-auto text-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsersPanel({
+  showToast,
+  isSuperAdmin,
+  isCeo,
+}: {
+  showToast: (msg: string, type: "ok" | "err") => void;
+  isSuperAdmin: boolean;
+  isCeo: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+
+  const { data: users, isLoading: loading } = useQuery<ManagedUser[]>({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
+      const data = await apiFetch("/admin/users");
+      return data as ManagedUser[];
+    },
+    staleTime: 30000,
+  });
+
+  const invalidate = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+  }, [queryClient]);
+
+  const renameMut = useMutation({
+    mutationFn: async ({ id, name }: { id: number; name: string }) => {
+      await apiFetch(`/jornada/user/${id}/name`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+    },
+    onSuccess: () => {
+      showToast("Nombre actualizado", "ok");
+      setEditingId(null);
+      setNameDraft("");
+      invalidate();
+    },
+    onError: (e: any) => showToast(e.message || "No se pudo renombrar", "err"),
+  });
 
   const setApproval = async (id: number, status: string) => {
     try {
@@ -317,7 +424,7 @@ function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err"
       });
       const labels: Record<string, string> = { approved: "aprobado", rejected: "rechazado", pending: "pendiente" };
       showToast(`Usuario ${labels[status] || status}`, "ok");
-      await load();
+      invalidate();
     } catch (e: any) {
       showToast(e.message, "err");
     }
@@ -328,7 +435,7 @@ function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err"
     try {
       await apiFetch(`/admin/users/${id}`, { method: "DELETE" });
       showToast("Usuario eliminado", "ok");
-      await load();
+      invalidate();
     } catch (e: any) {
       showToast(e.message, "err");
     }
@@ -367,7 +474,9 @@ function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err"
         </div>
         <div>
           <p className="text-sm font-semibold">Gestión de usuarios</p>
-          <p className="text-xs text-muted-foreground">Aprueba o rechaza acceso a colaboradores</p>
+          <p className="text-xs text-muted-foreground">
+            {isSuperAdmin ? "Aprueba, rechaza, renombra y asigna roles al equipo" : "Asigna roles al equipo"}
+          </p>
         </div>
         {!loading && pending.length > 0 && (
           <span className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500 text-black">
@@ -401,14 +510,65 @@ function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err"
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-medium truncate">{u.name || u.email}</p>
-                  {statusBadge(u.approvalStatus)}
-                </div>
-                <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                {editingId === u.id ? (
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (nameDraft.trim()) renameMut.mutate({ id: u.id, name: nameDraft.trim() });
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Escape") { setEditingId(null); setNameDraft(""); } }}
+                      disabled={renameMut.isPending}
+                      placeholder="Nombre visible"
+                      className="flex-1 min-w-0 text-sm bg-foreground/8 border border-foreground/20 rounded-lg px-2 py-1 outline-none focus:border-primary/60 transition"
+                    />
+                    <button
+                      type="submit"
+                      disabled={renameMut.isPending || !nameDraft.trim()}
+                      className="w-7 h-7 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 flex items-center justify-center transition disabled:opacity-40"
+                    >
+                      {renameMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingId(null); setNameDraft(""); }}
+                      className="w-7 h-7 rounded-lg bg-foreground/5 hover:bg-foreground/10 text-muted-foreground flex items-center justify-center transition"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium truncate">{u.name || u.email}</p>
+                    {statusBadge(u.approvalStatus)}
+                    <TeamRoleBadge teamRole={u.teamRole} />
+                    {(isCeo || isSuperAdmin) && (
+                      <button
+                        onClick={() => { setEditingId(u.id); setNameDraft(u.name || ""); }}
+                        title="Cambiar nombre"
+                        className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition opacity-40 hover:opacity-100"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {editingId !== u.id && <p className="text-xs text-muted-foreground truncate">{u.email}</p>}
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {u.approvalStatus !== "approved" && (
+                {(isCeo || isSuperAdmin) && editingId !== u.id && (
+                  <TeamRoleSelector
+                    userId={u.id}
+                    currentRole={u.teamRole}
+                    onChanged={invalidate}
+                  />
+                )}
+                {isSuperAdmin && u.approvalStatus !== "approved" && editingId !== u.id && (
                   <button
                     onClick={() => setApproval(u.id, "approved")}
                     title="Aprobar acceso"
@@ -417,7 +577,7 @@ function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err"
                     <UserCheck className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {u.approvalStatus !== "rejected" && (
+                {isSuperAdmin && u.approvalStatus !== "rejected" && editingId !== u.id && (
                   <button
                     onClick={() => setApproval(u.id, "rejected")}
                     title="Rechazar acceso"
@@ -426,13 +586,15 @@ function UsersPanel({ showToast }: { showToast: (msg: string, type: "ok" | "err"
                     <UserX className="w-3.5 h-3.5" />
                   </button>
                 )}
-                <button
-                  onClick={() => deleteUser(u.id, u.email)}
-                  title="Eliminar usuario"
-                  className="w-7 h-7 rounded-lg bg-foreground/5 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 flex items-center justify-center transition"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {isSuperAdmin && editingId !== u.id && (
+                  <button
+                    onClick={() => deleteUser(u.id, u.email)}
+                    title="Eliminar usuario"
+                    className="w-7 h-7 rounded-lg bg-foreground/5 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 flex items-center justify-center transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -446,6 +608,7 @@ export default function AjustesPage() {
   const { t } = useLang();
   const auth = useAuth();
   const isSuperAdmin = auth?.role === "superadmin";
+  const isCeo = auth?.teamRole === "ceo";
   const [credentials, setCredentials] = useState<CredentialStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -504,7 +667,9 @@ export default function AjustesPage() {
           <p className="text-sm text-muted-foreground">{t.ajustesSubtitle}</p>
         </div>
 
-        {isSuperAdmin && <UsersPanel showToast={showToast} />}
+        {(isSuperAdmin || isCeo) && (
+          <UsersPanel showToast={showToast} isSuperAdmin={isSuperAdmin} isCeo={isCeo} />
+        )}
 
         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
           <Lock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />

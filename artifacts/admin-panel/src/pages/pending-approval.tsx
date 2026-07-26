@@ -8,6 +8,7 @@ type AuthUser = { id: number; email: string; name: string | null; picture: strin
 export default function PendingApprovalPage({ user }: { user: AuthUser }) {
   const handleLogout = async () => {
     await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+    try { localStorage.removeItem("wm_auth_hint"); } catch {}
     window.location.href = "/";
   };
 

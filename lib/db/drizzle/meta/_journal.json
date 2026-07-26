@@ -103,22 +103,29 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1785283200000,
-      "tag": "0016_employee_profiles",
+      "when": 1784851200000,
+      "tag": "0016_hub_tasks_v2",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1785369600000,
-      "tag": "0017_tickets",
+      "when": 1784937600000,
+      "tag": "0017_hub_services",
       "breakpoints": true
     },
     {
-      "idx": 18,
+      "idx": 20,
       "version": "7",
-      "when": 1785456000000,
-      "tag": "0018_jornada_discord",
+      "when": 1785283200000,
+      "tag": "0020_employee_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785369600000,
+      "tag": "0021_tickets",
       "breakpoints": true
     }
   ]

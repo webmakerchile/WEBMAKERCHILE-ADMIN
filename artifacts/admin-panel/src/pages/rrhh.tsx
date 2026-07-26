@@ -11,7 +11,7 @@ import {
   CalendarDays, Phone, FileText, ExternalLink,
 } from "lucide-react";
 import { TicketsInline } from "@/components/tickets-inline";
-import { useTeamAttendance, useJornadaStatus, formatDuration } from "@/lib/jornada";
+import { useAsistencia, formatMinutes, type AsistenciaMiembro } from "@/lib/asistencia";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -159,10 +159,9 @@ export default function RrhhPage() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
-  const { data: attendance } = useTeamAttendance();
-  const { data: discordStatus } = useJornadaStatus();
+  const { data: attendance } = useAsistencia();
   const attendanceById = useMemo(
-    () => new Map((attendance?.people ?? []).map(a => [a.id, a])),
+    () => new Map((attendance?.members ?? []).map(a => [a.id, a])),
     [attendance],
   );
 
@@ -286,37 +285,34 @@ export default function RrhhPage() {
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                   <p className="text-sm font-semibold">Asistencia de hoy</p>
-                  {discordStatus && (
-                    <span className={`text-[11px] ${discordStatus.configured && discordStatus.lastPollOk ? "text-emerald-400" : "text-amber-400"}`}>
-                      {!discordStatus.configured
-                        ? "Discord sin configurar"
-                        : discordStatus.lastPollOk
-                          ? `Discord conectado · ${discordStatus.linkedUsers} cuenta${discordStatus.linkedUsers === 1 ? "" : "s"} vinculada${discordStatus.linkedUsers === 1 ? "" : "s"}`
-                          : `Discord con problemas: ${discordStatus.lastError ?? "sin detalle"}`}
+                  {attendance && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {attendance.summary.working} trabajando · {attendance.summary.finished} terminaron · {attendance.summary.absent} sin marcar
                     </span>
                   )}
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-3">
-                  El tiempo se mide por la presencia en el canal de voz, no por marcar entrada.
+                  Las horas salen de la jornada: Discord verifica la presencia en el canal de voz.
                 </p>
-                {!attendance || attendance.people.length === 0 ? (
+                {!attendance || attendance.members.length === 0 ? (
                   <p className="text-sm text-muted-foreground py-4 text-center">Sin datos de asistencia todavía.</p>
                 ) : (
                   <ul className="divide-y divide-foreground/5">
-                    {attendance.people
+                    {attendance.members
                       .slice()
-                      .sort((a, b) => Number(b.online) - Number(a.online) || b.weekSeconds - a.weekSeconds)
-                      .map(a => (
+                      .sort((a, b) => Number(!!b.today?.open) - Number(!!a.today?.open) || b.weekTotal - a.weekTotal)
+                      .map((a: AsistenciaMiembro) => (
                         <li key={a.id} className="flex flex-wrap items-center gap-3 py-2">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.online ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.today?.open ? "bg-emerald-400" : a.today ? "bg-zinc-500" : "bg-zinc-700"}`} />
                           <span className="flex-1 min-w-[8rem] text-sm truncate">{a.name || a.email}</span>
-                          {!a.linked && <span className="text-[11px] text-amber-400">sin vincular</span>}
-                          {a.online && a.channelName && (
-                            <span className="text-[11px] text-muted-foreground truncate max-w-[10rem]">{a.channelName}</span>
+                          {!a.discord?.linked && <span className="text-[11px] text-amber-400">Discord sin vincular</span>}
+                          {a.discord?.inVoiceNow === true && <span className="text-[11px] text-emerald-400">en voz</span>}
+                          {a.discord?.pct !== null && a.discord?.pct !== undefined && (
+                            <span className="text-[11px] text-muted-foreground">{a.discord.pct}% verificado</span>
                           )}
-                          <span className="text-xs tabular-nums w-16 text-right">{formatDuration(a.todaySeconds)}</span>
+                          <span className="text-xs tabular-nums w-16 text-right">{formatMinutes(a.today?.minutes ?? 0)}</span>
                           <span className="text-[11px] text-muted-foreground tabular-nums w-20 text-right">
-                            {formatDuration(a.weekSeconds)} sem
+                            {formatMinutes(a.weekTotal)} sem
                           </span>
                         </li>
                       ))}
@@ -372,9 +368,9 @@ export default function RrhhPage() {
                               {(() => {
                                 const a = attendanceById.get(p.id);
                                 if (!a) return null;
-                                return a.linked
-                                  ? <span className="text-emerald-400">Discord: {a.discordUsername || "vinculado"}</span>
-                                  : <span className="text-amber-400">Discord sin vincular — su jornada no se mide</span>;
+                                return a.discord?.linked
+                                  ? <span className="text-emerald-400">Discord: {a.discord.tag || "vinculado"}</span>
+                                  : <span className="text-amber-400">Discord sin vincular — su jornada no se verifica</span>;
                               })()}
                               {prof?.documentsUrl && (
                                 <a href={prof.documentsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">

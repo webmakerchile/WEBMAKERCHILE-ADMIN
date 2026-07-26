@@ -1,4 +1,5 @@
-import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -7,8 +8,8 @@ export const users = pgTable("users", {
   name: text("name"),
   picture: text("picture"),
   role: text("role").notNull().default("admin"),
-  /** Collaboration role: 'editor' (default) or 'reviewer' (can approve videos). */
-  teamRole: text("team_role").notNull().default("editor"),
+  /** User area (access zone): 'ceo' | 'ejecutivo' | 'edicion' | 'marketing'. Default: 'edicion'. Full definition in @workspace/areas. */
+  teamRole: text("team_role").notNull().default("edicion"),
   googleAccessToken: text("google_access_token"),
   googleRefreshToken: text("google_refresh_token"),
   tiktokOpenId: text("tiktok_open_id"),
@@ -39,13 +40,6 @@ export const users = pgTable("users", {
    * Cleared on successful re-auth in the OAuth callback.
    */
   revokedNetworks: text("revoked_networks").notNull().default(""),
-  /**
-   * Vínculo con Discord: la jornada se mide por su presencia en los canales de
-   * voz del servidor, así que sin este id la persona no puede ser medida.
-   */
-  discordUserId: text("discord_user_id"),
-  discordUsername: text("discord_username"),
-  discordLinkedAt: timestamp("discord_linked_at"),
   googleCalendarAccessToken: text("google_calendar_access_token"),
   googleCalendarRefreshToken: text("google_calendar_refresh_token"),
   googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),
@@ -56,4 +50,13 @@ export const users = pgTable("users", {
   approvalStatus: text("approval_status").notNull().default("pending"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
-});
+  /** ID de la cuenta de Discord emparejada (verificación de asistencia por canal de voz). */
+  discordUserId: text("discord_user_id"),
+  /** Nombre visible de Discord cacheado al emparejar (solo para UI). */
+  discordTag: text("discord_tag"),
+}, (t) => ({
+  /** Una cuenta de Discord solo puede estar emparejada con UNA persona. */
+  discordUniq: uniqueIndex("users_discord_user_id_uniq")
+    .on(t.discordUserId)
+    .where(sql`${t.discordUserId} IS NOT NULL`),
+}));

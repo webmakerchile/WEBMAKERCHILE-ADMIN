@@ -23,6 +23,7 @@ import {
   Menu,
   X,
   Languages,
+  CheckSquare2,
   LayoutGrid,
   ChevronRight,
   Receipt,
@@ -33,7 +34,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
-import { JornadaIndicator } from "@/components/jornada-indicator";
 
 type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
 type NavSection = { label: string; items: NavItem[] };
@@ -44,6 +44,7 @@ import { GlobalShortcutsProvider } from "@/components/global-shortcuts-provider"
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { InstallBanner } from "@/components/install-banner";
+import { JornadaChip } from "@/components/jornada-card";
 import { useLang } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -62,6 +63,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       label: t.navSectionContent,
       items: [
         { href: "/", icon: LayoutDashboard, label: t.navHome, tour: "nav-inicio" },
+        { href: "/mi-dia", icon: CheckSquare2, label: t.navMyDay, tour: "nav-mi-dia" },
         { href: "/schedule", icon: CalendarClock, label: t.navPosts, tour: "nav-schedule" },
         { href: "/cuentas", icon: Users2, label: t.navAccounts, tour: "nav-cuentas" },
         { href: "/videos", icon: Video, label: t.navVideos, tour: "nav-videos" },
@@ -141,7 +143,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     } catch {}
     try {
       for (const key of Object.keys(localStorage)) {
-        if (key.startsWith("wm_hub")) localStorage.removeItem(key);
+        if (key.startsWith("wm_hub") || key === "wm_auth_hint") localStorage.removeItem(key);
       }
     } catch {}
     queryClient.invalidateQueries({ queryKey: ["auth-me"] });
@@ -229,9 +231,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-4 border-t border-foreground/10 space-y-3">
-          {/* La jornada se ve en todas las páginas: si solo viviera en "Mi día",
-              quien entra directo a otra sección no se entera. */}
-          <JornadaIndicator />
+          <JornadaChip />
           {user && (
             <div className="flex items-center gap-3 px-1">
               {user.picture ? (
@@ -271,7 +271,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <JornadaIndicator variant="compact" />
             <LangToggle />
             <NotificationsBell />
             <ThemeToggle />
@@ -342,7 +341,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </nav>
 
                 <div className="p-4 border-t border-foreground/10 space-y-3">
-                  <JornadaIndicator />
+                  <JornadaChip />
                   {user && (
                     <div className="flex items-center gap-3 px-1">
                       {user.picture ? (

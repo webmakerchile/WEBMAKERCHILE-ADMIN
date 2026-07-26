@@ -1,0 +1,17 @@
+En este proyecto (WebMaker Latam Admin Panel) la tabla `users` en lib/db/src/schema/users.ts ya tiene los campos `role`, `teamRole` y `approvalStatus`. Quiero reemplazar el sistema de teamRole por un sistema de ÁREAS que controla qué pantallas ve cada usuario.
+
+Áreas válidas: "ceo", "ejecutivo", "edicion", "marketing".
+
+1. Renombra/reutiliza el campo `teamRole` como área con esos 4 valores. Migración de datos: cualquier valor existente ("editor", "reviewer", etc.) pasa a "ceo" para no dejar a nadie fuera; después yo reasigno manualmente.
+2. Crea un mapa central de permisos en UN solo lugar compartido (por ejemplo lib/ o un archivo importable por backend y frontend) que defina qué rutas de página y qué prefijos de API puede usar cada área:
+   - ceo: acceso total a todo el panel.
+   - ejecutivo: Hub Ejecutivo (/ejecutivo y las rutas /api/hub/*), y las futuras pantallas de tareas ("Mi día").
+   - edicion: Inicio, Publicaciones, Calendario, Studio, Transcriptor, y "Mi día". Sus rutas API correspondientes.
+   - marketing: Analytics, Comunidad (historias y carruseles), Inspiraciones, Calendario, y "Mi día". Sus rutas API correspondientes.
+3. Backend: middleware requireArea(...areas) en src/lib/ siguiendo el patrón de requireAuth, aplicado a los routers correspondientes en app.ts. Un usuario de "marketing" que llame a /api/hub/* debe recibir 403.
+4. Frontend: el sidebar (components/layout.tsx) muestra SOLO los ítems del área del usuario logueado. Si navega por URL directa a una página que no le corresponde, muéstrale una pantalla "No tienes acceso a esta sección" en español, con botón para volver a su pantalla principal. El command palette y los shortcuts globales también deben respetar el área.
+5. En la página de Cuentas, el usuario "ceo" puede asignar el área de cada usuario aprobado con un selector visual (badge de color por área: ceo dorado, ejecutivo azul, edicion violeta, marketing verde).
+6. La pantalla de inicio tras el login debe ser la principal de su área: ceo → Inicio, ejecutivo → /ejecutivo, edicion → Inicio, marketing → Analytics.
+7. No toques el flujo OAuth ni ALLOWED_ADMIN_EMAILS.
+
+TypeScript strict, migración Drizzle, y corre pnpm run typecheck antes de terminar. Agrega un test Vitest que verifique que requireArea bloquea con 403 a un área sin permiso.

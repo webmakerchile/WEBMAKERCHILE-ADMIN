@@ -6,10 +6,11 @@ import { createContext, useContext, Component, lazy, Suspense, type ReactNode } 
 import { LangProvider } from "@/lib/lang";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, ShieldOff } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
 import { canAccessRoute, roleHome, type TeamRole } from "@workspace/roles";
 import { useEffect } from "react";
+import { areaCanAccessPage, toArea, AREA_HOME, type Area } from "@workspace/areas";
 
 // Eager: dashboard is the landing page; login pages are tiny and unauthed.
 import Dashboard from "./pages/dashboard";
@@ -42,6 +43,7 @@ const VentasPage = lazy(() => import("./pages/ventas"));
 const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
 const RrhhPage = lazy(() => import("./pages/rrhh"));
 const TicketsPage = lazy(() => import("./pages/tickets"));
+const MiDiaPage = lazy(() => import("./pages/mi-dia"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -80,15 +82,12 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
-      // Mild default cache so navigation feels instant; per-query overrides
-      // (e.g. analytics, RSS news, library) bump this further when data is
-      // expensive to fetch and changes infrequently.
       staleTime: 30_000,
     }
   }
 });
 
-type AuthUser = {
+export type AuthUser = {
   id: number;
   email: string;
   name: string | null;
@@ -137,6 +136,52 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   );
 }
 
+/** Shown when a user tries to access a page outside their area. */
+function UnauthorizedPage() {
+  const user = useAuth();
+  const area = toArea(user?.teamRole);
+  const home = AREA_HOME[area];
+  const [, setLocation] = useLocation();
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="text-center p-8 max-w-sm">
+        <ShieldOff className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+        <h2 className="text-lg font-semibold mb-1">Acceso restringido</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Tu área no tiene permiso para ver esta sección.
+        </p>
+        <button
+          onClick={() => setLocation(home)}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm"
+        >
+          Ir a mi panel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Wraps a page and shows UnauthorizedPage if the current user's area cannot access path. */
+function AreaGuard({ path, children }: { path: string; children: ReactNode }) {
+  const user = useAuth();
+  const area = toArea(user?.teamRole);
+  if (!areaCanAccessPage(area, path)) {
+    return <UnauthorizedPage />;
+  }
+  return <>{children}</>;
+}
+
+/** Legacy guard kept for the /ejecutivo route — now expanded to include "ejecutivo" area. */
+function EjecutivoRoute({ children }: { children: ReactNode }) {
+  const user = useAuth();
+  if (!user) return null;
+  const area = toArea(user.teamRole);
+  if (user.role !== "superadmin" && area !== "ceo" && area !== "ejecutivo" && area !== "rrhh") {
+    return <UnauthorizedPage />;
+  }
+  return <>{children}</>;
+}
+
 function AccessDeniedScreen({ user }: { user: AuthUser }) {
   const handleLogout = async () => {
     try {
@@ -144,6 +189,7 @@ function AccessDeniedScreen({ user }: { user: AuthUser }) {
     } catch {
       // Ignorar: igual redirigimos al login.
     }
+    clearSessionHint();
     window.location.href = "/";
   };
   return (
@@ -187,8 +233,20 @@ function ReconnectingScreen() {
   );
 }
 
+const SESSION_HINT_KEY = "wm_auth_hint";
+
+function setSessionHint() {
+  try { localStorage.setItem(SESSION_HINT_KEY, "1"); } catch {}
+}
+function clearSessionHint() {
+  try { localStorage.removeItem(SESSION_HINT_KEY); } catch {}
+}
+function hasSessionHint() {
+  try { return !!localStorage.getItem(SESSION_HINT_KEY); } catch { return false; }
+}
+
 function AuthLoader({ children }: { children: React.ReactNode }) {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const { data: user, isLoading, error } = useQuery<AuthUser>({
     queryKey: ["auth-me"],
@@ -196,18 +254,25 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
       if (res.status === 401) throw new Error("No autenticado");
       if (!res.ok) throw new Error(`server_error_${res.status}`);
-      return res.json();
+      const data = await res.json();
+      setSessionHint();
+      return data;
     },
     retry: (failureCount, error: any) => {
-      // 401 = sesión inválida, no reintentar
-      if (error?.message === "No autenticado") return false;
-      // Errores de servidor/red durante arranque: hasta 8 intentos (~25 s)
+      if (error?.message === "No autenticado") {
+        // Si el usuario estaba autenticado previamente, reintentamos hasta 4 veces
+        // para cubrir el caso de un reinicio de servidor (el servidor puede devolver
+        // 401 transitoriamente mientras la sesión PG se inicializa).
+        if (hasSessionHint() && failureCount < 4) return true;
+        return false;
+      }
       return failureCount < 8;
     },
-    retryDelay: (attempt) => Math.min(1500 * attempt, 5000),
+    retryDelay: (attempt, error: any) => {
+      if ((error as Error)?.message === "No autenticado") return 3000;
+      return Math.min(1500 * attempt, 5000);
+    },
     staleTime: 5 * 60 * 1000,
-    // Mientras la cuenta está pendiente, re-consultar cada 30s para que al
-    // aprobarla se desbloquee el panel sin recargar la página.
     refetchInterval: (query) =>
       query.state.data?.approvalStatus === "pending" ? 30_000 : false,
   });
@@ -215,6 +280,16 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSentryUser(user ? { id: user.id, email: user.email } : null);
   }, [user]);
+
+  // Post-login redirect: send each area to its home page when landing on "/".
+  useEffect(() => {
+    if (!user || user.approvalStatus !== "approved") return;
+    const area = toArea(user.teamRole);
+    const home = AREA_HOME[area as Area];
+    if (location === "/" && home !== "/") {
+      setLocation(home);
+    }
+  }, [user?.teamRole, user?.approvalStatus, location, setLocation]);
 
   if (isLoading) {
     return (
@@ -224,7 +299,6 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Error de servidor/red (no 401): mostrar pantalla de reconexión, no login
   if (error && (error as Error).message !== "No autenticado") {
     return <ReconnectingScreen />;
   }
@@ -261,55 +335,94 @@ function Router() {
   return (
     <Switch>
       <Route path="/">
-        <RouteShell name="dashboard"><Dashboard /></RouteShell>
+        <AreaGuard path="/">
+          <RouteShell name="dashboard"><Dashboard /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/videos">
-        <RouteShell name="videos"><VideosPage /></RouteShell>
+        <AreaGuard path="/videos">
+          <RouteShell name="videos"><VideosPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/cover">
-        <RouteShell name="cover"><CoverGeneratorPage /></RouteShell>
+        <AreaGuard path="/cover">
+          <RouteShell name="cover"><CoverGeneratorPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/drive">
-        <RouteShell name="drive"><DriveBrowserPage /></RouteShell>
+        <AreaGuard path="/drive">
+          <RouteShell name="drive"><DriveBrowserPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/schedule">
-        <RouteShell name="schedule"><SchedulePage /></RouteShell>
+        <AreaGuard path="/schedule">
+          <RouteShell name="schedule"><SchedulePage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/estudio">
-        <RouteShell name="estudio"><StudioPage /></RouteShell>
+        <AreaGuard path="/estudio">
+          <RouteShell name="estudio"><StudioPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/historias">
-        <RouteShell name="historias"><HistoriasPage /></RouteShell>
+        <AreaGuard path="/historias">
+          <RouteShell name="historias"><HistoriasPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/descripciones">
-        <RouteShell name="descripciones"><DescripcionesPage /></RouteShell>
+        <AreaGuard path="/descripciones">
+          <RouteShell name="descripciones"><DescripcionesPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/cuentas">
-        <RouteShell name="cuentas"><CuentasPage /></RouteShell>
+        <AreaGuard path="/cuentas">
+          <RouteShell name="cuentas"><CuentasPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/biblioteca">
-        <RouteShell name="biblioteca"><BibliotecaPage /></RouteShell>
+        <AreaGuard path="/biblioteca">
+          <RouteShell name="biblioteca"><BibliotecaPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/insights">
-        <RouteShell name="insights"><InsightsPage /></RouteShell>
+        <AreaGuard path="/insights">
+          <RouteShell name="insights"><InsightsPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/campanas/:id">
-        <RouteShell name="campana"><CampanaPage /></RouteShell>
+        <AreaGuard path="/biblioteca">
+          <RouteShell name="campana"><CampanaPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/equipo">
-        <RouteShell name="equipo"><EquipoPage /></RouteShell>
+        <AreaGuard path="/equipo">
+          <RouteShell name="equipo"><EquipoPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/transcriptor">
-        <RouteShell name="transcriptor"><TranscriptorPage /></RouteShell>
+        <AreaGuard path="/transcriptor">
+          <RouteShell name="transcriptor"><TranscriptorPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/ayuda">
-        <RouteShell name="ayuda"><AyudaPage /></RouteShell>
+        <AreaGuard path="/ayuda">
+          <RouteShell name="ayuda"><AyudaPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/ajustes">
-        <RouteShell name="ajustes"><AjustesPage /></RouteShell>
+        <AreaGuard path="/ajustes">
+          <RouteShell name="ajustes"><AjustesPage /></RouteShell>
+        </AreaGuard>
+      </Route>
+      <Route path="/mi-dia">
+        <AreaGuard path="/mi-dia">
+          <RouteShell name="mi-dia"><MiDiaPage /></RouteShell>
+        </AreaGuard>
       </Route>
       <Route path="/ejecutivo">
-        <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
+        <EjecutivoRoute>
+          <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
+        </EjecutivoRoute>
       </Route>
       <Route path="/reportes">
         <RouteShell name="reportes"><ReportesPage /></RouteShell>

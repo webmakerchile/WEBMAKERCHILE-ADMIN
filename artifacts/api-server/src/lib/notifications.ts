@@ -1,7 +1,13 @@
 import webpush from "web-push";
 import { db } from "@workspace/db";
-import { notifications, pushSubscriptions, type InsertNotification } from "@workspace/db/schema";
+import { notifications, pushSubscriptions, users, type InsertNotification } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+
+/**
+ * Cuentas excluidas de web push (cuentas de prueba/revisión de tiendas).
+ * Siguen recibiendo la notificación in-app; solo se omite el push al dispositivo.
+ */
+const PUSH_EXCLUDED_EMAILS = new Set(["reviewer@webmakerchile.com"]);
 
 const VAPID_PUBLIC_KEY = (process.env.VAPID_PUBLIC_KEY || "").trim();
 const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY || "").trim();
@@ -81,6 +87,16 @@ type PushPayload = { title: string; body: string; link?: string; tag?: string };
 
 export async function sendPushToUser(userId: number, payload: PushPayload): Promise<void> {
   if (!configureWebPush()) return;
+  try {
+    const [target] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (target?.email && PUSH_EXCLUDED_EMAILS.has(target.email.toLowerCase())) return;
+  } catch (err: any) {
+    console.error("[Push] exclusion lookup failed:", err?.message || err);
+  }
   const subs = await db
     .select()
     .from(pushSubscriptions)

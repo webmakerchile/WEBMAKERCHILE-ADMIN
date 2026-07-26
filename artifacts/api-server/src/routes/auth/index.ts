@@ -28,7 +28,7 @@ function getYouTubeCallbackURL() {
   return `${base}/auth/youtube/callback`;
 }
 
-function getCalendarCallbackURL() {
+export function getCalendarCallbackURL() {
   if (process.env.GOOGLE_CALENDAR_CALLBACK_URL) return process.env.GOOGLE_CALENDAR_CALLBACK_URL;
   const base = getCallbackURL().replace("/auth/google/callback", "");
   return `${base}/auth/google-calendar/callback`;
@@ -267,13 +267,18 @@ router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: R
 });
 
 router.get("/auth/google-calendar", requireAuth, requireApproved, async (req: Request, res: Response) => {
-  if (!GOOGLE_CLIENT_ID) {
-    res.status(500).json({ error: "Google OAuth no configurado" });
+  // Volver a la página desde donde se inició la conexión (Reuniones por defecto).
+  const returnTo = req.query.from === "cuentas" ? "/cuentas" : "/ejecutivo";
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    // Navegación de enlace: redirigir con el motivo visible en vez de responder JSON.
+    res.redirect(`${returnTo}?calendar=error&msg=not_configured`);
     return;
   }
 
   const csrfState = crypto.randomBytes(16).toString("hex");
   (req.session as any).calendarCsrf = csrfState;
+  (req.session as any).calendarReturnTo = returnTo;
   await new Promise<void>((resolve) => req.session.save(resolve));
 
   const params = new URLSearchParams({
@@ -293,9 +298,13 @@ router.get("/auth/google-calendar/callback", requireAuth, requireApproved, async
   const { code, state, error } = req.query;
   const user = req.user as any;
 
+  const returnTo = (req.session as any).calendarReturnTo === "/cuentas" ? "/cuentas" : "/ejecutivo";
+  delete (req.session as any).calendarReturnTo;
+
   if (error) {
     console.error("[Calendar connect] OAuth error:", error);
-    res.redirect("/cuentas?calendar=error&msg=access_denied");
+    const msg = error === "access_denied" ? "access_denied" : "oauth_error";
+    res.redirect(`${returnTo}?calendar=error&msg=${msg}&detail=${encodeURIComponent(String(error))}`);
     return;
   }
 
@@ -304,12 +313,12 @@ router.get("/auth/google-calendar/callback", requireAuth, requireApproved, async
 
   if (!storedState || state !== storedState) {
     console.error("[Calendar connect] CSRF state mismatch");
-    res.redirect("/cuentas?calendar=error&msg=csrf_mismatch");
+    res.redirect(`${returnTo}?calendar=error&msg=csrf_mismatch`);
     return;
   }
 
   if (!code) {
-    res.redirect("/cuentas?calendar=error&msg=no_code");
+    res.redirect(`${returnTo}?calendar=error&msg=no_code`);
     return;
   }
 
@@ -330,7 +339,8 @@ router.get("/auth/google-calendar/callback", requireAuth, requireApproved, async
 
     if (!tokenData.access_token) {
       console.error("[Calendar connect] No access token:", JSON.stringify(tokenData));
-      res.redirect("/cuentas?calendar=error&msg=token_failed");
+      const detail = typeof tokenData.error === "string" ? `&detail=${encodeURIComponent(tokenData.error)}` : "";
+      res.redirect(`${returnTo}?calendar=error&msg=token_failed${detail}`);
       return;
     }
 
@@ -349,10 +359,10 @@ router.get("/auth/google-calendar/callback", requireAuth, requireApproved, async
     await db.update(users).set(updateData).where(eq(users.id, user.id));
 
     console.log("[Calendar connect] Tokens stored for user", user.id);
-    res.redirect("/cuentas?calendar=connected");
+    res.redirect(`${returnTo}?calendar=connected`);
   } catch (err: any) {
     console.error("[Calendar connect] Error:", err.message);
-    res.redirect("/cuentas?calendar=error&msg=server_error");
+    res.redirect(`${returnTo}?calendar=error&msg=server_error`);
   }
 });
 
