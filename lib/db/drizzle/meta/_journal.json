@@ -113,6 +113,13 @@
       "when": 1785369600000,
       "tag": "0017_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785456000000,
+      "tag": "0018_jornada_discord",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,7 @@ import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hrRouter from "./hr";
 import ticketsRouter from "./tickets";
+import jornadaRouter from "./jornada";
 import adminUsersRouter from "./admin-users";
 
 const router: IRouter = Router();
@@ -61,6 +62,7 @@ router.use(calendarRouter);
 router.use(hubRouter);
 router.use(hrRouter);
 router.use(ticketsRouter);
+router.use(jornadaRouter);
 router.use(adminUsersRouter);
 
 export default router;

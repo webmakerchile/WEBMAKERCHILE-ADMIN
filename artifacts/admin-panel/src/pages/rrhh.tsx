@@ -11,6 +11,7 @@ import {
   CalendarDays, Phone, FileText, ExternalLink,
 } from "lucide-react";
 import { TicketsInline } from "@/components/tickets-inline";
+import { useTeamAttendance, useJornadaStatus, formatDuration } from "@/lib/jornada";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -158,6 +159,13 @@ export default function RrhhPage() {
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
+  const { data: attendance } = useTeamAttendance();
+  const { data: discordStatus } = useJornadaStatus();
+  const attendanceById = useMemo(
+    () => new Map((attendance?.people ?? []).map(a => [a.id, a])),
+    [attendance],
+  );
+
   const pendientes = useMemo(() => people.filter(p => p.approvalStatus === "pending"), [people]);
   const equipo = useMemo(() => people.filter(p => p.approvalStatus === "approved"), [people]);
 
@@ -275,6 +283,49 @@ export default function RrhhPage() {
             )}
 
             <Card className="bg-card/40 border-foreground/10">
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <p className="text-sm font-semibold">Asistencia de hoy</p>
+                  {discordStatus && (
+                    <span className={`text-[11px] ${discordStatus.configured && discordStatus.lastPollOk ? "text-emerald-400" : "text-amber-400"}`}>
+                      {!discordStatus.configured
+                        ? "Discord sin configurar"
+                        : discordStatus.lastPollOk
+                          ? `Discord conectado · ${discordStatus.linkedUsers} cuenta${discordStatus.linkedUsers === 1 ? "" : "s"} vinculada${discordStatus.linkedUsers === 1 ? "" : "s"}`
+                          : `Discord con problemas: ${discordStatus.lastError ?? "sin detalle"}`}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  El tiempo se mide por la presencia en el canal de voz, no por marcar entrada.
+                </p>
+                {!attendance || attendance.people.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">Sin datos de asistencia todavía.</p>
+                ) : (
+                  <ul className="divide-y divide-foreground/5">
+                    {attendance.people
+                      .slice()
+                      .sort((a, b) => Number(b.online) - Number(a.online) || b.weekSeconds - a.weekSeconds)
+                      .map(a => (
+                        <li key={a.id} className="flex flex-wrap items-center gap-3 py-2">
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.online ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                          <span className="flex-1 min-w-[8rem] text-sm truncate">{a.name || a.email}</span>
+                          {!a.linked && <span className="text-[11px] text-amber-400">sin vincular</span>}
+                          {a.online && a.channelName && (
+                            <span className="text-[11px] text-muted-foreground truncate max-w-[10rem]">{a.channelName}</span>
+                          )}
+                          <span className="text-xs tabular-nums w-16 text-right">{formatDuration(a.todaySeconds)}</span>
+                          <span className="text-[11px] text-muted-foreground tabular-nums w-20 text-right">
+                            {formatDuration(a.weekSeconds)} sem
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-2 sm:p-4">
                 <p className="text-sm font-semibold mb-3 px-2 sm:px-0">Equipo ({equipo.length})</p>
                 {equipo.length === 0 ? (
@@ -318,6 +369,13 @@ export default function RrhhPage() {
                               <span>Renta: {prof?.monthlySalary ? fmtCLP(prof.monthlySalary) : "—"}</span>
                               {prof?.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{prof.phone}</span>}
                               <span>Último acceso: {fmtDate(p.lastLoginAt)}</span>
+                              {(() => {
+                                const a = attendanceById.get(p.id);
+                                if (!a) return null;
+                                return a.linked
+                                  ? <span className="text-emerald-400">Discord: {a.discordUsername || "vinculado"}</span>
+                                  : <span className="text-amber-400">Discord sin vincular — su jornada no se mide</span>;
+                              })()}
                               {prof?.documentsUrl && (
                                 <a href={prof.documentsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
                                   <FileText className="w-3 h-3" /> Documentos <ExternalLink className="w-2.5 h-2.5" />

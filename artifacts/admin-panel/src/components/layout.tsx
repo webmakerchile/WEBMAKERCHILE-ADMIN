@@ -33,6 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
+import { JornadaIndicator } from "@/components/jornada-indicator";
 
 type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
 type NavSection = { label: string; items: NavItem[] };
@@ -228,6 +229,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-4 border-t border-foreground/10 space-y-3">
+          {/* La jornada se ve en todas las páginas: si solo viviera en "Mi día",
+              quien entra directo a otra sección no se entera. */}
+          <JornadaIndicator />
           {user && (
             <div className="flex items-center gap-3 px-1">
               {user.picture ? (
@@ -267,6 +271,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <div className="flex items-center gap-1">
+            <JornadaIndicator variant="compact" />
             <LangToggle />
             <NotificationsBell />
             <ThemeToggle />
@@ -337,6 +342,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </nav>
 
                 <div className="p-4 border-t border-foreground/10 space-y-3">
+                  <JornadaIndicator />
                   {user && (
                     <div className="flex items-center gap-3 px-1">
                       {user.picture ? (
