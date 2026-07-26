@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Layout } from "@/components/layout";
+import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import {
   Sparkles, Download, AlertCircle, Loader2, Dices, Copy, Check, RefreshCw,
   Pencil, Repeat, Settings, X, Wand2, Bot, Film, BookOpen, Package,
@@ -56,6 +57,7 @@ type Resultado = {
   tipo_historia: string;
   concepto: string;
   texto_en_imagen: boolean;
+  estilo_titular?: string;
   frames: Frame[];
   fecha: string;
 };
@@ -71,6 +73,9 @@ export default function HistoriasPage() {
   const [tipoHistoria, setTipoHistoria] = useState("tip_tech");
   const [concepto, setConcepto] = useState("");
   const [textoEnImagen, setTextoEnImagen] = useState(false);
+  // Estilo tipográfico del título (motor de impacto compartido con portadas);
+  // null = rotación automática entre los estilos más impactantes.
+  const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
   const [formato, setFormato] = useState<Formato>("auto");
   const [cantidadFrames, setCantidadFrames] = useState<number>(3);
   const [loading, setLoading] = useState(false);
@@ -139,6 +144,7 @@ export default function HistoriasPage() {
           tipo_historia: tipoHistoria,
           concepto: concepto.trim(),
           texto_en_imagen: textoEnImagen,
+          estilo_titular: estiloTitular ?? undefined,
           formato: formatoFinal,
           ...(formatoFinal === "serie" ? { cantidad_frames: cantidad || cantidadFrames } : {}),
         }),
@@ -219,6 +225,7 @@ export default function HistoriasPage() {
           concepto: resultado.concepto,
           texto_actual: frame.texto,
           texto_en_imagen: resultado.texto_en_imagen,
+          estilo_titular: resultado.estilo_titular ?? undefined,
           modo,
           prompt_personalizado: promptPersonalizado,
           imagen_actual_base64: imagenActualBase64,
@@ -441,6 +448,16 @@ export default function HistoriasPage() {
               </div>
             )}
           </div>
+
+          {textoEnImagen && (
+            <div className="bg-foreground/5 rounded-xl p-4 border border-foreground/10">
+              <EstiloTitularPicker
+                value={estiloTitular}
+                onChange={setEstiloTitular}
+                descripcionAuto="El título usa el motor de tipografía de las portadas — en automático rota entre los estilos impactantes."
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
             <div>

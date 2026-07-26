@@ -247,6 +247,89 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenerateGeminiImageResponse"
+  /gemini/cover-drafts:
+    get:
+      operationId: listCoverDrafts
+      tags: [gemini]
+      summary: List saved cover drafts (thumbnails only, newest first)
+      responses:
+        "200":
+          description: Saved drafts with thumbnails
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverDraftListResponse"
+    post:
+      operationId: createCoverDraft
+      tags: [gemini]
+      summary: Save a generated cover as a persistent draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoverDraftCreateBody"
+      responses:
+        "201":
+          description: Draft saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverDraftCreatedResponse"
+  /gemini/cover-drafts/{id}:
+    get:
+      operationId: getCoverDraft
+      tags: [gemini]
+      summary: Get a cover draft with its full image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverDraftResponse"
+    put:
+      operationId: updateCoverDraft
+      tags: [gemini]
+      summary: Replace a draft's image (e.g. after an AI adjustment)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoverDraftUpdateBody"
+      responses:
+        "200":
+          description: Draft updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverDraftCreatedResponse"
+    delete:
+      operationId: deleteCoverDraft
+      tags: [gemini]
+      summary: Delete a cover draft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Draft deleted
   /gemini/improve-adjust-instruction:
     post:
       operationId: improveAdjustInstruction
@@ -719,6 +802,113 @@ components:
       required:
         - id
         - etiqueta
+    CoverDraftSettings:
+      type: object
+      properties:
+        description:
+          type: string
+        style:
+          type: string
+        direccionId:
+          type: string
+        poseId:
+          type: string
+        plantillaId:
+          type: string
+        estiloTitularId:
+          type: string
+        utileria:
+          type: string
+    CoverDraftSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        formato:
+          type: string
+          enum: [vertical, youtube]
+        title:
+          type: string
+        thumb:
+          type: string
+          description: Miniatura webp en base64 para la lista
+        settings:
+          $ref: "#/components/schemas/CoverDraftSettings"
+        createdAt:
+          type: string
+      required:
+        - id
+        - formato
+        - title
+        - thumb
+        - settings
+        - createdAt
+    CoverDraftListResponse:
+      type: object
+      properties:
+        drafts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverDraftSummary"
+      required:
+        - drafts
+    CoverDraftResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        formato:
+          type: string
+          enum: [vertical, youtube]
+        title:
+          type: string
+        imageBase64:
+          type: string
+        settings:
+          $ref: "#/components/schemas/CoverDraftSettings"
+        createdAt:
+          type: string
+      required:
+        - id
+        - formato
+        - title
+        - imageBase64
+        - settings
+        - createdAt
+    CoverDraftCreateBody:
+      type: object
+      properties:
+        formato:
+          type: string
+          enum: [vertical, youtube]
+        title:
+          type: string
+          maxLength: 200
+        imageBase64:
+          type: string
+        settings:
+          $ref: "#/components/schemas/CoverDraftSettings"
+      required:
+        - formato
+        - title
+        - imageBase64
+    CoverDraftUpdateBody:
+      type: object
+      properties:
+        imageBase64:
+          type: string
+      required:
+        - imageBase64
+    CoverDraftCreatedResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        createdAt:
+          type: string
+      required:
+        - id
+        - createdAt
     CoverPlantillaOption:
       type: object
       properties:

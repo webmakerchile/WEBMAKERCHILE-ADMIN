@@ -24,3 +24,12 @@ Regla: la variedad de diseño viene de `thumbnail-templates.ts`: cada plantilla 
 Regla: el adaptador (`lib/integrations-gemini-ai/client.ts`) pasa TODAS las imageParts a `openai.images.edit` (array) — hasta 3 fotos de la misma persona vía `personImagesBase64`. La primera foto es la principal; el bloque de identidad del prompt exige usar todos los ángulos.
 **Why:** el usuario pasó 2 fotos y "la cara pierde el diseño": el adaptador descartaba silenciosamente todas las referencias menos la primera. gpt-image-1 acepta varias imágenes en edit y mejora mucho con más ángulos (siempre con `input_fidelity: "high"`).
 **How to apply:** cualquier flujo nuevo con persona real debe mandar el array completo de fotos validadas (`validarFotosPersona`, máx `MAX_FOTOS_PERSONA`) y `numFotosPersona` al prompt builder.
+
+## Borradores de portadas sin migración
+Regla: los borradores del generador de portadas viven en `community_content` con kind `portada_borrador` (subtype=formato, topic=título, imageUrl=base64 completo, data={thumb webp, settings}) — el MISMO patrón de persistencia que historias/carruseles. CRUD en `/gemini/cover-drafts`; la lista NUNCA devuelve imageUrl (solo thumbnails); poda a 60 al insertar.
+**Why:** evita una migración DDL (drizzle push cuelga; Publish solo mueve schema) y reusa un patrón ya probado en prod. El frontend auto-guarda cada generación y actualiza el borrador al ajustar.
+**How to apply:** features nuevas de persistencia liviana de contenido generado → preferir kind nuevo en community_content antes que tabla nueva, salvo que necesiten relaciones/consultas ricas.
+
+## Títulos de Historias/Posts IA con el motor de portadas
+Regla: en `routes/community/index.ts` SOLO el título pasa por `construirOverlayTitular` (capa full-canvas compositada aparte, scrim "ninguno" porque topfade/botfade ya existen); sub-copy, CTA y hashtags conservan su render Inter con filtros feGaussianBlur (que sí funcionan en esta librsvg). Un `estilo_titular` por historia/carrusel completo, resuelto una vez en la ruta y persistido en data — los reintentos lo reciben del frontend para no cambiar el diseño.
+**Why:** el usuario pidió "el mismo nivel" que portadas en estos apartados; la galería canon de ilustración (aprobada 10/10) NO se toca — solo la tipografía del título.

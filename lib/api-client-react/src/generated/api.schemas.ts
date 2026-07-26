@@ -159,6 +159,80 @@ export interface CoverPoseOption {
   etiqueta: string;
 }
 
+export interface CoverDraftSettings {
+  description?: string;
+  style?: string;
+  direccionId?: string;
+  poseId?: string;
+  plantillaId?: string;
+  estiloTitularId?: string;
+  utileria?: string;
+}
+
+export type CoverDraftSummaryFormato =
+  (typeof CoverDraftSummaryFormato)[keyof typeof CoverDraftSummaryFormato];
+
+export const CoverDraftSummaryFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
+export interface CoverDraftSummary {
+  id: number;
+  formato: CoverDraftSummaryFormato;
+  title: string;
+  /** Miniatura webp en base64 para la lista */
+  thumb: string;
+  settings: CoverDraftSettings;
+  createdAt: string;
+}
+
+export interface CoverDraftListResponse {
+  drafts: CoverDraftSummary[];
+}
+
+export type CoverDraftResponseFormato =
+  (typeof CoverDraftResponseFormato)[keyof typeof CoverDraftResponseFormato];
+
+export const CoverDraftResponseFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
+export interface CoverDraftResponse {
+  id: number;
+  formato: CoverDraftResponseFormato;
+  title: string;
+  imageBase64: string;
+  settings: CoverDraftSettings;
+  createdAt: string;
+}
+
+export type CoverDraftCreateBodyFormato =
+  (typeof CoverDraftCreateBodyFormato)[keyof typeof CoverDraftCreateBodyFormato];
+
+export const CoverDraftCreateBodyFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
+export interface CoverDraftCreateBody {
+  formato: CoverDraftCreateBodyFormato;
+  /** @maxLength 200 */
+  title: string;
+  imageBase64: string;
+  settings?: CoverDraftSettings;
+}
+
+export interface CoverDraftUpdateBody {
+  imageBase64: string;
+}
+
+export interface CoverDraftCreatedResponse {
+  id: number;
+  createdAt: string;
+}
+
 export type CoverPlantillaOptionFormato =
   (typeof CoverPlantillaOptionFormato)[keyof typeof CoverPlantillaOptionFormato];
 

@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { conversations, messages, communityContent } from "@workspace/db/schema";
+import { eq, desc, and, inArray } from "drizzle-orm";
+import sharp from "sharp";
 import { ai, imageModel } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import {
@@ -13,6 +14,8 @@ import {
   ImproveCoverIdeaBody,
   AdjustCoverBody,
   ImproveAdjustInstructionBody,
+  CreateCoverDraftBody,
+  UpdateCoverDraftBody,
 } from "@workspace/api-zod";
 import { toFile } from "openai";
 import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit, listarOpcionesPortada } from "../../lib/cover-style.js";
@@ -480,6 +483,183 @@ router.post("/gemini/generate-youtube-cover", async (req, res) => {
       res.status(500).json({ error: "No se pudo generar la miniatura. Intenta de nuevo en unos momentos." });
     }
   }
+});
+
+
+/* ==================== Borradores de portadas ============================= */
+// Persistencia sobre community_content (kind "portada_borrador"), el mismo
+// patrón que ya usan historias y carruseles: cada generación se auto-guarda
+// para que nada se pierda al salir de la página. La lista viaja solo con
+// thumbnails webp; la imagen completa se pide al cargar un borrador. Se
+// conservan los últimos MAX_BORRADORES (poda automática al guardar).
+
+const KIND_BORRADOR = "portada_borrador";
+const MAX_BORRADORES = 60;
+
+async function thumbDeImagen(base64: string): Promise<string> {
+  const buf = await sharp(Buffer.from(base64, "base64"))
+    .resize(360, undefined, { withoutEnlargement: true })
+    .webp({ quality: 72 })
+    .toBuffer();
+  return buf.toString("base64");
+}
+
+type DatosBorrador = { thumb?: string; settings?: Record<string, unknown> };
+
+router.get("/gemini/cover-drafts", async (_req, res) => {
+  const rows = await db
+    .select({
+      id: communityContent.id,
+      subtype: communityContent.subtype,
+      topic: communityContent.topic,
+      data: communityContent.data,
+      createdAt: communityContent.createdAt,
+    })
+    .from(communityContent)
+    .where(eq(communityContent.kind, KIND_BORRADOR))
+    .orderBy(desc(communityContent.createdAt))
+    .limit(MAX_BORRADORES);
+  res.json({
+    drafts: rows.map((r) => {
+      const d = (r.data ?? {}) as DatosBorrador;
+      return {
+        id: r.id,
+        formato: r.subtype === "youtube" ? "youtube" : "vertical",
+        title: r.topic,
+        thumb: d.thumb ?? "",
+        settings: d.settings ?? {},
+        createdAt: r.createdAt.toISOString(),
+      };
+    }),
+  });
+});
+
+router.get("/gemini/cover-drafts/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "id inválido" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(communityContent)
+    .where(and(eq(communityContent.id, id), eq(communityContent.kind, KIND_BORRADOR)))
+    .limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Borrador no encontrado" });
+    return;
+  }
+  const d = (row.data ?? {}) as DatosBorrador;
+  res.json({
+    id: row.id,
+    formato: row.subtype === "youtube" ? "youtube" : "vertical",
+    title: row.topic,
+    imageBase64: row.imageUrl ?? "",
+    settings: d.settings ?? {},
+    createdAt: row.createdAt.toISOString(),
+  });
+});
+
+router.post("/gemini/cover-drafts", async (req, res) => {
+  const parsed = CreateCoverDraftBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Borrador inválido: revisa el formato, el título (máx. 200) y la imagen." });
+    return;
+  }
+  const body = parsed.data;
+  const v = validarFotoPersona(body.imageBase64);
+  if (!v.ok) {
+    res.status(400).json({ error: v.error });
+    return;
+  }
+
+  let thumb = "";
+  try {
+    thumb = await thumbDeImagen(v.base64);
+  } catch (e) {
+    console.warn(`[Borradores] No se pudo generar thumbnail: ${(e as Error).message}`);
+  }
+
+  const [row] = await db
+    .insert(communityContent)
+    .values({
+      kind: KIND_BORRADOR,
+      subtype: body.formato,
+      topic: body.title,
+      data: { thumb, settings: body.settings ?? {} },
+      imageUrl: v.base64,
+    })
+    .returning({ id: communityContent.id, createdAt: communityContent.createdAt });
+
+  // Poda: conservar solo los MAX_BORRADORES más recientes.
+  try {
+    const sobrantes = await db
+      .select({ id: communityContent.id })
+      .from(communityContent)
+      .where(eq(communityContent.kind, KIND_BORRADOR))
+      .orderBy(desc(communityContent.createdAt))
+      .offset(MAX_BORRADORES);
+    if (sobrantes.length > 0) {
+      await db.delete(communityContent).where(
+        and(eq(communityContent.kind, KIND_BORRADOR), inArray(communityContent.id, sobrantes.map((r) => r.id))),
+      );
+    }
+  } catch (e) {
+    console.warn(`[Borradores] Poda falló: ${(e as Error).message}`);
+  }
+
+  console.log(`[Borradores] Guardado #${row!.id} (${body.formato}): "${body.title.slice(0, 60)}"`);
+  res.status(201).json({ id: row!.id, createdAt: row!.createdAt.toISOString() });
+});
+
+router.put("/gemini/cover-drafts/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "id inválido" });
+    return;
+  }
+  const parsed = UpdateCoverDraftBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Imagen inválida para actualizar el borrador." });
+    return;
+  }
+  const v = validarFotoPersona(parsed.data.imageBase64);
+  if (!v.ok) {
+    res.status(400).json({ error: v.error });
+    return;
+  }
+  const [existente] = await db
+    .select({ id: communityContent.id, data: communityContent.data })
+    .from(communityContent)
+    .where(and(eq(communityContent.id, id), eq(communityContent.kind, KIND_BORRADOR)))
+    .limit(1);
+  if (!existente) {
+    res.status(404).json({ error: "Borrador no encontrado" });
+    return;
+  }
+  let thumb = "";
+  try {
+    thumb = await thumbDeImagen(v.base64);
+  } catch { /* thumbnail es best-effort */ }
+  const dPrev = (existente.data ?? {}) as DatosBorrador;
+  const [row] = await db
+    .update(communityContent)
+    .set({ imageUrl: v.base64, data: { ...dPrev, thumb: thumb || dPrev.thumb } })
+    .where(eq(communityContent.id, id))
+    .returning({ id: communityContent.id, createdAt: communityContent.createdAt });
+  res.json({ id: row!.id, createdAt: row!.createdAt.toISOString() });
+});
+
+router.delete("/gemini/cover-drafts/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "id inválido" });
+    return;
+  }
+  await db
+    .delete(communityContent)
+    .where(and(eq(communityContent.id, id), eq(communityContent.kind, KIND_BORRADOR)));
+  res.status(204).send();
 });
 
 export default router;
