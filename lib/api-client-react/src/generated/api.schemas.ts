@@ -71,6 +71,9 @@ export interface ImproveCoverIdeaBody {
 export interface ImproveCoverIdeaResponse {
   title: string;
   idea: string;
+  utileria?: string;
+  estiloExtra?: string;
+  direccionId?: string;
 }
 
 export interface CoverDireccionOption {

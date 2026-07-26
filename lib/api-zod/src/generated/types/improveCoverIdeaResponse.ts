@@ -9,4 +9,7 @@
 export interface ImproveCoverIdeaResponse {
   title: string;
   idea: string;
+  utileria?: string;
+  estiloExtra?: string;
+  direccionId?: string;
 }

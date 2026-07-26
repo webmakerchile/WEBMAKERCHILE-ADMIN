@@ -166,12 +166,13 @@ router.post("/gemini/improve-cover-idea", async (req, res) => {
   }
 
   try {
+    const catalogo = listarOpcionesPortada();
     const resp = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: buildImproveIdeaPrompt(title, idea) }] }],
-      config: { maxOutputTokens: 700 },
+      contents: [{ role: "user", parts: [{ text: buildImproveIdeaPrompt(title, idea, catalogo.direcciones) }] }],
+      config: { maxOutputTokens: 900 },
     });
-    const parsed = parseImprovedIdea(resp.text ?? "");
+    const parsed = parseImprovedIdea(resp.text ?? "", catalogo.direcciones.map((d) => d.id));
     if (!parsed) {
       res.status(502).json({ error: "La IA no devolvió una redacción válida. Intenta de nuevo." });
       return;

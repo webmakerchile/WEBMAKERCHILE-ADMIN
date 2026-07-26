@@ -553,6 +553,12 @@ components:
           type: string
         idea:
           type: string
+        utileria:
+          type: string
+        estiloExtra:
+          type: string
+        direccionId:
+          type: string
       required:
         - title
         - idea

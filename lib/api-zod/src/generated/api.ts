@@ -157,6 +157,9 @@ export const ImproveCoverIdeaBody = zod.object({
 export const ImproveCoverIdeaResponse = zod.object({
   title: zod.string(),
   idea: zod.string(),
+  utileria: zod.string().optional(),
+  estiloExtra: zod.string().optional(),
+  direccionId: zod.string().optional(),
 });
 
 /**

@@ -35,12 +35,18 @@ export default function CoverGeneratorPage() {
   const ajustesActivos = [direccionId, poseId, utileria.trim() || null, style.trim() || null, !isDefaultRef ? "ref" : null].filter(Boolean).length;
 
   // Refs espejo para leer el valor MÁS RECIENTE cuando vuelve la respuesta de
-  // la IA: si el usuario siguió escribiendo mientras tanto, no se le pisa el
-  // texto; y un contador de secuencia descarta respuestas viejas fuera de orden.
+  // la IA: si el usuario tocó un campo mientras tanto, ese campo no se pisa;
+  // y un contador de secuencia descarta respuestas viejas fuera de orden.
   const titleRef = useRef(title);
   titleRef.current = title;
   const descriptionRef = useRef(description);
   descriptionRef.current = description;
+  const utileriaRef = useRef(utileria);
+  utileriaRef.current = utileria;
+  const styleRef = useRef(style);
+  styleRef.current = style;
+  const direccionIdRef = useRef(direccionId);
+  direccionIdRef.current = direccionId;
   const improveSeqRef = useRef(0);
   const improvingRef = useRef(false);
 
@@ -49,6 +55,9 @@ export default function CoverGeneratorPage() {
     const sentTitle = title.trim();
     const sentIdea = description.trim();
     if (!sentTitle && !sentIdea) return;
+    const sentUtileria = utileria;
+    const sentStyle = style;
+    const sentDireccion = direccionId;
     const seq = ++improveSeqRef.current;
     improvingRef.current = true;
     improveIdea.mutate(
@@ -63,7 +72,34 @@ export default function CoverGeneratorPage() {
           const applied = Boolean(r.idea) && ideaUntouched;
           if (applied) setDescription(r.idea);
           if (r.title && !titleRef.current.trim()) setTitle(r.title);
-          setToast(applied ? "✨ Listo — la IA redactó tu idea" : "Seguiste escribiendo — mantuve tu versión");
+
+          // Set sugerido por la IA (utilería, estilo e iluminación): cada campo
+          // se aplica solo si el usuario no lo tocó mientras la IA respondía.
+          // Una iluminación fuera del catálogo la resetea el useEffect de sync.
+          let setSugerido = false;
+          if (r.utileria && utileriaRef.current === sentUtileria) {
+            setUtileria(r.utileria);
+            setSugerido = true;
+          }
+          if (r.estiloExtra && styleRef.current === sentStyle) {
+            setStyle(r.estiloExtra);
+            setSugerido = true;
+          }
+          if (r.direccionId && direccionIdRef.current === sentDireccion) {
+            setDireccionId(r.direccionId);
+            setSugerido = true;
+          }
+          if (setSugerido) setShowAdvanced(true);
+
+          setToast(
+            applied
+              ? setSugerido
+                ? "✨ Listo — idea redactada y set sugerido (revísalo abajo)"
+                : "✨ Listo — la IA redactó tu idea"
+              : setSugerido
+                ? "Mantuve tu texto — te dejé un set sugerido abajo"
+                : "Seguiste escribiendo — mantuve tu versión"
+          );
           setTimeout(() => setToast(null), 3500);
         },
       }
@@ -203,7 +239,7 @@ export default function CoverGeneratorPage() {
                   {improveIdea.isPending ? "Redactando tu idea..." : "Escribir con IA"}
                 </button>
                 <p className="text-xs text-muted-foreground/70">
-                  Escríbela a lo bruto — la IA la redacta mejor y te sugiere un título si falta.
+                  Escríbela a lo bruto — la IA la redacta y te sugiere título, luz del estudio, utilería y estilo; después ajustas lo que quieras.
                 </p>
                 {improveIdea.isError && (
                   <p className="text-xs text-red-400">
