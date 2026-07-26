@@ -2,6 +2,7 @@ import webpush from "web-push";
 import { db } from "@workspace/db";
 import { notifications, pushSubscriptions, users, type InsertNotification } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+import { sendDirectMessage } from "./discord";
 
 /**
  * Cuentas excluidas de web push (cuentas de prueba/revisión de tiendas).
@@ -80,7 +81,32 @@ export async function createNotification(input: CreateNotificationInput) {
       tag: `notif-${row.id}`,
     });
   }
+  // DM de Discord (fire-and-forget): solo si la persona tiene cuenta vinculada
+  // Y no lo desactivó. Un fallo aquí jamás afecta la notificación del panel.
+  void sendDiscordDm(input.userId, row.title, row.body, row.link).catch((err) =>
+    console.error("[Notifications] Discord DM failed:", err?.message || err),
+  );
   return row;
+}
+
+/** Punto único de envío del DM. Exportado para tests. */
+export async function sendDiscordDm(
+  userId: number,
+  title: string,
+  body?: string | null,
+  link?: string | null,
+): Promise<boolean> {
+  const [target] = await db
+    .select({ discordUserId: users.discordUserId, notifyDiscord: users.notifyDiscord })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!target?.discordUserId || !target.notifyDiscord) return false;
+
+  const base = (process.env.PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  const url = link ? (link.startsWith("http") ? link : base ? `${base}${link}` : null) : null;
+  const content = [`🔔 **${title}**`, body || null, url].filter(Boolean).join("\n");
+  return sendDirectMessage(target.discordUserId, content);
 }
 
 type PushPayload = { title: string; body: string; link?: string; tag?: string };

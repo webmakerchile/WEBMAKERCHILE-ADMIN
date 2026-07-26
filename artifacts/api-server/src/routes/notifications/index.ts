@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { notifications, pushSubscriptions } from "@workspace/db/schema";
+import { notifications, pushSubscriptions, users } from "@workspace/db/schema";
 import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { createNotification, getVapidPublicKey, isPushEnabled } from "../../lib/notifications";
 
@@ -25,6 +25,36 @@ router.get("/notifications", async (req: Request, res: Response) => {
     .orderBy(desc(notifications.createdAt))
     .limit(limit);
   res.json(rows);
+});
+
+/** GET /notifications/prefs — preferencias de entrega del propio usuario. */
+router.get("/notifications/prefs", async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json({ error: "No autenticado" }); return; }
+  const [row] = await db
+    .select({ notifyDiscord: users.notifyDiscord, discordUserId: users.discordUserId, discordTag: users.discordTag })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!row) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+  res.json({
+    discord: row.notifyDiscord,
+    discordLinked: !!row.discordUserId,
+    discordTag: row.discordTag,
+  });
+});
+
+/** PATCH /notifications/prefs — activar/desactivar el DM de Discord (propio). */
+router.patch("/notifications/prefs", async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) { res.status(401).json({ error: "No autenticado" }); return; }
+  const discord = (req.body as { discord?: unknown } | undefined)?.discord;
+  if (typeof discord !== "boolean") {
+    res.status(400).json({ error: "Campo 'discord' (boolean) requerido" });
+    return;
+  }
+  await db.update(users).set({ notifyDiscord: discord }).where(eq(users.id, userId));
+  res.json({ ok: true, discord });
 });
 
 router.get("/notifications/unread-count", async (req: Request, res: Response) => {

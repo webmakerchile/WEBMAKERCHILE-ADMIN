@@ -85,8 +85,60 @@ export async function reportToChannel(message: string): Promise<void> {
   }
 }
 
+/* ------------------------- Mensajes directos (DM) ------------------------ */
+
+/** Canal DM por usuario, para no recrearlo en cada notificación. */
+const dmChannelCache = new Map<string, Cached<string | null>>();
+const DM_CHANNEL_TTL_MS = 60 * 60_000;
+
+/**
+ * Envía un mensaje directo a un usuario de Discord.
+ * Devuelve true si Discord aceptó el mensaje; false en cualquier otro caso
+ * (bot sin token, usuario con DMs cerrados, red caída). Nunca lanza.
+ */
+export async function sendDirectMessage(discordUserId: string, content: string): Promise<boolean> {
+  const token = process.env["DISCORD_BOT_TOKEN"]?.trim();
+  if (!token || !discordUserId) return false;
+  try {
+    let channelId: string | null = null;
+    const hit = dmChannelCache.get(discordUserId);
+    if (hit && Date.now() - hit.at < DM_CHANNEL_TTL_MS) {
+      channelId = hit.value;
+    } else {
+      const cRes = await fetch(`${API}/users/@me/channels`, {
+        method: "POST",
+        headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient_id: discordUserId }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      const cJson = (await cRes.json().catch(() => null)) as { id?: string } | null;
+      channelId = cRes.ok && cJson?.id ? cJson.id : null;
+      // Solo cachear éxitos: un fallo transitorio (timeout/5xx) no debe
+      // silenciar los DMs de esta persona durante todo el TTL.
+      if (channelId) dmChannelCache.set(discordUserId, { at: Date.now(), value: channelId });
+    }
+    if (!channelId) return false;
+
+    const mRes = await fetch(`${API}/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bot ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content.slice(0, 1900) }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!mRes.ok && (mRes.status === 403 || mRes.status === 404)) {
+      // Canal inválido o DMs cerrados: descartar el canal cacheado para que
+      // el próximo aviso intente recrearlo en vez de esperar el TTL.
+      dmChannelCache.delete(discordUserId);
+    }
+    return mRes.ok;
+  } catch {
+    return false; // DMs cerrados / red caída: la notificación del panel es la fuente de verdad
+  }
+}
+
 /** Solo para tests. */
 export function _resetDiscordCache(): void {
+  dmChannelCache.clear();
   appCache = null;
   guildCache = null;
   membersCache = null;

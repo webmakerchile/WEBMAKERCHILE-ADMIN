@@ -14,6 +14,7 @@ import {
   X,
   BellOff,
   BellRing,
+  MessageCircle,
 } from "lucide-react";
 import {
   Popover,
@@ -204,6 +205,35 @@ export function NotificationsBell() {
     }
   };
 
+  // Preferencia de DM por Discord (solo relevante con cuenta vinculada).
+  const { data: prefs } = useQuery<{ discord: boolean; discordLinked: boolean; discordTag: string | null }>({
+    queryKey: ["notification-prefs"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/notifications/prefs`, { credentials: "include" });
+      if (!r.ok) throw new Error("prefs");
+      return r.json();
+    },
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const toggleDiscord = useMutation({
+    mutationFn: async (next: boolean) => {
+      const r = await fetch(`${API_BASE}/notifications/prefs`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discord: next }),
+      });
+      if (!r.ok) throw new Error("No se pudo guardar la preferencia");
+      return next;
+    },
+    onSuccess: (next) => {
+      queryClient.invalidateQueries({ queryKey: ["notification-prefs"] });
+      toast({ title: next ? "Avisos por Discord activados" : "Avisos por Discord desactivados" });
+    },
+    onError: () => toast({ title: "No se pudo guardar la preferencia", variant: "destructive" }),
+  });
+
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
     [items],
@@ -256,6 +286,22 @@ export function NotificationsBell() {
                 title={pushSubscribed ? "Desactivar push" : "Activar push"}
               >
                 {pushSubscribed ? <BellRing className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+              </button>
+            )}
+            {prefs?.discordLinked && (
+              <button
+                type="button"
+                onClick={() => toggleDiscord.mutate(!prefs.discord)}
+                disabled={toggleDiscord.isPending}
+                className={cn(
+                  "p-2 rounded-lg transition-base text-xs",
+                  prefs.discord
+                    ? "text-primary hover:bg-primary/10"
+                    : "text-muted-foreground hover:bg-foreground/10",
+                )}
+                title={prefs.discord ? "Desactivar avisos por Discord" : "Activar avisos por Discord"}
+              >
+                <MessageCircle className="w-4 h-4" />
               </button>
             )}
             {unreadCount > 0 && (
