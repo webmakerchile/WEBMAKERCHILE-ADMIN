@@ -96,3 +96,9 @@ id = "MEhjbmfLKBAddnssvmQ50"
 uri = "file://artifacts/api-server/public/uploads/covers/demo-custom.png"
 type = "image"
 title = "Portada personalizada: luz esmeralda + pulgar arriba + utilería pedida"
+
+[[outputs]]
+id = "om6_kKqS7xKceeustA_rY"
+uri = "file://screenshots/miniatura-prueba-fidelidad.png"
+type = "image"
+title = "Prueba: misma cara + energía viral"

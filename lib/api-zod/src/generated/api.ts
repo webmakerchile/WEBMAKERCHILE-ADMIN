@@ -193,6 +193,43 @@ export const GenerateYoutubeCoverResponse = zod.object({
 });
 
 /**
+ * @summary Apply a conversational adjustment to an already generated cover/thumbnail (image edit that keeps everything else intact)
+ */
+export const adjustCoverBodyInstructionMax = 1000;
+
+export const AdjustCoverBody = zod.object({
+  instruction: zod.string().max(adjustCoverBodyInstructionMax),
+  imageBase64: zod
+    .string()
+    .describe(
+      "Current image (base64, no data-URL prefix) the adjustment is applied to",
+    ),
+  formato: zod.enum(["vertical", "youtube"]),
+});
+
+export const AdjustCoverResponse = zod.object({
+  b64_json: zod.string(),
+  mimeType: zod.string(),
+});
+
+/**
+ * @summary Rewrite a rough adjustment request into a clear image-edit instruction
+ */
+export const improveAdjustInstructionBodyInstructionMax = 1000;
+
+export const improveAdjustInstructionBodyTitleMax = 200;
+
+export const ImproveAdjustInstructionBody = zod.object({
+  instruction: zod.string().max(improveAdjustInstructionBodyInstructionMax),
+  formato: zod.enum(["vertical", "youtube"]),
+  title: zod.string().max(improveAdjustInstructionBodyTitleMax).optional(),
+});
+
+export const ImproveAdjustInstructionResponse = zod.object({
+  instruction: zod.string(),
+});
+
+/**
  * @summary List files in a Google Drive folder
  */
 export const ListDriveFilesQueryParams = zod.object({

@@ -425,6 +425,7 @@ export async function generateFoxIllustration(
   refImageBase64?: string,
   imageSize: "1024x1536" | "1536x1024" = "1024x1536",
   refMimeType?: string,
+  inputFidelity?: "high" | "low",
 ): Promise<Buffer> {
   const refBase64 = refImageBase64 ?? (await loadFoxReference());
 
@@ -442,7 +443,7 @@ export async function generateFoxIllustration(
             ],
           },
         ],
-        config: { responseModalities: ["TEXT", "IMAGE"], imageSize },
+        config: { responseModalities: ["TEXT", "IMAGE"], imageSize, inputFidelity },
       });
 
       const inline = firstInlineData(response.candidates?.[0]?.content?.parts);

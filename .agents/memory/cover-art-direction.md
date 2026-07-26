@@ -20,3 +20,8 @@ La familia "estudio spotlight" se extiende a miniaturas de YouTube 1280x720: mis
 **Protagonista YouTube:** la foto de una persona real (rostro IDÉNTICO, fotorrealista, prohibido cartoonizar — energía youtuber) o Webi si no hay foto. Las poses del banco son exclusivas de Webi.
 **Why:** El usuario pidió que la diferencia vertical (TikTok/IG) vs horizontal (YouTube) se note de inmediato, y que en YouTube pueda salir él u otra persona real.
 **How to apply:** gpt-image-1 solo soporta 1536x1024 como lienzo apaisado → pedir ese tamaño y recortar con sharp a 1280x720 (el crop come ~11% arriba/abajo: componer pensando en encuadre cintura-arriba).
+
+## Fidelidad de rostro y energía viral (miniaturas YouTube)
+Para conservar el rostro de una persona real en gpt-image-1 (images.edit) el prompt NO basta: hay que pasar `input_fidelity: "high"` (soportado por el SDK openai ≥6.x). Se activa solo cuando hay foto de persona; los flujos con el master de Webi quedan sin ese flag (comportamiento ya aceptado).
+**Why:** el usuario reportó que las caras cambiaban demasiado y que las miniaturas se veían planas/corporativas. Con high fidelity + bloque de identidad estricto (misma edad, prohibido embellecer, solo cambia expresión/pose) la cara queda reconocible al instante.
+**How to apply:** además, la variante YouTube exige el bloque "ENERGÍA DE MINIATURA VIRAL": paleta de la dirección AMPLIFICADA (más saturación/contraste), atmósfera con haces visibles, un momento con drama (no posado), profundidad con prop en primer plano — sin invadir ni aclarar la franja izquierda del titular, y con margen de recorte del 8% arriba/abajo (lienzo 1536x1024 → 1280x720).

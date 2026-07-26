@@ -74,6 +74,42 @@ export interface GenerateYoutubeCoverBody {
   utileria?: string;
 }
 
+export type AdjustCoverBodyFormato =
+  (typeof AdjustCoverBodyFormato)[keyof typeof AdjustCoverBodyFormato];
+
+export const AdjustCoverBodyFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
+export interface AdjustCoverBody {
+  /** @maxLength 1000 */
+  instruction: string;
+  /** Current image (base64, no data-URL prefix) the adjustment is applied to */
+  imageBase64: string;
+  formato: AdjustCoverBodyFormato;
+}
+
+export type ImproveAdjustInstructionBodyFormato =
+  (typeof ImproveAdjustInstructionBodyFormato)[keyof typeof ImproveAdjustInstructionBodyFormato];
+
+export const ImproveAdjustInstructionBodyFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
+export interface ImproveAdjustInstructionBody {
+  /** @maxLength 1000 */
+  instruction: string;
+  formato: ImproveAdjustInstructionBodyFormato;
+  /** @maxLength 200 */
+  title?: string;
+}
+
+export interface ImproveAdjustInstructionResponse {
+  instruction: string;
+}
+
 export type ImproveCoverIdeaBodyFormato =
   (typeof ImproveCoverIdeaBodyFormato)[keyof typeof ImproveCoverIdeaBodyFormato];
 

@@ -229,6 +229,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenerateGeminiImageResponse"
+  /gemini/adjust-cover:
+    post:
+      operationId: adjustCover
+      tags: [gemini]
+      summary: Apply a conversational adjustment to an already generated cover/thumbnail (image edit that keeps everything else intact)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustCoverBody"
+      responses:
+        "200":
+          description: Adjusted image data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateGeminiImageResponse"
+  /gemini/improve-adjust-instruction:
+    post:
+      operationId: improveAdjustInstruction
+      tags: [gemini]
+      summary: Rewrite a rough adjustment request into a clear image-edit instruction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImproveAdjustInstructionBody"
+      responses:
+        "200":
+          description: Rewritten instruction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImproveAdjustInstructionResponse"
   /drive/files:
     get:
       operationId: listDriveFiles
@@ -576,6 +612,38 @@ components:
           maxLength: 300
       required:
         - title
+    AdjustCoverBody:
+      type: object
+      required: [instruction, imageBase64, formato]
+      properties:
+        instruction:
+          type: string
+          maxLength: 1000
+        imageBase64:
+          type: string
+          description: Current image (base64, no data-URL prefix) the adjustment is applied to
+        formato:
+          type: string
+          enum: [vertical, youtube]
+    ImproveAdjustInstructionBody:
+      type: object
+      required: [instruction, formato]
+      properties:
+        instruction:
+          type: string
+          maxLength: 1000
+        formato:
+          type: string
+          enum: [vertical, youtube]
+        title:
+          type: string
+          maxLength: 200
+    ImproveAdjustInstructionResponse:
+      type: object
+      required: [instruction]
+      properties:
+        instruction:
+          type: string
     ImproveCoverIdeaBody:
       type: object
       properties:

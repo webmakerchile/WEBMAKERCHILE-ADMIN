@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./adjustCoverBody";
+export * from "./adjustCoverBodyFormato";
 export * from "./coverDireccionOption";
 export * from "./coverOptionsResponse";
 export * from "./coverPoseOption";
@@ -23,6 +25,9 @@ export * from "./generateGeminiImageBody";
 export * from "./generateGeminiImageResponse";
 export * from "./generateYoutubeCoverBody";
 export * from "./healthStatus";
+export * from "./improveAdjustInstructionBody";
+export * from "./improveAdjustInstructionBodyFormato";
+export * from "./improveAdjustInstructionResponse";
 export * from "./improveCoverIdeaBody";
 export * from "./improveCoverIdeaBodyFormato";
 export * from "./improveCoverIdeaResponse";

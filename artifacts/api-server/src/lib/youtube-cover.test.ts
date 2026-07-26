@@ -156,3 +156,21 @@ describe("validarFotoPersona", () => {
     if (!r.ok) expect(r.error).toContain("8 MB");
   });
 });
+
+describe("energía viral y fidelidad de rostro (v2)", () => {
+  it("exige energía de miniatura viral, dirección amplificada y margen de recorte", () => {
+    const prep = prepararMiniaturaYoutube("lanzamos algo nuevo", null, { direccionId: "estudio_carmesi", conPersona: false });
+    expect(prep.prompt).toContain("GANAS DE HACER CLIC");
+    expect(prep.prompt).toContain("SATURADA");
+    expect(prep.prompt).toContain("AMPLIFICADA");
+    expect(prep.prompt).toContain("MARGEN DE SEGURIDAD");
+  });
+
+  it("con persona: exige misma edad, reconocible al instante y solo cambiar expresión/pose", () => {
+    const prep = prepararMiniaturaYoutube("lanzamos algo nuevo", null, { direccionId: "estudio_carmesi", conPersona: true });
+    expect(prep.prompt).toContain("misma edad");
+    expect(prep.prompt).toContain("reconocible AL INSTANTE");
+    expect(prep.prompt).toContain("la EXPRESIÓN, la POSE");
+    expect(prep.prompt).toContain("PROHIBIDO inventar una cara nueva");
+  });
+});

@@ -11,11 +11,14 @@ import {
   GenerateCoverBody,
   GenerateYoutubeCoverBody,
   ImproveCoverIdeaBody,
+  AdjustCoverBody,
+  ImproveAdjustInstructionBody,
 } from "@workspace/api-zod";
 import { toFile } from "openai";
 import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit, listarOpcionesPortada } from "../../lib/cover-style.js";
 import { buildImproveIdeaPrompt, parseImprovedIdea } from "../../lib/improve-cover-idea.js";
 import { prepararMiniaturaYoutube, composeYoutubeCover, validarFotoPersona } from "../../lib/youtube-cover.js";
+import { buildAdjustPrompt, prepararLienzoAjuste, recortarAjuste, buildImproveAdjustPrompt, parseImprovedInstruction } from "../../lib/adjust-cover.js";
 
 const router: IRouter = Router();
 
@@ -152,6 +155,83 @@ router.get("/gemini/cover-options", (_req, res) => {
 
 // El usuario cuenta su idea "a lo bruto" y la IA la redacta: título corto de
 // miniatura + brief visual del set (misma dirección de arte del estudio).
+// Chat de ajustes: edita la imagen YA generada manteniendo todo lo demás
+// intacto (la imagen actual es la referencia del edit, con fidelidad "high").
+router.post("/gemini/adjust-cover", async (req, res) => {
+  const parsedBody = AdjustCoverBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "Ajuste inválido: la instrucción acepta hasta 1000 caracteres y la imagen debe venir en base64." });
+    return;
+  }
+  const body = parsedBody.data;
+  if (!body.instruction.trim()) {
+    res.status(400).json({ error: "Escribe qué quieres cambiar de la imagen." });
+    return;
+  }
+  const v = validarFotoPersona(body.imageBase64);
+  if (!v.ok) {
+    res.status(400).json({ error: v.error });
+    return;
+  }
+
+  try {
+    const prompt = buildAdjustPrompt(body.instruction.trim(), body.formato);
+    const editSize = body.formato === "youtube" ? ("1536x1024" as const) : ("1024x1536" as const);
+    // Letterbox al lienzo exacto del modelo para que NO reencuadre la escena
+    // (las franjas negras se recortan después de editar).
+    const conFranjas = await prepararLienzoAjuste(Buffer.from(v.base64, "base64"), body.formato);
+    const buf = await generateFoxIllustration(prompt, conFranjas.toString("base64"), editSize, "image/png", "high");
+    const final = await recortarAjuste(buf, body.formato);
+    console.log(`[AjusteCover] Ajuste aplicado (${body.formato}): "${body.instruction.trim().slice(0, 80)}"`);
+    res.json({ b64_json: final.toString("base64"), mimeType: "image/png" });
+  } catch (error: any) {
+    console.error(`[AjusteCover] Falló el ajuste: ${error?.message}`);
+    if (esErrorRateLimit(error)) {
+      res.status(429).json({ error: "La IA de imágenes está saturada en este momento. Espera un minuto y vuelve a intentarlo." });
+      return;
+    }
+    res.status(500).json({ error: "No se pudo aplicar el ajuste a la imagen. Intenta de nuevo." });
+  }
+});
+
+// Redacta la instrucción cruda del chat de ajustes antes de enviarla.
+router.post("/gemini/improve-adjust-instruction", async (req, res) => {
+  const parsedBody = ImproveAdjustInstructionBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "Instrucción inválida: acepta hasta 1000 caracteres." });
+    return;
+  }
+  const instruction = parsedBody.data.instruction.trim();
+  if (!instruction) {
+    res.status(400).json({ error: "Escribe primero qué quieres cambiar (aunque sea a lo bruto) para que la IA lo redacte." });
+    return;
+  }
+
+  try {
+    const resp = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{
+        role: "user",
+        parts: [{ text: buildImproveAdjustPrompt(instruction, parsedBody.data.formato, parsedBody.data.title) }],
+      }],
+      config: { maxOutputTokens: 400 },
+    });
+    const mejorada = parseImprovedInstruction(resp.text ?? "");
+    if (!mejorada) {
+      res.status(502).json({ error: "La IA no devolvió una redacción válida. Intenta de nuevo." });
+      return;
+    }
+    res.json({ instruction: mejorada });
+  } catch (error: any) {
+    console.error(`[ImproveAjuste] Falló la redacción: ${error?.message}`);
+    if (esErrorRateLimit(error)) {
+      res.status(429).json({ error: "La IA está saturada en este momento. Espera un minuto y vuelve a intentarlo." });
+      return;
+    }
+    res.status(500).json({ error: "No se pudo redactar la instrucción. Intenta de nuevo." });
+  }
+});
+
 router.post("/gemini/improve-cover-idea", async (req, res) => {
   // safeParse: el handler global convierte los ZodError en 500 con el dump
   // crudo — aquí queremos un 400 con mensaje amable para la UI.
@@ -335,7 +415,14 @@ router.post("/gemini/generate-youtube-cover", async (req, res) => {
   try {
     // Con foto → la persona es la imagen de referencia; sin foto → master del
     // zorro (lo carga generateFoxIllustration por defecto). Lienzo horizontal.
-    const buf = await generateFoxIllustration(prompt, fotoPersona?.base64, "1536x1024", fotoPersona?.mime);
+    // Con persona, fidelidad "high" para que el rostro quede igual a la foto.
+    const buf = await generateFoxIllustration(
+      prompt,
+      fotoPersona?.base64,
+      "1536x1024",
+      fotoPersona?.mime,
+      fotoPersona ? "high" : undefined,
+    );
     console.log(`[MiniaturaYT] Ilustración lista, componiendo titular (${direccion.id})...`);
     const composited = await composeYoutubeCover(buf, body.title, direccion);
     res.json({ b64_json: composited.toString("base64"), mimeType: "image/png" });

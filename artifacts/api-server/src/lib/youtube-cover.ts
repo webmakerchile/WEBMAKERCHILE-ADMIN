@@ -75,11 +75,14 @@ export function buildYoutubeThumbnailPrompt(
 ): string {
   const bloqueProtagonista = opts.conPersona
     ? `PROTAGONISTA - LA PERSONA REAL DE LA FOTO ADJUNTA (CRÍTICO - NO NEGOCIABLE):
-- Integra a la persona de la foto adjunta como protagonista ABSOLUTO de la miniatura, recortada de su fondo original (nada del fondo de la foto debe aparecer)
-- Su ROSTRO debe quedar IDÉNTICO al de la foto: mismos rasgos, misma piel, mismo peinado, mismos lentes o accesorios si los tiene. FOTORREALISTA — PROHIBIDO convertirla en cartoon, ilustración o pintura
-- Encuádrala de la cintura hacia arriba, GRANDE, ocupando aproximadamente la mitad DERECHA del encuadre y llegando casi hasta el borde superior, como los youtubers en sus miniaturas
-- EXPRESIÓN OBLIGATORIA de youtuber para esta miniatura: ${expresionYoutuber(tema)}
-- La luz del estudio la ilumina igual que al resto del set: cara hacia el foco y un borde de luz (rim light) del color de la variante recortando su silueta`
+- El protagonista es LA MISMA PERSONA de la foto adjunta y debe ser reconocible AL INSTANTE por cualquiera que la conozca. Trátalo como un RETRATO de esa persona, no como "alguien parecido"
+- Rostro IDÉNTICO al de la foto: misma forma de cara, misma nariz, mismos ojos y cejas, misma boca y mentón, mismo tono de piel, misma edad, mismo peinado y color de pelo, misma barba/maquillaje/lentes/accesorios si los tiene
+- PROHIBIDO inventar una cara nueva, "embellecerla", rejuvenecerla o cambiar su contextura. Lo ÚNICO que cambia respecto a la foto es: la EXPRESIÓN, la POSE, la ropa y la iluminación. Nada más
+- FOTORREALISTA — PROHIBIDO convertirla en cartoon, ilustración o pintura: piel con textura real, como fotografía de estudio tomada con cámara profesional
+- Recórtala de su fondo original (nada del fondo de la foto debe aparecer)
+- Encuádrala del pecho hacia arriba, MUY GRANDE y con presencia dominante, ocupando la mitad DERECHA del encuadre, cuerpo ligeramente inclinado hacia la cámara
+- EXPRESIÓN OBLIGATORIA de youtuber (exagerada, llevada al máximo SIN deformar sus rasgos): ${expresionYoutuber(tema)}
+- La luz del estudio la esculpe con drama: luz principal modelando la cara y un RIM LIGHT intenso del color de la variante recortando toda su silueta contra el fondo`
     : `PROTAGONISTA - ZORRO WEBI ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia adjunta):
 - Zorro naranja antropomórfico con lentes rectangulares negros gruesos y camiseta verde oscuro, IDÉNTICO a la referencia en proporciones, estilo de dibujo y nivel de detalle
 - Mantiene el estilo FLAT CARTOON de la referencia: contornos gruesos negros, colores PLANOS y sólidos, SIN degradados, SIN texturas, SIN sombras realistas en el personaje
@@ -96,7 +99,16 @@ ${bloqueProtagonista}
 COMPOSICIÓN HORIZONTAL DE MINIATURA (CRÍTICO - NO NEGOCIABLE):
 - MITAD DERECHA del encuadre: el protagonista, anclado al piso del estudio con su sombra coherente
 - CENTRO (entre el protagonista y la franja izquierda): 2 a 3 piezas de UTILERÍA física del tema, apoyadas en el piso del set o sobre una mesa baja, a escala real
+- PROFUNDIDAD DE CÁMARA REAL: una pieza de utilería asoma GRANDE en primer plano parcial (por la derecha o el centro-bajo, JAMÁS en la franja izquierda), ligeramente desenfocada; el protagonista queda perfectamente nítido y el fondo con desenfoque suave de lente
 - FRANJA IZQUIERDA (el 40% izquierdo del encuadre): SOLO el fondo de la dirección de arte en su versión más plana y OSCURA, totalmente DESPEJADA — ahí se montará el titular después. NADA puede existir en esa franja: ni objetos, ni brazos, ni haces protagonistas, ni sombras marcadas.
+- MARGEN DE SEGURIDAD: el 8% superior e inferior del lienzo se recorta después — nada crítico (cabeza, ojos, objetos clave) puede quedar pegado al borde superior ni al inferior
+
+ENERGÍA DE MINIATURA VIRAL (CRÍTICO — debe dar GANAS DE HACER CLIC):
+- Nada de escena tranquila ni foto corporativa de banco de imágenes: esto es la miniatura de un youtuber top — dramática, intensa y con tensión visual
+- COLOR AL MÁXIMO: la paleta de la dirección de arte en su versión más SATURADA y contrastada — luces potentes, sombras profundas, colores que revientan incluso en pantalla de celular
+- Iluminación CINEMATOGRÁFICA con volumen: atmósfera/neblina sutil que hace visibles los haces de luz, rim light vibrante bien marcado, brillos especulares en la utilería
+- La escena cuenta un MOMENTO con drama (algo acaba de pasar o está a punto de pasar), no un posado estático
+- Acabado premium de productora audiovisual: la calidad se nota a primera vista
 
 TEMA DEL VIDEO: "${tema}"
 ${opts.extraEstilo ? `ESTILO ADICIONAL PEDIDO POR EL USUARIO: ${opts.extraEstilo}\n` : ""}
@@ -110,7 +122,7 @@ ${opts.utileria ? `
 UTILERÍA PEDIDA POR EL USUARIO (OBLIGATORIA): ${opts.utileria}
 Dibuja EXACTAMENTE esa utilería como los props del set — mismas reglas físicas de arriba — sin agregar otros objetos protagonistas por tu cuenta.
 ` : ""}
-DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" adaptada a encuadre HORIZONTAL (toda mención a "franja superior" aplícala aquí a la FRANJA IZQUIERDA):
+DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" adaptada a encuadre HORIZONTAL (toda mención a "franja superior" aplícala aquí a la FRANJA IZQUIERDA) y AMPLIFICADA: más saturación, más contraste y luz más potente que en una portada normal, sin aclarar la franja izquierda:
 ${direccion.fondo}
 DETALLE ÚNICO DE ESTA MINIATURA: ${detalle}
 

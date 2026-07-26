@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AdjustCoverBody,
   CoverOptionsResponse,
   CreateGeminiConversationBody,
   CreateVideoBody,
@@ -32,6 +33,8 @@ import type {
   GenerateGeminiImageResponse,
   GenerateYoutubeCoverBody,
   HealthStatus,
+  ImproveAdjustInstructionBody,
+  ImproveAdjustInstructionResponse,
   ImproveCoverIdeaBody,
   ImproveCoverIdeaResponse,
   ListDriveFilesParams,
@@ -1061,6 +1064,182 @@ export const useGenerateYoutubeCover = <
   TContext
 > => {
   return useMutation(getGenerateYoutubeCoverMutationOptions(options));
+};
+
+/**
+ * @summary Apply a conversational adjustment to an already generated cover/thumbnail (image edit that keeps everything else intact)
+ */
+export const getAdjustCoverUrl = () => {
+  return `/api/gemini/adjust-cover`;
+};
+
+export const adjustCover = async (
+  adjustCoverBody: AdjustCoverBody,
+  options?: RequestInit,
+): Promise<GenerateGeminiImageResponse> => {
+  return customFetch<GenerateGeminiImageResponse>(getAdjustCoverUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(adjustCoverBody),
+  });
+};
+
+export const getAdjustCoverMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adjustCover>>,
+    TError,
+    { data: BodyType<AdjustCoverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adjustCover>>,
+  TError,
+  { data: BodyType<AdjustCoverBody> },
+  TContext
+> => {
+  const mutationKey = ["adjustCover"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adjustCover>>,
+    { data: BodyType<AdjustCoverBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return adjustCover(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdjustCoverMutationResult = NonNullable<
+  Awaited<ReturnType<typeof adjustCover>>
+>;
+export type AdjustCoverMutationBody = BodyType<AdjustCoverBody>;
+export type AdjustCoverMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Apply a conversational adjustment to an already generated cover/thumbnail (image edit that keeps everything else intact)
+ */
+export const useAdjustCover = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adjustCover>>,
+    TError,
+    { data: BodyType<AdjustCoverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof adjustCover>>,
+  TError,
+  { data: BodyType<AdjustCoverBody> },
+  TContext
+> => {
+  return useMutation(getAdjustCoverMutationOptions(options));
+};
+
+/**
+ * @summary Rewrite a rough adjustment request into a clear image-edit instruction
+ */
+export const getImproveAdjustInstructionUrl = () => {
+  return `/api/gemini/improve-adjust-instruction`;
+};
+
+export const improveAdjustInstruction = async (
+  improveAdjustInstructionBody: ImproveAdjustInstructionBody,
+  options?: RequestInit,
+): Promise<ImproveAdjustInstructionResponse> => {
+  return customFetch<ImproveAdjustInstructionResponse>(
+    getImproveAdjustInstructionUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(improveAdjustInstructionBody),
+    },
+  );
+};
+
+export const getImproveAdjustInstructionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof improveAdjustInstruction>>,
+    TError,
+    { data: BodyType<ImproveAdjustInstructionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof improveAdjustInstruction>>,
+  TError,
+  { data: BodyType<ImproveAdjustInstructionBody> },
+  TContext
+> => {
+  const mutationKey = ["improveAdjustInstruction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof improveAdjustInstruction>>,
+    { data: BodyType<ImproveAdjustInstructionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return improveAdjustInstruction(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImproveAdjustInstructionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof improveAdjustInstruction>>
+>;
+export type ImproveAdjustInstructionMutationBody =
+  BodyType<ImproveAdjustInstructionBody>;
+export type ImproveAdjustInstructionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Rewrite a rough adjustment request into a clear image-edit instruction
+ */
+export const useImproveAdjustInstruction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof improveAdjustInstruction>>,
+    TError,
+    { data: BodyType<ImproveAdjustInstructionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof improveAdjustInstruction>>,
+  TError,
+  { data: BodyType<ImproveAdjustInstructionBody> },
+  TContext
+> => {
+  return useMutation(getImproveAdjustInstructionMutationOptions(options));
 };
 
 /**

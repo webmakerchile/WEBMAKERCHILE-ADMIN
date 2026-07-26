@@ -1,17 +1,20 @@
 import { useState, useEffect, useRef } from "react";
-import { useGenerateCover, useGenerateYoutubeCover, useGetCoverOptions, useImproveCoverIdea } from "@workspace/api-client-react";
+import { useGenerateCover, useGenerateYoutubeCover, useGetCoverOptions, useImproveCoverIdea, useAdjustCover, useImproveAdjustInstruction } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown, Youtube, Smartphone, UserRound, Maximize2
+  Sparkles, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown, Youtube, Smartphone, UserRound, Maximize2, MessageSquare, Send
 } from "lucide-react";
 import { motion } from "framer-motion";
-import { RETRY_PRESETS } from "@/lib/retry-presets";
 
 const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
 
+type FormatoPortada = "vertical" | "youtube";
+type MsgAjuste = { role: "user" | "ia"; text: string };
+type ImagenGenerada = { b64_json: string; mimeType: string };
+
 export default function CoverGeneratorPage() {
-  const [formato, setFormato] = useState<"vertical" | "youtube">("vertical");
+  const [formato, setFormato] = useState<FormatoPortada>("vertical");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [style, setStyle] = useState("");
@@ -39,22 +42,40 @@ export default function CoverGeneratorPage() {
   const previewOverlayRef = useRef<HTMLDivElement>(null);
   const previewCloseRef = useRef<HTMLButtonElement>(null);
   const previewReturnFocusRef = useRef<HTMLElement | null>(null);
+  // Chat de ajustes con IA sobre la imagen ya generada (uno por formato).
+  const [chatMensajes, setChatMensajes] = useState<Record<FormatoPortada, MsgAjuste[]>>({ vertical: [], youtube: [] });
+  const [chatTexto, setChatTexto] = useState("");
+  const chatTextoRef = useRef(""); // espejo del texto vivo, para descartar redacciones tardías
+  const [imagenAjustada, setImagenAjustada] = useState<Record<FormatoPortada, ImagenGenerada | null>>({ vertical: null, youtube: null });
+  // Época por formato: cada generación nueva la sube, y las respuestas de
+  // ajustes lanzados en una época anterior se descartan (no pueden pisar
+  // una imagen más nueva ni resucitar burbujas en un chat ya limpiado).
+  const ajusteEpochRef = useRef<Record<FormatoPortada, number>>({ vertical: 0, youtube: 0 });
 
   const generateCover = useGenerateCover();
   const generateYoutube = useGenerateYoutubeCover();
   const coverOptions = useGetCoverOptions();
   const improveIdea = useImproveCoverIdea();
+  const adjustCover = useAdjustCover();
+  const improveAjuste = useImproveAdjustInstruction();
   const esYoutube = formato === "youtube";
   // Estado de generación del formato activo (cada pestaña recuerda su último resultado).
   const activeGen = esYoutube ? generateYoutube : generateCover;
+  // Lo que se muestra: el último ajuste del chat (si existe) o la generación original.
+  const imagenMostrada: ImagenGenerada | null = imagenAjustada[formato] ?? activeGen.data ?? null;
   const direccionSeleccionada = coverOptions.data?.direcciones.find((d) => d.id === direccionId) ?? null;
 
+  const cambiarChatTexto = (v: string) => {
+    chatTextoRef.current = v;
+    setChatTexto(v);
+  };
+
   const abrirPreview = () => {
-    if (!activeGen.data) return;
+    if (!imagenMostrada) return;
     previewReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setModalAjuste(false); // nunca dos overlays a la vez
     setPreview({
-      src: `data:${activeGen.data.mimeType};base64,${activeGen.data.b64_json}`,
+      src: `data:${imagenMostrada.mimeType};base64,${imagenMostrada.b64_json}`,
       download: `${esYoutube ? "miniatura-youtube" : "portada"}-${title || "webmakerchile"}.png`,
       alt: esYoutube ? "Miniatura de YouTube en grande" : "Portada vertical en grande",
     });
@@ -254,6 +275,12 @@ export default function CoverGeneratorPage() {
   const handleGenerate = async (ajuste?: string) => {
     if (!title) return alert("El título es requerido");
 
+    // Una generación nueva parte de cero: descarta los ajustes del chat de este
+    // formato e invalida cualquier ajuste que siga en vuelo (sube la época).
+    ajusteEpochRef.current[formato] += 1;
+    setImagenAjustada((prev) => ({ ...prev, [formato]: null }));
+    setChatMensajes((prev) => ({ ...prev, [formato]: [] }));
+
     let base64: string | undefined = undefined;
     if (isDefaultRef && defaultRefBase64) {
       base64 = defaultRefBase64;
@@ -311,6 +338,53 @@ export default function CoverGeneratorPage() {
           }
         },
       }
+    );
+  };
+
+  // Envía la instrucción del chat: el backend EDITA la imagen actual (no
+  // regenera desde cero) manteniendo todo lo que no se pidió cambiar.
+  const enviarAjuste = () => {
+    const txt = chatTexto.trim();
+    const base = imagenAjustada[formato] ?? activeGen.data;
+    if (!txt || adjustCover.isPending || !base) return;
+    const formatoEnviado = formato; // fijado al enviar: inmune a cambios de pestaña
+    const epochEnviada = ajusteEpochRef.current[formatoEnviado];
+    setChatMensajes((prev) => ({ ...prev, [formatoEnviado]: [...prev[formatoEnviado], { role: "user" as const, text: txt }] }));
+    cambiarChatTexto("");
+    adjustCover.mutate(
+      { data: { instruction: txt, imageBase64: base.b64_json, formato: formatoEnviado } },
+      {
+        onSuccess: (r) => {
+          if (ajusteEpochRef.current[formatoEnviado] !== epochEnviada) return; // hubo regeneración: respuesta obsoleta
+          setImagenAjustada((prev) => ({ ...prev, [formatoEnviado]: r }));
+          setChatMensajes((prev) => ({ ...prev, [formatoEnviado]: [...prev[formatoEnviado], { role: "ia" as const, text: "Listo — apliqué el cambio manteniendo el resto igual." }] }));
+        },
+        onError: (e: any) => {
+          if (ajusteEpochRef.current[formatoEnviado] !== epochEnviada) return;
+          setChatMensajes((prev) => ({ ...prev, [formatoEnviado]: [...prev[formatoEnviado], { role: "ia" as const, text: `No pude aplicar el ajuste: ${e?.message || "intenta de nuevo."}` }] }));
+        },
+      },
+    );
+  };
+
+  // "Redactar con IA": reescribe la instrucción cruda ANTES de enviarla; el
+  // usuario revisa el texto mejorado y decide cuándo aplicarlo.
+  const redactarAjuste = () => {
+    const txt = chatTexto.trim();
+    if (!txt || improveAjuste.isPending || adjustCover.isPending) return;
+    improveAjuste.mutate(
+      { data: { instruction: txt, formato, title: title.trim() || undefined } },
+      {
+        onSuccess: (r) => {
+          // Solo reemplaza si el usuario no siguió escribiendo mientras tanto.
+          if (chatTextoRef.current.trim() !== txt) return;
+          cambiarChatTexto(r.instruction);
+        },
+        onError: (e: any) => {
+          setToast(`⚠️ ${e?.message || "No se pudo redactar la instrucción."}`);
+          setTimeout(() => setToast(null), 3500);
+        },
+      },
     );
   };
 
@@ -583,7 +657,7 @@ export default function CoverGeneratorPage() {
 
               <button
                 onClick={() => handleGenerate()}
-                disabled={activeGen.isPending || !title}
+                disabled={activeGen.isPending || adjustCover.isPending || !title}
                 className={`w-full flex items-center justify-center px-6 py-4 text-white rounded-xl font-bold shadow-xl disabled:opacity-50 hover:-translate-y-0.5 transition-all duration-300 ${esYoutube ? "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 shadow-red-500/20 hover:shadow-red-500/40" : "bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 shadow-primary/20 hover:shadow-primary/40"}`}
               >
                 {activeGen.isPending ? (
@@ -632,7 +706,7 @@ export default function CoverGeneratorPage() {
                     Reintentar
                   </button>
                 </div>
-              ) : activeGen.data ? (
+              ) : imagenMostrada ? (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -643,11 +717,12 @@ export default function CoverGeneratorPage() {
                   <button
                     type="button"
                     onClick={abrirPreview}
+                    disabled={adjustCover.isPending}
                     title="Ver en grande"
                     className={`group relative block w-full rounded-2xl overflow-hidden shadow-2xl border border-foreground/10 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${esYoutube ? "" : "max-w-[300px] mx-auto"}`}
                   >
                     <img 
-                      src={`data:${activeGen.data.mimeType};base64,${activeGen.data.b64_json}`} 
+                      src={`data:${imagenMostrada.mimeType};base64,${imagenMostrada.b64_json}`} 
                       alt={esYoutube ? "Miniatura de YouTube generada" : "Portada vertical generada"} 
                       className={`w-full h-auto object-cover ${esYoutube ? "aspect-video" : "aspect-[9/16]"}`}
                     />
@@ -657,10 +732,16 @@ export default function CoverGeneratorPage() {
                         Ver en grande
                       </span>
                     </span>
+                    {adjustCover.isPending && (
+                      <span className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-white" />
+                        <span className="text-white text-xs font-bold">Aplicando tu ajuste…</span>
+                      </span>
+                    )}
                   </button>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <a 
-                      href={`data:${activeGen.data.mimeType};base64,${activeGen.data.b64_json}`} 
+                      href={`data:${imagenMostrada.mimeType};base64,${imagenMostrada.b64_json}`} 
                       download={`${esYoutube ? "miniatura-youtube" : "portada"}-${title || "webmakerchile"}.png`}
                       className="flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all duration-300"
                     >
@@ -669,7 +750,7 @@ export default function CoverGeneratorPage() {
                     </a>
                     <button
                       onClick={() => handleGenerate()}
-                      disabled={activeGen.isPending}
+                      disabled={activeGen.isPending || adjustCover.isPending}
                       className="flex items-center justify-center px-4 py-3 bg-amber-500/90 hover:bg-amber-500 disabled:bg-amber-500/40 text-slate-900 rounded-xl font-bold transition-all"
                     >
                       <RefreshCw className="w-5 h-5 mr-2" />
@@ -677,31 +758,77 @@ export default function CoverGeneratorPage() {
                     </button>
                     <button
                       onClick={() => { setPreview(null); setModalAjuste(true); setAjusteTexto(""); }}
-                      disabled={activeGen.isPending}
+                      disabled={activeGen.isPending || adjustCover.isPending}
                       className="flex items-center justify-center px-4 py-3 bg-foreground/10 hover:bg-foreground/20 disabled:bg-foreground/5 text-foreground rounded-xl font-bold transition-all"
                     >
                       <Settings className="w-5 h-5 mr-2" />
                       Ajustar
                     </button>
                   </div>
-                  {/* Ajustes rápidos predefinidos */}
+                  {/* Chat de ajustes con IA: pide cambios puntuales en lenguaje natural.
+                      El backend EDITA la imagen actual — todo lo no pedido queda igual. */}
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1.5 flex items-center gap-1.5">
-                      <Wand2 className="w-3 h-3" />Ajustes rápidos
+                      <MessageSquare className="w-3 h-3" />Ajustes con IA
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {RETRY_PRESETS.map((preset) => (
-                        <button
-                          key={preset.id}
-                          onClick={() => handleGenerate(preset.prompt)}
-                          disabled={activeGen.isPending}
-                          title={preset.prompt.slice(0, 140) + "…"}
-                          className="bg-foreground/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-foreground/10 transition flex items-center gap-1"
-                        >
-                          <span>{preset.emoji}</span>{preset.label}
-                        </button>
-                      ))}
+                    {chatMensajes[formato].length > 0 && (
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto mb-2 pr-1">
+                        {chatMensajes[formato].map((m, i) => (
+                          <div
+                            key={i}
+                            className={`text-xs rounded-lg px-3 py-2 whitespace-pre-wrap ${
+                              m.role === "user"
+                                ? "bg-primary/15 border border-primary/20 text-foreground ml-6"
+                                : "bg-foreground/5 border border-foreground/10 text-muted-foreground mr-6"
+                            }`}
+                          >
+                            {m.text}
+                          </div>
+                        ))}
+                        {adjustCover.isPending && (
+                          <div className="bg-foreground/5 border border-foreground/10 text-muted-foreground mr-6 text-xs rounded-lg px-3 py-2 flex items-center gap-2">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Editando la imagen…
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <textarea
+                      value={chatTexto}
+                      onChange={(e) => cambiarChatTexto(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          enviarAjuste();
+                        }
+                      }}
+                      rows={2}
+                      maxLength={1000}
+                      placeholder='Ej: mantén todo igual, pero la pizarra debe decir "Abogada Mily"'
+                      className="w-full bg-background/50 border border-foreground/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none placeholder:text-muted-foreground/40"
+                    />
+                    <div className="flex gap-2 mt-1.5">
+                      <button
+                        onClick={redactarAjuste}
+                        disabled={!chatTexto.trim() || improveAjuste.isPending || adjustCover.isPending}
+                        title="La IA reescribe tu instrucción para que el cambio salga bien"
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                      >
+                        {improveAjuste.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                        Redactar con IA
+                      </button>
+                      <button
+                        onClick={enviarAjuste}
+                        disabled={!chatTexto.trim() || adjustCover.isPending}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold transition"
+                      >
+                        {adjustCover.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        Aplicar a la imagen
+                      </button>
                     </div>
+                    <p className="text-[10px] text-muted-foreground/50 mt-1">
+                      Cambia solo lo que pidas — el resto de la imagen (y el titular) se mantiene igual. "Redactar con IA" mejora tu instrucción antes de enviarla.
+                    </p>
                   </div>
 
                   {intentos >= 5 && (

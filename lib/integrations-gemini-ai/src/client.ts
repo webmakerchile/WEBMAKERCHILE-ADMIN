@@ -30,6 +30,9 @@ type GeminiConfig = {
   temperature?: number;
   // Tamaño a pedir a gpt-image-1 cuando se solicita una imagen.
   imageSize?: SupportedImageSize;
+  // Fidelidad respecto a la imagen de referencia en edits: "high" preserva
+  // rostros/identidad de la foto original (clave para personas reales).
+  inputFidelity?: "high" | "low";
 };
 
 function contentsToMessages(contents: GeminiContent[]): OpenAI.Chat.ChatCompletionMessageParam[] {
@@ -88,6 +91,8 @@ async function generateContentImpl(
         image: imageFile,
         prompt,
         size,
+        // "high" hace que gpt-image-1 conserve el rostro/identidad de la foto.
+        input_fidelity: config?.inputFidelity,
       });
       const b64 = resp.data?.[0]?.b64_json ?? "";
       return {

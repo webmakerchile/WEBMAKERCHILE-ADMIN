@@ -12,3 +12,4 @@
 - [Dirección de arte portadas](cover-art-direction.md) — familia "estudio spotlight" en vertical 9:16 y miniaturas YouTube 16:9 (persona real fotorrealista o Webi); utilería física, jamás stickers.
 - [Prod build skew](prod-build-skew.md) — el usuario prueba solo en la app publicada; ante "permiso denegado" en prod, sospechar primero build viejo: publicar suele ser el fix.
 - [Gates de /hub: área vs rol](hub-area-gates.md) — el gate por área corre antes que los routers montados; abrir por rol exige eximir el path en hub-gate.ts; los tests de router no ven ese middleware.
+- [Edición de imágenes (ajustes)](image-edit-adjustments.md) — gpt-image-1 edit reencuadra si el aspecto ≠ lienzo: letterbox negro determinista + recorte; sharp: un solo resize por pipeline.

@@ -45,7 +45,7 @@ export function buildImproveIdeaPrompt(
         conPersona
           ? "la EXPRESIÓN exagerada de youtuber de la persona (asombro, celebración, alerta, duda…) y su actitud"
           : "la emoción o actitud del zorro Webi"
-      }, 1 a 3 objetos físicos reales de utilería (apoyados en el set — nunca stickers, iconos ni símbolos flotantes; si hay una idea abstracta, va impresa en un objeto físico como una pizarra, una pantalla encendida o una caja) y el ambiente o tono general.`
+      }, 1 a 3 objetos físicos reales de utilería (apoyados en el set — nunca stickers, iconos ni símbolos flotantes; si hay una idea abstracta, va impresa en un objeto físico como una pizarra, una pantalla encendida o una caja) y el ambiente o tono general. La escena debe tener energía de miniatura viral: un momento con drama e intensidad sucediendo en el set, nunca un posado corporativo tranquilo.`
     : `- "idea": 2 a 3 frases en español natural que describan la escena de la portada: la emoción o actitud del zorro, 1 a 3 objetos físicos reales de utilería (apoyados en el set — nunca stickers, iconos ni símbolos flotantes; si hay una idea abstracta, va impresa en un objeto físico como una pizarra, una pantalla encendida o una caja) y el ambiente o tono general.`;
 
   return `Eres el redactor creativo de WebMaker (agencia digital, LATAM). ${contexto}

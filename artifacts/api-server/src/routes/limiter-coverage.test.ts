@@ -28,6 +28,8 @@ const MUST_AI = [
   "/api/gemini/generate-image",
   "/api/gemini/generate-cover",
   "/api/gemini/generate-youtube-cover",
+  "/api/gemini/adjust-cover",
+  "/api/gemini/improve-adjust-instruction",
   "/api/gemini/improve-cover-idea",
   "/api/studio/ideas/generate",
   "/api/studio/ideas/77/generate-cover",

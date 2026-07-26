@@ -3,12 +3,15 @@ export * from "./generated/types";
 // Explicit re-exports resolve the ambiguity for names present in both
 // generated modules (the zod schemas in ./generated/api take precedence).
 export {
+  AdjustCoverBody,
   CreateGeminiConversationBody,
   CreateVideoBody,
   GenerateCoverBody,
   GenerateYoutubeCoverBody,
   GenerateGeminiImageBody,
   GenerateGeminiImageResponse,
+  ImproveAdjustInstructionBody,
+  ImproveAdjustInstructionResponse,
   ImproveCoverIdeaBody,
   ImproveCoverIdeaResponse,
   ScheduleVideoBody,
