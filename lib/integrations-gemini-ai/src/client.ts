@@ -16,6 +16,12 @@ if (!apiKey) {
 
 const openai = new OpenAI({ apiKey, baseURL });
 
+// Modelo de imágenes: intercambiable por env para pruebas A/B entre
+// generaciones de modelos (p. ej. AI_IMAGE_MODEL=gpt-image-2). Se lee en cada
+// llamada — no al cargar el módulo — para que scripts de comparación puedan
+// alternarlo en caliente. Sin la variable, el comportamiento es el de siempre.
+export const imageModel = (): string => process.env.AI_IMAGE_MODEL || "gpt-image-1";
+
 type GeminiPart = { text: string } | { inlineData: { data: string; mimeType: string } };
 type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 
@@ -56,6 +62,21 @@ function contentsToMessages(contents: GeminiContent[]): OpenAI.Chat.ChatCompleti
   });
 }
 
+// Detecta el 400 de "parámetro no soportado" del SDK de OpenAI usando campos
+// estructurados (status + param) y, solo como último recurso, el mensaje.
+function esParametroNoSoportado(err: unknown, param: string): boolean {
+  const e = err as {
+    status?: number;
+    param?: string | null;
+    error?: { param?: string | null };
+    message?: string;
+  } | null;
+  if (typeof e?.status === "number" && e.status !== 400) return false;
+  const p = e?.param ?? e?.error?.param;
+  if (p) return p === param;
+  return typeof e?.message === "string" && e.message.toLowerCase().includes(param);
+}
+
 function pickTextModel(geminiModel: string): string {
   if (geminiModel.includes("flash")) return "gpt-4.1-mini";
   return "gpt-4.1";
@@ -86,14 +107,33 @@ async function generateContentImpl(
       const refMime = ref.mimeType || "image/png";
       const ext = refMime.includes("jpeg") ? "jpg" : refMime.includes("webp") ? "webp" : "png";
       const imageFile = await toFile(refBuf, `reference.${ext}`, { type: refMime });
-      const resp = await openai.images.edit({
-        model: "gpt-image-1",
-        image: imageFile,
-        prompt,
-        size,
-        // "high" hace que gpt-image-1 conserve el rostro/identidad de la foto.
-        input_fidelity: config?.inputFidelity,
-      });
+      // "high" hace que gpt-image-1 conserve el rostro/identidad de la foto.
+      // Algunos modelos (p. ej. gpt-image-2) rechazan el parámetro con 400:
+      // en ese caso se reintenta UNA vez sin él, en vez de fallar toda la
+      // generación por un parámetro de afinado.
+      const model = imageModel(); // fijado por operación: llamada y reintento usan el mismo modelo
+      let resp: OpenAI.Images.ImagesResponse;
+      try {
+        resp = await openai.images.edit({
+          model,
+          image: imageFile,
+          prompt,
+          size,
+          input_fidelity: config?.inputFidelity,
+        });
+      } catch (err) {
+        if (config?.inputFidelity && esParametroNoSoportado(err, "input_fidelity")) {
+          console.warn(`[gemini-ai] ${model} no soporta input_fidelity; reintento sin el parámetro`);
+          resp = await openai.images.edit({
+            model,
+            image: imageFile,
+            prompt,
+            size,
+          });
+        } else {
+          throw err;
+        }
+      }
       const b64 = resp.data?.[0]?.b64_json ?? "";
       return {
         candidates: [{
@@ -104,7 +144,7 @@ async function generateContentImpl(
       };
     } else {
       const resp = await openai.images.generate({
-        model: "gpt-image-1",
+        model: imageModel(),
         prompt,
         n: 1,
         size,

@@ -1,4 +1,4 @@
-import { ai } from "../client";
+import { ai, imageModel } from "../client";
 import { toFile } from "openai";
 
 export type ImageSize =
@@ -34,7 +34,7 @@ async function callEditApi(
   size: string
 ) {
   return ai.images.edit({
-    model: "gpt-image-1",
+    model: imageModel(),
     image: imageFile,
     prompt,
     size: size as SupportedApiSize,
@@ -43,7 +43,7 @@ async function callEditApi(
 
 async function callGenerateApi(prompt: string, size: string, n = 1) {
   return ai.images.generate({
-    model: "gpt-image-1",
+    model: imageModel(),
     prompt,
     n,
     size: size as SupportedApiSize,

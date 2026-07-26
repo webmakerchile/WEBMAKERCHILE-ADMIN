@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { ai } from "@workspace/integrations-gemini-ai";
+import { ai, imageModel } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import {
   CreateGeminiConversationBody,
@@ -325,7 +325,7 @@ router.post("/gemini/generate-cover", async (req, res) => {
         const ext = refValidada.mime.includes("jpeg") ? "jpg" : refValidada.mime.includes("webp") ? "webp" : "png";
         const imageFile = await toFile(refBuffer, `reference.${ext}`, { type: refValidada.mime });
         const response = await ai.images.edit({
-          model: "gpt-image-1",
+          model: imageModel(),
           image: imageFile,
           prompt: basePrompt,
           size: "1024x1536",

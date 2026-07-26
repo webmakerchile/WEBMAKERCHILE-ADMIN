@@ -102,3 +102,9 @@ id = "om6_kKqS7xKceeustA_rY"
 uri = "file://screenshots/miniatura-prueba-fidelidad.png"
 type = "image"
 title = "Prueba: misma cara + energía viral"
+
+[[outputs]]
+id = "2juW1rWPbfQ6TjM03wHg2"
+uri = "file://screenshots/comparacion-gpt-image-1-vs-2.png"
+type = "image"
+title = "Comparación gpt-image-1 vs gpt-image-2 (misma foto, mismo prompt)"
