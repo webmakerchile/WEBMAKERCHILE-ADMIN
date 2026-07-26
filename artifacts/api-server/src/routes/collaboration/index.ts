@@ -3,10 +3,11 @@ import { db } from "@workspace/db";
 import { comments, reviews, users, videos } from "@workspace/db/schema";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createNotification } from "../../lib/notifications";
+import { TEAM_ROLES, canManageTeam, canReview, isTeamRole, normalizeRole } from "@workspace/roles";
 
 const router: IRouter = Router();
 
-function getUser(req: Request): { id: number; teamRole?: string; name?: string | null; email?: string } | null {
+function getUser(req: Request): { id: number; teamRole?: string; role?: string; name?: string | null; email?: string } | null {
   const u = req.user as any;
   return u?.id ? u : null;
 }
@@ -45,10 +46,13 @@ router.get("/team/members", async (req, res) => {
       name: users.name,
       picture: users.picture,
       teamRole: users.teamRole,
+      role: users.role,
     })
     .from(users)
     .orderBy(asc(users.id));
-  res.json(rows);
+  // El rol que ve el panel siempre es el normalizado (los roles antiguos
+  // 'editor'/'reviewer' se mapean, y un superadmin siempre es CEO).
+  res.json(rows.map(({ role, ...r }) => ({ ...r, teamRole: normalizeRole(r.teamRole, role === "superadmin") })));
 });
 
 router.patch("/team/members/:id/role", async (req, res) => {
@@ -56,14 +60,19 @@ router.patch("/team/members/:id/role", async (req, res) => {
   if (!me) return unauthorized(res);
   // Only reviewers can promote/demote others.
   const [meRow] = await db.select().from(users).where(eq(users.id, me.id)).limit(1);
-  if (!meRow || meRow.teamRole !== "reviewer") {
-    res.status(403).json({ error: "Solo un revisor puede cambiar roles" });
+  if (!meRow || !canManageTeam(meRow.teamRole, meRow.role === "superadmin")) {
+    res.status(403).json({ error: "Solo la dirección puede cambiar roles" });
     return;
   }
   const id = Number(req.params.id);
   if (!Number.isFinite(id)) return badRequest(res, "ID inválido");
   const role = String(req.body?.teamRole || "");
-  if (role !== "editor" && role !== "reviewer") return badRequest(res, "Rol inválido");
+  if (!isTeamRole(role)) return badRequest(res, `Rol inválido. Válidos: ${TEAM_ROLES.join(", ")}`);
+  // Un superadmin siempre es CEO: dejarlo cambiar de rol lo dejaría fuera del panel.
+  const [target] = await db.select({ role: users.role }).from(users).where(eq(users.id, id)).limit(1);
+  if (target?.role === "superadmin" && role !== "ceo") {
+    return badRequest(res, "El superadministrador siempre tiene rol CEO");
+  }
   const [row] = await db
     .update(users)
     .set({ teamRole: role })
@@ -227,9 +236,9 @@ router.post("/content/videos/:videoId/reviews", async (req, res) => {
 
   const [video] = await db.select({ id: videos.id, title: videos.title }).from(videos).where(eq(videos.id, videoId)).limit(1);
   if (!video) return badRequest(res, "Video no encontrado");
-  const [reviewer] = await db.select({ id: users.id, teamRole: users.teamRole }).from(users).where(eq(users.id, assignedTo)).limit(1);
+  const [reviewer] = await db.select({ id: users.id, teamRole: users.teamRole, role: users.role }).from(users).where(eq(users.id, assignedTo)).limit(1);
   if (!reviewer) return badRequest(res, "Revisor no encontrado");
-  if (reviewer.teamRole !== "reviewer") return badRequest(res, "El usuario seleccionado no tiene rol de revisor");
+  if (!canReview(reviewer.teamRole, reviewer.role === "superadmin")) return badRequest(res, "El usuario seleccionado no puede aprobar contenido");
 
   // Resolve any pending reviews for this video before creating a new one.
   await db
@@ -287,8 +296,8 @@ router.post("/content/videos/:videoId/reviews/decision", async (req, res) => {
       res.status(403).json({ error: "Solo el revisor asignado puede decidir" });
       return;
     }
-  } else if (meRow.teamRole !== "reviewer") {
-    res.status(403).json({ error: "Necesitas rol de revisor para aprobar" });
+  } else if (!canReview(meRow.teamRole, meRow.role === "superadmin")) {
+    res.status(403).json({ error: "Tu rol no puede aprobar contenido" });
     return;
   }
 

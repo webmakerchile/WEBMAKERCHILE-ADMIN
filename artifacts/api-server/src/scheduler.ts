@@ -14,6 +14,7 @@ import { publishToFacebook } from "./routes/facebook";
 import { createNotification } from "./lib/notifications";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
 import { getCredential } from "./lib/credentials";
+import { pollDiscordSessions } from "./lib/jornada-poll";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -1243,6 +1244,13 @@ async function tick() {
     await checkConnectionsForAdmin();
   } catch (err: any) {
     console.error("[Scheduler] checkConnectionsForAdmin failed:", err?.message || err);
+  }
+  // Jornada por presencia en Discord: abre y cierra las sesiones de voz.
+  // No-op si falta DISCORD_BOT_TOKEN/DISCORD_GUILD_ID.
+  try {
+    await pollDiscordSessions();
+  } catch (err: any) {
+    console.error("[Scheduler] pollDiscordSessions failed:", err?.message || err);
   }
 }
 

@@ -302,6 +302,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/roles':
+        specifier: workspace:*
+        version: link:../../lib/roles
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -404,6 +407,9 @@ importers:
       '@workspace/integrations-gemini-ai':
         specifier: workspace:*
         version: link:../../lib/integrations-gemini-ai
+      '@workspace/roles':
+        specifier: workspace:*
+        version: link:../../lib/roles
       connect-pg-simple:
         specifier: ^10.0.0
         version: 10.0.0
@@ -746,6 +752,8 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+
+  lib/roles: {}
 
   scripts:
     dependencies:

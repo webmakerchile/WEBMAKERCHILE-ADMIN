@@ -25,8 +25,15 @@ import {
   Languages,
   LayoutGrid,
   ChevronRight,
+  Receipt,
+  Handshake,
+  ListChecks,
+  IdCard,
+  Ticket as TicketIcon,
   type LucideIcon,
 } from "lucide-react";
+import { canAccessRoute } from "@workspace/roles";
+import { JornadaIndicator } from "@/components/jornada-indicator";
 
 type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
 type NavSection = { label: string; items: NavItem[] };
@@ -48,7 +55,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t, toggleLang, lang } = useLang();
 
-  const navSections: NavSection[] = [
+  const isSuperAdmin = user?.role === "superadmin";
+  /** Cada rol solo ve en el menú las rutas que su rol permite. */
+  const allRoleSections: NavSection[] = [
     {
       label: t.navSectionContent,
       items: [
@@ -72,6 +81,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       ],
     },
     {
+      label: t.navSectionAreas,
+      items: [
+        { href: "/tickets", icon: TicketIcon, label: t.navTickets, tour: "nav-tickets" },
+        { href: "/ventas", icon: Handshake, label: t.navSales, tour: "nav-ventas" },
+        { href: "/mis-tareas", icon: ListChecks, label: t.navMyTasks, tour: "nav-mis-tareas" },
+        { href: "/reportes", icon: Receipt, label: t.navReports, tour: "nav-reportes" },
+        { href: "/rrhh", icon: IdCard, label: t.navHr, tour: "nav-rrhh" },
+      ],
+    },
+    {
       label: t.navSectionAdmin,
       items: [
         { href: "/equipo", icon: UserCog, label: t.navTeam, tour: "nav-equipo" },
@@ -80,6 +99,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
       ],
     },
   ];
+
+  const navSections: NavSection[] = allRoleSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canAccessRoute(user?.teamRole, item.href, isSuperAdmin)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   // The mobile bottom-nav shows the first 5 items (the "Contenido" section).
   const navItems = navSections.flatMap((s) => s.items);
@@ -203,6 +229,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-4 border-t border-foreground/10 space-y-3">
+          {/* La jornada se ve en todas las páginas: si solo viviera en "Mi día",
+              quien entra directo a otra sección no se entera. */}
+          <JornadaIndicator />
           {user && (
             <div className="flex items-center gap-3 px-1">
               {user.picture ? (
@@ -242,6 +271,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <div className="flex items-center gap-1">
+            <JornadaIndicator variant="compact" />
             <LangToggle />
             <NotificationsBell />
             <ThemeToggle />
@@ -312,6 +342,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </nav>
 
                 <div className="p-4 border-t border-foreground/10 space-y-3">
+                  <JornadaIndicator />
                   {user && (
                     <div className="flex items-center gap-3 px-1">
                       {user.picture ? (
@@ -389,8 +420,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       <InstallBanner />
 
-      {/* Hub Ejecutivo FAB — visible on all admin panel pages except /ejecutivo itself */}
-      {location !== "/ejecutivo" && <Link
+      {/* Hub Ejecutivo FAB — solo para roles con acceso al Hub, y nunca dentro del propio Hub */}
+      {location !== "/ejecutivo" && canAccessRoute(user?.teamRole, "/ejecutivo", isSuperAdmin) && <Link
         href="/ejecutivo"
         title={t.navHub}
         className="fixed bottom-20 lg:bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"

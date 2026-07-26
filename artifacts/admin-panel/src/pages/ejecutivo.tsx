@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
+import { ALL_HUB_SCOPES, type HubScope } from "@workspace/roles";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
@@ -28,7 +29,23 @@ interface Meeting { id: string; client: string; date: string; summary: string; n
 interface Note { id: string; cat: NoteCat; title: string; body: string; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
 type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
-interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; }
+// `doc` guarda los datos estructurados con los que se generó el PDF (módulos,
+// precios, alcance, forma de pago). Es la fuente del documento: si cambia, el
+// PDF se puede regenerar. Los contratos antiguos o subidos a mano no lo tienen.
+interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; doc?: WizData;
+  /** Versión técnica del contrato: los requerimientos sin un solo monto. */
+  brief?: ContractBrief; briefUrl?: string; briefTitle?: string; briefUploadedAt?: number;
+  /** Lo marca el servidor cuando censuró los montos para este rol. */
+  moneyRedacted?: boolean; }
+
+interface BriefModule { modulo: string; descripcion: string; entregables: string[]; requisitos: string[] }
+interface ContractBrief {
+  objetivo: string; contexto: string;
+  alcance: BriefModule[];
+  criteriosAceptacion: string[]; fueraDeAlcance: string[]; stackSugerido: string[];
+  hitos: { nombre: string; detalle: string }[];
+  generatedAt?: number;
+}
 interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
 interface WizModule { id: string; name: string; desc: string; price: number; }
 interface WizData { client: string; project: string; scope: string; date: string; advisor: string; modules: WizModule[]; downPct: number; notes: string; monthly: string; monthlyPrice: string; validityDays: number; }
@@ -168,25 +185,56 @@ function loadState(key: string | null): HubState {
 }
 function saveState(key: string | null, st: HubState) { if (!key) return; try { localStorage.setItem(key, JSON.stringify(st)); } catch { /* ignore */ } }
 
-async function fetchHubFromServer(): Promise<HubState | null> {
+/* ============================================================
+   TABLERO COMPARTIDO
+
+   El tablero es uno solo para toda la agencia (el de la dirección). El
+   servidor recorta lo que cada rol puede leer (`scopes`) y escribir
+   (`writeScopes`), y fusiona los cambios entidad por entidad usando la
+   versión que teníamos al cargar. Por eso guardamos `version`: sin ella el
+   servidor no puede distinguir "esto lo borré yo" de "esto lo creó otro".
+   ============================================================ */
+interface HubSnapshot {
+  data: Partial<HubState> | null;
+  version: number;
+  scopes: HubScope[];
+  writeScopes: HubScope[];
+  owner: { name: string | null; email: string } | null;
+}
+
+async function fetchHubFromServer(): Promise<HubSnapshot | null> {
   try {
     const res = await fetch(`${HUB_API_BASE}/hub`, { credentials: "include" });
     if (!res.ok) return null;
-    const json = await res.json() as { data: unknown };
-    if (!json.data || typeof json.data !== "object" || Array.isArray(json.data)) return null;
-    return Object.assign(blankState(), json.data) as HubState;
+    const json = await res.json() as Partial<HubSnapshot> & { data?: unknown };
+    const data = json.data && typeof json.data === "object" && !Array.isArray(json.data)
+      ? json.data as Partial<HubState>
+      : null;
+    return {
+      data,
+      version: Number(json.version) || 0,
+      scopes: Array.isArray(json.scopes) ? json.scopes : [...ALL_HUB_SCOPES],
+      writeScopes: Array.isArray(json.writeScopes) ? json.writeScopes : [...ALL_HUB_SCOPES],
+      owner: json.owner ?? null,
+    };
   } catch { return null; }
 }
 
-async function patchHubToServer(st: HubState): Promise<void> {
+async function patchHubToServer(st: HubState, baseVersion: number): Promise<{ data: Partial<HubState>; version: number } | null> {
   try {
-    await fetch(`${HUB_API_BASE}/hub`, {
+    const res = await fetch(`${HUB_API_BASE}/hub`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: st }),
+      body: JSON.stringify({ data: st, baseVersion }),
     });
-  } catch { /* ignore — localStorage already saved */ }
+    if (!res.ok) return null;
+    const json = await res.json() as { data?: unknown; version?: unknown };
+    const data = json.data && typeof json.data === "object" && !Array.isArray(json.data)
+      ? json.data as Partial<HubState>
+      : {};
+    return { data, version: Number(json.version) || 0 };
+  } catch { return null; /* localStorage ya guardó: se reintenta en el próximo cambio */ }
 }
 function migrate(st: HubState): HubState {
   const now = Date.now();
@@ -454,6 +502,247 @@ const fmtCLP = (n: number) => "$" + Math.round(n).toLocaleString("es-CL");
 function extractDriveFileId(url: string): string | null {
   const m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   return m ? m[1] : null;
+}
+
+const DOC_IVA = 0.19;
+
+/** Suma los módulos con nombre del documento (neto) y calcula IVA + total. */
+function docTotals(d: WizData) {
+  const neto = (d.modules || []).filter(m => (m.name || "").trim() !== "").reduce((a, m) => a + (Number(m.price) || 0), 0);
+  const iva = Math.round(neto * DOC_IVA);
+  return { neto, iva, total: neto + iva };
+}
+
+/** "$1.234.567" → 1234567 */
+function parseCLP(v: string): number {
+  const n = Number(String(v || "").replace(/[^\d]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Fecha de vencimiento derivada de emisión + vigencia. */
+function docExpiry(d: WizData): string {
+  if (!d.validityDays || d.validityDays <= 0) return "";
+  const base = d.date || new Date().toISOString().slice(0, 10);
+  const exp = new Date(base + "T12:00:00");
+  if (isNaN(exp.getTime())) return "";
+  exp.setDate(exp.getDate() + d.validityDays);
+  return exp.toISOString().slice(0, 10);
+}
+
+/** Documento base para contratos sin `doc` (creados antes o subidos como PDF externo). */
+function docFromContract(c: Contract): WizData {
+  const totalConIva = parseCLP(c.value);
+  const neto = totalConIva > 0 ? Math.round(totalConIva / (1 + DOC_IVA)) : 0;
+  return {
+    client: c.client || "",
+    project: c.title || "",
+    scope: c.notes || "",
+    date: c.signedAt || new Date().toISOString().slice(0, 10),
+    advisor: "",
+    modules: [{ id: uid(), name: c.title || "Servicio", desc: c.notes || "", price: neto }],
+    downPct: 50, notes: "", monthly: "", monthlyPrice: "", validityDays: 15,
+  };
+}
+
+/** Mezcla los cambios que devuelve la IA sobre el documento actual y sanea tipos. */
+function normalizeDoc(base: WizData, incoming?: Partial<WizData> | null): WizData {
+  const d = { ...base, ...(incoming || {}) } as WizData;
+  const mods = Array.isArray(d.modules) ? d.modules : [];
+  d.modules = mods.map(m => ({
+    id: m?.id || uid(),
+    name: String(m?.name ?? ""),
+    desc: String(m?.desc ?? ""),
+    price: Number(m?.price) || 0,
+  }));
+  if (d.modules.length === 0) d.modules = [{ id: uid(), name: "", desc: "", price: 0 }];
+  d.downPct = Math.min(100, Math.max(0, Number(d.downPct) || 0));
+  d.validityDays = Math.max(0, Number(d.validityDays) || 0);
+  d.monthlyPrice = String(d.monthlyPrice ?? "");
+  d.client = String(d.client ?? ""); d.project = String(d.project ?? "");
+  d.scope = String(d.scope ?? ""); d.notes = String(d.notes ?? "");
+  d.advisor = String(d.advisor ?? ""); d.monthly = String(d.monthly ?? "");
+  d.date = String(d.date ?? "");
+  return d;
+}
+
+
+/* ------------------------------------------------------------------
+   Versión técnica del contrato.
+
+   Del mismo trato salen dos documentos: la cotización comercial (con precios,
+   para el cliente) y este brief (sin ningún monto, para quien construye).
+   Se genera y se sube sola cada vez que el contrato nace o cambia.
+   ------------------------------------------------------------------ */
+async function fetchContractBrief(doc: WizData, contract?: Partial<Contract>): Promise<ContractBrief | null> {
+  try {
+    const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/brief`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ doc, contract }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { brief?: ContractBrief };
+    return data.brief ?? null;
+  } catch { return null; }
+}
+
+async function buildBriefPdf(brief: ContractBrief, doc: WizData): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, H = 297, ml = 14, mr = W - 14;
+  let y = 0;
+
+  const dark = () => pdf.setTextColor(13, 23, 46);
+  const orange = () => pdf.setTextColor(234, 88, 12);
+  const dim = () => pdf.setTextColor(110, 110, 110);
+
+  const pageBreak = (need: number) => {
+    if (y + need < H - 20) return;
+    pdf.addPage();
+    y = 20;
+  };
+
+  const heading = (text: string) => {
+    pageBreak(16);
+    y += 6;
+    orange();
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text(text.toUpperCase(), ml, y);
+    y += 2;
+    pdf.setDrawColor(234, 88, 12);
+    pdf.setLineWidth(0.3);
+    pdf.line(ml, y, mr, y);
+    y += 5;
+  };
+
+  const paragraph = (text: string, size = 9) => {
+    if (!text) return;
+    dark();
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(size);
+    const lines = pdf.splitTextToSize(text, mr - ml);
+    for (const line of lines) {
+      pageBreak(6);
+      pdf.text(line, ml, y);
+      y += size * 0.52;
+    }
+    y += 2;
+  };
+
+  const bullets = (items: string[]) => {
+    dark();
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8.5);
+    for (const item of items.filter(Boolean)) {
+      const lines = pdf.splitTextToSize(item, mr - ml - 6);
+      lines.forEach((line: string, i: number) => {
+        pageBreak(6);
+        if (i === 0) { orange(); pdf.text("•", ml + 1, y); dark(); }
+        pdf.text(line, ml + 6, y);
+        y += 4.6;
+      });
+    }
+    y += 2;
+  };
+
+  // Portada compacta
+  pdf.setFillColor(13, 23, 46);
+  pdf.rect(0, 0, W, 46, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7.5);
+  pdf.text("WEBMAKER LATAM · DOCUMENTO INTERNO", ml, 12);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(15);
+  pdf.text(pdf.splitTextToSize((doc.project || "Proyecto").toUpperCase(), mr - ml).slice(0, 2), ml, 24);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8.5);
+  pdf.text(`Cliente: ${doc.client || "—"}${doc.date ? `  ·  Emisión: ${doc.date}` : ""}`, ml, 38);
+  y = 56;
+
+  dim();
+  pdf.setFont("helvetica", "italic");
+  pdf.setFontSize(7.5);
+  pdf.text("Brief técnico — describe qué se debe construir. No contiene información comercial ni montos.", ml, y);
+  y += 6;
+
+  if (brief.objetivo) { heading("Objetivo"); paragraph(brief.objetivo); }
+  if (brief.contexto) { heading("Contexto"); paragraph(brief.contexto); }
+
+  if (brief.alcance.length) {
+    heading("Alcance por módulo");
+    for (const mod of brief.alcance) {
+      pageBreak(20);
+      dark();
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(9.5);
+      pdf.text(mod.modulo || "Módulo", ml, y);
+      y += 5;
+      paragraph(mod.descripcion, 8.5);
+      if (mod.entregables.length) {
+        dim(); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
+        pageBreak(6); pdf.text("Entregables", ml, y); y += 4;
+        bullets(mod.entregables);
+      }
+      if (mod.requisitos.length) {
+        dim(); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
+        pageBreak(6); pdf.text("Requisitos", ml, y); y += 4;
+        bullets(mod.requisitos);
+      }
+      y += 2;
+    }
+  }
+
+  if (brief.criteriosAceptacion.length) { heading("Criterios de aceptación"); bullets(brief.criteriosAceptacion); }
+  if (brief.fueraDeAlcance.length) { heading("Fuera de alcance"); bullets(brief.fueraDeAlcance); }
+  if (brief.stackSugerido.length) { heading("Stack sugerido"); bullets(brief.stackSugerido); }
+  if (brief.hitos.length) {
+    heading("Hitos");
+    bullets(brief.hitos.map(h => `${h.nombre}${h.detalle ? ` — ${h.detalle}` : ""}`));
+  }
+
+  const pages = pdf.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    pdf.setPage(i);
+    pdf.setFontSize(6.5);
+    dim();
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`WEBMAKER LATAM · BRIEF TÉCNICO · ${(doc.client || "CLIENTE").toUpperCase()}`, ml, H - 8);
+    pdf.text(`${i} / ${pages}`, mr, H - 8, { align: "right" });
+  }
+
+  return pdf.output("blob");
+}
+
+/** Sube un PDF a la carpeta del Hub en Drive. Devuelve null si Drive no responde. */
+async function uploadPdfToDrive(blob: Blob, filename: string): Promise<{ url: string; title: string; uploadedAt: number } | null> {
+  try {
+    const fd = new FormData();
+    fd.append("file", new File([blob], filename, { type: "application/pdf" }));
+    fd.append("parentId", HUB_DRIVE_ROOT);
+    const res = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
+    if (!res.ok) return null;
+    const up = await res.json() as { webViewLink: string; name: string; uploadedAt: number };
+    return { url: up.webViewLink, title: up.name, uploadedAt: up.uploadedAt };
+  } catch { return null; }
+}
+
+/**
+ * Genera la versión técnica completa (brief + PDF en Drive) para un documento.
+ * Es best-effort: si la IA o Drive fallan, el contrato se guarda igual sin brief.
+ */
+async function buildTechnicalVersion(doc: WizData, contract?: Partial<Contract>) {
+  const brief = await fetchContractBrief(doc, contract);
+  if (!brief) return null;
+  try {
+    const blob = await buildBriefPdf(brief, doc);
+    const name = `Brief-Tecnico-${(doc.client || "cliente").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    const uploaded = await uploadPdfToDrive(blob, name);
+    return { brief, briefUrl: uploaded?.url, briefTitle: uploaded?.title, briefUploadedAt: uploaded?.uploadedAt };
+  } catch {
+    return { brief, briefUrl: undefined, briefTitle: undefined, briefUploadedAt: undefined };
+  }
 }
 
 async function buildContractPdf(wiz: WizData): Promise<Blob> {
@@ -911,9 +1200,115 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
 /* ============================================================
    SHEET CONTENT
    ============================================================ */
-interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; }
 
-function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm }: SheetProps) {
+/**
+ * Bloque de la versión técnica del contrato. Es lo único del contrato que ve
+ * quien construye, así que aquí no se renderiza ningún dato comercial.
+ */
+function BriefView({ brief, briefUrl, doc, onGenerate, generating }: {
+  brief?: ContractBrief; briefUrl?: string; doc?: WizData;
+  /** Solo se pasa cuando el rol puede escribir contratos: genera o rehace el brief. */
+  onGenerate?: () => void; generating?: boolean;
+}) {
+  const mods = brief?.alcance ?? [];
+  return (
+    <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: "1em" }}>🛠️</span>
+        <strong style={{ fontSize: "0.92em" }}>Versión técnica</strong>
+        {briefUrl && (
+          <a href={briefUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.75em", color: "var(--accent, #ff7800)" }}>
+            Abrir PDF ↗
+          </a>
+        )}
+      </div>
+
+      {!brief ? (
+        <>
+          <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>
+            Este contrato todavía no tiene versión técnica. Genérala para que el equipo vea
+            los requerimientos sin acceder a la información comercial.
+          </p>
+          {onGenerate && (
+            <button
+              disabled={generating}
+              onClick={onGenerate}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)",
+                background: "rgba(255,120,0,0.1)", color: "var(--accent, #ff7800)",
+                fontWeight: 600, fontSize: "0.86em", cursor: generating ? "not-allowed" : "pointer",
+              }}
+            >{generating ? "⏳ Redactando el brief con IA…" : "🛠️ Generar brief técnico"}</button>
+          )}
+        </>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: "0.8em" }}>
+          {brief.objetivo && (
+            <div><div style={{ fontSize: "0.85em", color: "var(--muted)", marginBottom: 2 }}>Objetivo</div>{brief.objetivo}</div>
+          )}
+          {mods.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.85em", color: "var(--muted)", marginBottom: 4 }}>Alcance por módulo</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {mods.map((m, i) => (
+                  <div key={i} style={{ padding: "8px 11px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                    <div style={{ fontWeight: 600 }}>{m.modulo}</div>
+                    {m.descripcion && <div style={{ color: "var(--muted)", marginTop: 2 }}>{m.descripcion}</div>}
+                    {m.entregables?.length > 0 && (
+                      <ul style={{ margin: "6px 0 0", paddingLeft: 16, color: "var(--muted)" }}>
+                        {m.entregables.map((e, j) => <li key={j}>{e}</li>)}
+                      </ul>
+                    )}
+                    {m.requisitos?.length > 0 && (
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
+                        {m.requisitos.map((r, j) => <li key={j}>{r}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {brief.criteriosAceptacion?.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.85em", color: "var(--muted)", marginBottom: 2 }}>Criterios de aceptación</div>
+              <ul style={{ margin: 0, paddingLeft: 16 }}>{brief.criteriosAceptacion.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </div>
+          )}
+          {brief.fueraDeAlcance?.length > 0 && (
+            <div>
+              <div style={{ fontSize: "0.85em", color: "var(--muted)", marginBottom: 2 }}>Fuera de alcance</div>
+              <ul style={{ margin: 0, paddingLeft: 16, color: "var(--muted)" }}>{brief.fueraDeAlcance.map((x, i) => <li key={i}>{x}</li>)}</ul>
+            </div>
+          )}
+          {brief.stackSugerido?.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {brief.stackSugerido.map((x, i) => (
+                <span key={i} style={{ fontSize: "0.9em", padding: "2px 8px", borderRadius: 10, background: "var(--card-bg)", border: "1px solid var(--border)" }}>{x}</span>
+              ))}
+            </div>
+          )}
+          {doc?.scope && !brief.objetivo && <div style={{ color: "var(--muted)" }}>{doc.scope}</div>}
+          {onGenerate && (
+            <button
+              disabled={generating}
+              onClick={onGenerate}
+              style={{
+                marginTop: 2, padding: "8px 0", borderRadius: 8, border: "1px solid var(--border)",
+                background: "transparent", color: "var(--fg)", fontWeight: 500, fontSize: "0.95em",
+                cursor: generating ? "not-allowed" : "pointer",
+              }}
+            >{generating ? "⏳ Rehaciendo el brief…" : "↻ Rehacer brief técnico"}</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; canWrite: (scope: HubScope) => boolean; }
+
+function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, canWrite }: SheetProps) {
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
@@ -938,6 +1333,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{ name: string; client: string; pendingPrefill: Record<string, string> } | null>(null);
   const newProjFromContractIdRef = useRef<string | null>(null);
   const lastScrumProjIdRef = useRef<string | null>(null);
+  // Documento (cotización) del contrato abierto: borrador editable por el chat IA.
+  const [docDraft, setDocDraft] = useState<WizData | null>(null);
+  const [docDirty, setDocDirty] = useState(false);
+  const [regeneratingDoc, setRegeneratingDoc] = useState(false);
+  const [generatingBrief, setGeneratingBrief] = useState(false);
+  const lastContractSheetIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (sheet?.kind === "proj") {
@@ -959,11 +1360,21 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       projPreFillRef.current = {}; // clear after reading so next fresh open starts blank
     }
     if (sheet?.kind === "contract") {
-      const c = state.contracts.find(x => x.id === (sheet as { id: string }).id);
-      if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
-      else setPdfData(null);
-      setChatHistory([]); setChatInput(""); setExtractingProject(false);
-      setDuplicateProjectWarning(null);
+      // Solo reiniciamos chat/documento al abrir OTRO contrato: al guardar
+      // (regenerar PDF) el estado cambia y el sheet sigue abierto.
+      const id = (sheet as { id: string }).id;
+      const c = state.contracts.find(x => x.id === id);
+      if (lastContractSheetIdRef.current !== id) {
+        lastContractSheetIdRef.current = id;
+        if (c && c.pdfUrl) setPdfData({ url: c.pdfUrl, title: c.pdfTitle || "", uploadedAt: c.pdfUploadedAt || 0 });
+        else setPdfData(null);
+        setChatHistory([]); setChatInput(""); setExtractingProject(false);
+        setDuplicateProjectWarning(null);
+        setDocDraft(c?.doc ? normalizeDoc(c.doc) : null);
+        setDocDirty(false); setRegeneratingDoc(false);
+      }
+    } else {
+      lastContractSheetIdRef.current = null;
     }
     if (sheet?.kind === "new-contract") { setPdfData(null); setAiExtracting(false); }
     if (sheet?.kind === "new-contract-meeting") { setMeetingNotes(""); setMeetingExtracting(false); }
@@ -987,6 +1398,103 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       onToast("Información extraída de la reunión ✓");
     } catch { onToast("Error de conexión"); }
     finally { setMeetingExtracting(false); }
+  };
+
+  /**
+   * Regenera el PDF del contrato a partir del documento (`d`), lo sube a Drive
+   * y persiste documento + ficha + nuevo enlace. Es lo que hace que los cambios
+   * del chat IA lleguen al documento que ve el cliente.
+   */
+  const regenerateContractDoc = async (c: Contract, d: WizData) => {
+    setRegeneratingDoc(true);
+    try {
+      const blob = await buildContractPdf(d);
+      const stamp = new Date();
+      const cliente = (d.client || c.client || "cliente").replace(/\s+/g, "-");
+      const fname = `Cotizacion-${cliente}-${stamp.toISOString().slice(0, 10)}-${stamp.getTime().toString().slice(-5)}.pdf`;
+      const fd = new FormData();
+      fd.append("file", new File([blob], fname, { type: "application/pdf" }));
+      fd.append("parentId", HUB_DRIVE_ROOT);
+
+      let nextPdf: PdfData | null = pdfData;
+      const upRes = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
+      if (upRes.ok) {
+        const up = await upRes.json() as { webViewLink: string; name: string; uploadedAt: number };
+        nextPdf = { url: up.webViewLink, title: up.name, uploadedAt: up.uploadedAt };
+        setPdfData(nextPdf);
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = fname; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+        onToast("PDF regenerado y descargado (Drive no disponible)");
+      }
+
+      // Si cambia el documento, el brief técnico deja de ser válido: se rehace
+      // en la misma operación para que ambas versiones digan lo mismo.
+      const tech = await buildTechnicalVersion(d, { title: c.title, client: c.client, notes: c.notes });
+
+      const totals = docTotals(d);
+      const exp = docExpiry(d);
+      onSave({
+        ...state,
+        contracts: state.contracts.map(x => x.id !== c.id ? x : {
+          ...x,
+          brief: tech?.brief ?? x.brief,
+          briefUrl: tech?.briefUrl ?? x.briefUrl,
+          briefTitle: tech?.briefTitle ?? x.briefTitle,
+          briefUploadedAt: tech?.briefUploadedAt ?? x.briefUploadedAt,
+          title: (V("ti").trim() || d.project || x.title),
+          client: d.client || V("cl"),
+          value: totals.total > 0 ? fmtCLP(totals.total) : V("va"),
+          status: (V("st") || x.status) as ContractStatus,
+          signedAt: d.date || V("si"),
+          expiresAt: exp || V("ex"),
+          notes: V("no") || d.scope,
+          doc: d,
+          pdfUrl: nextPdf?.url, pdfTitle: nextPdf?.title, pdfUploadedAt: nextPdf?.uploadedAt,
+          updatedAt: Date.now(),
+        }),
+      });
+      setDocDirty(false);
+      if (upRes.ok) onToast(tech?.brief ? "Cotización y brief técnico regenerados ✓" : "Documento regenerado con los cambios ✓");
+    } catch (e: unknown) {
+      onToast("Error regenerando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
+    } finally {
+      setRegeneratingDoc(false);
+    }
+  };
+
+  /**
+   * Genera (o rehace) solo la versión técnica de un contrato, sin tocar la
+   * cotización comercial ni su PDF. Sirve para los contratos que ya existían
+   * antes de que el brief fuera automático.
+   */
+  const generateBriefFor = async (c: Contract) => {
+    // Si el contrato no tiene documento estructurado (PDF externo o carga
+    // manual), se arma uno desde la ficha para tener algo que describir.
+    const source = docDraft ?? c.doc ?? docFromContract(c);
+    setGeneratingBrief(true);
+    try {
+      const tech = await buildTechnicalVersion(source, { title: c.title, client: c.client, notes: c.notes });
+      if (!tech) { onToast("No se pudo generar el brief técnico"); return; }
+      onSave({
+        ...state,
+        contracts: state.contracts.map(x => x.id !== c.id ? x : {
+          ...x,
+          doc: x.doc ?? source,
+          brief: tech.brief,
+          briefUrl: tech.briefUrl ?? x.briefUrl,
+          briefTitle: tech.briefTitle ?? x.briefTitle,
+          briefUploadedAt: tech.briefUploadedAt ?? x.briefUploadedAt,
+          updatedAt: Date.now(),
+        }),
+      });
+      onToast(tech.briefUrl ? "Brief técnico generado y subido a Drive ✓" : "Brief técnico generado");
+    } catch (e: unknown) {
+      onToast("Error generando el brief: " + (e instanceof Error ? e.message : "desconocido"));
+    } finally {
+      setGeneratingBrief(false);
+    }
   };
 
   if (!sheet) return null;
@@ -1531,6 +2039,26 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   if (sheet.kind === "contract") {
     const c = state.contracts.find(x => x.id === sheet.id); if (!c) return null;
     const previewFileId = pdfData ? extractDriveFileId(pdfData.url) : null;
+    const readOnlyContract = !canWrite("contracts");
+
+    // Vista técnica: es lo que recibe quien construye. El servidor ya quitó los
+    // montos y el PDF comercial, así que aquí solo se muestran requerimientos.
+    if (c.moneyRedacted) {
+      return (<>
+        <div className="sheet-head"><h2>Requerimientos</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+        <div className="detail-meta"><span className="badge">{c.status}</span><span className="badge">Vista técnica</span></div>
+        <div className="field"><label>Servicio</label><div className="ro-value">{c.title}</div></div>
+        <div className="field"><label>Cliente</label><div className="ro-value">{c.client || "—"}</div></div>
+        {c.signedAt && <div className="field"><label>Inicio</label><div className="ro-value">{c.signedAt}</div></div>}
+        {c.notes && <div className="field"><label>Alcance acordado</label><div className="ro-value" style={{ whiteSpace: "pre-wrap" }}>{c.notes}</div></div>}
+        <BriefView brief={c.brief} briefUrl={c.briefUrl} doc={c.doc} />
+        <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 14 }}>
+          Esta es la versión técnica del contrato: describe qué construir. La información comercial
+          (valores, precios por módulo y forma de pago) no forma parte de esta vista.
+        </p>
+      </>);
+    }
+
     return (<>
       <div className="sheet-head"><h2>Contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} defaultValue={c.title} /></div>
@@ -1559,10 +2087,79 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
         </div>
       )}
-      <button className="save" onClick={() => {
-        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
+      {!readOnlyContract && <button className="save" disabled={regeneratingDoc} onClick={async () => {
+        // Si el documento tiene cambios pendientes (chat IA / edición), guardar
+        // implica regenerar el PDF para que el documento refleje la ficha.
+        if (docDirty && docDraft) { await regenerateContractDoc(c, docDraft); onClose(); return; }
+        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
-      }}>Guardar cambios</button>
+      }}>{docDirty ? (regeneratingDoc ? "⏳ Regenerando documento…" : "Guardar y regenerar documento") : "Guardar cambios"}</button>}
+
+      {/* ---- Documento de la cotización (fuente del PDF) ---- */}
+      <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: "1em" }}>📄</span>
+          <strong style={{ fontSize: "0.92em" }}>Documento</strong>
+          {docDirty && (
+            <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(255,180,0,0.15)", color: "#e0a52a" }}>
+              cambios sin aplicar al PDF
+            </span>
+          )}
+        </div>
+
+        {docDraft ? (() => {
+          const totals = docTotals(docDraft);
+          const mods = docDraft.modules.filter(m => (m.name || "").trim() !== "");
+          const abono = Math.round(totals.total * docDraft.downPct / 100);
+          return (
+            <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+                {mods.length === 0 && <div style={{ fontSize: "0.78em", color: "var(--muted)" }}>Sin módulos definidos.</div>}
+                {mods.map(m => (
+                  <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 11px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "0.83em", fontWeight: 600 }}>{m.name}</div>
+                      {m.desc && <div style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 2 }}>{m.desc}</div>}
+                    </div>
+                    <div style={{ fontSize: "0.8em", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtCLP(m.price)}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: "0.76em", color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
+                <span>Neto {fmtCLP(totals.neto)} · IVA {fmtCLP(totals.iva)} · <strong style={{ color: "var(--fg)" }}>Total {fmtCLP(totals.total)}</strong></span>
+                <span>Pago: {docDraft.downPct}% al iniciar ({fmtCLP(abono)}) · {100 - docDraft.downPct}% a la entrega</span>
+                {docDraft.monthly && <span>Mensualidad: {docDraft.monthly} {docDraft.monthlyPrice ? `· ${fmtCLP(Number(docDraft.monthlyPrice) || 0)} neto/mes` : ""}</span>}
+                {docDraft.validityDays > 0 && <span>Vigencia: {docDraft.validityDays} días{docExpiry(docDraft) ? ` (hasta ${docExpiry(docDraft)})` : ""}</span>}
+              </div>
+              <button
+                disabled={regeneratingDoc}
+                onClick={() => regenerateContractDoc(c, docDraft)}
+                style={{
+                  width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)",
+                  background: docDirty ? "rgba(255,120,0,0.14)" : "var(--card-bg)",
+                  color: docDirty ? "var(--accent, #ff7800)" : "var(--fg)",
+                  fontWeight: 600, fontSize: "0.86em", cursor: regeneratingDoc ? "not-allowed" : "pointer",
+                }}
+              >{regeneratingDoc ? "⏳ Generando cotización y brief…" : "🔄 Regenerar documentos (cliente + técnico)"}</button>
+              <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 5 }}>
+                Genera las dos versiones: la cotización para el cliente y el brief técnico para el equipo,
+                y ambas se suben a Drive.
+              </p>
+            </>
+          );
+        })() : (
+          <>
+            <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>
+              Este contrato no tiene un documento estructurado (se creó a mano o el PDF se subió desde fuera),
+              así que la IA sólo puede editar la ficha. Crea uno para que el chat pueda modificar el PDF.
+            </p>
+            <button
+              onClick={() => { setDocDraft(docFromContract(c)); setDocDirty(true); onToast("Documento creado desde la ficha — ajústalo con el chat"); }}
+              style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--fg)", fontWeight: 600, fontSize: "0.86em", cursor: "pointer" }}
+            >📄 Crear documento desde la ficha</button>
+          </>
+        )}
+      </div>
 
       {/* ---- Proyectos vinculados ---- */}
       {(() => {
@@ -1682,12 +2279,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         </button>
       </div>
 
+      {/* ---- Versión técnica (brief) ---- */}
+      <BriefView
+        brief={c.brief}
+        briefUrl={c.briefUrl}
+        doc={c.doc}
+        onGenerate={readOnlyContract ? undefined : () => void generateBriefFor(c)}
+        generating={generatingBrief}
+      />
+
       {/* ---- Chat IA para modificar el contrato ---- */}
       <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
           <span style={{ fontSize: "1.1em" }}>✨</span>
           <strong style={{ fontSize: "0.92em" }}>Modificar con IA</strong>
-          <span style={{ fontSize: "0.75em", color: "var(--muted)", fontWeight: 400 }}>Dile a la IA qué cambiar y aplicará los cambios al formulario</span>
+          <span style={{ fontSize: "0.75em", color: "var(--muted)", fontWeight: 400 }}>
+            {docDraft ? "Cambia la ficha y el documento (módulos, precios, alcance, pago)" : "Dile a la IA qué cambiar y aplicará los cambios al formulario"}
+          </span>
         </div>
 
         {chatHistory.length > 0 && (
@@ -1744,10 +2352,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/ai-chat`, {
                   method: "POST", credentials: "include",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ contract: currentContract, instruction }),
+                  body: JSON.stringify({ contract: currentContract, doc: docDraft, instruction }),
                 });
                 if (!res.ok) { const e = await res.json().catch(() => ({} as Record<string,string>)); setChatHistory(h => [...h, { role: "ai", text: (e as {error?:string}).error || "Error al procesar" }]); return; }
-                const data = await res.json() as Record<string, string>;
+                const payload = await res.json() as { contract?: Record<string, string>; doc?: Partial<WizData> | null; summary?: string };
+                const data = payload.contract || {};
                 if (r.current["ti"] && data.title) r.current["ti"].value = data.title;
                 if (r.current["cl"] && data.client) r.current["cl"].value = data.client;
                 if (r.current["va"] && data.value) r.current["va"].value = data.value;
@@ -1755,7 +2364,26 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 if (r.current["si"] && data.signedAt) r.current["si"].value = data.signedAt;
                 if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
                 if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
-                setChatHistory(h => [...h, { role: "ai", text: "✓ Cambios aplicados. Revisa los campos arriba y guarda cuando estés listo." }]);
+
+                // Documento: aplicamos los cambios y recalculamos ficha desde el
+                // documento (valor, fechas) para que PDF y ficha no se separen.
+                let docUpdated = false;
+                if (payload.doc && docDraft) {
+                  const nd = normalizeDoc(docDraft, payload.doc);
+                  setDocDraft(nd); setDocDirty(true); docUpdated = true;
+                  const totals = docTotals(nd);
+                  if (r.current["ti"] && nd.project) r.current["ti"].value = nd.project;
+                  if (r.current["cl"] && nd.client) r.current["cl"].value = nd.client;
+                  if (r.current["va"] && totals.total > 0) r.current["va"].value = fmtCLP(totals.total);
+                  if (r.current["si"] && nd.date) r.current["si"].value = nd.date;
+                  const exp = docExpiry(nd);
+                  if (r.current["ex"] && exp) r.current["ex"].value = exp;
+                }
+
+                const summary = payload.summary ? `✓ ${payload.summary}` : "✓ Cambios aplicados.";
+                setChatHistory(h => [...h, { role: "ai", text: docUpdated
+                  ? `${summary} Revisa el documento más arriba y pulsa "Regenerar PDF" para actualizarlo en Drive.`
+                  : `${summary} Revisa los campos arriba y guarda cuando estés listo.` }]);
               } catch { setChatHistory(h => [...h, { role: "ai", text: "Error de conexión" }]); }
               finally { setChatLoading(false); }
             }}
@@ -1765,11 +2393,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 5 }}>Los cambios se aplican al formulario — haz clic en "Guardar cambios" para confirmar.</p>
       </div>
 
-      <button className="del-link" style={{ marginTop: 16 }} onClick={() => {
+      {!readOnlyContract && <button className="del-link" style={{ marginTop: 16 }} onClick={() => {
         const snap = [...state.contracts];
         onSave({ ...state, contracts: state.contracts.filter(x => x.id !== c.id) });
         onClose(); onToast("Contrato eliminado", () => onSave({ ...state, contracts: snap }));
-      }}>Eliminar contrato</button>
+      }}>Eliminar contrato</button>}
     </>);
   }
 
@@ -1950,13 +2578,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   exp.setDate(exp.getDate() + wiz.validityDays);
                   expiresAt = exp.toISOString().slice(0, 10);
                 }
-                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, createdAt: now, updatedAt: now }] });
+                // Versión técnica: se genera sola, en la misma pasada. Quien
+                // programa no debería esperar a que alguien le escriba el brief.
+                const tech = await buildTechnicalVersion(wiz);
+
+                // Guardamos también `doc`: es la fuente del PDF, y permite que el
+                // chat IA modifique el documento y lo regenere después.
+                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: wiz.project, client: wiz.client, value: tTotal > 0 ? fmtCLP(tTotal) : "", status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, doc: wiz, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, brief: tech?.brief, briefUrl: tech?.briefUrl, briefTitle: tech?.briefTitle, briefUploadedAt: tech?.briefUploadedAt, createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
-                onToast(pdfUrl ? "Contrato creado y PDF subido a Drive ✓" : "Contrato creado");
+                onToast(pdfUrl ? (tech?.briefUrl ? "Contrato creado: cotización y brief técnico en Drive ✓" : "Contrato creado y PDF subido a Drive ✓") : "Contrato creado");
               } catch (e: unknown) {
                 onToast("Error generando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
               } finally { setGeneratingPdf(false); }
-            }}>{generatingPdf ? "⏳ Generando PDF…" : "✨ Generar contrato PDF"}</button>
+            }}>{generatingPdf ? "⏳ Generando cotización y brief técnico…" : "✨ Generar contrato PDF"}</button>
           </div>
         </div>
       )}
@@ -2551,28 +3185,67 @@ export default function EjecutivoPage() {
   };
 
   const [state, setStateRaw] = useState<HubState>(() => migrate(loadState(storageKey)));
+  const [scopes, setScopes] = useState<HubScope[]>(() => [...ALL_HUB_SCOPES]);
+  const [writeScopes, setWriteScopes] = useState<HubScope[]>(() => [...ALL_HUB_SCOPES]);
+  const [boardOwner, setBoardOwner] = useState<{ name: string | null; email: string } | null>(null);
 
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  /** Última versión del tablero que conocemos: la base para fusionar en el servidor. */
+  const versionRef = useRef(0);
+  /** Contador de guardados: si sube mientras viaja un PATCH, no pisamos lo que el usuario acaba de escribir. */
+  const saveSeqRef = useRef(0);
+
+  /** Adopta el tablero del servidor conservando las colecciones fuera de nuestro alcance. */
+  const adoptServerData = useCallback((data: Partial<HubState> | null, version: number) => {
+    versionRef.current = version;
+    if (!data) return;
+    setStateRaw(prev => {
+      const merged = migrate(Object.assign(blankState(), prev, data));
+      saveState(storageKey, merged);
+      return merged;
+    });
+  }, [storageKey]);
 
   const setState = useCallback((next: HubState) => {
     dirtyRef.current = true;
+    const seq = ++saveSeqRef.current;
     setStateRaw(next);
     saveState(storageKey, next);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => { void patchHubToServer(next); }, 1500);
-  }, [storageKey]);
+    serverSaveTimer.current = setTimeout(() => {
+      void patchHubToServer(next, versionRef.current).then(result => {
+        if (!result) return;
+        versionRef.current = result.version;
+        // Si el usuario siguió editando mientras viajaba el PATCH, no aplicamos
+        // la respuesta: su versión local es más nueva y se enviará enseguida.
+        if (saveSeqRef.current !== seq) return;
+        dirtyRef.current = false;
+        adoptServerData(result.data, result.version);
+      });
+    }, 1500);
+  }, [storageKey, adoptServerData]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchHubFromServer().then(serverState => {
-      if (cancelled || !serverState || dirtyRef.current) return;
-      const merged = migrate(serverState);
-      setStateRaw(merged);
-      saveState(storageKey, merged);
-    });
-    return () => { cancelled = true; };
-  }, [storageKey]);
+    const pull = () => {
+      // Nunca traemos del servidor con cambios locales sin enviar: se perderían.
+      if (dirtyRef.current) return;
+      void fetchHubFromServer().then(snap => {
+        if (cancelled || !snap || dirtyRef.current) return;
+        setScopes(snap.scopes);
+        setWriteScopes(snap.writeScopes);
+        setBoardOwner(snap.owner);
+        adoptServerData(snap.data, snap.version);
+      });
+    };
+    pull();
+    // El tablero es compartido: refrescamos para ver lo que hace el resto.
+    const timer = setInterval(pull, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [storageKey, adoptServerData]);
+
+  const canWrite = useCallback((scope: HubScope) => writeScopes.includes(scope), [writeScopes]);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
     try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive"].includes(s)) return s as Tab; } catch { /* ignore */ }
@@ -2580,11 +3253,16 @@ export default function EjecutivoPage() {
   });
 
   useEffect(() => {
-    if (tab === "svc" && !isAdmin) {
+    const tabScope: Partial<Record<Tab, HubScope>> = {
+      proj: "projects", clients: "clients", meet: "meetings", notes: "notes", contracts: "contracts",
+    };
+    const scope = tabScope[tab];
+    // La pestaña guardada puede no corresponder al rol (o al alcance del tablero).
+    if ((tab === "svc" && !isAdmin) || (scope && !scopes.includes(scope))) {
       setTabRaw("dash");
       try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
     }
-  }, [tab, isAdmin]);
+  }, [tab, isAdmin, scopes]);
   const setTab = useCallback((t: Tab) => { setTabRaw(t); try { localStorage.setItem(LS_TAB, t); } catch { /* ignore */ } }, []);
   const navigate = useCallback((t: Tab) => { setTab(t); window.scrollTo(0, 0); }, [setTab]);
 
@@ -2609,12 +3287,13 @@ export default function EjecutivoPage() {
   const openSheet = useCallback((s: SheetKind) => setSheet(s), []);
 
   const handleNew = () => {
-    if (tab === "clients") openSheet({ kind: "new-client" });
-    else if (tab === "meet") openSheet({ kind: "new-meet" });
-    else if (tab === "notes") openSheet({ kind: "new-note" });
-    else if (tab === "contracts") openSheet({ kind: "new-contract-mode" });
-    else if (tab === "proj" && projView === "scrum") openSheet({ kind: "new-task" });
-    else openSheet({ kind: "new-proj" });
+    const denied = () => showToast("Tu rol no puede crear elementos en esta sección");
+    if (tab === "clients") { canWrite("clients") ? openSheet({ kind: "new-client" }) : denied(); return; }
+    if (tab === "meet") { canWrite("meetings") ? openSheet({ kind: "new-meet" }) : denied(); return; }
+    if (tab === "notes") { canWrite("notes") ? openSheet({ kind: "new-note" }) : denied(); return; }
+    if (tab === "contracts") { canWrite("contracts") ? openSheet({ kind: "new-contract-mode" }) : denied(); return; }
+    if (tab === "proj" && projView === "scrum") { canWrite("tasks") ? openSheet({ kind: "new-task" }) : denied(); return; }
+    canWrite("projects") ? openSheet({ kind: "new-proj" }) : denied();
   };
 
   const handleExport = () => {
@@ -2646,16 +3325,24 @@ export default function EjecutivoPage() {
   }, []);
 
   const [tt, tsub] = TAB_TITLES[tab] || TAB_TITLES.dash;
-  const TABS: { id: Tab; cnt?: number }[] = [
-    { id: "dash" },
-    { id: "proj", cnt: state.projects.length },
-    { id: "clients", cnt: state.clients.length },
-    { id: "meet", cnt: state.meetings.length },
-    { id: "notes", cnt: state.notes.length },
-    { id: "contracts", cnt: state.contracts.length },
-    { id: "drive" },
+  // Cada pestaña vive de una colección del tablero: si el rol no la puede leer,
+  // la pestaña no existe para esa persona.
+  const TAB_SCOPE: Partial<Record<Tab, HubScope>> = {
+    proj: "projects", clients: "clients", meet: "meetings", notes: "notes", contracts: "contracts",
+  };
+  const TABS: { id: Tab; cnt?: number }[] = ([
+    { id: "dash" as Tab },
+    { id: "proj" as Tab, cnt: state.projects.length },
+    { id: "clients" as Tab, cnt: state.clients.length },
+    { id: "meet" as Tab, cnt: state.meetings.length },
+    { id: "notes" as Tab, cnt: state.notes.length },
+    { id: "contracts" as Tab, cnt: state.contracts.length },
+    { id: "drive" as Tab },
     ...(isAdmin ? [{ id: "svc" as Tab }] : []),
-  ];
+  ]).filter(t => {
+    const scope = TAB_SCOPE[t.id];
+    return !scope || scopes.includes(scope);
+  });
   const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
 
   return (
@@ -2755,7 +3442,15 @@ export default function EjecutivoPage() {
           {/* ---- MAIN SCROLLABLE CONTENT ---- */}
           <div className="main">
             <div className="topbar">
-              <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
+              <div className="ptitle">
+                <span>{tt}</span>
+                <small>
+                  {tsub}
+                  {/* El tablero es compartido: que se vea de quién es y si soy de solo lectura. */}
+                  {boardOwner && <> · tablero de {boardOwner.name || boardOwner.email}</>}
+                  {writeScopes.length === 0 && <> · solo lectura</>}
+                </small>
+              </div>
               <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
             </div>
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}
@@ -2806,7 +3501,7 @@ export default function EjecutivoPage() {
           {sheet && <>
             <div className="overlay" onClick={() => setSheet(null)} />
             <div className="sheet">
-              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />
+              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} canWrite={canWrite} />
             </div>
           </>}
 

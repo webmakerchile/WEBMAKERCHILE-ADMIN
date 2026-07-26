@@ -39,6 +39,13 @@ export const users = pgTable("users", {
    * Cleared on successful re-auth in the OAuth callback.
    */
   revokedNetworks: text("revoked_networks").notNull().default(""),
+  /**
+   * Vínculo con Discord: la jornada se mide por su presencia en los canales de
+   * voz del servidor, así que sin este id la persona no puede ser medida.
+   */
+  discordUserId: text("discord_user_id"),
+  discordUsername: text("discord_username"),
+  discordLinkedAt: timestamp("discord_linked_at"),
   googleCalendarAccessToken: text("google_calendar_access_token"),
   googleCalendarRefreshToken: text("google_calendar_refresh_token"),
   googleCalendarTokenExpiry: timestamp("google_calendar_token_expiry"),

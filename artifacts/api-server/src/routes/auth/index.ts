@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";
+import { normalizeRole } from "@workspace/roles";
 import { clearNetworkRevoked } from "../../lib/connections";
 import { createNotification } from "../../lib/notifications";
 
@@ -422,7 +423,9 @@ router.get("/auth/me", (req: Request, res: Response) => {
       name: user.name,
       picture: user.picture,
       role: user.role,
-      teamRole: user.teamRole || "editor",
+      // Rol normalizado: mapea los roles antiguos y garantiza que el
+      // superadministrador siempre entre como CEO (nunca se queda fuera).
+      teamRole: normalizeRole(user.teamRole, user.role === "superadmin"),
       approvalStatus: user.approvalStatus || "approved",
       hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
     });

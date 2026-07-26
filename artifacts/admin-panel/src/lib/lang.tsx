@@ -46,6 +46,12 @@ const T = {
     navSectionContent: "Contenido",
     navSectionTools: "Herramientas",
     navSectionAdmin: "Administración",
+    navSectionAreas: "Mi área",
+    navReports: "Reportes",
+    navSales: "Ventas",
+    navMyTasks: "Mis tareas",
+    navHr: "Recursos Humanos",
+    navTickets: "Tickets",
 
     // Transcriptor
     transcriberNoKey: "El servicio de transcripción no está configurado: falta GROQ_API_KEY en el servidor. Las transcripciones fallarán hasta que se configure.",
@@ -704,6 +710,12 @@ const T = {
     navSectionContent: "Content",
     navSectionTools: "Tools",
     navSectionAdmin: "Administration",
+    navSectionAreas: "My area",
+    navReports: "Reports",
+    navSales: "Sales",
+    navMyTasks: "My tasks",
+    navHr: "People",
+    navTickets: "Tickets",
 
     // Transcriptor
     transcriberNoKey: "The transcription service is not configured: GROQ_API_KEY is missing on the server. Transcriptions will fail until it is set.",
