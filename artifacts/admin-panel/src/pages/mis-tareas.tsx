@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { useHubOwner, fmtDate, daysUntil, type HubProject, type HubTask } from "@/lib/hub-owner";
+import { TicketsInline } from "@/components/tickets-inline";
 import { Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban } from "lucide-react";
 
 /** Mismas etapas y colores que el Scrumban del Hub Ejecutivo. */
@@ -100,6 +101,8 @@ export default function MisTareasPage() {
           </div>
         )}
 
+        <TicketsInline title="Solicitudes para desarrollo" />
+
         {!isLoading && !error && (
           <>
             {tasks.length === 0 ? (
@@ -134,6 +137,9 @@ export default function MisTareasPage() {
                               style={{ borderLeft: `3px solid ${CRIT_COLOR[t.crit] || "#7a8699"}` }}
                             >
                               <p className="text-xs font-medium leading-snug">{t.title}</p>
+                              {t.ticketId && (
+                                <p className="text-[10px] text-emerald-400 mt-1">Desde el ticket #{t.ticketId}</p>
+                              )}
                               <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
                                 <span className="px-1.5 py-0.5 rounded" style={{ background: `${CRIT_COLOR[t.crit] || "#7a8699"}22`, color: CRIT_COLOR[t.crit] || "#7a8699" }}>{t.crit}</span>
                                 <span className="truncate flex-1">{projectName(t.projectId)}</span>

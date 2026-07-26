@@ -33,6 +33,8 @@ export interface HubProject {
 export interface HubTask {
   id: string; title: string; projectId: string; crit: string; stage: string;
   stageSince: number; stageTime?: Record<string, number>; notes: string;
+  /** Ticket que originó esta tarea, si nació de una solicitud de otra área. */
+  ticketId?: number;
   createdAt: number; updatedAt: number;
 }
 

@@ -10,6 +10,7 @@ import {
   Loader2, Users2, AlertTriangle, UserPlus, Check, X, Pencil,
   CalendarDays, Phone, FileText, ExternalLink,
 } from "lucide-react";
+import { TicketsInline } from "@/components/tickets-inline";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -194,6 +195,8 @@ export default function RrhhPage() {
             Fichas laborales, contratos, ingresos y solicitudes de acceso al panel.
           </p>
         </header>
+
+        <TicketsInline title="Solicitudes a Recursos Humanos" />
 
         {isLoading && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
 

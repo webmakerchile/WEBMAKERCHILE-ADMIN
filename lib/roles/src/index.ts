@@ -43,17 +43,43 @@ export interface RoleDef {
   canManagePeople: boolean;
   /** Puede aprobar contenido que está en revisión. */
   canReview: boolean;
-  /** Colecciones del Hub Ejecutivo que puede leer (ver `/api/hub/owner`). */
+  /** Colecciones del tablero (Hub) que puede leer. */
   hubScopes: readonly HubScope[];
+  /**
+   * Colecciones del tablero que puede modificar. Siempre subconjunto de
+   * `hubScopes`: el servidor ignora los cambios que lleguen fuera de esta lista.
+   */
+  hubWrite: readonly HubScope[];
+  /** Áreas de las que este rol es responsable: recibe los tickets dirigidos a ellas. */
+  ticketAreas: readonly TicketArea[];
 }
 
 /** Colecciones del blob del Hub Ejecutivo. */
 export type HubScope = "projects" | "tasks" | "clients" | "meetings" | "notes" | "contracts";
 
-const ALL_HUB_SCOPES: readonly HubScope[] = ["projects", "tasks", "clients", "meetings", "notes", "contracts"];
+export const ALL_HUB_SCOPES: readonly HubScope[] = ["projects", "tasks", "clients", "meetings", "notes", "contracts"];
+
+/**
+ * Áreas a las que se puede dirigir un ticket. Son las "bandejas de entrada"
+ * del equipo: quien pide no necesita saber el nombre de la persona.
+ */
+export const TICKET_AREAS = ["direccion", "ventas", "desarrollo", "contenido", "redes", "marketing", "rrhh", "finanzas"] as const;
+export type TicketArea = (typeof TICKET_AREAS)[number];
+
+export const TICKET_AREA_LABELS: Record<TicketArea, string> = {
+  direccion: "Dirección",
+  ventas: "Ventas",
+  desarrollo: "Desarrollo",
+  contenido: "Contenido / Video",
+  redes: "Redes sociales",
+  marketing: "Marketing",
+  rrhh: "Recursos Humanos",
+  finanzas: "Finanzas",
+};
 
 /** Rutas que cualquier persona autenticada puede ver. */
-export const COMMON_ROUTES = ["/ayuda", "/ajustes"] as const;
+/** Rutas que cualquier persona autenticada puede ver (los tickets son el canal común del equipo). */
+export const COMMON_ROUTES = ["/tickets", "/ayuda", "/ajustes"] as const;
 
 export const ROLES: Record<TeamRole, RoleDef> = {
   ceo: {
@@ -66,6 +92,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManagePeople: true,
     canReview: true,
     hubScopes: ALL_HUB_SCOPES,
+    hubWrite: ALL_HUB_SCOPES,
+    ticketAreas: ["direccion"],
   },
   editora: {
     id: "editora",
@@ -77,6 +105,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManagePeople: false,
     canReview: false,
     hubScopes: [],
+    hubWrite: [],
+    ticketAreas: ["contenido"],
   },
   social: {
     id: "social",
@@ -88,39 +118,47 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManagePeople: false,
     canReview: false,
     hubScopes: [],
+    hubWrite: [],
+    ticketAreas: ["redes"],
   },
   ventas: {
     id: "ventas",
     label: "Ejecutivo de ventas",
     description: "Cartera de clientes, reuniones y contratos con sus cotizaciones.",
     home: "/ventas",
-    routes: ["/ventas", ...COMMON_ROUTES],
+    routes: ["/ventas", "/ejecutivo", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
-    hubScopes: ["contracts", "clients", "meetings"],
+    hubScopes: ["contracts", "clients", "meetings", "projects"],
+    hubWrite: ["contracts", "clients", "meetings"],
+    ticketAreas: ["ventas"],
   },
   dev: {
     id: "dev",
     label: "Programador",
     description: "Proyectos asignados y tablero de tareas por etapa.",
     home: "/mis-tareas",
-    routes: ["/mis-tareas", "/drive", ...COMMON_ROUTES],
+    routes: ["/mis-tareas", "/ejecutivo", "/drive", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
-    hubScopes: ["projects", "tasks"],
+    hubScopes: ["projects", "tasks", "notes"],
+    hubWrite: ["projects", "tasks"],
+    ticketAreas: ["desarrollo"],
   },
   marketing: {
     id: "marketing",
     label: "Marketing",
     description: "Métricas, campañas, biblioteca de contenido y aprobación de publicaciones.",
     home: "/insights",
-    routes: ["/", "/insights", "/schedule", "/biblioteca", "/campanas", "/videos", "/historias", "/descripciones", "/cuentas", ...COMMON_ROUTES],
+    routes: ["/", "/insights", "/schedule", "/biblioteca", "/campanas", "/videos", "/historias", "/descripciones", "/cuentas", "/mis-tareas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: true,
-    hubScopes: [],
+    hubScopes: ["projects", "tasks", "clients"],
+    hubWrite: ["tasks"],
+    ticketAreas: ["marketing"],
   },
   rrhh: {
     id: "rrhh",
@@ -132,17 +170,21 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManagePeople: true,
     canReview: false,
     hubScopes: [],
+    hubWrite: [],
+    ticketAreas: ["rrhh"],
   },
   contador: {
     id: "contador",
     label: "Contador",
     description: "Reporte financiero: contratos facturados, IVA, vencimientos y cobros.",
     home: "/reportes",
-    routes: ["/reportes", "/ayuda"],
+    routes: ["/reportes", "/tickets", "/ayuda"],
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
     hubScopes: ["contracts"],
+    hubWrite: [],
+    ticketAreas: ["finanzas"],
   },
 };
 
@@ -194,6 +236,20 @@ export function canReview(role: unknown, isSuperAdmin = false): boolean {
 
 export function hubScopesFor(role: unknown, isSuperAdmin = false): readonly HubScope[] {
   return roleDef(role, isSuperAdmin).hubScopes;
+}
+
+/** Colecciones del tablero que este rol puede modificar. */
+export function hubWriteScopesFor(role: unknown, isSuperAdmin = false): readonly HubScope[] {
+  return roleDef(role, isSuperAdmin).hubWrite;
+}
+
+/** Áreas cuyos tickets aterrizan en la bandeja de este rol. */
+export function ticketAreasFor(role: unknown, isSuperAdmin = false): readonly TicketArea[] {
+  return roleDef(role, isSuperAdmin).ticketAreas;
+}
+
+export function isTicketArea(value: unknown): value is TicketArea {
+  return typeof value === "string" && (TICKET_AREAS as readonly string[]).includes(value);
 }
 
 /**

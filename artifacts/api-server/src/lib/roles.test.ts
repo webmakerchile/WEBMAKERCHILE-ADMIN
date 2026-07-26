@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
-  ROLES, TEAM_ROLES, canAccessRoute, canManagePeople, canManageTeam, canReview,
-  hubScopesFor, isTeamRole, normalizeRole, roleHome,
+  ROLES, TEAM_ROLES, TICKET_AREAS, canAccessRoute, canManagePeople, canManageTeam, canReview,
+  hubScopesFor, hubWriteScopesFor, isTeamRole, normalizeRole, roleHome, ticketAreasFor,
 } from "@workspace/roles";
 
 describe("roles del equipo", () => {
@@ -78,13 +78,46 @@ describe("roles del equipo", () => {
     expect(hubScopesFor("contador")).toEqual(["contracts"]);
   });
 
-  it("cada rol declara solo los datos del Hub que necesita", () => {
-    expect(hubScopesFor("ventas")).toEqual(["contracts", "clients", "meetings"]);
-    expect(hubScopesFor("dev")).toEqual(["projects", "tasks"]);
-    // Los roles de contenido no leen el tablero ejecutivo.
+  it("cada rol declara solo los datos del tablero que necesita", () => {
+    expect(hubScopesFor("ventas")).toEqual(["contracts", "clients", "meetings", "projects"]);
+    expect(hubScopesFor("dev")).toEqual(["projects", "tasks", "notes"]);
+    expect(hubScopesFor("marketing")).toEqual(["projects", "tasks", "clients"]);
+    // Los roles puramente de producción no entran al tablero: se conectan por tickets.
     expect(hubScopesFor("editora")).toEqual([]);
     expect(hubScopesFor("social")).toEqual([]);
-    expect(hubScopesFor("marketing")).toEqual([]);
+    expect(hubScopesFor("rrhh")).toEqual([]);
+  });
+
+  it("nadie puede escribir una colección del tablero que no puede leer", () => {
+    for (const role of TEAM_ROLES) {
+      const readable = new Set(hubScopesFor(role));
+      for (const scope of hubWriteScopesFor(role)) {
+        expect(readable.has(scope), `${role} escribe ${scope} sin poder leerlo`).toBe(true);
+      }
+    }
+  });
+
+  it("los permisos de escritura del tablero reflejan quién hace cada trabajo", () => {
+    // Ventas cierra contratos y cartera, pero no mueve el tablero de desarrollo.
+    expect(hubWriteScopesFor("ventas")).toEqual(["contracts", "clients", "meetings"]);
+    expect(hubWriteScopesFor("dev")).toEqual(["projects", "tasks"]);
+    // Marketing coordina tareas, no toca contratos.
+    expect(hubWriteScopesFor("marketing")).toEqual(["tasks"]);
+    // El contador solo mira.
+    expect(hubWriteScopesFor("contador")).toEqual([]);
+  });
+
+  it("cada rol atiende un área de tickets y nadie queda sin bandeja", () => {
+    const areas = new Set<string>();
+    for (const role of TEAM_ROLES) {
+      const mine = ticketAreasFor(role);
+      expect(mine.length, `${role} no atiende ninguna área`).toBeGreaterThan(0);
+      mine.forEach(a => areas.add(a));
+    }
+    // Toda área a la que se puede dirigir un ticket tiene quien la responda.
+    for (const area of TICKET_AREAS) {
+      expect(areas.has(area), `nadie atiende el área ${area}`).toBe(true);
+    }
   });
 
   it("toda definición de rol es coherente consigo misma", () => {

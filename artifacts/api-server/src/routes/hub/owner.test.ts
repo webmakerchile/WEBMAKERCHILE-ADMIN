@@ -37,6 +37,8 @@ vi.mock("@workspace/db", () => {
         return filtered ? rows.me : rows.users;
       },
       orderBy: async () => (table === HUB_STATE ? rows.hub : rows.users),
+      // `resolveBoard` hace `await db.select().from(hubState)` sin filtros.
+      then: (resolve: (v: unknown) => unknown) => resolve(table === HUB_STATE ? rows.hub : rows.users),
     };
     return chain;
   };
@@ -92,23 +94,31 @@ describe("GET /api/hub/owner", () => {
     expect(body.scopes).toEqual(["contracts"]);
   });
 
-  it("ventas recibe contratos, clientes y reuniones — nunca tareas ni notas", async () => {
+  it("ventas recibe su cartera y los proyectos que enlaza — nunca tareas ni notas", async () => {
     const r = await callAsRole("ventas");
     const body = await r.json() as { data: Record<string, unknown[]> };
-    expect(Object.keys(body.data).sort()).toEqual(["clients", "contracts", "meetings"]);
+    expect(Object.keys(body.data).sort()).toEqual(["clients", "contracts", "meetings", "projects"]);
     expect(body.data.tasks).toBeUndefined();
     expect(body.data.notes).toBeUndefined();
   });
 
-  it("el programador recibe proyectos y tareas, no contratos", async () => {
+  it("el programador recibe proyectos, tareas y notas, no contratos ni clientes", async () => {
     const r = await callAsRole("dev");
     const body = await r.json() as { data: Record<string, unknown[]> };
-    expect(Object.keys(body.data).sort()).toEqual(["projects", "tasks"]);
+    expect(Object.keys(body.data).sort()).toEqual(["notes", "projects", "tasks"]);
+    expect(body.data.contracts).toBeUndefined();
+    expect(body.data.clients).toBeUndefined();
+  });
+
+  it("marketing ve proyectos, tareas y clientes para coordinar campañas", async () => {
+    const r = await callAsRole("marketing");
+    const body = await r.json() as { data: Record<string, unknown[]> };
+    expect(Object.keys(body.data).sort()).toEqual(["clients", "projects", "tasks"]);
     expect(body.data.contracts).toBeUndefined();
   });
 
-  it("los roles de contenido no pueden leer el tablero ejecutivo", async () => {
-    for (const role of ["editora", "social", "marketing"]) {
+  it("los roles de producción pura no leen el tablero: se conectan por tickets", async () => {
+    for (const role of ["editora", "social", "rrhh"]) {
       const r = await callAsRole(role);
       expect(r.status, `${role} debería recibir 403`).toBe(403);
     }

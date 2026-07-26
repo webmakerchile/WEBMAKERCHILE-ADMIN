@@ -29,6 +29,7 @@ import {
   Handshake,
   ListChecks,
   IdCard,
+  Ticket as TicketIcon,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
@@ -81,6 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     {
       label: t.navSectionAreas,
       items: [
+        { href: "/tickets", icon: TicketIcon, label: t.navTickets, tour: "nav-tickets" },
         { href: "/ventas", icon: Handshake, label: t.navSales, tour: "nav-ventas" },
         { href: "/mis-tareas", icon: ListChecks, label: t.navMyTasks, tour: "nav-mis-tareas" },
         { href: "/reportes", icon: Receipt, label: t.navReports, tour: "nav-reportes" },

@@ -8,6 +8,7 @@ import {
   CONTRACT_STATUS_STYLE, type HubContract,
 } from "@/lib/hub-owner";
 import { Loader2, Receipt, Download, AlertTriangle, FileText, ExternalLink } from "lucide-react";
+import { TicketsInline } from "@/components/tickets-inline";
 
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -136,6 +137,8 @@ export default function ReportesPage() {
             </Button>
           </div>
         </header>
+
+        <TicketsInline title="Solicitudes a finanzas" />
 
         {isLoading && (
           <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>

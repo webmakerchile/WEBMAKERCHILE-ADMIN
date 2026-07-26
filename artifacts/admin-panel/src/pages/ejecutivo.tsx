@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
+import { ALL_HUB_SCOPES, type HubScope } from "@workspace/roles";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
@@ -171,25 +172,56 @@ function loadState(key: string | null): HubState {
 }
 function saveState(key: string | null, st: HubState) { if (!key) return; try { localStorage.setItem(key, JSON.stringify(st)); } catch { /* ignore */ } }
 
-async function fetchHubFromServer(): Promise<HubState | null> {
+/* ============================================================
+   TABLERO COMPARTIDO
+
+   El tablero es uno solo para toda la agencia (el de la dirección). El
+   servidor recorta lo que cada rol puede leer (`scopes`) y escribir
+   (`writeScopes`), y fusiona los cambios entidad por entidad usando la
+   versión que teníamos al cargar. Por eso guardamos `version`: sin ella el
+   servidor no puede distinguir "esto lo borré yo" de "esto lo creó otro".
+   ============================================================ */
+interface HubSnapshot {
+  data: Partial<HubState> | null;
+  version: number;
+  scopes: HubScope[];
+  writeScopes: HubScope[];
+  owner: { name: string | null; email: string } | null;
+}
+
+async function fetchHubFromServer(): Promise<HubSnapshot | null> {
   try {
     const res = await fetch(`${HUB_API_BASE}/hub`, { credentials: "include" });
     if (!res.ok) return null;
-    const json = await res.json() as { data: unknown };
-    if (!json.data || typeof json.data !== "object" || Array.isArray(json.data)) return null;
-    return Object.assign(blankState(), json.data) as HubState;
+    const json = await res.json() as Partial<HubSnapshot> & { data?: unknown };
+    const data = json.data && typeof json.data === "object" && !Array.isArray(json.data)
+      ? json.data as Partial<HubState>
+      : null;
+    return {
+      data,
+      version: Number(json.version) || 0,
+      scopes: Array.isArray(json.scopes) ? json.scopes : [...ALL_HUB_SCOPES],
+      writeScopes: Array.isArray(json.writeScopes) ? json.writeScopes : [...ALL_HUB_SCOPES],
+      owner: json.owner ?? null,
+    };
   } catch { return null; }
 }
 
-async function patchHubToServer(st: HubState): Promise<void> {
+async function patchHubToServer(st: HubState, baseVersion: number): Promise<{ data: Partial<HubState>; version: number } | null> {
   try {
-    await fetch(`${HUB_API_BASE}/hub`, {
+    const res = await fetch(`${HUB_API_BASE}/hub`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: st }),
+      body: JSON.stringify({ data: st, baseVersion }),
     });
-  } catch { /* ignore — localStorage already saved */ }
+    if (!res.ok) return null;
+    const json = await res.json() as { data?: unknown; version?: unknown };
+    const data = json.data && typeof json.data === "object" && !Array.isArray(json.data)
+      ? json.data as Partial<HubState>
+      : {};
+    return { data, version: Number(json.version) || 0 };
+  } catch { return null; /* localStorage ya guardó: se reintenta en el próximo cambio */ }
 }
 function migrate(st: HubState): HubState {
   const now = Date.now();
@@ -2778,28 +2810,67 @@ export default function EjecutivoPage() {
   };
 
   const [state, setStateRaw] = useState<HubState>(() => migrate(loadState(storageKey)));
+  const [scopes, setScopes] = useState<HubScope[]>(() => [...ALL_HUB_SCOPES]);
+  const [writeScopes, setWriteScopes] = useState<HubScope[]>(() => [...ALL_HUB_SCOPES]);
+  const [boardOwner, setBoardOwner] = useState<{ name: string | null; email: string } | null>(null);
 
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  /** Última versión del tablero que conocemos: la base para fusionar en el servidor. */
+  const versionRef = useRef(0);
+  /** Contador de guardados: si sube mientras viaja un PATCH, no pisamos lo que el usuario acaba de escribir. */
+  const saveSeqRef = useRef(0);
+
+  /** Adopta el tablero del servidor conservando las colecciones fuera de nuestro alcance. */
+  const adoptServerData = useCallback((data: Partial<HubState> | null, version: number) => {
+    versionRef.current = version;
+    if (!data) return;
+    setStateRaw(prev => {
+      const merged = migrate(Object.assign(blankState(), prev, data));
+      saveState(storageKey, merged);
+      return merged;
+    });
+  }, [storageKey]);
 
   const setState = useCallback((next: HubState) => {
     dirtyRef.current = true;
+    const seq = ++saveSeqRef.current;
     setStateRaw(next);
     saveState(storageKey, next);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => { void patchHubToServer(next); }, 1500);
-  }, [storageKey]);
+    serverSaveTimer.current = setTimeout(() => {
+      void patchHubToServer(next, versionRef.current).then(result => {
+        if (!result) return;
+        versionRef.current = result.version;
+        // Si el usuario siguió editando mientras viajaba el PATCH, no aplicamos
+        // la respuesta: su versión local es más nueva y se enviará enseguida.
+        if (saveSeqRef.current !== seq) return;
+        dirtyRef.current = false;
+        adoptServerData(result.data, result.version);
+      });
+    }, 1500);
+  }, [storageKey, adoptServerData]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchHubFromServer().then(serverState => {
-      if (cancelled || !serverState || dirtyRef.current) return;
-      const merged = migrate(serverState);
-      setStateRaw(merged);
-      saveState(storageKey, merged);
-    });
-    return () => { cancelled = true; };
-  }, [storageKey]);
+    const pull = () => {
+      // Nunca traemos del servidor con cambios locales sin enviar: se perderían.
+      if (dirtyRef.current) return;
+      void fetchHubFromServer().then(snap => {
+        if (cancelled || !snap || dirtyRef.current) return;
+        setScopes(snap.scopes);
+        setWriteScopes(snap.writeScopes);
+        setBoardOwner(snap.owner);
+        adoptServerData(snap.data, snap.version);
+      });
+    };
+    pull();
+    // El tablero es compartido: refrescamos para ver lo que hace el resto.
+    const timer = setInterval(pull, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [storageKey, adoptServerData]);
+
+  const canWrite = useCallback((scope: HubScope) => writeScopes.includes(scope), [writeScopes]);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
     try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive"].includes(s)) return s as Tab; } catch { /* ignore */ }
@@ -2807,11 +2878,16 @@ export default function EjecutivoPage() {
   });
 
   useEffect(() => {
-    if (tab === "svc" && !isAdmin) {
+    const tabScope: Partial<Record<Tab, HubScope>> = {
+      proj: "projects", clients: "clients", meet: "meetings", notes: "notes", contracts: "contracts",
+    };
+    const scope = tabScope[tab];
+    // La pestaña guardada puede no corresponder al rol (o al alcance del tablero).
+    if ((tab === "svc" && !isAdmin) || (scope && !scopes.includes(scope))) {
       setTabRaw("dash");
       try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
     }
-  }, [tab, isAdmin]);
+  }, [tab, isAdmin, scopes]);
   const setTab = useCallback((t: Tab) => { setTabRaw(t); try { localStorage.setItem(LS_TAB, t); } catch { /* ignore */ } }, []);
   const navigate = useCallback((t: Tab) => { setTab(t); window.scrollTo(0, 0); }, [setTab]);
 
@@ -2836,12 +2912,13 @@ export default function EjecutivoPage() {
   const openSheet = useCallback((s: SheetKind) => setSheet(s), []);
 
   const handleNew = () => {
-    if (tab === "clients") openSheet({ kind: "new-client" });
-    else if (tab === "meet") openSheet({ kind: "new-meet" });
-    else if (tab === "notes") openSheet({ kind: "new-note" });
-    else if (tab === "contracts") openSheet({ kind: "new-contract-mode" });
-    else if (tab === "proj" && projView === "scrum") openSheet({ kind: "new-task" });
-    else openSheet({ kind: "new-proj" });
+    const denied = () => showToast("Tu rol no puede crear elementos en esta sección");
+    if (tab === "clients") { canWrite("clients") ? openSheet({ kind: "new-client" }) : denied(); return; }
+    if (tab === "meet") { canWrite("meetings") ? openSheet({ kind: "new-meet" }) : denied(); return; }
+    if (tab === "notes") { canWrite("notes") ? openSheet({ kind: "new-note" }) : denied(); return; }
+    if (tab === "contracts") { canWrite("contracts") ? openSheet({ kind: "new-contract-mode" }) : denied(); return; }
+    if (tab === "proj" && projView === "scrum") { canWrite("tasks") ? openSheet({ kind: "new-task" }) : denied(); return; }
+    canWrite("projects") ? openSheet({ kind: "new-proj" }) : denied();
   };
 
   const handleExport = () => {
@@ -2873,16 +2950,24 @@ export default function EjecutivoPage() {
   }, []);
 
   const [tt, tsub] = TAB_TITLES[tab] || TAB_TITLES.dash;
-  const TABS: { id: Tab; cnt?: number }[] = [
-    { id: "dash" },
-    { id: "proj", cnt: state.projects.length },
-    { id: "clients", cnt: state.clients.length },
-    { id: "meet", cnt: state.meetings.length },
-    { id: "notes", cnt: state.notes.length },
-    { id: "contracts", cnt: state.contracts.length },
-    { id: "drive" },
+  // Cada pestaña vive de una colección del tablero: si el rol no la puede leer,
+  // la pestaña no existe para esa persona.
+  const TAB_SCOPE: Partial<Record<Tab, HubScope>> = {
+    proj: "projects", clients: "clients", meet: "meetings", notes: "notes", contracts: "contracts",
+  };
+  const TABS: { id: Tab; cnt?: number }[] = ([
+    { id: "dash" as Tab },
+    { id: "proj" as Tab, cnt: state.projects.length },
+    { id: "clients" as Tab, cnt: state.clients.length },
+    { id: "meet" as Tab, cnt: state.meetings.length },
+    { id: "notes" as Tab, cnt: state.notes.length },
+    { id: "contracts" as Tab, cnt: state.contracts.length },
+    { id: "drive" as Tab },
     ...(isAdmin ? [{ id: "svc" as Tab }] : []),
-  ];
+  ]).filter(t => {
+    const scope = TAB_SCOPE[t.id];
+    return !scope || scopes.includes(scope);
+  });
   const TAB_LABELS: Record<Tab, string> = { dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
 
   return (
@@ -2982,7 +3067,15 @@ export default function EjecutivoPage() {
           {/* ---- MAIN SCROLLABLE CONTENT ---- */}
           <div className="main">
             <div className="topbar">
-              <div className="ptitle"><span>{tt}</span><small>{tsub}</small></div>
+              <div className="ptitle">
+                <span>{tt}</span>
+                <small>
+                  {tsub}
+                  {/* El tablero es compartido: que se vea de quién es y si soy de solo lectura. */}
+                  {boardOwner && <> · tablero de {boardOwner.name || boardOwner.email}</>}
+                  {writeScopes.length === 0 && <> · solo lectura</>}
+                </small>
+              </div>
               <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
             </div>
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} />}

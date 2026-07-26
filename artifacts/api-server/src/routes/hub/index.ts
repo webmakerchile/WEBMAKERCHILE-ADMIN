@@ -2,11 +2,13 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { hubState, users } from "@workspace/db/schema";
 import { asc, eq } from "drizzle-orm";
-import { hubScopesFor, normalizeRole } from "@workspace/roles";
+import { ALL_HUB_SCOPES, hubScopesFor, hubWriteScopesFor, normalizeRole, type HubScope } from "@workspace/roles";
 import { google } from "googleapis";
 import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
 import { z } from "zod";
+import { mergeCollection, type HubEntity } from "../../lib/hub-merge";
+import { resolveBoard, saveBoard } from "../../lib/hub-board";
 
 const router: IRouter = Router();
 
@@ -31,6 +33,14 @@ function getUser(req: Request): AuthedUser {
   return req.user as AuthedUser;
 }
 
+/** Carga al usuario autenticado desde la DB: el rol se verifica siempre contra la base, no contra la sesión. */
+async function loadMe(req: Request) {
+  const sessionUser = req.user as { id?: number } | undefined;
+  if (!sessionUser?.id) return null;
+  const [me] = await db.select().from(users).where(eq(users.id, sessionUser.id)).limit(1);
+  return me ?? null;
+}
+
 function getGoogleAuth(user: AuthedUser) {
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID || "",
@@ -43,19 +53,59 @@ function getGoogleAuth(user: AuthedUser) {
   return oauth2Client;
 }
 
+/* ------------------------------------------------------------------
+   Tablero compartido.
+
+   El Hub es UN solo tablero para toda la agencia — el de la dirección. Cada
+   rol lee las colecciones de su `hubScopes` y solo puede modificar las de su
+   `hubWrite`; lo que llegue fuera de eso se ignora en el servidor.
+
+   Como varias personas escriben a la vez, no se sobrescribe el blob completo:
+   se fusiona entidad por entidad (ver `mergeCollection`). Así dos personas
+   trabajando en pestañas distintas no se borran el trabajo mutuamente.
+   ------------------------------------------------------------------ */
+
+/** Recorta el tablero a las colecciones que el rol puede leer. */
+function scopeBoard(data: Record<string, unknown>, scopes: readonly HubScope[]) {
+  const out: Record<string, unknown> = {};
+  for (const scope of scopes) out[scope] = Array.isArray(data[scope]) ? data[scope] : [];
+  return out;
+}
+
 router.get("/hub", async (req: Request, res: Response) => {
-  const user = getUser(req);
-  const [row] = await db
-    .select()
-    .from(hubState)
-    .where(eq(hubState.userId, user.id))
-    .limit(1);
-  res.json({ data: row?.data ?? null });
+  const me = await loadMe(req);
+  if (!me) { res.status(401).json({ error: "No autenticado" }); return; }
+
+  const role = normalizeRole(me.teamRole, me.role === "superadmin");
+  const scopes = hubScopesFor(role);
+  if (scopes.length === 0) {
+    res.status(403).json({ error: "Tu rol no tiene acceso al tablero" });
+    return;
+  }
+
+  const board = await resolveBoard();
+  res.json({
+    data: board?.exists ? scopeBoard(board.data, scopes) : null,
+    version: board?.version ?? 0,
+    scopes,
+    writeScopes: hubWriteScopesFor(role),
+    owner: board?.owner ? { name: board.owner.name, email: board.owner.email } : null,
+  });
 });
 
 router.patch("/hub", async (req: Request, res: Response) => {
-  const user = getUser(req);
-  const { data } = req.body as { data: unknown };
+  const me = await loadMe(req);
+  if (!me) { res.status(401).json({ error: "No autenticado" }); return; }
+
+  const role = normalizeRole(me.teamRole, me.role === "superadmin");
+  const scopes = hubScopesFor(role);
+  const writeScopes = hubWriteScopesFor(role);
+  if (writeScopes.length === 0) {
+    res.status(403).json({ error: "Tu rol no puede modificar el tablero" });
+    return;
+  }
+
+  const { data, baseVersion } = req.body as { data: unknown; baseVersion?: unknown };
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     res.status(400).json({ error: "Campo 'data' requerido (objeto)" });
     return;
@@ -73,18 +123,37 @@ router.patch("/hub", async (req: Request, res: Response) => {
     });
     return;
   }
-  const validData = parsed.data;
+  const incoming = parsed.data as Record<string, unknown>;
 
-  const [row] = await db
-    .insert(hubState)
-    .values({ userId: user.id, data: validData, updatedAt: new Date() })
-    .onConflictDoUpdate({
-      target: hubState.userId,
-      set: { data: validData, updatedAt: new Date() },
-    })
-    .returning();
+  const board = await resolveBoard();
+  if (!board) {
+    res.status(409).json({ error: "Todavía no hay un tablero de dirección al que escribir" });
+    return;
+  }
+  const stored = board.data;
+  // Sin baseVersion asumimos que el cliente cargó recién: solo se conservan las
+  // entidades ajenas creadas desde ahora, nunca se borra trabajo de otros.
+  const base = Number(baseVersion);
+  const safeBase = Number.isFinite(base) && base > 0 ? base : Date.now();
 
-  res.json({ data: row!.data });
+  const merged: Record<string, unknown> = { ...stored };
+  for (const scope of ALL_HUB_SCOPES) {
+    const storedList = Array.isArray(stored[scope]) ? (stored[scope] as HubEntity[]) : [];
+    if (!writeScopes.includes(scope) || !Array.isArray(incoming[scope])) {
+      merged[scope] = storedList;
+      continue;
+    }
+    merged[scope] = mergeCollection(storedList, incoming[scope] as HubEntity[], safeBase);
+  }
+
+  const saved = await saveBoard(board.boardUserId, merged);
+
+  res.json({
+    data: scopeBoard(saved.data, scopes),
+    version: saved.version,
+    scopes,
+    writeScopes,
+  });
 });
 
 /* ------------------------------------------------------------------
@@ -95,17 +164,6 @@ router.patch("/hub", async (req: Request, res: Response) => {
    programador: proyectos/tareas, contador: contratos) sin poder escribir
    sobre el tablero — así no hay dos personas pisándose el blob.
    ------------------------------------------------------------------ */
-
-/** Dueño del tablero: el superadmin, o en su defecto el CEO más antiguo. */
-async function findHubOwner() {
-  const rows = await db
-    .select({ id: users.id, name: users.name, email: users.email, role: users.role, teamRole: users.teamRole })
-    .from(users)
-    .orderBy(asc(users.id));
-  return rows.find(u => u.role === "superadmin")
-    ?? rows.find(u => normalizeRole(u.teamRole) === "ceo")
-    ?? null;
-}
 
 router.get("/hub/owner", async (req: Request, res: Response) => {
   const user = getUser(req);
@@ -119,23 +177,13 @@ router.get("/hub/owner", async (req: Request, res: Response) => {
     return;
   }
 
-  const owner = await findHubOwner();
-  if (!owner) { res.json({ data: {}, owner: null, updatedAt: null, scopes }); return; }
-
-  const [row] = await db
-    .select()
-    .from(hubState)
-    .where(eq(hubState.userId, owner.id))
-    .limit(1);
-
-  const full = (row?.data ?? {}) as Record<string, unknown>;
-  const data: Record<string, unknown> = {};
-  for (const scope of scopes) data[scope] = Array.isArray(full[scope]) ? full[scope] : [];
+  const board = await resolveBoard();
+  if (!board) { res.json({ data: {}, owner: null, updatedAt: null, scopes }); return; }
 
   res.json({
-    data,
-    owner: { name: owner.name, email: owner.email },
-    updatedAt: row?.updatedAt ?? null,
+    data: scopeBoard(board.data, scopes),
+    owner: board.owner ? { name: board.owner.name, email: board.owner.email } : null,
+    updatedAt: board.version ? new Date(board.version).toISOString() : null,
     scopes,
   });
 });

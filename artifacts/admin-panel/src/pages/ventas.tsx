@@ -7,6 +7,7 @@ import {
   CONTRACT_STATUS_STYLE, type ContractStatus, type HubContract,
 } from "@/lib/hub-owner";
 import { Loader2, Handshake, AlertTriangle, FileText, ExternalLink, Users2, CalendarClock, Search } from "lucide-react";
+import { TicketsInline } from "@/components/tickets-inline";
 
 type Filter = "todos" | ContractStatus;
 
@@ -78,6 +79,8 @@ export default function VentasPage() {
             Cartera de clientes, reuniones y estado de cada cotización.
           </p>
         </header>
+
+        <TicketsInline title="Solicitudes de ventas" />
 
         {isLoading && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
 
