@@ -16,6 +16,7 @@ export const ROLE_STYLE: Record<TeamRole, string> = {
   marketing: "bg-pink-500/10 text-pink-400 border-pink-500/20",
   contador: "bg-teal-500/10 text-teal-400 border-teal-500/20",
   rrhh: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+  tester: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
 };
 
 export function RoleBadge({ role, className = "" }: { role: string; className?: string }) {

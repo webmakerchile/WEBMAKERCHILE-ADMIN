@@ -20,6 +20,7 @@ export const TEAM_ROLES = [
   "marketing",
   "contador",
   "rrhh",
+  "tester",
 ] as const;
 
 export type TeamRole = (typeof TEAM_ROLES)[number];
@@ -214,6 +215,21 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     hubScopes: ["contracts"],
     hubWrite: [],
     ticketAreas: ["finanzas"],
+  },
+  tester: {
+    id: "tester",
+    label: "Tester TikTok",
+    description: "Cuenta de revisión: acceso completo de solo recorrido para verificar la app (TikTok review).",
+    home: "/",
+    routes: ["*"],
+    canManageTeam: true,
+    canManagePeople: true,
+    canAssignGoals: true,
+    canReview: true,
+    canSeeMoney: true,
+    hubScopes: ALL_HUB_SCOPES,
+    hubWrite: ALL_HUB_SCOPES,
+    ticketAreas: ["direccion"],
   },
 };
 

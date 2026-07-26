@@ -15,7 +15,9 @@ describe("roles del equipo", () => {
     expect(canManageTeam("ceo")).toBe(true);
     expect(canManageTeam("rrhh")).toBe(true);
     expect(canAccessRoute("ceo", "/cualquier-cosa-nueva")).toBe(true);
-    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "rrhh")) {
+    // "tester" es la cuenta de revisión (TikTok review): espejo del CEO a propósito.
+    expect(canManageTeam("tester")).toBe(true);
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "rrhh" && r !== "tester")) {
       expect(canManageTeam(role), `${role} no debería administrar el equipo`).toBe(false);
       expect(canAccessRoute(role, "/equipo"), `${role} no debería ver /equipo`).toBe(false);
     }
@@ -24,7 +26,8 @@ describe("roles del equipo", () => {
   it("las fichas laborales solo las ven dirección y RRHH", () => {
     expect(canManagePeople("ceo")).toBe(true);
     expect(canManagePeople("rrhh")).toBe(true);
-    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "rrhh")) {
+    expect(canManagePeople("tester")).toBe(true); // cuenta de revisión: acceso total
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "rrhh" && r !== "tester")) {
       expect(canManagePeople(role), `${role} no debería ver fichas laborales`).toBe(false);
       expect(canAccessRoute(role, "/rrhh"), `${role} no debería ver /rrhh`).toBe(false);
     }
@@ -163,8 +166,11 @@ describe("cada rol tiene su propia pantalla", () => {
   it("ningún rol comparte pantalla de inicio con otro", () => {
     // Cada área escala por su cuenta: si dos roles aterrizaran en la misma
     // pantalla, darle una función específica a uno se la daría al otro.
-    const homes = TEAM_ROLES.map(r => roleHome(r));
-    expect(new Set(homes).size, `hay pantallas compartidas: ${homes.join(", ")}`).toBe(TEAM_ROLES.length);
+    // "tester" es un espejo del CEO (cuenta de revisión), así que comparte su home.
+    const propios = TEAM_ROLES.filter(r => r !== "tester");
+    const homes = propios.map(r => roleHome(r));
+    expect(new Set(homes).size, `hay pantallas compartidas: ${homes.join(", ")}`).toBe(propios.length);
+    expect(roleHome("tester")).toBe(roleHome("ceo"));
   });
 
   it("la pantalla de inicio de cada rol le pertenece", () => {
@@ -172,7 +178,7 @@ describe("cada rol tiene su propia pantalla", () => {
       const home = roleHome(role);
       expect(canAccessRoute(role, home), `${role} no entra a su propia pantalla`).toBe(true);
       // Nadie más debería aterrizar ahí por defecto.
-      const otros = TEAM_ROLES.filter(r => r !== role && r !== "ceo");
+      const otros = TEAM_ROLES.filter(r => r !== role && r !== "ceo" && r !== "tester");
       for (const otro of otros) {
         expect(roleHome(otro), `${otro} aterriza en la pantalla de ${role}`).not.toBe(home);
       }
@@ -190,7 +196,8 @@ describe("cada rol tiene su propia pantalla", () => {
 describe("qué NO debe ver cada rol", () => {
   it("las credenciales de las redes son solo de dirección", () => {
     // /ajustes guarda claves de API y gestión de usuarios.
-    for (const role of TEAM_ROLES.filter(r => r !== "ceo")) {
+    // "tester" (cuenta de revisión TikTok) tiene acceso total a propósito.
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "tester")) {
       expect(canAccessRoute(role, "/ajustes"), `${role} no debería ver /ajustes`).toBe(false);
     }
     expect(canAccessRoute("ceo", "/ajustes")).toBe(true);

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { eq, desc, ne } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { TEAM_ROLES, isTeamRole, normalizeRole } from "@workspace/roles";
 
 const router: IRouter = Router();
@@ -21,7 +21,8 @@ router.get("/admin/users", async (req: Request, res: Response) => {
     res.status(403).json({ error: "Solo el CEO o super-admin puede gestionar usuarios" });
     return;
   }
-  const me = req.user as any;
+  // La lista incluye tu propia cuenta (para que te veas y puedas renombrarte);
+  // los cambios de rol/aprobación/borrado sobre uno mismo siguen bloqueados.
   const rows = await db
     .select({
       id: users.id,
@@ -37,7 +38,6 @@ router.get("/admin/users", async (req: Request, res: Response) => {
       discordTag: users.discordTag,
     })
     .from(users)
-    .where(ne(users.id, me.id))
     .orderBy(desc(users.createdAt));
   // Rol normalizado: da igual qué vocabulario haya quedado en la base.
   res.json(rows.map(r => ({ ...r, teamRole: normalizeRole(r.teamRole, r.role === "superadmin") })));

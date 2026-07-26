@@ -100,6 +100,8 @@ export function areaCanAccessPage(area: Area | string | null | undefined, route:
  */
 const ROLE_TO_AREA: Record<string, Area> = {
   ceo: "ceo",
+  // Cuenta de revisión (TikTok review): mismo alcance que dirección.
+  tester: "ceo",
   // Trabajan sobre el tablero ejecutivo (cartera, proyectos, tareas).
   ventas: "ejecutivo",
   dev: "ejecutivo",

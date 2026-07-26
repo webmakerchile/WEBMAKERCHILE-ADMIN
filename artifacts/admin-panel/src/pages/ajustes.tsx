@@ -311,6 +311,8 @@ function UsersPanel({
   isCeo: boolean;
 }) {
   const queryClient = useQueryClient();
+  const auth = useAuth();
+  const selfId = auth?.id ?? null;
   const [editingId, setEditingId] = useState<number | null>(null);
   const [nameDraft, setNameDraft] = useState("");
 
@@ -475,6 +477,11 @@ function UsersPanel({
                 ) : (
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium truncate">{u.name || u.email}</p>
+                    {u.id === selfId && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-foreground/10 text-foreground border border-foreground/20">
+                        Tú
+                      </span>
+                    )}
                     {statusBadge(u.approvalStatus)}
                     <RoleBadge role={u.teamRole} />
                     {(isCeo || isSuperAdmin) && (
@@ -491,7 +498,7 @@ function UsersPanel({
                 {editingId !== u.id && <p className="text-xs text-muted-foreground truncate">{u.email}</p>}
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
-                {(isCeo || isSuperAdmin) && editingId !== u.id && (
+                {(isCeo || isSuperAdmin) && editingId !== u.id && u.id !== selfId && (
                   <>
                     <RoleSelector userId={u.id} current={u.teamRole} />
                     {/* El vínculo de Discord se asigna aquí mismo: sin él la
@@ -503,7 +510,7 @@ function UsersPanel({
                     />
                   </>
                 )}
-                {isSuperAdmin && u.approvalStatus !== "approved" && editingId !== u.id && (
+                {isSuperAdmin && u.approvalStatus !== "approved" && editingId !== u.id && u.id !== selfId && (
                   <button
                     onClick={() => setApproval(u.id, "approved")}
                     title="Aprobar acceso"
@@ -512,7 +519,7 @@ function UsersPanel({
                     <UserCheck className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {isSuperAdmin && u.approvalStatus !== "rejected" && editingId !== u.id && (
+                {isSuperAdmin && u.approvalStatus !== "rejected" && editingId !== u.id && u.id !== selfId && (
                   <button
                     onClick={() => setApproval(u.id, "rejected")}
                     title="Rechazar acceso"
@@ -521,7 +528,7 @@ function UsersPanel({
                     <UserX className="w-3.5 h-3.5" />
                   </button>
                 )}
-                {isSuperAdmin && editingId !== u.id && (
+                {isSuperAdmin && editingId !== u.id && u.id !== selfId && (
                   <button
                     onClick={() => deleteUser(u.id, u.email)}
                     title="Eliminar usuario"
