@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 import {
   useVideos, missingPieces, publishedNetworks, WORKFLOW_META, fmtFecha,
   type ContentVideo, type WorkflowStatus,
@@ -144,6 +145,8 @@ export default function EdicionPage() {
             );
           })}
         </div>
+
+        <MetasInline />
 
         <TicketsInline title="Lo que te pidieron" />
 

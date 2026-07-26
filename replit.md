@@ -74,6 +74,12 @@ artifacts-monorepo/
   - **Descripciones (Carruseles)**: Multi-slide carrusel generation with per-slide retry, ZIP download, granular regenerate controls
   - **Historias (Stories 9:16)**: Single frame ("única") or narrative series (2–5 frames). Series use role-based structure: 2=[hook,cta], 3=[hook,desarrollo,cta], 4=[hook,problema,solucion,cta], 5=[hook,contexto,problema,solucion,cta]. Each role has its own pose+visualHint and CTA style (microCTA "Sigue viendo" for intermediate frames, conversion CTA with WhatsApp for final). "Auto" mode calls OpenAI gpt-4.1 (`/community/historias/detectar-formato`) to recommend formato + cantidad based on the concept (e.g., "N tips" → N+2 frames). Frames are generated in parallel via `Promise.allSettled` so partial failures surface as per-frame retry buttons. UI shows carousel thumbnail strip with role labels, frame counter pill (N/Total) rendered top-right, ZIP download with textos.txt.
 
+### Metas por período y menú personalizable
+- **Metas** (tabla `goals`, migración `0023_goals_nav.sql`): compromisos de gestión con ventana — diaria, semanal o mensual — distintos de las tareas del tablero. Las asignan dirección, ventas y RRHH (`canAssignGoals`); cada persona ve y marca las suyas. Admiten meta numérica (`target`/`progress`, "8 publicaciones") o simple cumplir/no cumplir. Notifican al asignar y al cumplir.
+- **Ventanas de tiempo** (`src/lib/periods.ts`): `periodKey` guarda la ventana ya calculada en hora de Chile (`2026-07-28`, `2026-W31`, `2026-07`), así "esta semana" significa lo mismo para quien asigna y quien cumple, y filtrar es una comparación exacta. La semana usa numeración ISO y se compara por año+número, no como texto (`2025-W52` es anterior a `2026-W05`). API: `GET/POST /api/goals`, `PATCH/DELETE /api/goals/:id`; `?scope=team` para quien asigna. Quien solo cumple puede avanzar su meta pero no reescribir el enunciado.
+- **Dónde aparecen**: página `/metas` (propias y del equipo) y el widget `components/metas-inline.tsx` incrustado en Edición, Redes, Marketing, Mis tareas, RRHH y Reportes — una meta que hay que ir a buscar no se cumple.
+- **Menú personalizable** (`users.nav_hidden` + `components/nav-customizer.tsx`, `GET/PUT /api/me/nav`): cada persona elige qué secciones ver en su barra lateral. El filtrado es en dos pasos — primero el permiso del rol, después el gusto — y el personalizador solo ofrece ocultar lo que ese rol ya puede ver. Es cosmético: no cambia permisos ni bloquea rutas.
+
 ### Una pantalla propia por rol
 Cada área tiene su **propia página**, no una plantilla configurable: van a divergir a medida que cada rol reciba funciones específicas.
 
@@ -83,7 +89,7 @@ Cada área tiene su **propia página**, no una plantilla configurable: van a div
 | Editora | `/edicion` | "Qué video sigue y qué le falta": siguiente pieza a tomar, colas por estado, chips de lo que falta (portada, archivo, descripciones) y atajos a Estudio/Portadas/Transcriptor |
 | Redes | `/redes` | El calendario: semana en curso, próximas publicaciones, **atrasados** (programados cuya hora pasó sin publicarse), estado de conexión de cada red y aprobados esperando fecha |
 | Marketing | `/marketing` | Decisión y resultado: lo que espera su aprobación primero, rendimiento por red ordenado por alcance, proyectos y cartera (contratos sin montos) |
-| Ventas | `/ventas` | Pipeline, cartera, reuniones y cotizaciones |
+| Ventas | `/ejecutivo` | El Hub Ejecutivo **es** su panel: contratos con wizard, PDF y chat IA, cartera, reuniones y proyectos, recortado a su alcance |
 | Programador | `/mis-tareas` | Scrumban por etapa y requerimientos técnicos |
 | Contador | `/reportes` | Neto, IVA, facturación por mes y vencimientos |
 | RRHH | `/rrhh` | Fichas laborales, asistencia y solicitudes de acceso |

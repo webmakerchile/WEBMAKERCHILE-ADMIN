@@ -28,6 +28,7 @@ import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hrRouter from "./hr";
 import ticketsRouter from "./tickets";
+import goalsRouter from "./goals";
 import hubTasksRouter from "./hub/tasks";
 import hubServicesRouter from "./hub/services";
 import jornadaRouter from "./jornada";
@@ -89,6 +90,7 @@ router.use(hubServicesRouter);
 router.use(hubRouter);
 router.use(hrRouter);
 router.use(ticketsRouter);
+router.use(goalsRouter);
 
 // Cotizaciones: generador de cotizaciones PDF (hub ejecutivo)
 router.use("/cotizaciones", requireArea("ceo", "ejecutivo"));

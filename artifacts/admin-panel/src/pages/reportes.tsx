@@ -9,6 +9,7 @@ import {
 } from "@/lib/hub-owner";
 import { Loader2, Receipt, Download, AlertTriangle, FileText, ExternalLink } from "lucide-react";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 
 const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
@@ -137,6 +138,8 @@ export default function ReportesPage() {
             </Button>
           </div>
         </header>
+
+        <MetasInline />
 
         <TicketsInline title="Solicitudes a finanzas" />
 

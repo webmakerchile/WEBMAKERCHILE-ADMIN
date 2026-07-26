@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { useHubOwner, fmtDate, daysUntil, type HubProject, type HubTask, type HubContract } from "@/lib/hub-owner";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 import { Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2, ChevronDown } from "lucide-react";
 
 /** Mismas etapas y colores que el Scrumban del Hub Ejecutivo. */
@@ -105,6 +106,8 @@ export default function MisTareasPage() {
             <span>{(error as Error).message}</span>
           </div>
         )}
+
+        <MetasInline />
 
         <TicketsInline title="Solicitudes para desarrollo" />
 

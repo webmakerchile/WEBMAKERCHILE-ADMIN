@@ -27,18 +27,19 @@ import {
   LayoutGrid,
   ChevronRight,
   Receipt,
-  Handshake,
   ListChecks,
   IdCard,
   Ticket as TicketIcon,
   Scissors,
   Share2,
   Megaphone,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
 import { useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { ViewAsBar } from "@/components/view-as-bar";
+import { NavCustomizer, useHiddenNav } from "@/components/nav-customizer";
 
 type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
 type NavSection = { label: string; items: NavItem[] };
@@ -96,8 +97,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/edicion", icon: Scissors, label: t.navEdicion, tour: "nav-edicion" },
         { href: "/redes", icon: Share2, label: t.navRedes, tour: "nav-redes" },
         { href: "/marketing", icon: Megaphone, label: t.navMarketing, tour: "nav-marketing" },
+        { href: "/metas", icon: Target, label: t.navMetas, tour: "nav-metas" },
         { href: "/tickets", icon: TicketIcon, label: t.navTickets, tour: "nav-tickets" },
-        { href: "/ventas", icon: Handshake, label: t.navSales, tour: "nav-ventas" },
         { href: "/mis-tareas", icon: ListChecks, label: t.navMyTasks, tour: "nav-mis-tareas" },
         { href: "/reportes", icon: Receipt, label: t.navReports, tour: "nav-reportes" },
         { href: "/rrhh", icon: IdCard, label: t.navHr, tour: "nav-rrhh" },
@@ -113,12 +114,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
     },
   ];
 
-  const navSections: NavSection[] = allRoleSections
+  // Primero el permiso (qué puede ver el rol), después el gusto (qué eligió ocultar).
+  const hiddenNav = useHiddenNav();
+  const permitidas = allRoleSections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => canAccessRoute(effectiveRole, item.href, isSuperAdmin)),
     }))
     .filter((section) => section.items.length > 0);
+
+  const navSections: NavSection[] = permitidas
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !hiddenNav.includes(item.href)),
+    }))
+    .filter((section) => section.items.length > 0);
+
+  /** Lo que el personalizador ofrece esconder: solo lo que este rol ve. */
+  const navOptions = permitidas.flatMap((s) => s.items.map((i) => ({ href: i.href, label: i.label })));
 
   // The mobile bottom-nav shows the first 5 items (the "Contenido" section).
   const navItems = navSections.flatMap((s) => s.items);

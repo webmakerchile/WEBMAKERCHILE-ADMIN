@@ -11,6 +11,7 @@ import {
   CalendarDays, Phone, FileText, ExternalLink,
 } from "lucide-react";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 import { useAsistencia, formatMinutes, type AsistenciaMiembro } from "@/lib/asistencia";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -202,6 +203,8 @@ export default function RrhhPage() {
             Fichas laborales, contratos, ingresos y solicitudes de acceso al panel.
           </p>
         </header>
+
+        <MetasInline />
 
         <TicketsInline title="Solicitudes a Recursos Humanos" />
 

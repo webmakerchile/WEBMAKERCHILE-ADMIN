@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ROLES, TEAM_ROLES, TICKET_AREAS, canAccessRoute, canManagePeople, canManageTeam, canReview,
-  canSeeMoney, hubScopesFor, hubWriteScopesFor, isTeamRole, normalizeRole, roleHome, ticketAreasFor,
+  canAssignGoals, canSeeMoney, hubScopesFor, hubWriteScopesFor, isTeamRole, normalizeRole, roleHome, ticketAreasFor,
 } from "@workspace/roles";
 
 describe("roles del equipo", () => {
@@ -207,6 +207,37 @@ describe("qué NO debe ver cada rol", () => {
     ];
     for (const [role, ruta] of ajenas) {
       expect(canAccessRoute(role, ruta), `${role} no debería entrar a ${ruta}`).toBe(false);
+    }
+  });
+});
+
+describe("metas por período", () => {
+  it("solo dirección, ventas y RRHH ponen metas", () => {
+    // Son los roles que dirigen a alguien; el resto cumple las suyas.
+    expect(canAssignGoals("ceo")).toBe(true);
+    expect(canAssignGoals("ventas")).toBe(true);
+    expect(canAssignGoals("rrhh")).toBe(true);
+    for (const role of ["editora", "social", "dev", "marketing", "contador"] as const) {
+      expect(canAssignGoals(role), `${role} no debería asignar metas`).toBe(false);
+    }
+  });
+
+  it("todos ven la pantalla de metas: también quien solo las cumple", () => {
+    for (const role of TEAM_ROLES) {
+      expect(canAccessRoute(role, "/metas"), `${role} no ve sus metas`).toBe(true);
+    }
+  });
+});
+
+describe("el Hub Ejecutivo es el panel de ventas", () => {
+  it("ventas aterriza en el Hub y no en una pantalla aparte", () => {
+    expect(roleHome("ventas")).toBe("/ejecutivo");
+    expect(canAccessRoute("ventas", "/ejecutivo")).toBe(true);
+  });
+
+  it("el Hub sigue siendo exclusivo de dirección y ventas", () => {
+    for (const role of ["editora", "social", "marketing", "contador", "rrhh"] as const) {
+      expect(canAccessRoute(role, "/ejecutivo"), `${role} no debería entrar al Hub`).toBe(false);
     }
   });
 });

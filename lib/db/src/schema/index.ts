@@ -16,6 +16,7 @@ export * from "./credentials";
 export * from "./hub-state";
 export * from "./hr";
 export * from "./tickets";
+export * from "./goals";
 export * from "./hub-services";
 export * from "./hub-tasks";
 export * from "./hub-task-activity";

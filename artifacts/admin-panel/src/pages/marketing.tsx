@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 import { useHubOwner } from "@/lib/hub-owner";
 import {
   useVideos, useAnalytics, publishedNetworks, fmtNumero, fmtFecha,
@@ -261,6 +262,8 @@ export default function MarketingPage() {
                 </Card>
               </Link>
             </div>
+
+            <MetasInline />
 
             <TicketsInline title="Lo que le pidieron a marketing" />
           </>

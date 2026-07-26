@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 import {
   useVideos, useAnalytics, publishedNetworks, WORKFLOW_META, fmtFecha, fmtNumero,
   NETWORKS, NETWORK_LABELS, type ContentVideo, type Network, type WorkflowStatus,
@@ -278,6 +279,8 @@ export default function RedesPage() {
                 );
               })}
             </div>
+
+            <MetasInline />
 
             <TicketsInline title="Lo que le pidieron a redes" />
           </>
