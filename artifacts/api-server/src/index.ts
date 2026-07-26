@@ -8,12 +8,20 @@ import { users, hubState, hubTasks } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
 
 async function runDataMigrations() {
-  // Migrate legacy area values to the new 4-area system.
-  // Any value not in the 4 areas → "ceo" so no one is locked out.
+  // Traduce SOLO los valores antiguos de team_role a los roles actuales
+  // (mismo mapeo que LEGACY_ALIASES en @workspace/roles). Nunca toca un rol
+  // válido: antes este bloque reseteaba a 'ceo' todo lo que no estuviera en
+  // una lista vieja de 4 valores, y cada arranque/republicación borraba los
+  // roles asignados desde Ajustes.
   await db.execute(sql`
     UPDATE users
-    SET team_role = 'ceo'
-    WHERE team_role NOT IN ('ceo', 'ejecutivo', 'edicion', 'marketing')
+    SET team_role = CASE team_role
+          WHEN 'reviewer'  THEN 'ceo'
+          WHEN 'editor'    THEN 'editora'
+          WHEN 'ejecutivo' THEN 'ventas'
+          WHEN 'edicion'   THEN 'editora'
+        END
+    WHERE team_role IN ('reviewer', 'editor', 'ejecutivo', 'edicion')
   `);
 
   // Migrate existing hub_tasks rows that were created with the old
