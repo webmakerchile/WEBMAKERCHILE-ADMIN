@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   ROLES, TEAM_ROLES, TICKET_AREAS, canAccessRoute, canManagePeople, canManageTeam, canReview,
-  hubScopesFor, hubWriteScopesFor, isTeamRole, normalizeRole, roleHome, ticketAreasFor,
+  canSeeMoney, hubScopesFor, hubWriteScopesFor, isTeamRole, normalizeRole, roleHome, ticketAreasFor,
 } from "@workspace/roles";
 
 describe("roles del equipo", () => {
@@ -32,6 +32,34 @@ describe("roles del equipo", () => {
     expect(canReview("rrhh")).toBe(false);
     expect(hubScopesFor("rrhh")).toEqual([]);
     expect(canAccessRoute("rrhh", "/videos")).toBe(false);
+  });
+
+  it("los montos solo los ve quien maneja plata", () => {
+    // Dirección cierra tratos, ventas cotiza y el contador declara.
+    expect(canSeeMoney("ceo")).toBe(true);
+    expect(canSeeMoney("ventas")).toBe(true);
+    expect(canSeeMoney("contador")).toBe(true);
+    // Quien ejecuta ve el contrato, pero nunca los precios.
+    expect(canSeeMoney("dev")).toBe(false);
+    expect(canSeeMoney("marketing")).toBe(false);
+    expect(canSeeMoney("editora")).toBe(false);
+    expect(canSeeMoney("social")).toBe(false);
+    expect(canSeeMoney("rrhh")).toBe(false);
+  });
+
+  it("quien lee contratos sin ver montos recibe la versión técnica", () => {
+    // Invariante del negocio: si un rol tiene contratos en su alcance y no puede
+    // ver dinero, es porque necesita los requerimientos, no la cotización.
+    for (const role of TEAM_ROLES) {
+      const leeContratos = hubScopesFor(role).includes("contracts");
+      const escribeContratos = hubWriteScopesFor(role).includes("contracts");
+      if (escribeContratos) {
+        expect(canSeeMoney(role), `${role} edita contratos pero no ve montos`).toBe(true);
+      }
+      if (leeContratos && !canSeeMoney(role)) {
+        expect(escribeContratos, `${role} no debería poder editar contratos censurados`).toBe(false);
+      }
+    }
   });
 
   it("aprobar contenido queda en dirección y marketing", () => {
@@ -80,8 +108,8 @@ describe("roles del equipo", () => {
 
   it("cada rol declara solo los datos del tablero que necesita", () => {
     expect(hubScopesFor("ventas")).toEqual(["contracts", "clients", "meetings", "projects"]);
-    expect(hubScopesFor("dev")).toEqual(["projects", "tasks", "notes"]);
-    expect(hubScopesFor("marketing")).toEqual(["projects", "tasks", "clients"]);
+    expect(hubScopesFor("dev")).toEqual(["projects", "tasks", "notes", "contracts"]);
+    expect(hubScopesFor("marketing")).toEqual(["projects", "tasks", "clients", "contracts"]);
     // Los roles puramente de producción no entran al tablero: se conectan por tickets.
     expect(hubScopesFor("editora")).toEqual([]);
     expect(hubScopesFor("social")).toEqual([]);

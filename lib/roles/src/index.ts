@@ -43,6 +43,12 @@ export interface RoleDef {
   canManagePeople: boolean;
   /** Puede aprobar contenido que está en revisión. */
   canReview: boolean;
+  /**
+   * Puede ver montos: valores de contratos, precios por módulo, forma de pago y
+   * el PDF comercial. Quien no lo tenga recibe los contratos ya censurados en el
+   * servidor — nunca se le envía el dato y luego se oculta en pantalla.
+   */
+  canSeeMoney: boolean;
   /** Colecciones del tablero (Hub) que puede leer. */
   hubScopes: readonly HubScope[];
   /**
@@ -91,6 +97,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: true,
     canManagePeople: true,
     canReview: true,
+    canSeeMoney: true,
     hubScopes: ALL_HUB_SCOPES,
     hubWrite: ALL_HUB_SCOPES,
     ticketAreas: ["direccion"],
@@ -104,6 +111,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
+    canSeeMoney: false,
     hubScopes: [],
     hubWrite: [],
     ticketAreas: ["contenido"],
@@ -117,6 +125,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
+    canSeeMoney: false,
     hubScopes: [],
     hubWrite: [],
     ticketAreas: ["redes"],
@@ -130,6 +139,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
+    canSeeMoney: true,
     hubScopes: ["contracts", "clients", "meetings", "projects"],
     hubWrite: ["contracts", "clients", "meetings"],
     ticketAreas: ["ventas"],
@@ -143,7 +153,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
-    hubScopes: ["projects", "tasks", "notes"],
+    canSeeMoney: false,
+    hubScopes: ["projects", "tasks", "notes", "contracts"],
     hubWrite: ["projects", "tasks"],
     ticketAreas: ["desarrollo"],
   },
@@ -156,7 +167,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: false,
     canManagePeople: false,
     canReview: true,
-    hubScopes: ["projects", "tasks", "clients"],
+    canSeeMoney: false,
+    hubScopes: ["projects", "tasks", "clients", "contracts"],
     hubWrite: ["tasks"],
     ticketAreas: ["marketing"],
   },
@@ -169,6 +181,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: true,
     canManagePeople: true,
     canReview: false,
+    canSeeMoney: false,
     hubScopes: [],
     hubWrite: [],
     ticketAreas: ["rrhh"],
@@ -182,6 +195,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
+    canSeeMoney: true,
     hubScopes: ["contracts"],
     hubWrite: [],
     ticketAreas: ["finanzas"],
@@ -232,6 +246,11 @@ export function canManagePeople(role: unknown, isSuperAdmin = false): boolean {
 
 export function canReview(role: unknown, isSuperAdmin = false): boolean {
   return roleDef(role, isSuperAdmin).canReview;
+}
+
+/** ¿Este rol puede ver montos (valores, precios por módulo, PDF comercial)? */
+export function canSeeMoney(role: unknown, isSuperAdmin = false): boolean {
+  return roleDef(role, isSuperAdmin).canSeeMoney;
 }
 
 export function hubScopesFor(role: unknown, isSuperAdmin = false): readonly HubScope[] {

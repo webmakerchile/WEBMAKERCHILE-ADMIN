@@ -2,13 +2,14 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { hubState, users } from "@workspace/db/schema";
 import { asc, eq } from "drizzle-orm";
-import { ALL_HUB_SCOPES, hubScopesFor, hubWriteScopesFor, normalizeRole, type HubScope } from "@workspace/roles";
+import { ALL_HUB_SCOPES, canSeeMoney, hubScopesFor, hubWriteScopesFor, normalizeRole, type HubScope } from "@workspace/roles";
 import { google } from "googleapis";
 import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
 import { z } from "zod";
 import { mergeCollection, type HubEntity } from "../../lib/hub-merge";
 import { resolveBoard, saveBoard } from "../../lib/hub-board";
+import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
 
 const router: IRouter = Router();
 
@@ -65,10 +66,16 @@ function getGoogleAuth(user: AuthedUser) {
    trabajando en pestañas distintas no se borran el trabajo mutuamente.
    ------------------------------------------------------------------ */
 
-/** Recorta el tablero a las colecciones que el rol puede leer. */
-function scopeBoard(data: Record<string, unknown>, scopes: readonly HubScope[]) {
+/**
+ * Recorta el tablero a las colecciones que el rol puede leer y censura los
+ * montos cuando no le corresponde verlos (ver lib/contract-view).
+ */
+function scopeBoard(data: Record<string, unknown>, scopes: readonly HubScope[], seeMoney: boolean) {
   const out: Record<string, unknown> = {};
-  for (const scope of scopes) out[scope] = Array.isArray(data[scope]) ? data[scope] : [];
+  for (const scope of scopes) {
+    const list = Array.isArray(data[scope]) ? (data[scope] as unknown[]) : [];
+    out[scope] = scope === "contracts" && !seeMoney ? redactContracts(list) : list;
+  }
   return out;
 }
 
@@ -85,7 +92,7 @@ router.get("/hub", async (req: Request, res: Response) => {
 
   const board = await resolveBoard();
   res.json({
-    data: board?.exists ? scopeBoard(board.data, scopes) : null,
+    data: board?.exists ? scopeBoard(board.data, scopes, canSeeMoney(role)) : null,
     version: board?.version ?? 0,
     scopes,
     writeScopes: hubWriteScopesFor(role),
@@ -149,7 +156,7 @@ router.patch("/hub", async (req: Request, res: Response) => {
   const saved = await saveBoard(board.boardUserId, merged);
 
   res.json({
-    data: scopeBoard(saved.data, scopes),
+    data: scopeBoard(saved.data, scopes, canSeeMoney(role)),
     version: saved.version,
     scopes,
     writeScopes,
@@ -181,7 +188,7 @@ router.get("/hub/owner", async (req: Request, res: Response) => {
   if (!board) { res.json({ data: {}, owner: null, updatedAt: null, scopes }); return; }
 
   res.json({
-    data: scopeBoard(board.data, scopes),
+    data: scopeBoard(board.data, scopes, canSeeMoney(role)),
     owner: board.owner ? { name: board.owner.name, email: board.owner.email } : null,
     updatedAt: board.version ? new Date(board.version).toISOString() : null,
     scopes,
@@ -362,6 +369,116 @@ Devuelve un JSON con estos campos (string vacío si no aplica):
   try { extracted = JSON.parse(raw); } catch { /* leave empty */ }
 
   res.json(extracted);
+});
+
+/* ------------------------------------------------------------------
+   Brief técnico: la segunda versión del contrato.
+
+   De la misma cotización salen dos documentos: el comercial (con precios, para
+   el cliente) y este brief (sin un solo monto, para quien construye). Se genera
+   automáticamente al crear o modificar el contrato, así el equipo técnico nunca
+   depende de que alguien recuerde escribir los requerimientos.
+   ------------------------------------------------------------------ */
+const briefSchema = z.object({
+  objetivo: z.coerce.string().default(""),
+  contexto: z.coerce.string().default(""),
+  alcance: z.array(z.object({
+    modulo: z.coerce.string().default(""),
+    descripcion: z.coerce.string().default(""),
+    entregables: z.array(z.coerce.string()).default([]),
+    requisitos: z.array(z.coerce.string()).default([]),
+  })).default([]),
+  criteriosAceptacion: z.array(z.coerce.string()).default([]),
+  fueraDeAlcance: z.array(z.coerce.string()).default([]),
+  stackSugerido: z.array(z.coerce.string()).default([]),
+  hitos: z.array(z.object({
+    nombre: z.coerce.string().default(""),
+    detalle: z.coerce.string().default(""),
+  })).default([]),
+});
+
+export type ContractBrief = z.infer<typeof briefSchema> & { generatedAt: number };
+
+/** Limpia montos de todos los textos del brief, venga de donde venga. */
+function sanitizeBrief(brief: z.infer<typeof briefSchema>): z.infer<typeof briefSchema> {
+  const clean = (v: string) => stripMoneyFromText(String(v ?? ""));
+  return {
+    objetivo: clean(brief.objetivo),
+    contexto: clean(brief.contexto),
+    alcance: brief.alcance.map(a => ({
+      modulo: clean(a.modulo),
+      descripcion: clean(a.descripcion),
+      entregables: a.entregables.map(clean),
+      requisitos: a.requisitos.map(clean),
+    })),
+    criteriosAceptacion: brief.criteriosAceptacion.map(clean),
+    fueraDeAlcance: brief.fueraDeAlcance.map(clean),
+    stackSugerido: brief.stackSugerido.map(clean),
+    hitos: brief.hitos.map(h => ({ nombre: clean(h.nombre), detalle: clean(h.detalle) })),
+  };
+}
+
+router.post("/hub/contracts/brief", async (req: Request, res: Response) => {
+  const { doc, contract } = req.body as { doc?: Record<string, unknown>; contract?: Record<string, unknown> };
+  if (!doc && !contract) {
+    res.status(400).json({ error: "Se requiere el documento o la ficha del contrato" });
+    return;
+  }
+
+  // A la IA se le manda el documento SIN precios: no los necesita para describir
+  // el trabajo, y así tampoco puede colarlos en el texto.
+  const source = doc ?? {};
+  const mods = Array.isArray((source as { modules?: unknown }).modules)
+    ? ((source as { modules: Record<string, unknown>[] }).modules)
+        .filter(m => String(m?.name ?? "").trim() !== "")
+        .map(m => ({ nombre: m.name, descripcion: m.desc ?? "" }))
+    : [];
+
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_API_BASE || undefined,
+  });
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4.1",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "Eres un líder técnico de una agencia digital chilena (sitios web, e-commerce, software a medida, branding y contenido). Traduces lo vendido a un brief accionable para quien programa o diseña. PROHIBIDO mencionar precios, montos, presupuestos, formas de pago o cualquier cifra de dinero. Responde SOLO con JSON válido.",
+      },
+      {
+        role: "user",
+        content: `Servicio vendido: ${String((source as Record<string, unknown>).project ?? contract?.title ?? "")}
+Cliente: ${String((source as Record<string, unknown>).client ?? contract?.client ?? "")}
+Alcance acordado: ${String((source as Record<string, unknown>).scope ?? contract?.notes ?? "")}
+Módulos contratados: ${JSON.stringify(mods)}
+
+Genera el brief técnico con este JSON exacto:
+{
+  "objetivo": "qué problema del cliente resuelve esto, en 1-2 frases",
+  "contexto": "contexto del cliente y su rubro, en 1-2 frases",
+  "alcance": [{ "modulo": "", "descripcion": "qué hay que construir", "entregables": ["…"], "requisitos": ["requisito técnico o funcional"] }],
+  "criteriosAceptacion": ["condición verificable para dar por terminado"],
+  "fueraDeAlcance": ["lo que NO incluye, para evitar malentendidos"],
+  "stackSugerido": ["tecnología recomendada"],
+  "hitos": [{ "nombre": "", "detalle": "" }]
+}
+
+Un elemento de "alcance" por cada módulo contratado. Sé concreto y accionable: quien lo lea debe poder empezar a trabajar sin preguntar nada más.`,
+      },
+    ],
+  });
+
+  const raw = completion.choices[0]?.message?.content || "{}";
+  let parsedJson: unknown = {};
+  try { parsedJson = JSON.parse(raw); } catch { /* deja el brief vacío */ }
+
+  const parsed = briefSchema.safeParse(parsedJson);
+  const brief = sanitizeBrief(parsed.success ? parsed.data : briefSchema.parse({}));
+
+  res.json({ brief: { ...brief, generatedAt: Date.now() } });
 });
 
 router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response) => {

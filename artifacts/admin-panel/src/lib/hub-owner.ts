@@ -16,11 +16,25 @@ export interface HubDoc {
   monthly?: string; monthlyPrice?: string; validityDays?: number;
 }
 
+export interface HubBriefModule { modulo: string; descripcion: string; entregables: string[]; requisitos: string[] }
+
+/** Versión técnica del contrato: qué construir, sin ningún dato comercial. */
+export interface HubBrief {
+  objetivo: string; contexto: string;
+  alcance: HubBriefModule[];
+  criteriosAceptacion: string[]; fueraDeAlcance: string[]; stackSugerido: string[];
+  hitos: { nombre: string; detalle: string }[];
+  generatedAt?: number;
+}
+
 export interface HubContract {
   id: string; title: string; client: string; value: string; status: ContractStatus;
   signedAt: string; expiresAt: string; notes: string;
   createdAt: number; updatedAt: number;
   pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; doc?: HubDoc;
+  brief?: HubBrief; briefUrl?: string; briefTitle?: string;
+  /** El servidor lo marca cuando censuró los montos para este rol. */
+  moneyRedacted?: boolean;
 }
 
 export interface HubClient { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number }

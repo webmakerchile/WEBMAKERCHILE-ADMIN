@@ -46,7 +46,12 @@ vi.mock("@workspace/db", () => {
 });
 
 const HUB_BLOB = {
-  contracts: [{ id: "c1", title: "Landing", value: "$119.000" }],
+  contracts: [{
+    id: "c1", title: "Landing", value: "$119.000",
+    pdfUrl: "https://drive.google.com/file/d/comercial/view",
+    briefUrl: "https://drive.google.com/file/d/tecnico/view",
+    doc: { modules: [{ id: "m1", name: "Landing", desc: "One-page", price: 100000 }], downPct: 50, monthlyPrice: "50000" },
+  }],
   clients: [{ id: "cl1", name: "ACME" }],
   meetings: [{ id: "m1", client: "ACME" }],
   projects: [{ id: "p1", name: "Landing ACME" }],
@@ -102,19 +107,18 @@ describe("GET /api/hub/owner", () => {
     expect(body.data.notes).toBeUndefined();
   });
 
-  it("el programador recibe proyectos, tareas y notas, no contratos ni clientes", async () => {
+  it("el programador recibe proyectos, tareas, notas y los contratos censurados", async () => {
     const r = await callAsRole("dev");
     const body = await r.json() as { data: Record<string, unknown[]> };
-    expect(Object.keys(body.data).sort()).toEqual(["notes", "projects", "tasks"]);
-    expect(body.data.contracts).toBeUndefined();
+    expect(Object.keys(body.data).sort()).toEqual(["contracts", "notes", "projects", "tasks"]);
+    // La cartera de clientes es comercial: no le corresponde.
     expect(body.data.clients).toBeUndefined();
   });
 
-  it("marketing ve proyectos, tareas y clientes para coordinar campañas", async () => {
+  it("marketing ve proyectos, tareas, clientes y contratos censurados", async () => {
     const r = await callAsRole("marketing");
     const body = await r.json() as { data: Record<string, unknown[]> };
-    expect(Object.keys(body.data).sort()).toEqual(["clients", "projects", "tasks"]);
-    expect(body.data.contracts).toBeUndefined();
+    expect(Object.keys(body.data).sort()).toEqual(["clients", "contracts", "projects", "tasks"]);
   });
 
   it("los roles de producción pura no leen el tablero: se conectan por tickets", async () => {
@@ -129,6 +133,44 @@ describe("GET /api/hub/owner", () => {
     const body = await r.json() as { data: Record<string, unknown[]>; owner: { email: string } };
     expect(Object.keys(body.data).sort()).toEqual(["clients", "contracts", "meetings", "notes", "projects", "tasks"]);
     expect(body.owner.email).toBe("ceo@x.cl");
+  });
+
+  it("al programador le llegan los contratos sin un solo monto", async () => {
+    const r = await callAsRole("dev");
+    const body = await r.json() as { data: Record<string, unknown[]> };
+    const [contrato] = body.data.contracts as Record<string, unknown>[];
+    expect(contrato.title).toBe("Landing");
+    expect(contrato.moneyRedacted).toBe(true);
+    expect(contrato.value).toBeUndefined();
+    // El PDF comercial lleva los precios impresos: tampoco se entrega.
+    expect(contrato.pdfUrl).toBeUndefined();
+    expect(contrato.briefUrl).toBe("https://drive.google.com/file/d/tecnico/view");
+    // Ni siquiera serializado aparece una cifra.
+    expect(JSON.stringify(contrato)).not.toContain("119.000");
+    expect(JSON.stringify(contrato)).not.toContain("100000");
+    expect(JSON.stringify(contrato)).not.toContain("50000");
+  });
+
+  it("marketing tampoco ve montos", async () => {
+    const r = await callAsRole("marketing");
+    const body = await r.json() as { data: Record<string, unknown[]> };
+    const [contrato] = body.data.contracts as Record<string, unknown>[];
+    expect(contrato.moneyRedacted).toBe(true);
+    expect(contrato.value).toBeUndefined();
+  });
+
+  it("ventas, contador y dirección sí reciben los montos completos", async () => {
+    for (const role of ["ventas", "contador"]) {
+      const r = await callAsRole(role);
+      const body = await r.json() as { data: Record<string, unknown[]> };
+      const [contrato] = body.data.contracts as Record<string, unknown>[];
+      expect(contrato.value, `${role} debería ver el valor`).toBe("$119.000");
+      expect(contrato.moneyRedacted).toBeUndefined();
+      expect(contrato.pdfUrl).toBeTruthy();
+    }
+    const ceo = await callAsRole("reviewer", "superadmin");
+    const body = await ceo.json() as { data: Record<string, unknown[]> };
+    expect((body.data.contracts as Record<string, unknown>[])[0].value).toBe("$119.000");
   });
 
   it("una colección ausente en el blob se devuelve como array vacío", async () => {

@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
-import { useHubOwner, fmtDate, daysUntil, type HubProject, type HubTask } from "@/lib/hub-owner";
+import { useHubOwner, fmtDate, daysUntil, type HubProject, type HubTask, type HubContract } from "@/lib/hub-owner";
 import { TicketsInline } from "@/components/tickets-inline";
-import { Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban } from "lucide-react";
+import { Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2, ChevronDown } from "lucide-react";
 
 /** Mismas etapas y colores que el Scrumban del Hub Ejecutivo. */
 const STAGES = [
@@ -42,6 +42,11 @@ export default function MisTareasPage() {
   const projects = useMemo(() => data?.data.projects ?? [], [data]);
 
   const [projectId, setProjectId] = useState<string>("todos");
+  const [openBrief, setOpenBrief] = useState<string | null>(null);
+
+  // Los contratos llegan censurados por el servidor: sin valores, sin precios por
+  // módulo y sin el PDF comercial. Lo que queda es qué hay que construir.
+  const contracts = useMemo(() => data?.data.contracts ?? [], [data]);
 
   const visible = useMemo(
     () => (projectId === "todos" ? tasks : tasks.filter(t => t.projectId === projectId)),
@@ -154,6 +159,108 @@ export default function MisTareasPage() {
                   })}
                 </div>
               </div>
+            )}
+
+            {contracts.length > 0 && (
+              <Card className="bg-card/40 border-foreground/10">
+                <CardContent className="p-4">
+                  <p className="text-sm font-semibold mb-1 flex items-center gap-2">
+                    <FileCode2 className="w-4 h-4 text-primary" /> Requerimientos contratados
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mb-3">
+                    Qué se le vendió al cliente, traducido a alcance técnico. Sin información comercial.
+                  </p>
+                  <ul className="space-y-2">
+                    {contracts.map((c: HubContract) => {
+                      const open = openBrief === c.id;
+                      const brief = c.brief;
+                      return (
+                        <li key={c.id} className="rounded-lg border border-foreground/10 bg-card/40">
+                          <button
+                            onClick={() => setOpenBrief(open ? null : c.id)}
+                            className="w-full text-left px-3 py-2.5 flex items-center gap-3"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{c.title}</p>
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {c.client || "Sin cliente"}
+                                {brief?.alcance?.length ? ` · ${brief.alcance.length} módulo${brief.alcance.length === 1 ? "" : "s"}` : " · sin brief todavía"}
+                              </p>
+                            </div>
+                            {c.briefUrl && (
+                              <a href={c.briefUrl} target="_blank" rel="noopener noreferrer"
+                                 onClick={e => e.stopPropagation()}
+                                 className="text-[11px] text-primary hover:underline inline-flex items-center gap-1">
+                                PDF <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                            )}
+                            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+                          </button>
+
+                          {open && (
+                            <div className="px-3 pb-3 pt-1 border-t border-foreground/10 space-y-3 text-xs">
+                              {!brief ? (
+                                <p className="text-muted-foreground">
+                                  Este contrato todavía no tiene brief técnico. Se genera solo cuando dirección
+                                  crea o regenera los documentos.
+                                </p>
+                              ) : (
+                                <>
+                                  {brief.objetivo && (
+                                    <div>
+                                      <p className="text-[11px] text-muted-foreground mb-0.5">Objetivo</p>
+                                      <p>{brief.objetivo}</p>
+                                    </div>
+                                  )}
+                                  {brief.alcance?.map((m, i) => (
+                                    <div key={i} className="rounded-lg border border-foreground/10 p-2.5">
+                                      <p className="font-medium">{m.modulo}</p>
+                                      {m.descripcion && <p className="text-muted-foreground mt-0.5">{m.descripcion}</p>}
+                                      {m.entregables?.length > 0 && (
+                                        <ul className="list-disc pl-4 mt-1.5 text-muted-foreground">
+                                          {m.entregables.map((e, j) => <li key={j}>{e}</li>)}
+                                        </ul>
+                                      )}
+                                      {m.requisitos?.length > 0 && (
+                                        <ul className="list-disc pl-4 mt-1">
+                                          {m.requisitos.map((r, j) => <li key={j}>{r}</li>)}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {brief.criteriosAceptacion?.length > 0 && (
+                                    <div>
+                                      <p className="text-[11px] text-muted-foreground mb-0.5">Criterios de aceptación</p>
+                                      <ul className="list-disc pl-4">
+                                        {brief.criteriosAceptacion.map((x, i) => <li key={i}>{x}</li>)}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {brief.fueraDeAlcance?.length > 0 && (
+                                    <div>
+                                      <p className="text-[11px] text-muted-foreground mb-0.5">Fuera de alcance</p>
+                                      <ul className="list-disc pl-4 text-muted-foreground">
+                                        {brief.fueraDeAlcance.map((x, i) => <li key={i}>{x}</li>)}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {brief.stackSugerido?.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {brief.stackSugerido.map((x, i) => (
+                                        <span key={i} className="px-2 py-0.5 rounded-full border border-foreground/10 bg-card/60">{x}</span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </CardContent>
+              </Card>
             )}
 
             <Card className="bg-card/40 border-foreground/10">

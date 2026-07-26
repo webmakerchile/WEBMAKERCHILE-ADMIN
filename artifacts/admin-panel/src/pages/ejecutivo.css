@@ -361,3 +361,15 @@
 /* Generate button */
 .hub-root .wiz-gen-btn{background:linear-gradient(135deg,var(--orange) 0%,var(--orange2) 100%)!important;color:#fff!important;font-family:'Oswald',sans-serif!important;letter-spacing:.6px!important;}
 .hub-root .wiz-gen-btn:disabled{opacity:.55!important;}
+
+/* Valor de solo lectura: mismo peso visual que un input, sin ser editable.
+   Se usa en la vista técnica del contrato, donde nada se puede modificar. */
+.ro-value {
+  padding: 9px 11px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: var(--card-bg, rgba(255, 255, 255, 0.03));
+  color: var(--fg);
+  font-size: 0.9em;
+  line-height: 1.45;
+}
