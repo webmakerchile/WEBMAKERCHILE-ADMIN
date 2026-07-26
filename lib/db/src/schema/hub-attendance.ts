@@ -41,6 +41,8 @@ export const hubWorkSessions = pgTable(
     discordHits: integer("discord_hits").notNull().default(0),
     /** Última vez visto en un canal de voz durante esta sesión. */
     discordLastSeenAt: timestamp("discord_last_seen_at", { withTimezone: true }),
+    /** true = la abrió el bot al detectar al usuario en el canal de voz. */
+    autoStarted: boolean("auto_started").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

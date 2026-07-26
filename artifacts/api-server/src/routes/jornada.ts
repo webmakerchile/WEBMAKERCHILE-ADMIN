@@ -133,7 +133,7 @@ router.get("/jornada/me", async (req: Request, res: Response) => {
     res.json({
       date: today,
       open: open
-        ? { id: open.id, workDate: open.workDate, checkIn: open.checkIn, onDiscord: open.onDiscord, discordCheckin: open.discordCheckin ?? null, stale: open.workDate !== today }
+        ? { id: open.id, workDate: open.workDate, checkIn: open.checkIn, onDiscord: open.onDiscord, discordCheckin: open.discordCheckin ?? null, autoStarted: open.autoStarted, stale: open.workDate !== today }
         : null,
       discordLinked: !!meRows[0]?.discordUserId,
       todayMinutes: days.find((d) => d.date === today)?.minutes ?? 0,

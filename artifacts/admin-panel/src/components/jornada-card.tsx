@@ -26,6 +26,8 @@ export interface JornadaOpenSession {
   onDiscord: boolean;
   /** Verificación automática al marcar entrada: true/false, o null si no se pudo verificar. */
   discordCheckin: boolean | null;
+  /** true = la abrió el bot al detectarte en el canal de voz de Discord. */
+  autoStarted: boolean;
   stale: boolean;
 }
 
@@ -192,7 +194,11 @@ export function JornadaCard() {
           <h2 className="text-sm font-semibold leading-tight">Mi jornada</h2>
           <p className="text-[11px] text-muted-foreground">Hoy {fmtMin(todayMin)} · Semana {fmtMin(data.week.total)}</p>
         </div>
-        {open && data.discordLinked && open.discordCheckin !== null ? (
+        {open?.autoStarted ? (
+          <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+            <Headphones className="w-3 h-3" /> Inicio automático por Discord
+          </span>
+        ) : open && data.discordLinked && open.discordCheckin !== null ? (
           <span className={cn("hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border",
             open.discordCheckin
               ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
@@ -265,7 +271,7 @@ export function JornadaCard() {
               {data.discordLinked ? (
                 <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-muted-foreground select-none">
                   <Headphones className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                  Tu conexión a Discord se verifica automáticamente
+                  Conéctate al canal de voz y tu jornada parte sola (en 1–2 min)
                 </p>
               ) : (
                 <label className="mt-1.5 flex items-center gap-2 text-[12px] text-muted-foreground cursor-pointer select-none">
