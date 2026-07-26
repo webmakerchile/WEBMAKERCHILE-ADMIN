@@ -68,7 +68,9 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
             // Auto-approve if email is in the allowlist
             const updateData: Record<string, any> = {
               lastLoginAt: new Date(),
-              name: profile.displayName || existing.name,
+              // Preserva el nombre personalizado (renombrado desde el panel);
+              // solo usa el de Google si el usuario aún no tiene nombre.
+              name: existing.name || profile.displayName || null,
               picture: profile.photos?.[0]?.value || existing.picture,
             };
             if (isAutoApproved && existing.approvalStatus !== "approved") {

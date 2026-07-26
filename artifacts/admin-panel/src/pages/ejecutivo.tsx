@@ -8,6 +8,7 @@ import { useAuth } from "@/App";
 import { ALL_HUB_SCOPES, type HubScope } from "@workspace/roles";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PushEnableBanner } from "@/components/push-enable-banner";
+import { ViewAsBar } from "@/components/view-as-bar";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
@@ -5074,7 +5075,9 @@ export default function EjecutivoPage() {
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@300;400;500&family=Oswald:wght@500;600&display=swap" rel="stylesheet" />
 
-      <div className="flex h-[100dvh] bg-background text-foreground overflow-hidden">
+      <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
+      <ViewAsBar />
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ======= MAIN CONTENT AREA ======= */}
         <div className="hub-root flex-1 min-w-0 flex flex-col overflow-hidden relative">
@@ -5366,6 +5369,7 @@ export default function EjecutivoPage() {
           </div>
         </aside>
 
+      </div>
       </div>
     </>
   );
