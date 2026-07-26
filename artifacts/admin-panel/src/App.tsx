@@ -8,7 +8,8 @@ import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle, ShieldOff } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
-import { canAccessRoute, roleHome, type TeamRole } from "@workspace/roles";
+import { canAccessRoute, roleHome, canManageTeam, type TeamRole } from "@workspace/roles";
+import { ViewAsProvider, useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { useEffect } from "react";
 import { areaCanAccessPage, toArea, AREA_HOME, type Area } from "@workspace/areas";
 
@@ -43,6 +44,9 @@ const VentasPage = lazy(() => import("./pages/ventas"));
 const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
 const RrhhPage = lazy(() => import("./pages/rrhh"));
 const TicketsPage = lazy(() => import("./pages/tickets"));
+const EdicionPage = lazy(() => import("./pages/edicion"));
+const RedesPage = lazy(() => import("./pages/redes"));
+const MarketingPage = lazy(() => import("./pages/marketing"));
 const MiDiaPage = lazy(() => import("./pages/mi-dia"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
@@ -118,10 +122,14 @@ function PageLoader() {
  */
 function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   const user = useAuth();
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
   const [location, setLocation] = useLocation();
-  const isSuperAdmin = user?.role === "superadmin";
-  const allowed = !user || canAccessRoute(user.teamRole, location, isSuperAdmin);
-  const home = roleHome(user?.teamRole, isSuperAdmin);
+  // Al simular otro rol, el atajo de superadmin no aplica: la gracia es ver
+  // exactamente lo que ve esa persona, con sus límites.
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
+  const allowed = !user || canAccessRoute(effectiveRole, location, isSuperAdmin);
+  const home = roleHome(effectiveRole, isSuperAdmin);
 
   useEffect(() => {
     if (!allowed && location !== home) setLocation(home, { replace: true });
@@ -317,8 +325,13 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={user}>
-      <RouteTracker />
-      {children}
+      <ViewAsProvider
+        realRole={user.teamRole}
+        canSimulate={canManageTeam(user.teamRole, user.role === "superadmin")}
+      >
+        <RouteTracker />
+        {children}
+      </ViewAsProvider>
     </AuthContext.Provider>
   );
 }
@@ -438,6 +451,15 @@ function Router() {
       </Route>
       <Route path="/tickets">
         <RouteShell name="tickets"><TicketsPage /></RouteShell>
+      </Route>
+      <Route path="/edicion">
+        <RouteShell name="edicion"><EdicionPage /></RouteShell>
+      </Route>
+      <Route path="/redes">
+        <RouteShell name="redes"><RedesPage /></RouteShell>
+      </Route>
+      <Route path="/marketing">
+        <RouteShell name="marketing"><MarketingPage /></RouteShell>
       </Route>
       <Route component={NotFound} />
     </Switch>

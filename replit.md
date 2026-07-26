@@ -74,6 +74,33 @@ artifacts-monorepo/
   - **Descripciones (Carruseles)**: Multi-slide carrusel generation with per-slide retry, ZIP download, granular regenerate controls
   - **Historias (Stories 9:16)**: Single frame ("única") or narrative series (2–5 frames). Series use role-based structure: 2=[hook,cta], 3=[hook,desarrollo,cta], 4=[hook,problema,solucion,cta], 5=[hook,contexto,problema,solucion,cta]. Each role has its own pose+visualHint and CTA style (microCTA "Sigue viendo" for intermediate frames, conversion CTA with WhatsApp for final). "Auto" mode calls OpenAI gpt-4.1 (`/community/historias/detectar-formato`) to recommend formato + cantidad based on the concept (e.g., "N tips" → N+2 frames). Frames are generated in parallel via `Promise.allSettled` so partial failures surface as per-frame retry buttons. UI shows carousel thumbnail strip with role labels, frame counter pill (N/Total) rendered top-right, ZIP download with textos.txt.
 
+### Una pantalla propia por rol
+Cada área tiene su **propia página**, no una plantilla configurable: van a divergir a medida que cada rol reciba funciones específicas.
+
+| Rol | Pantalla | Alrededor de qué está construida |
+|---|---|---|
+| CEO | `/ejecutivo` | El tablero completo de la agencia |
+| Editora | `/edicion` | "Qué video sigue y qué le falta": siguiente pieza a tomar, colas por estado, chips de lo que falta (portada, archivo, descripciones) y atajos a Estudio/Portadas/Transcriptor |
+| Redes | `/redes` | El calendario: semana en curso, próximas publicaciones, **atrasados** (programados cuya hora pasó sin publicarse), estado de conexión de cada red y aprobados esperando fecha |
+| Marketing | `/marketing` | Decisión y resultado: lo que espera su aprobación primero, rendimiento por red ordenado por alcance, proyectos y cartera (contratos sin montos) |
+| Ventas | `/ventas` | Pipeline, cartera, reuniones y cotizaciones |
+| Programador | `/mis-tareas` | Scrumban por etapa y requerimientos técnicos |
+| Contador | `/reportes` | Neto, IVA, facturación por mes y vencimientos |
+| RRHH | `/rrhh` | Fichas laborales, asistencia y solicitudes de acceso |
+
+Invariantes con test: ningún rol comparte pantalla de inicio con otro, cada uno entra a la suya, todos ven `/mi-dia` y `/tickets`, y nadie entra a la pantalla de otra área.
+
+**Cerrado en esta pasada**: `/api/credentials` no tenía ningún control de rol — cualquier sesión autenticada podía listar, sobrescribir o borrar las claves de API de todas las redes. Ahora exige dirección en el servidor, y `/ajustes` salió de `COMMON_ROUTES` (guarda credenciales y gestión de usuarios).
+
+### Sincronía de roles y vista previa por rol
+Equipo, Ajustes, RRHH y el Hub escriben y leen el **mismo** `users.team_role`, con un solo vocabulario: los roles.
+
+- **Causa del desfase (corregida)**: `/admin/users/:id/team-role` (Ajustes) validaba contra las *áreas* y `/team/members/:id/role` (Equipo) contra los *roles*. Cambiar el rol en una pantalla pisaba lo hecho en la otra. Ahora ambos aceptan roles; los valores antiguos de área que quedaron en la base se traducen al leer (`normalizeRole`: `ejecutivo`→`ventas`, `edicion`→`editora`) y se guardan ya normalizados.
+- **Controles compartidos** (`components/role-controls.tsx`): `RoleBadge`, `RoleSelector`, `DiscordLinkPicker` y `usePeopleSync()`. Cualquier cambio invalida `team-members`, `admin-users`, `hr-people`, `jornada-overview`, `discord-members` y `auth-me`, así que las pantallas se mueven juntas sin recargar.
+- **Discord desde Equipo y Ajustes**: el emparejamiento usa `/jornada/discord/members` + `/jornada/discord/map` (los de producción). Sin vínculo, el chip queda ámbar avisando que esa jornada no se verifica.
+- **Vista previa de rol** (`lib/view-as.tsx` + `components/view-as-bar.tsx`): la dirección recorre el panel como cualquier rol — menú, rutas y pantalla de inicio reales. Solo afecta lo que se muestra: el backend sigue respondiendo según el rol real, así que **nunca puede otorgar permisos**, solo quitarlos. Al simular, el atajo de superadmin se desactiva para que la vista sea fiel. Se lanza desde Equipo y se sale desde la barra superior.
+- Tests: `src/routes/role-sync.test.ts` (convergencia de vocabularios, estabilidad de la normalización, ida y vuelta rol↔área, y que un rol desconocido nunca caiga en dirección).
+
 ### Roles del equipo y secciones por área
 Fuente única de verdad en `lib/roles` (`@workspace/roles`, paquete sin dependencias que consumen API y panel). Ocho roles: `ceo`, `editora`, `social`, `ventas`, `dev`, `marketing`, `contador`, `rrhh`. Cada `RoleDef` declara `home` (pantalla de entrada), `routes` (rutas permitidas, `"*"` = todas), `canManageTeam`, `canManagePeople`, `canReview` y `hubScopes` (colecciones del Hub que puede leer).
 

@@ -26,7 +26,7 @@ import { motion } from "framer-motion";
 import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/components/social-icons";
 import { useLang } from "@/lib/lang";
 import { useAuth } from "@/App";
-import { AREAS, AREA_LABELS, AREA_BADGE, type Area } from "@workspace/areas";
+import { RoleBadge, RoleSelector, DiscordLinkPicker, usePeopleSync } from "@/components/role-controls";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -292,88 +292,15 @@ type ManagedUser = {
   approvalStatus: string;
   createdAt: string;
   lastLoginAt: string;
+  discordUserId?: string | null;
+  discordTag?: string | null;
 };
 
-function TeamRoleBadge({ teamRole }: { teamRole: string }) {
-  const badge = AREA_BADGE[teamRole as Area];
-  if (!badge) return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-foreground/10 text-muted-foreground border border-foreground/15">
-      {teamRole}
-    </span>
-  );
-  return (
-    <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border"
-      style={{ background: badge.bg, color: badge.text, borderColor: badge.text + "40" }}
-    >
-      {AREA_LABELS[teamRole as Area]}
-    </span>
-  );
-}
-
-function TeamRoleSelector({
-  userId,
-  currentRole,
-  onChanged,
-}: {
-  userId: number;
-  currentRole: string;
-  onChanged: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const handleSelect = async (role: Area) => {
-    if (role === currentRole) { setOpen(false); return; }
-    setSaving(true);
-    try {
-      await apiFetch(`/admin/users/${userId}/team-role`, {
-        method: "PATCH",
-        body: JSON.stringify({ teamRole: role }),
-      });
-      onChanged();
-    } catch {
-    } finally {
-      setSaving(false);
-      setOpen(false);
-    }
-  };
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        disabled={saving}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-dashed border-foreground/25 hover:border-primary/50 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-      >
-        {saving ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <ChevronDown className="w-2.5 h-2.5" />}
-        Rol
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-popover text-popover-foreground border border-foreground/15 rounded-xl shadow-xl py-1 min-w-[150px]">
-          {AREAS.map((r) => {
-            const badge = AREA_BADGE[r];
-            return (
-              <button
-                key={r}
-                onClick={() => handleSelect(r)}
-                className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-foreground hover:bg-foreground/8 transition-colors ${r === currentRole ? "font-semibold" : "font-normal"}`}
-              >
-                <span
-                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ background: badge.text }}
-                />
-                {AREA_LABELS[r]}
-                {r === currentRole && <CheckCircle2 className="w-3 h-3 ml-auto text-primary" />}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
+/**
+ * El chip y el selector de rol viven en components/role-controls: la misma
+ * pieza que usa Equipo. Antes cada pantalla tenía el suyo con vocabularios
+ * distintos, y cambiar el rol en una deshacía lo hecho en la otra.
+ */
 function UsersPanel({
   showToast,
   isSuperAdmin,
@@ -396,9 +323,12 @@ function UsersPanel({
     staleTime: 30000,
   });
 
+  // Cambiar a una persona aquí debe verse al instante en Equipo, RRHH y en la
+  // asistencia: todas leen del mismo campo, así que se refrescan juntas.
+  const syncPeople = usePeopleSync();
   const invalidate = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-  }, [queryClient]);
+    syncPeople();
+  }, [syncPeople]);
 
   const renameMut = useMutation({
     mutationFn: async ({ id, name }: { id: number; name: string }) => {
@@ -546,7 +476,7 @@ function UsersPanel({
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium truncate">{u.name || u.email}</p>
                     {statusBadge(u.approvalStatus)}
-                    <TeamRoleBadge teamRole={u.teamRole} />
+                    <RoleBadge role={u.teamRole} />
                     {(isCeo || isSuperAdmin) && (
                       <button
                         onClick={() => { setEditingId(u.id); setNameDraft(u.name || ""); }}
@@ -562,11 +492,16 @@ function UsersPanel({
               </div>
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 {(isCeo || isSuperAdmin) && editingId !== u.id && (
-                  <TeamRoleSelector
-                    userId={u.id}
-                    currentRole={u.teamRole}
-                    onChanged={invalidate}
-                  />
+                  <>
+                    <RoleSelector userId={u.id} current={u.teamRole} />
+                    {/* El vínculo de Discord se asigna aquí mismo: sin él la
+                        jornada de esa persona no se puede verificar. */}
+                    <DiscordLinkPicker
+                      userId={u.id}
+                      currentId={u.discordUserId ?? null}
+                      currentTag={u.discordTag ?? null}
+                    />
+                  </>
                 )}
                 {isSuperAdmin && u.approvalStatus !== "approved" && editingId !== u.id && (
                   <button

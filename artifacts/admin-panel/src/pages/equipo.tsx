@@ -6,7 +6,9 @@ import { useAuth } from "@/App";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ROLES, TEAM_ROLES, canManageTeam, normalizeRole, type TeamRole } from "@workspace/roles";
+import { RoleBadge, RoleSelector, DiscordLinkPicker, ROLE_STYLE, usePeopleSync } from "@/components/role-controls";
 import { Users2, ShieldCheck, Loader2 } from "lucide-react";
+import { ViewAsLauncher } from "@/components/view-as-bar";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -16,19 +18,11 @@ type Member = {
   name: string | null;
   picture: string | null;
   teamRole: TeamRole;
+  discordUserId?: string | null;
+  discordTag?: string | null;
+  approvalStatus?: string;
 };
 
-/** Color del chip por rol, para distinguir las áreas de un vistazo. */
-const ROLE_STYLE: Record<TeamRole, string> = {
-  ceo: "bg-primary/10 text-primary border-primary/20",
-  editora: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  social: "bg-sky-500/10 text-sky-400 border-sky-500/20",
-  ventas: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  dev: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  marketing: "bg-pink-500/10 text-pink-400 border-pink-500/20",
-  contador: "bg-teal-500/10 text-teal-400 border-teal-500/20",
-  rrhh: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
-};
 
 export default function EquipoPage() {
   const me = useAuth();
@@ -81,6 +75,8 @@ export default function EquipoPage() {
           </p>
         </header>
 
+        <ViewAsLauncher />
+
         {!canEdit && (
           <div className="rounded-xl border border-foreground/10 bg-amber-500/10 text-amber-400 px-4 py-3 text-sm">
             Solo la <strong>dirección</strong> puede cambiar los roles del equipo.
@@ -121,29 +117,15 @@ export default function EquipoPage() {
                         <p className="text-[11px] text-muted-foreground truncate">{m.email}</p>
                         <p className="text-[11px] text-muted-foreground/80 mt-0.5">{def.description}</p>
                       </div>
-                      <Badge className={ROLE_STYLE[role]}>
-                        {def.canManageTeam && <ShieldCheck className="w-3 h-3 mr-1" />}
-                        {def.label}
-                      </Badge>
-                      {canEdit && !isMe && (
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={role}
-                            disabled={busyId === m.id}
-                            onChange={(e) => {
-                              setBusyId(m.id);
-                              updateRole.mutate({ id: m.id, teamRole: e.target.value as TeamRole });
-                            }}
-                            className="h-8 rounded-lg border border-foreground/15 bg-card/60 px-2 text-xs"
-                            aria-label={`Rol de ${m.name || m.email}`}
-                          >
-                            {TEAM_ROLES.map((r) => (
-                              <option key={r} value={r}>{ROLES[r].label}</option>
-                            ))}
-                          </select>
-                          {busyId === m.id && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
-                        </div>
+                      <RoleBadge role={role} />
+                      {canEdit && (
+                        <DiscordLinkPicker
+                          userId={m.id}
+                          currentId={m.discordUserId ?? null}
+                          currentTag={m.discordTag ?? null}
+                        />
                       )}
+                      {canEdit && !isMe && <RoleSelector userId={m.id} current={role} />}
                     </li>
                   );
                 })}

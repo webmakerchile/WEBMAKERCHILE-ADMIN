@@ -158,3 +158,55 @@ describe("roles del equipo", () => {
     }
   });
 });
+
+describe("cada rol tiene su propia pantalla", () => {
+  it("ningún rol comparte pantalla de inicio con otro", () => {
+    // Cada área escala por su cuenta: si dos roles aterrizaran en la misma
+    // pantalla, darle una función específica a uno se la daría al otro.
+    const homes = TEAM_ROLES.map(r => roleHome(r));
+    expect(new Set(homes).size, `hay pantallas compartidas: ${homes.join(", ")}`).toBe(TEAM_ROLES.length);
+  });
+
+  it("la pantalla de inicio de cada rol le pertenece", () => {
+    for (const role of TEAM_ROLES) {
+      const home = roleHome(role);
+      expect(canAccessRoute(role, home), `${role} no entra a su propia pantalla`).toBe(true);
+      // Nadie más debería aterrizar ahí por defecto.
+      const otros = TEAM_ROLES.filter(r => r !== role && r !== "ceo");
+      for (const otro of otros) {
+        expect(roleHome(otro), `${otro} aterriza en la pantalla de ${role}`).not.toBe(home);
+      }
+    }
+  });
+
+  it("todos pueden ver su jornada y sus tickets", () => {
+    for (const role of TEAM_ROLES) {
+      expect(canAccessRoute(role, "/mi-dia"), `${role} no ve su jornada`).toBe(true);
+      expect(canAccessRoute(role, "/tickets"), `${role} no ve sus tickets`).toBe(true);
+    }
+  });
+});
+
+describe("qué NO debe ver cada rol", () => {
+  it("las credenciales de las redes son solo de dirección", () => {
+    // /ajustes guarda claves de API y gestión de usuarios.
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo")) {
+      expect(canAccessRoute(role, "/ajustes"), `${role} no debería ver /ajustes`).toBe(false);
+    }
+    expect(canAccessRoute("ceo", "/ajustes")).toBe(true);
+  });
+
+  it("nadie entra a la pantalla de otra área por accidente", () => {
+    const ajenas: [string, string][] = [
+      ["editora", "/redes"], ["editora", "/marketing"], ["editora", "/ventas"],
+      ["social", "/edicion"], ["social", "/rrhh"], ["social", "/reportes"],
+      ["dev", "/edicion"], ["dev", "/redes"], ["dev", "/reportes"],
+      ["contador", "/edicion"], ["contador", "/redes"], ["contador", "/marketing"],
+      ["rrhh", "/edicion"], ["rrhh", "/redes"], ["rrhh", "/ventas"],
+      ["ventas", "/edicion"], ["ventas", "/rrhh"],
+    ];
+    for (const [role, ruta] of ajenas) {
+      expect(canAccessRoute(role, ruta), `${role} no debería entrar a ${ruta}`).toBe(false);
+    }
+  });
+});

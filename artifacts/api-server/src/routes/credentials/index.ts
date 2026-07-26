@@ -1,4 +1,5 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
+import { normalizeRole } from "@workspace/roles";
 import {
   getCredential,
   setCredential,
@@ -8,6 +9,19 @@ import {
 } from "../../lib/credentials";
 
 const router: IRouter = Router();
+
+/**
+ * Las claves de API de las redes son del dueño de las cuentas: leerlas,
+ * sobrescribirlas o borrarlas queda solo en dirección. Antes cualquier sesión
+ * autenticada podía tocarlas, incluida gente que no administra nada.
+ */
+function soloDireccion(req: Request, res: Response, next: NextFunction): void {
+  const u = req.user as { role?: string; teamRole?: string } | undefined;
+  if (u?.role === "superadmin" || normalizeRole(u?.teamRole) === "ceo") { next(); return; }
+  res.status(403).json({ error: "Solo la dirección puede gestionar las credenciales" });
+}
+
+router.use("/credentials", soloDireccion);
 
 const CREDENTIAL_LABELS: Record<string, { label: string; network: string; secret: boolean }> = {
   TIKTOK_CLIENT_KEY:          { label: "Client Key",         network: "tiktok",    secret: false },

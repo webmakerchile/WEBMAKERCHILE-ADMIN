@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
 import { eq, desc, ne } from "drizzle-orm";
-import { AREAS, type Area } from "@workspace/areas";
+import { TEAM_ROLES, isTeamRole, normalizeRole } from "@workspace/roles";
 
 const router: IRouter = Router();
 
@@ -33,11 +33,14 @@ router.get("/admin/users", async (req: Request, res: Response) => {
       approvalStatus: users.approvalStatus,
       createdAt: users.createdAt,
       lastLoginAt: users.lastLoginAt,
+      discordUserId: users.discordUserId,
+      discordTag: users.discordTag,
     })
     .from(users)
     .where(ne(users.id, me.id))
     .orderBy(desc(users.createdAt));
-  res.json(rows);
+  // Rol normalizado: da igual qué vocabulario haya quedado en la base.
+  res.json(rows.map(r => ({ ...r, teamRole: normalizeRole(r.teamRole, r.role === "superadmin") })));
 });
 
 router.patch("/admin/users/:id/approval", async (req: Request, res: Response) => {
@@ -70,30 +73,35 @@ router.patch("/admin/users/:id/approval", async (req: Request, res: Response) =>
 
 /**
  * PATCH /admin/users/:id/team-role
- * Assigns an area to a user. Only CEO or superadmin can call this.
- * Valid values: ceo | ejecutivo | edicion | marketing
+ *
+ * Asigna el ROL del equipo. Es el mismo campo y el mismo vocabulario que usa
+ * `/team/members/:id/role` desde Equipo: si cada pantalla escribiera valores
+ * distintos, cambiar el rol en una desharía lo hecho en la otra.
  */
 router.patch("/admin/users/:id/team-role", async (req: Request, res: Response) => {
   if (!isCeoOrSuperAdmin(req)) {
-    res.status(403).json({ error: "Solo el CEO o super-admin puede asignar áreas" });
+    res.status(403).json({ error: "Solo la dirección o el super-admin puede asignar roles" });
     return;
   }
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
 
   const me = req.user as any;
-  if (id === me.id) { res.status(400).json({ error: "No puedes cambiar tu propia área" }); return; }
+  if (id === me.id) { res.status(400).json({ error: "No puedes cambiar tu propio rol" }); return; }
 
   const body = req.body as { teamRole?: unknown };
-  const teamRole = typeof body.teamRole === "string" ? body.teamRole : "";
-  if (!(AREAS as readonly string[]).includes(teamRole)) {
-    res.status(400).json({ error: `Área inválida. Use: ${AREAS.join(", ")}` });
+  const raw = typeof body.teamRole === "string" ? body.teamRole : "";
+  // Se aceptan también los valores del vocabulario viejo de áreas: se guardan
+  // ya traducidos al rol, para no dejar mezclas en la base.
+  const teamRole = isTeamRole(raw) ? raw : (raw ? normalizeRole(raw) : "");
+  if (!teamRole || !isTeamRole(teamRole)) {
+    res.status(400).json({ error: `Rol inválido. Use: ${TEAM_ROLES.join(", ")}` });
     return;
   }
 
   const [updated] = await db
     .update(users)
-    .set({ teamRole: teamRole as Area })
+    .set({ teamRole })
     .where(eq(users.id, id))
     .returning({ id: users.id, email: users.email, teamRole: users.teamRole });
 
