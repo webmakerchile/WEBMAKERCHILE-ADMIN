@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { comments, reviews, users, videos } from "@workspace/db/schema";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createNotification } from "../../lib/notifications";
+import { handoffVideoApproved } from "../../lib/handoffs";
 import { TEAM_ROLES, canManageTeam, canReview, isTeamRole, normalizeRole } from "@workspace/roles";
 
 const router: IRouter = Router();
@@ -327,6 +328,11 @@ router.post("/content/videos/:videoId/reviews/decision", async (req, res) => {
     .update(videos)
     .set({ workflowStatus: wf, updatedAt: new Date() })
     .where(eq(videos.id, videoId));
+
+  if (decision === "approve") {
+    // Handoff: video aprobado → cola de redes con fecha sugerida (idempotente).
+    void handoffVideoApproved(videoId, me.id).catch((err) => console.error("[handoff video_aprobado]", err));
+  }
 
   // Notify the requester (if not the same person).
   if (active && active.requestedBy !== me.id) {

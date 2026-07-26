@@ -1603,6 +1603,18 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [projectCreatedContractIds, setProjectCreatedContractIds] = useState<Set<string>>(new Set());
   const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{ name: string; client: string; pendingPrefill: Record<string, string> } | null>(null);
   const newProjFromContractIdRef = useRef<string | null>(null);
+  // Playbooks: plantillas de proceso que generan tareas estándar al crear proyecto.
+  const [playbookId, setPlaybookId] = useState<string>("");
+  const { data: playbooksData } = useQuery<{ playbooks: Array<{ id: number; name: string; workType: string; archived: boolean; tasks: Array<{ title: string }> }> }>({
+    queryKey: ["hub-playbooks"],
+    queryFn: async () => {
+      const r = await fetch(`${DRIVE_API_BASE}/hub/playbooks`, { credentials: "include" });
+      if (!r.ok) throw new Error("playbooks");
+      return r.json();
+    },
+    enabled: sheet?.kind === "new-proj",
+    staleTime: 5 * 60_000,
+  });
   const lastScrumProjIdRef = useRef<string | null>(null);
   // Documento (cotización) del contrato abierto: borrador editable por el chat IA.
   const [docDraft, setDocDraft] = useState<WizData | null>(null);
@@ -1634,6 +1646,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       setProjNameDraft(hasPrefill ? (pf.name || "") : "");
       setProjPrefilledByAI(hasPrefill);
       newProjFromContractIdRef.current = pf.fromContractId || null;
+      setPlaybookId("");
       projPreFillRef.current = {}; // clear after reading so next fresh open starts blank
     }
     if (sheet?.kind === "contract") {
@@ -1911,11 +1924,34 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} onToast={onToast} />
       </div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={pf.notes || ""} /></div>
+      {(playbooksData?.playbooks?.filter(pb => !pb.archived).length ?? 0) > 0 && (
+        <div className="field">
+          <label>Playbook (tareas estándar)</label>
+          <select value={playbookId} onChange={e => setPlaybookId(e.target.value)}>
+            <option value="">Sin playbook</option>
+            {playbooksData!.playbooks.filter(pb => !pb.archived).map(pb => (
+              <option key={pb.id} value={String(pb.id)}>{pb.name} · {pb.tasks.length} tareas</option>
+            ))}
+          </select>
+        </div>
+      )}
       <button className="add-btn" onClick={() => {
         const name = projNameDraft.trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
         const fromCid = newProjFromContractIdRef.current || undefined;
-        onSave({ ...state, projects: [...state.projects, { id: uid(), name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, contractId: fromCid, createdAt: now, updatedAt: now }] });
+        const newProjId = uid();
+        onSave({ ...state, projects: [...state.projects, { id: newProjId, name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, contractId: fromCid, createdAt: now, updatedAt: now }] });
+        if (playbookId) {
+          // Genera las tareas estándar del playbook para el proyecto recién creado.
+          fetch(`${DRIVE_API_BASE}/hub/playbooks/${playbookId}/apply`, {
+            method: "POST", credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectRef: newProjId }),
+          }).then(async r => {
+            if (r.ok) { const d = await r.json(); onToast(`${d.created} tareas creadas desde el playbook`); onRefreshTasks?.(); }
+            else onToast("No se pudieron crear las tareas del playbook");
+          }).catch(() => onToast("No se pudieron crear las tareas del playbook"));
+        }
         if (fromCid) {
           setProjectCreatedContractIds(prev => new Set([...prev, fromCid]));
           newProjFromContractIdRef.current = null;
@@ -3695,6 +3731,114 @@ const emptySvcDraft = (category: string): SvcDraft => ({
   ],
 });
 
+/** Playbooks: plantillas de proceso por tipo de trabajo. Se administran junto al catálogo. */
+type PlaybookRow = { id: number; name: string; workType: string; description: string; archived: boolean; tasks: Array<{ title: string; notes?: string; priority?: string }> };
+
+function PlaybooksManager({ canManage, showToast }: { canManage: boolean; showToast: (msg: string) => void }) {
+  const [rows, setRows] = useState<PlaybookRow[] | null>(null);
+  const [editor, setEditor] = useState<{ id: number | null; name: string; workType: string; description: string; tasksText: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${HUB_API_BASE}/hub/playbooks`, { credentials: "include" });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      setRows(Array.isArray(data.playbooks) ? data.playbooks : []);
+    } catch { setRows([]); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    if (!editor) return;
+    const tasks = editor.tasksText.split("\n").map(l => l.trim()).filter(Boolean).map(l => ({ title: l.slice(0, 200) }));
+    if (!editor.name.trim()) { showToast("Ponle nombre al playbook"); return; }
+    setSaving(true);
+    try {
+      const res = await fetch(
+        editor.id === null ? `${HUB_API_BASE}/hub/playbooks` : `${HUB_API_BASE}/hub/playbooks/${editor.id}`,
+        {
+          method: editor.id === null ? "POST" : "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: editor.name.trim(), workType: editor.workType.trim(), description: editor.description.trim(), tasks }),
+        },
+      );
+      if (!res.ok) { const b = await res.json().catch(() => ({})); showToast(b.error || "No se pudo guardar"); return; }
+      setEditor(null); showToast("Playbook guardado"); load();
+    } finally { setSaving(false); }
+  };
+
+  const setArchivedPb = async (pb: PlaybookRow, archived: boolean) => {
+    const res = await fetch(`${HUB_API_BASE}/hub/playbooks/${pb.id}`, {
+      method: "PATCH", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    });
+    if (res.ok) { showToast(archived ? "Playbook archivado" : "Playbook restaurado"); load(); }
+    else showToast("No se pudo actualizar");
+  };
+
+  const active = (rows ?? []).filter(p => !p.archived);
+  const archived = (rows ?? []).filter(p => p.archived);
+
+  return (
+    <div className="svc-cat" style={{ marginTop: 28 }}>
+      <div className="svc-toolbar">
+        <div className="hint" style={{ flex: "1 1 240px" }}>
+          <b>Playbooks</b> — plantillas de proceso por tipo de trabajo. Al crear un proyecto puedes elegir uno y se generan sus tareas estándar.
+        </div>
+        {canManage && <button className="svc-new" onClick={() => setEditor({ id: null, name: "", workType: "", description: "", tasksText: "" })}>+ Nuevo playbook</button>}
+      </div>
+      {rows === null && <div className="empty-all">Cargando playbooks…</div>}
+      {rows !== null && active.length === 0 && <div className="empty-all">No hay playbooks activos.</div>}
+      {active.map(pb => (
+        <div key={pb.id} className="svc">
+          <div className="sh">
+            <h3>{pb.name} <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: "0.8em" }}>· {pb.tasks.length} tareas{pb.workType ? ` · ${pb.workType}` : ""}</span></h3>
+            {canManage && (
+              <div className="svc-acts">
+                <button className="svc-act" onClick={() => setEditor({ id: pb.id, name: pb.name, workType: pb.workType, description: pb.description, tasksText: pb.tasks.map(t => t.title).join("\n") })}>Editar</button>
+                <button className="svc-act" onClick={() => setArchivedPb(pb, true)}>Archivar</button>
+              </div>
+            )}
+          </div>
+          {pb.description && <div className="sd">{pb.description}</div>}
+          <div className="incl"><b>Tareas:</b> {pb.tasks.map(t => t.title).join(" · ")}</div>
+        </div>
+      ))}
+      {archived.length > 0 && canManage && (
+        <div style={{ marginTop: 10 }}>
+          {archived.map(pb => (
+            <div key={pb.id} className="svc" style={{ opacity: 0.55 }}>
+              <div className="sh"><h3>{pb.name} <span style={{ fontWeight: 400, fontSize: "0.8em" }}>(archivado)</span></h3>
+                <div className="svc-acts"><button className="svc-act" onClick={() => setArchivedPb(pb, false)}>Restaurar</button></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {editor && (
+        <div className="svc" style={{ border: "1px solid var(--accent, #ff7800)", marginTop: 12 }}>
+          <div className="field"><label>Nombre</label><input type="text" value={editor.name} onChange={e => setEditor({ ...editor, name: e.target.value })} placeholder="Ej: Sitio Web" /></div>
+          <div className="two field">
+            <div><label>Tipo de trabajo</label><input type="text" value={editor.workType} onChange={e => setEditor({ ...editor, workType: e.target.value })} placeholder="Sitio Web, Campaña…" /></div>
+            <div><label>Descripción</label><input type="text" value={editor.description} onChange={e => setEditor({ ...editor, description: e.target.value })} /></div>
+          </div>
+          <div className="field">
+            <label>Tareas estándar (una por línea)</label>
+            <textarea rows={8} value={editor.tasksText} onChange={e => setEditor({ ...editor, tasksText: e.target.value })} placeholder={"Kickoff con el cliente\nDiseño UI\nQA y publicación"} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="save" disabled={saving} onClick={save}>{saving ? "Guardando…" : "Guardar playbook"}</button>
+            <button className="svc-act" onClick={() => setEditor(null)}>Cancelar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SvcView({ canManage, showToast }: { canManage: boolean; showToast: (msg: string) => void }) {
   const [services, setServices] = useState<HubService[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -3953,6 +4097,8 @@ function SvcView({ canManage, showToast }: { canManage: boolean; showToast: (msg
           </div>
         </>
       )}
+
+      <PlaybooksManager canManage={canManage} showToast={showToast} />
     </div>
   );
 }
@@ -4838,6 +4984,10 @@ const TabIcons: Record<Tab, React.ReactNode> = {
 export default function EjecutivoPage() {
   const authUser = useAuth();
   const isAdmin = authUser?.role === "superadmin" || authUser?.role === "admin";
+  // "ejecutivo" es alias legacy de "ventas" (mismo criterio que normalizeRole en el backend).
+  const canManageSvc = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo";
+  // La pestaña Servicios/Playbooks la ven admins y quienes pueden gestionarla (ceo/ventas).
+  const canSeeSvc = isAdmin || canManageSvc;
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const storageKey = hubStorageKey(authUser?.id);
@@ -4951,11 +5101,11 @@ export default function EjecutivoPage() {
     };
     const scope = tabScope[tab];
     // La pestaña guardada puede no corresponder al rol (o al alcance del tablero).
-    if ((tab === "svc" && !isAdmin) || (scope && !scopes.includes(scope))) {
+    if ((tab === "svc" && !canSeeSvc) || (scope && !scopes.includes(scope))) {
       setTabRaw("dash");
       try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
     }
-  }, [tab, isAdmin, scopes]);
+  }, [tab, canSeeSvc, scopes]);
   const setTab = useCallback((t: Tab) => { setTabRaw(t); try { localStorage.setItem(LS_TAB, t); } catch { /* ignore */ } }, []);
   const navigate = useCallback((t: Tab) => { setTab(t); window.scrollTo(0, 0); }, [setTab]);
 
@@ -4978,7 +5128,6 @@ export default function EjecutivoPage() {
   }, []);
 
   const canManageTasks = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
-  const canManageSvc = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas";
 
   const handleDeleteTask = useCallback((id: number) => {
     setConfirm({
@@ -5066,7 +5215,7 @@ export default function EjecutivoPage() {
     { id: "notes" as Tab, cnt: state.notes.length },
     { id: "contracts" as Tab, cnt: state.contracts.length },
     { id: "drive" as Tab },
-    ...(isAdmin ? [{ id: "svc" as Tab }] : []),
+    ...(canSeeSvc ? [{ id: "svc" as Tab }] : []),
   ] as { id: Tab; cnt?: number }[]).filter(t => {
     const scope = TAB_SCOPE[t.id];
     return !scope || scopes.includes(scope);
@@ -5193,7 +5342,7 @@ export default function EjecutivoPage() {
             {tab === "drive" && <HubDriveView />}
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
             {tab === "att" && <AttendanceView />}
-            {tab === "svc" && isAdmin && <SvcView canManage={canManageSvc} showToast={showToast} />}
+            {tab === "svc" && canSeeSvc && <SvcView canManage={canManageSvc} showToast={showToast} />}
           </div>
 
           {/* ---- MOBILE FAB: crear según el tab activo ---- */}

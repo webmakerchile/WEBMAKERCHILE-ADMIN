@@ -148,6 +148,13 @@
       "when": 1785715200000,
       "tag": "0025_notify_discord",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785801600000,
+      "tag": "0026_playbooks_handoffs",
+      "breakpoints": true
     }
   ]
 }

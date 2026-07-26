@@ -11,6 +11,7 @@ import { mergeCollection, type HubEntity } from "../../lib/hub-merge";
 import { resolveBoard, saveBoard } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
 import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
+import { handoffContractClosed, handoffProjectDelivered } from "../../lib/handoffs";
 
 const router: IRouter = Router();
 
@@ -184,6 +185,19 @@ router.patch("/hub", async (req: Request, res: Response) => {
             action: "status_change",
             detail: { from: stateOf(old), to: stateOf(e) },
           });
+        }
+        // Handoffs automáticos entre áreas (idempotentes vía handoff_log):
+        // venta cerrada → proyecto+tareas; proyecto entregado → cobranza.
+        const becameNow = (target: string) => stateOf(e) === target && (!old || stateOf(old) !== target);
+        if (scope === "contracts" && becameNow("activo")) {
+          void handoffContractClosed(e as Record<string, unknown>, me.id).catch((err) =>
+            console.error("[handoff venta_cerrada]", err),
+          );
+        }
+        if (scope === "projects" && becameNow("done")) {
+          void handoffProjectDelivered(e as Record<string, unknown>, me.id).catch((err) =>
+            console.error("[handoff proyecto_entregado]", err),
+          );
         }
       }
     }

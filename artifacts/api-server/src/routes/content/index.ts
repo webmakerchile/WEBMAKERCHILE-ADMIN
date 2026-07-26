@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { videos, users, campaigns, templates } from "@workspace/db/schema";
 import { eq, desc, lte, and, or, inArray, ilike, isNotNull, sql } from "drizzle-orm";
 import { recordActivity } from "../../lib/activity";
+import { handoffVideoApproved } from "../../lib/handoffs";
 
 /**
  * Resolve a finite numeric library reference (campaignId/templateId) to either
@@ -906,6 +907,10 @@ router.patch("/content/videos/:id", async (req, res) => {
         action: body.status === "published" ? "completed" : "status_change",
         detail: { field: "status", from: prev.status, to: body.status },
       });
+    }
+    if (body.workflowStatus === "aprobado" && prev.workflowStatus !== "aprobado") {
+      // Handoff: video aprobado → cola de redes con fecha sugerida (idempotente).
+      void handoffVideoApproved(id, actorId).catch((err) => console.error("[handoff video_aprobado]", err));
     }
     if (body.workflowStatus !== undefined && body.workflowStatus !== prev.workflowStatus) {
       recordActivity({
