@@ -47,6 +47,9 @@ router.get("/team/members", async (req, res) => {
       picture: users.picture,
       teamRole: users.teamRole,
       role: users.role,
+      discordUserId: users.discordUserId,
+      discordTag: users.discordTag,
+      approvalStatus: users.approvalStatus,
     })
     .from(users)
     .orderBy(asc(users.id));

@@ -8,7 +8,8 @@ import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle, ShieldOff } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
-import { canAccessRoute, roleHome, type TeamRole } from "@workspace/roles";
+import { canAccessRoute, roleHome, canManageTeam, type TeamRole } from "@workspace/roles";
+import { ViewAsProvider, useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { useEffect } from "react";
 import { areaCanAccessPage, toArea, AREA_HOME, type Area } from "@workspace/areas";
 
@@ -118,10 +119,14 @@ function PageLoader() {
  */
 function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   const user = useAuth();
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
   const [location, setLocation] = useLocation();
-  const isSuperAdmin = user?.role === "superadmin";
-  const allowed = !user || canAccessRoute(user.teamRole, location, isSuperAdmin);
-  const home = roleHome(user?.teamRole, isSuperAdmin);
+  // Al simular otro rol, el atajo de superadmin no aplica: la gracia es ver
+  // exactamente lo que ve esa persona, con sus límites.
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
+  const allowed = !user || canAccessRoute(effectiveRole, location, isSuperAdmin);
+  const home = roleHome(effectiveRole, isSuperAdmin);
 
   useEffect(() => {
     if (!allowed && location !== home) setLocation(home, { replace: true });
@@ -317,8 +322,13 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={user}>
-      <RouteTracker />
-      {children}
+      <ViewAsProvider
+        realRole={user.teamRole}
+        canSimulate={canManageTeam(user.teamRole, user.role === "superadmin")}
+      >
+        <RouteTracker />
+        {children}
+      </ViewAsProvider>
     </AuthContext.Provider>
   );
 }

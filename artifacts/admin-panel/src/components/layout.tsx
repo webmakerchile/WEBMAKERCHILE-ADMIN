@@ -34,6 +34,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
+import { useEffectiveRole, useViewAs } from "@/lib/view-as";
+import { ViewAsBar } from "@/components/view-as-bar";
 
 type NavItem = { href: string; icon: LucideIcon; label: string; tour: string };
 type NavSection = { label: string; items: NavItem[] };
@@ -56,7 +58,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t, toggleLang, lang } = useLang();
 
-  const isSuperAdmin = user?.role === "superadmin";
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
+  // Simulando un rol, el superadmin no se salta nada: se ve el panel real de esa persona.
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
   /** Cada rol solo ve en el menú las rutas que su rol permite. */
   const allRoleSections: NavSection[] = [
     {
@@ -105,7 +110,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const navSections: NavSection[] = allRoleSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canAccessRoute(user?.teamRole, item.href, isSuperAdmin)),
+      items: section.items.filter((item) => canAccessRoute(effectiveRole, item.href, isSuperAdmin)),
     }))
     .filter((section) => section.items.length > 0);
 
@@ -372,6 +377,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
         </AnimatePresence>
 
+        <ViewAsBar />
+
         <main className="flex-1 relative overflow-y-auto overflow-x-hidden bg-background">
           <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] pointer-events-none bg-halo-1" />
           <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full blur-[100px] pointer-events-none bg-halo-2" />
@@ -420,7 +427,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <InstallBanner />
 
       {/* Hub Ejecutivo FAB — solo para roles con acceso al Hub, y nunca dentro del propio Hub */}
-      {location !== "/ejecutivo" && canAccessRoute(user?.teamRole, "/ejecutivo", isSuperAdmin) && <Link
+      {location !== "/ejecutivo" && canAccessRoute(effectiveRole, "/ejecutivo", isSuperAdmin) && <Link
         href="/ejecutivo"
         title={t.navHub}
         className="fixed bottom-20 lg:bottom-6 right-6 z-50 flex items-center gap-2 px-3.5 py-2 rounded-xl text-[0.8125rem] font-medium transition-all duration-150 bg-card/90 hover:bg-card border border-foreground/15 hover:border-primary/40 text-muted-foreground hover:text-foreground backdrop-blur-xl shadow-lg shadow-black/30 hover:shadow-primary/10"

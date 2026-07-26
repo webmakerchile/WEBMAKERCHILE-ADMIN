@@ -209,6 +209,11 @@ export const ROLES: Record<TeamRole, RoleDef> = {
 const LEGACY_ALIASES: Record<string, TeamRole> = {
   reviewer: "ceo",
   editor: "editora",
+  // Vocabulario de "áreas" que convivió con los roles: cualquier valor viejo
+  // guardado en users.team_role se resuelve al rol equivalente, para que
+  // Equipo, Ajustes y el Hub muestren siempre lo mismo.
+  ejecutivo: "ventas",
+  edicion: "editora",
 };
 
 export const DEFAULT_ROLE: TeamRole = "editora";

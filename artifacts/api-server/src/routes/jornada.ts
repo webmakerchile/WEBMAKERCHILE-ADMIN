@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { hubDayLogs, hubWorkSessions, users } from "@workspace/db/schema";
 import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { z } from "zod";
+import { normalizeRole } from "@workspace/roles";
 import {
   reportToChannel,
   discordConfigured,
@@ -72,15 +73,15 @@ export function sessionMinutes(
 type Me = { id: number; role?: string; teamRole?: string; name?: string | null; email?: string };
 const me = (req: Request) => req.user as Me;
 
-/** CEO, Ejecutivo y RRHH (o superadmin) supervisan la asistencia del equipo. */
+/**
+ * Quién supervisa la asistencia del equipo: dirección, ventas y RRHH.
+ * Se resuelve con el rol normalizado — así da igual si en la base quedó
+ * guardado un valor del vocabulario viejo de áreas.
+ */
 function canOversee(req: Request): boolean {
   const u = me(req);
-  return (
-    u.role === "superadmin" ||
-    u.teamRole === "ceo" ||
-    u.teamRole === "ejecutivo" ||
-    u.teamRole === "rrhh"
-  );
+  const role = normalizeRole(u.teamRole, u.role === "superadmin");
+  return role === "ceo" || role === "ventas" || role === "rrhh";
 }
 
 function isUniqueViolation(err: unknown): boolean {
