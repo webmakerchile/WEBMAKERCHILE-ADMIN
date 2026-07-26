@@ -40,13 +40,13 @@ const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
 const AjustesPage = lazy(() => import("./pages/ajustes"));
 const EjecutivoPage = lazy(() => import("./pages/ejecutivo"));
 const ReportesPage = lazy(() => import("./pages/reportes"));
-const VentasPage = lazy(() => import("./pages/ventas"));
 const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
 const RrhhPage = lazy(() => import("./pages/rrhh"));
 const TicketsPage = lazy(() => import("./pages/tickets"));
 const EdicionPage = lazy(() => import("./pages/edicion"));
 const RedesPage = lazy(() => import("./pages/redes"));
 const MarketingPage = lazy(() => import("./pages/marketing"));
+const MetasPage = lazy(() => import("./pages/metas"));
 const MiDiaPage = lazy(() => import("./pages/mi-dia"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
@@ -440,9 +440,6 @@ function Router() {
       <Route path="/reportes">
         <RouteShell name="reportes"><ReportesPage /></RouteShell>
       </Route>
-      <Route path="/ventas">
-        <RouteShell name="ventas"><VentasPage /></RouteShell>
-      </Route>
       <Route path="/mis-tareas">
         <RouteShell name="mis-tareas"><MisTareasPage /></RouteShell>
       </Route>
@@ -460,6 +457,9 @@ function Router() {
       </Route>
       <Route path="/marketing">
         <RouteShell name="marketing"><MarketingPage /></RouteShell>
+      </Route>
+      <Route path="/metas">
+        <RouteShell name="metas"><MetasPage /></RouteShell>
       </Route>
       <Route component={NotFound} />
     </Switch>

@@ -127,6 +127,13 @@
       "when": 1785369600000,
       "tag": "0021_tickets",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785542400000,
+      "tag": "0023_goals_nav",
+      "breakpoints": true
     }
   ]
 }

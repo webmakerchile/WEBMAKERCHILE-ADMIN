@@ -48,6 +48,12 @@ export const users = pgTable("users", {
    * 'rejected' = access denied. Emails in ALLOWED_ADMIN_EMAILS env are auto-approved.
    */
   approvalStatus: text("approval_status").notNull().default("pending"),
+  /**
+   * Secciones del menú que esta persona decidió ocultar (rutas separadas por
+   * coma). Es preferencia visual propia: no cambia permisos, solo limpia su
+   * barra lateral.
+   */
+  navHidden: text("nav_hidden").notNull().default(""),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at").defaultNow().notNull(),
   /** ID de la cuenta de Discord emparejada (verificación de asistencia por canal de voz). */

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -79,6 +79,128 @@ export function useAnalytics(days = 7) {
     },
     staleTime: 5 * 60_000,
     retry: 1,
+  });
+}
+
+/* ------------------------------------------------------------------
+   Escritura.
+
+   Las tres pantallas de contenido dejaron de ser tableros de lectura: cada
+   rol actúa desde la suya sin pasar por el gestor de videos. Todas las
+   mutaciones invalidan la MISMA clave, así Edición, Redes y Marketing ven el
+   cambio en el momento en que ocurre.
+   ------------------------------------------------------------------ */
+
+async function apiJson<T>(path: string, init: RequestInit): Promise<T> {
+  const r = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!r.ok) {
+    const e = (await r.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error || "No se pudo guardar el cambio");
+  }
+  return r.json() as Promise<T>;
+}
+
+/** Invalida todo lo que depende de los videos (lista, calendario, métricas). */
+function useContenidoRefresh() {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: ["/api/content/videos"] });
+    void qc.invalidateQueries({ queryKey: ["reviews-pending"] });
+    void qc.invalidateQueries({ queryKey: ["analytics-summary"] });
+  };
+}
+
+/** Campos que las pantallas de área pueden escribir sobre un video. */
+export interface VideoPatch {
+  title?: string;
+  description?: string | null;
+  workflowStatus?: WorkflowStatus;
+  status?: string;
+  scheduledAt?: string | null;
+  youtubeTitle?: string | null;
+  tiktokDescription?: string | null;
+  instagramDescription?: string | null;
+  linkedinDescription?: string | null;
+  xDescription?: string | null;
+  tiktokStatus?: string | null;
+  instagramStatus?: string | null;
+  youtubeStatus?: string | null;
+  linkedinStatus?: string | null;
+  xStatus?: string | null;
+  facebookStatus?: string | null;
+}
+
+export function usePatchVideo() {
+  const refresh = useContenidoRefresh();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: VideoPatch }) =>
+      apiJson<ContentVideo>(`/content/videos/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    onSuccess: refresh,
+  });
+}
+
+export function useCreateVideo() {
+  const refresh = useContenidoRefresh();
+  return useMutation({
+    // `description` es obligatorio en el esquema de creación: se manda vacío
+    // cuando solo hay título, que es como nace un video en la mesa de edición.
+    mutationFn: (body: { title: string; description?: string }) =>
+      apiJson<ContentVideo>("/content/videos", {
+        method: "POST",
+        body: JSON.stringify({ description: "", ...body }),
+      }),
+    onSuccess: refresh,
+  });
+}
+
+/** Pide revisión de un video: lo deja "en revisión" y avisa al revisor. */
+export function useRequestReview() {
+  const refresh = useContenidoRefresh();
+  return useMutation({
+    mutationFn: ({ videoId, assignedTo, message }: { videoId: number; assignedTo: number; message?: string }) =>
+      apiJson<{ id: number }>(`/content/videos/${videoId}/reviews`, {
+        method: "POST",
+        body: JSON.stringify({ assignedTo, message: message || null }),
+      }),
+    onSuccess: refresh,
+  });
+}
+
+/** Aprueba o pide cambios. Aprobar deja el video listo para programar. */
+export function useReviewDecision() {
+  const refresh = useContenidoRefresh();
+  return useMutation({
+    mutationFn: ({ videoId, decision, message }: { videoId: number; decision: "approve" | "request_changes"; message?: string }) =>
+      apiJson<{ ok: boolean; workflowStatus: WorkflowStatus }>(`/content/videos/${videoId}/reviews/decision`, {
+        method: "POST",
+        body: JSON.stringify({ decision, message: message || null }),
+      }),
+    onSuccess: refresh,
+  });
+}
+
+export interface TeamMemberLite {
+  id: number;
+  name: string | null;
+  email: string;
+  teamRole: string;
+  approvalStatus: string;
+}
+
+/** Equipo aprobado, para elegir a quién se le pide la revisión. */
+export function useTeamMembers() {
+  return useQuery<TeamMemberLite[]>({
+    queryKey: ["team-members"],
+    queryFn: async () => {
+      const r = await fetch(`${API_BASE}/team/members`, { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    staleTime: 5 * 60_000,
   });
 }
 

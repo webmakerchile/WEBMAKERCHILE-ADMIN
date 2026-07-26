@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { hubServices, type HubServiceTier } from "@workspace/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { normalizeRole } from "@workspace/roles";
 
 /**
  * Catálogo de servicios del Hub Ejecutivo.

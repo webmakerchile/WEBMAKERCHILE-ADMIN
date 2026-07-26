@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { HubScope } from "@workspace/roles";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -27,12 +27,37 @@ export interface HubBrief {
   generatedAt?: number;
 }
 
+/** Estados de cobranza (deben coincidir con COBRO_STATES del API). */
+export const COBRO_STATES = ["pendiente", "facturado", "pagado", "incobrable"] as const;
+export type CobroEstado = (typeof COBRO_STATES)[number];
+
+export const COBRO_STYLE: Record<CobroEstado, { label: string; className: string }> = {
+  pendiente: { label: "Por facturar", className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20" },
+  facturado: { label: "Facturado", className: "bg-sky-500/10 text-sky-400 border-sky-500/20" },
+  pagado: { label: "Pagado", className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  incobrable: { label: "Incobrable", className: "bg-red-500/10 text-red-400 border-red-500/20" },
+};
+
+/**
+ * Seguimiento de cobranza. Lo lleva contabilidad con un endpoint acotado: puede
+ * marcar facturado/pagado sin tocar precios ni alcance del contrato.
+ */
+export interface HubCobro {
+  estado: CobroEstado;
+  factura: string;
+  fechaPago: string;
+  nota: string;
+  updatedAt?: number;
+  by?: string;
+}
+
 export interface HubContract {
   id: string; title: string; client: string; value: string; status: ContractStatus;
   signedAt: string; expiresAt: string; notes: string;
   createdAt: number; updatedAt: number;
   pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; doc?: HubDoc;
   brief?: HubBrief; briefUrl?: string; briefTitle?: string;
+  cobro?: HubCobro;
   /** El servidor lo marca cuando censuró los montos para este rol. */
   moneyRedacted?: boolean;
 }
@@ -84,6 +109,30 @@ export function useHubOwner() {
       return r.json();
     },
     staleTime: 60_000,
+  });
+}
+
+/** Marca facturado/pagado un contrato sin poder tocar su contenido comercial. */
+export function useCobroMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ contractId, cobro }: { contractId: string; cobro: Omit<HubCobro, "updatedAt" | "by"> }) => {
+      const r = await fetch(`${API_BASE}/hub/contracts/${encodeURIComponent(contractId)}/cobro`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cobro }),
+      });
+      if (!r.ok) {
+        const e = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(e.error || "No se pudo guardar la cobranza");
+      }
+      return r.json() as Promise<{ ok: boolean; cobro: HubCobro }>;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hub-owner"] });
+      void qc.invalidateQueries({ queryKey: ["hub-board"] });
+    },
   });
 }
 

@@ -28,12 +28,14 @@ import calendarRouter from "./calendar";
 import hubRouter from "./hub";
 import hrRouter from "./hr";
 import ticketsRouter from "./tickets";
+import goalsRouter from "./goals";
 import hubTasksRouter from "./hub/tasks";
 import hubServicesRouter from "./hub/services";
 import jornadaRouter from "./jornada";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
 import { requireArea } from "../lib/require-area";
+import { hubNeedsAreaGate } from "../lib/hub-gate";
 
 const router: IRouter = Router();
 
@@ -83,12 +85,20 @@ router.use(jornadaRouter);
 // Hub routes: ejecutivo area only
 // hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y
 // /hub/services/* NO queden bajo el middleware CEO (gestión gateada por ruta).
-router.use("/hub", requireArea("ceo", "ejecutivo", "rrhh"));
+//
+// El tablero en sí (`/hub` y `/hub/owner`) lo gatea el ROL, no el área: ver
+// lib/hub-gate.ts. El resto de /hub sigue con el gate por área.
+const hubAreaGate = requireArea("ceo", "ejecutivo", "rrhh");
+router.use("/hub", (req, res, next) => {
+  if (!hubNeedsAreaGate(req.path)) { next(); return; }
+  hubAreaGate(req, res, next);
+});
 router.use(hubTasksRouter);
 router.use(hubServicesRouter);
 router.use(hubRouter);
 router.use(hrRouter);
 router.use(ticketsRouter);
+router.use(goalsRouter);
 
 // Cotizaciones: generador de cotizaciones PDF (hub ejecutivo)
 router.use("/cotizaciones", requireArea("ceo", "ejecutivo"));

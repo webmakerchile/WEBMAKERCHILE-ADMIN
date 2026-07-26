@@ -1,18 +1,30 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
 import {
-  useVideos, useAnalytics, publishedNetworks, WORKFLOW_META, fmtFecha, fmtNumero,
-  NETWORKS, NETWORK_LABELS, type ContentVideo, type Network, type WorkflowStatus,
+  useVideos, useAnalytics, usePatchVideo, publishedNetworks, WORKFLOW_META, fmtFecha, fmtNumero,
+  NETWORKS, NETWORK_LABELS, type ContentVideo, type Network, type WorkflowStatus, type VideoPatch,
 } from "@/lib/contenido";
 import {
   Loader2, AlertTriangle, CalendarClock, Users2, Sparkles, MessageSquareText,
-  ArrowRight, Plus, Eye, Heart, UserPlus, Send, CircleAlert,
+  ArrowRight, Plus, Eye, Heart, UserPlus, Send, CircleAlert, CalendarPlus,
+  CalendarX, CheckCheck,
 } from "lucide-react";
+
+/** `datetime-local` habla en hora local; la API en ISO. */
+function aInputLocal(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 /**
  * Centro de Redes Sociales.
@@ -30,6 +42,124 @@ function inicioSemana(): Date {
   const dow = (hoy.getDay() + 6) % 7;
   const lunes = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - dow);
   return lunes;
+}
+
+/**
+ * Control de fecha de una publicación.
+ *
+ * Quien lleva las redes decide CUÁNDO sale cada cosa: esa decisión tiene que
+ * poder tomarse aquí, no en otra pantalla. Programar deja el video en
+ * "programado" para que el scheduler lo tome; quitar la fecha lo devuelve a
+ * aprobado sin borrar nada del trabajo de edición.
+ */
+function ControlFecha({ video, compacto = false }: { video: ContentVideo; compacto?: boolean }) {
+  const patch = usePatchVideo();
+  const { toast } = useToast();
+  const [fecha, setFecha] = useState(() => aInputLocal(video.scheduledAt));
+  const [abierto, setAbierto] = useState(false);
+
+  const aplicar = (cambios: VideoPatch, titulo: string) => {
+    patch.mutate({ id: video.id, patch: cambios }, {
+      onSuccess: () => { setAbierto(false); toast({ title: titulo }); },
+      onError: e => toast({ title: "No se pudo guardar", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const programar = () => {
+    if (!fecha) return;
+    const d = new Date(fecha);
+    if (isNaN(d.getTime())) { toast({ title: "Fecha inválida", variant: "destructive" }); return; }
+    aplicar(
+      { scheduledAt: d.toISOString(), status: "scheduled", workflowStatus: "programado" },
+      video.scheduledAt ? "Reprogramado" : "Programado",
+    );
+  };
+
+  const quitar = () => {
+    setFecha("");
+    aplicar({ scheduledAt: null, status: "draft", workflowStatus: "aprobado" }, "Fecha quitada");
+  };
+
+  if (!abierto) {
+    return (
+      <button
+        onClick={() => setAbierto(true)}
+        className={`inline-flex items-center gap-1 rounded-lg border border-foreground/10 px-2 py-1 text-[11px] text-muted-foreground hover:text-primary hover:border-primary/30 transition-base ${compacto ? "" : "h-8"}`}
+      >
+        <CalendarPlus className="w-3 h-3" /> {video.scheduledAt ? "Reprogramar" : "Programar"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 w-full">
+      <input
+        type="datetime-local"
+        autoFocus
+        value={fecha}
+        onChange={e => setFecha(e.target.value)}
+        className="h-8 rounded-lg border border-foreground/15 bg-card/60 px-2 text-[11px] flex-1 min-w-[11rem]"
+      />
+      <Button size="sm" onClick={programar} disabled={!fecha || patch.isPending}>
+        {patch.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Guardar"}
+      </Button>
+      {video.scheduledAt && (
+        <button
+          onClick={quitar}
+          disabled={patch.isPending}
+          title="Quitar la fecha y devolverlo a aprobados"
+          className="h-8 w-8 rounded-lg border border-foreground/10 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-base"
+        >
+          <CalendarX className="w-3.5 h-3.5" />
+        </button>
+      )}
+      <button onClick={() => setAbierto(false)} className="text-[11px] text-muted-foreground hover:text-foreground px-1">
+        cancelar
+      </button>
+    </div>
+  );
+}
+
+/** Marca en qué redes salió realmente la publicación. */
+function MarcarPublicado({ video }: { video: ContentVideo }) {
+  const patch = usePatchVideo();
+  const { toast } = useToast();
+  const ya = publishedNetworks(video);
+
+  const marcar = (red: Network) => {
+    const key = `${red}Status` as keyof VideoPatch;
+    const publicada = ya.includes(red);
+    const cambios: VideoPatch = { [key]: publicada ? "pending" : "published" };
+    // En cuanto sale en alguna red el video está publicado: el estado global
+    // deja de ser "programado" para que no aparezca como atrasado.
+    if (!publicada) cambios.workflowStatus = "publicado";
+    patch.mutate({ id: video.id, patch: cambios }, {
+      onError: e => toast({ title: "No se pudo marcar", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {NETWORKS.map(n => {
+        const activa = ya.includes(n);
+        return (
+          <button
+            key={n}
+            onClick={() => marcar(n)}
+            disabled={patch.isPending}
+            title={activa ? `Desmarcar ${NETWORK_LABELS[n]}` : `Marcar publicado en ${NETWORK_LABELS[n]}`}
+            className={`px-1.5 py-0.5 rounded text-[10px] border transition-base ${
+              activa
+                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                : "border-foreground/10 text-muted-foreground hover:text-foreground hover:bg-foreground/5"
+            }`}
+          >
+            {NETWORK_LABELS[n]}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function RedesPage() {
@@ -109,13 +239,23 @@ export default function RedesPage() {
               <p className="text-sm font-semibold mb-2 flex items-center gap-2 text-red-400">
                 <CircleAlert className="w-4 h-4" /> Debieron salir y siguen sin publicarse
               </p>
-              <ul className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground mb-3">
+                Marca en qué red salió realmente, o dale una fecha nueva.
+              </p>
+              <ul className="space-y-2">
                 {atrasados.map(v => (
-                  <li key={v.id}>
-                    <Link href={`/schedule`} className="flex flex-wrap items-center gap-2 text-sm hover:underline">
-                      <span className="flex-1 min-w-[10rem] truncate">{v.title}</span>
+                  <li key={v.id} className="rounded-lg border border-foreground/10 bg-card/40 px-3 py-2 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1 min-w-[10rem] text-sm truncate">{v.title}</span>
                       <span className="text-[11px] text-red-400">{fmtFecha(v.scheduledAt)}</span>
-                    </Link>
+                      <ControlFecha video={v} compacto />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                        <CheckCheck className="w-3 h-3" /> salió en:
+                      </span>
+                      <MarcarPublicado video={v} />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -242,15 +382,13 @@ export default function RedesPage() {
                     Aprobados esperando fecha ({listasParaProgramar.length})
                   </p>
                   <p className="text-[11px] text-muted-foreground mb-3">
-                    Están listos y nadie los ha programado todavía.
+                    Están listos y nadie los ha programado todavía. Ponles fecha desde aquí.
                   </p>
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-2">
                     {listasParaProgramar.map(v => (
-                      <li key={v.id}>
-                        <Link href="/schedule" className="flex items-center gap-2 text-sm hover:underline">
-                          <span className="flex-1 truncate">{v.title}</span>
-                          <ArrowRight className="w-3 h-3 text-primary" />
-                        </Link>
+                      <li key={v.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-foreground/10 bg-card/40 px-3 py-2">
+                        <span className="flex-1 min-w-[10rem] text-sm truncate">{v.title}</span>
+                        <ControlFecha video={v} compacto />
                       </li>
                     ))}
                   </ul>
@@ -278,6 +416,8 @@ export default function RedesPage() {
                 );
               })}
             </div>
+
+            <MetasInline />
 
             <TicketsInline title="Lo que le pidieron a redes" />
           </>
@@ -307,6 +447,7 @@ function ProximaFila({ video }: { video: ContentVideo }) {
         </p>
       </div>
       <Badge className={meta.className}>{meta.label}</Badge>
+      <ControlFecha video={video} compacto />
     </li>
   );
 }

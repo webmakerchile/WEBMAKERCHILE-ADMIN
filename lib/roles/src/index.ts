@@ -41,6 +41,8 @@ export interface RoleDef {
   canManageTeam: boolean;
   /** Puede ver y editar las fichas laborales y aprobar accesos (RRHH). */
   canManagePeople: boolean;
+  /** Puede poner metas diarias, semanales o mensuales a otras personas. */
+  canAssignGoals: boolean;
   /** Puede aprobar contenido que está en revisión. */
   canReview: boolean;
   /**
@@ -90,7 +92,7 @@ export const TICKET_AREA_LABELS: Record<TicketArea, string> = {
  * `/ajustes` NO está aquí a propósito: guarda credenciales de API y gestión de
  * usuarios, así que es de dirección.
  */
-export const COMMON_ROUTES = ["/mi-dia", "/tickets", "/ayuda"] as const;
+export const COMMON_ROUTES = ["/mi-dia", "/metas", "/tickets", "/ayuda"] as const;
 
 export const ROLES: Record<TeamRole, RoleDef> = {
   ceo: {
@@ -101,6 +103,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["*"],
     canManageTeam: true,
     canManagePeople: true,
+    canAssignGoals: true,
     canReview: true,
     canSeeMoney: true,
     hubScopes: ALL_HUB_SCOPES,
@@ -115,6 +118,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["/edicion", "/videos", "/estudio", "/cover", "/transcriptor", "/drive", "/biblioteca", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
+    canAssignGoals: false,
     canReview: false,
     canSeeMoney: false,
     hubScopes: [],
@@ -129,6 +133,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["/redes", "/", "/schedule", "/cuentas", "/videos", "/historias", "/descripciones", "/insights", "/biblioteca", "/campanas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
+    canAssignGoals: false,
     canReview: false,
     canSeeMoney: false,
     hubScopes: [],
@@ -138,11 +143,12 @@ export const ROLES: Record<TeamRole, RoleDef> = {
   ventas: {
     id: "ventas",
     label: "Ejecutivo de ventas",
-    description: "Cartera de clientes, reuniones y contratos con sus cotizaciones.",
-    home: "/ventas",
-    routes: ["/ventas", "/ejecutivo", ...COMMON_ROUTES],
+    description: "Hub Ejecutivo: cartera, reuniones y contratos con sus cotizaciones.",
+    home: "/ejecutivo",
+    routes: ["/ejecutivo", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
+    canAssignGoals: true,
     canReview: false,
     canSeeMoney: true,
     hubScopes: ["contracts", "clients", "meetings", "projects"],
@@ -157,6 +163,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["/mis-tareas", "/ejecutivo", "/drive", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
+    canAssignGoals: false,
     canReview: false,
     canSeeMoney: false,
     hubScopes: ["projects", "tasks", "notes", "contracts"],
@@ -171,6 +178,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["/marketing", "/", "/insights", "/schedule", "/biblioteca", "/campanas", "/videos", "/historias", "/descripciones", "/cuentas", "/mis-tareas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
+    canAssignGoals: false,
     canReview: true,
     canSeeMoney: false,
     hubScopes: ["projects", "tasks", "clients", "contracts"],
@@ -185,6 +193,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["/rrhh", "/equipo", ...COMMON_ROUTES],
     canManageTeam: true,
     canManagePeople: true,
+    canAssignGoals: true,
     canReview: false,
     canSeeMoney: false,
     hubScopes: [],
@@ -199,6 +208,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     routes: ["/reportes", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
+    canAssignGoals: false,
     canReview: false,
     canSeeMoney: true,
     hubScopes: ["contracts"],
@@ -252,6 +262,11 @@ export function canManageTeam(role: unknown, isSuperAdmin = false): boolean {
 
 export function canManagePeople(role: unknown, isSuperAdmin = false): boolean {
   return roleDef(role, isSuperAdmin).canManagePeople;
+}
+
+/** ¿Puede este rol poner metas a otras personas? */
+export function canAssignGoals(role: unknown, isSuperAdmin = false): boolean {
+  return roleDef(role, isSuperAdmin).canAssignGoals;
 }
 
 export function canReview(role: unknown, isSuperAdmin = false): boolean {

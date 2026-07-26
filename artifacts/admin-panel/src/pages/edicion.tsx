@@ -4,22 +4,28 @@ import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { TicketsInline } from "@/components/tickets-inline";
+import { MetasInline } from "@/components/metas-inline";
+import { canReview } from "@workspace/roles";
 import {
-  useVideos, missingPieces, publishedNetworks, WORKFLOW_META, fmtFecha,
+  useVideos, useCreateVideo, usePatchVideo, useRequestReview, useTeamMembers,
+  missingPieces, publishedNetworks, WORKFLOW_META, fmtFecha,
   type ContentVideo, type WorkflowStatus,
 } from "@/lib/contenido";
 import {
   Loader2, AlertTriangle, Clapperboard, Image as ImageIcon, AudioLines,
-  ArrowRight, Clock, CheckCircle2, Film, ListVideo,
+  ArrowRight, Clock, CheckCircle2, Film, ListVideo, Plus, Send, X, Check,
+  ChevronDown, Pencil,
 } from "lucide-react";
 
 /**
  * Mesa de trabajo de Edición.
  *
  * La editora no necesita el tablero ejecutivo ni las métricas: necesita saber
- * qué video sigue y qué le falta a cada uno para poder cerrarse. Esta pantalla
- * está construida alrededor de esa pregunta.
+ * qué video sigue, qué le falta y poder cerrarlo sin salir de aquí. Por eso la
+ * pantalla escribe: crea videos, completa los textos que faltan y manda a
+ * revisión. El gestor paso a paso queda para lo pesado (archivo y portada).
  */
 
 type Cola = "pendientes" | "revision" | "listos" | "todos";
@@ -39,9 +45,26 @@ const HERRAMIENTAS = [
   { href: "/videos", icon: ListVideo, label: "Gestor de videos", desc: "Asistente paso a paso" },
 ];
 
+/** Textos que se pueden completar sin salir de esta pantalla. */
+const CAMPOS_TEXTO = [
+  { key: "youtubeTitle", label: "Título de YouTube", placeholder: "Título optimizado para YouTube", rows: 1 },
+  { key: "tiktokDescription", label: "Descripción TikTok", placeholder: "Gancho + hashtags", rows: 2 },
+  { key: "instagramDescription", label: "Descripción Instagram", placeholder: "Copy para el reel", rows: 2 },
+] as const;
+
 export default function EdicionPage() {
   const { data: videos = [], isLoading, error } = useVideos();
+  const { data: equipo = [] } = useTeamMembers();
+  const crear = useCreateVideo();
+  const { toast } = useToast();
   const [cola, setCola] = useState<Cola>("pendientes");
+  const [nuevo, setNuevo] = useState<string | null>(null);
+
+  /** Quién puede aprobar contenido: dirección y marketing. */
+  const revisores = useMemo(
+    () => equipo.filter(m => m.approvalStatus === "approved" && canReview(m.teamRole)),
+    [equipo],
+  );
 
   const clasificados = useMemo(() => {
     const pendientes = videos.filter(v => v.workflowStatus === "borrador");
@@ -72,15 +95,48 @@ export default function EdicionPage() {
     return clasificados.publicados.filter(v => new Date(v.updatedAt).getTime() >= hace7).length;
   }, [clasificados.publicados]);
 
+  const crearVideo = () => {
+    const title = (nuevo ?? "").trim();
+    if (!title) return;
+    crear.mutate({ title }, {
+      onSuccess: () => { setNuevo(null); toast({ title: "Video creado", description: "Quedó en borrador, listo para trabajarlo." }); },
+      onError: e => toast({ title: "No se pudo crear", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
-        <header>
-          <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Edición</h1>
-          <p className="text-muted-foreground text-xs sm:text-base">
-            Tu mesa de trabajo: qué video sigue, qué le falta y con qué herramienta cerrarlo.
-          </p>
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">Edición</h1>
+            <p className="text-muted-foreground text-xs sm:text-base">
+              Tu mesa de trabajo: qué video sigue, qué le falta y con qué herramienta cerrarlo.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setNuevo(nuevo === null ? "" : null)}>
+            <Plus className="w-4 h-4 mr-1.5" /> Nuevo video
+          </Button>
         </header>
+
+        {nuevo !== null && (
+          <Card className="bg-card/60 border-primary/30">
+            <CardContent className="p-4 flex flex-wrap gap-2">
+              <input
+                autoFocus
+                value={nuevo}
+                onChange={e => setNuevo(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") crearVideo(); if (e.key === "Escape") setNuevo(null); }}
+                placeholder="Título del video"
+                className="flex-1 min-w-[14rem] h-10 rounded-lg border border-foreground/15 bg-card/60 px-3 text-sm"
+              />
+              <Button size="sm" onClick={crearVideo} disabled={!nuevo.trim() || crear.isPending}>
+                {crear.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Check className="w-4 h-4 mr-1.5" /> Crear</>}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setNuevo(null)}><X className="w-4 h-4" /></Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Lo primero de la pantalla es lo primero del día: qué tomo ahora. */}
         {siguiente && (
@@ -145,6 +201,8 @@ export default function EdicionPage() {
           })}
         </div>
 
+        <MetasInline />
+
         <TicketsInline title="Lo que te pidieron" />
 
         {isLoading && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
@@ -183,7 +241,7 @@ export default function EdicionPage() {
                 </div>
               ) : (
                 <ul className="space-y-2">
-                  {visibles.map(v => <VideoFila key={v.id} video={v} />)}
+                  {visibles.map(v => <VideoFila key={v.id} video={v} revisores={revisores} />)}
                 </ul>
               )}
             </CardContent>
@@ -211,16 +269,16 @@ function FaltanChips({ video }: { video: ContentVideo }) {
   );
 }
 
-function VideoFila({ video }: { video: ContentVideo }) {
+interface Revisor { id: number; name: string | null; email: string }
+
+function VideoFila({ video, revisores }: { video: ContentVideo; revisores: Revisor[] }) {
   const meta = WORKFLOW_META[video.workflowStatus as WorkflowStatus] ?? WORKFLOW_META.borrador;
   const publicadas = publishedNetworks(video);
+  const [abierto, setAbierto] = useState(false);
 
   return (
-    <li>
-      <Link
-        href={`/videos?select=${video.id}`}
-        className="flex flex-wrap items-center gap-3 rounded-xl border border-foreground/10 bg-card/40 p-3 hover:border-primary/30 transition-base"
-      >
+    <li className="rounded-xl border border-foreground/10 bg-card/40">
+      <div className="flex flex-wrap items-center gap-3 p-3">
         {video.coverImageUrl ? (
           <img src={video.coverImageUrl} alt="" className="w-14 h-14 rounded-lg object-cover border border-foreground/10" />
         ) : (
@@ -241,7 +299,125 @@ function VideoFila({ video }: { video: ContentVideo }) {
           <span className="text-[11px] text-primary">{publicadas.length} red{publicadas.length === 1 ? "" : "es"}</span>
         )}
         <Badge className={meta.className}>{meta.label}</Badge>
-      </Link>
+        <button
+          onClick={() => setAbierto(!abierto)}
+          className="h-8 px-2 rounded-lg border border-foreground/10 text-[11px] text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-base inline-flex items-center gap-1"
+          title="Completar textos y enviar a revisión"
+        >
+          <Pencil className="w-3 h-3" /> Trabajar
+          <ChevronDown className={`w-3 h-3 transition-transform ${abierto ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+
+      {abierto && <PanelEdicion video={video} revisores={revisores} />}
     </li>
+  );
+}
+
+/**
+ * Panel de trabajo del video: los textos que faltan y el envío a revisión.
+ * El archivo y la portada siguen en el gestor — necesitan subida, no un input.
+ */
+function PanelEdicion({ video, revisores }: { video: ContentVideo; revisores: Revisor[] }) {
+  const patch = usePatchVideo();
+  const pedirRevision = useRequestReview();
+  const { toast } = useToast();
+
+  const [borrador, setBorrador] = useState<Record<string, string>>(() =>
+    Object.fromEntries(CAMPOS_TEXTO.map(c => [c.key, (video[c.key] as string | null) ?? ""])),
+  );
+  const [revisor, setRevisor] = useState<number | "">(revisores[0]?.id ?? "");
+  const [mensaje, setMensaje] = useState("");
+
+  const sucio = CAMPOS_TEXTO.some(c => borrador[c.key] !== ((video[c.key] as string | null) ?? ""));
+
+  const guardar = () => {
+    const cambios = Object.fromEntries(
+      CAMPOS_TEXTO
+        .filter(c => borrador[c.key] !== ((video[c.key] as string | null) ?? ""))
+        .map(c => [c.key, borrador[c.key] || null]),
+    );
+    if (Object.keys(cambios).length === 0) return;
+    patch.mutate({ id: video.id, patch: cambios }, {
+      onSuccess: () => toast({ title: "Textos guardados" }),
+      onError: e => toast({ title: "No se pudo guardar", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const enviar = () => {
+    if (typeof revisor !== "number") return;
+    pedirRevision.mutate({ videoId: video.id, assignedTo: revisor, message: mensaje }, {
+      onSuccess: () => { setMensaje(""); toast({ title: "Enviado a revisión", description: "Le llegó la notificación a quien tiene que aprobar." }); },
+      onError: e => toast({ title: "No se pudo enviar", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  const faltan = missingPieces(video);
+
+  return (
+    <div className="px-3 pb-3 pt-1 border-t border-foreground/10 space-y-3">
+      <div className="grid sm:grid-cols-2 gap-3">
+        {CAMPOS_TEXTO.map(c => (
+          <label key={c.key} className={c.rows > 1 ? "sm:col-span-1" : "sm:col-span-2"}>
+            <span className="text-[11px] text-muted-foreground">{c.label}</span>
+            <textarea
+              rows={c.rows}
+              value={borrador[c.key]}
+              onChange={e => setBorrador({ ...borrador, [c.key]: e.target.value })}
+              placeholder={c.placeholder}
+              className="mt-0.5 w-full rounded-lg border border-foreground/15 bg-card/60 px-2.5 py-1.5 text-xs resize-y"
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" onClick={guardar} disabled={!sucio || patch.isPending}>
+          {patch.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Guardar textos"}
+        </Button>
+        {(faltan.includes("portada") || faltan.includes("archivo de video")) && (
+          <Link href={`/videos?select=${video.id}`} className="text-[11px] text-amber-400 hover:underline">
+            Subir {faltan.filter(f => f === "portada" || f === "archivo de video").join(" y ")} en el gestor →
+          </Link>
+        )}
+      </div>
+
+      {video.workflowStatus === "borrador" && (
+        <div className="rounded-lg border border-purple-500/25 bg-purple-500/5 p-3 space-y-2">
+          <p className="text-[11px] text-purple-300 font-medium">Enviar a revisión</p>
+          {revisores.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground">
+              Nadie del equipo tiene permiso para aprobar contenido todavía. Pídele a dirección
+              que asigne el rol de Marketing o CEO a quien deba revisar.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={String(revisor)}
+                  onChange={e => setRevisor(Number(e.target.value))}
+                  className="h-8 rounded-lg border border-foreground/15 bg-card/60 px-2 text-xs flex-1 min-w-[10rem]"
+                >
+                  {revisores.map(r => <option key={r.id} value={r.id}>{r.name || r.email}</option>)}
+                </select>
+                <Button size="sm" onClick={enviar} disabled={pedirRevision.isPending || typeof revisor !== "number"}>
+                  {pedirRevision.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Send className="w-3.5 h-3.5 mr-1.5" /> Enviar</>}
+                </Button>
+              </div>
+              <input
+                value={mensaje}
+                onChange={e => setMensaje(e.target.value)}
+                placeholder="Mensaje para quien revisa (opcional)"
+                className="w-full h-8 rounded-lg border border-foreground/15 bg-card/60 px-2 text-xs"
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {video.workflowStatus === "en_revision" && (
+        <p className="text-[11px] text-purple-300">Ya está en revisión: esperando aprobación.</p>
+      )}
+    </div>
   );
 }
