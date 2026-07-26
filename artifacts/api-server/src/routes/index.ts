@@ -102,8 +102,8 @@ router.use(activityRouter);
 // hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y
 // /hub/services/* NO queden bajo el middleware CEO (gestión gateada por ruta).
 //
-// El tablero en sí (`/hub` y `/hub/owner`) lo gatea el ROL, no el área: ver
-// lib/hub-gate.ts. El resto de /hub sigue con el gate por área.
+// El tablero (`/hub`, `/hub/owner`) y las tareas (`/hub/tasks*`) los gatea el
+// ROL, no el área: ver lib/hub-gate.ts. El resto de /hub sigue por área.
 const hubAreaGate = requireArea("ceo", "ejecutivo", "rrhh");
 router.use("/hub", (req, res, next) => {
   if (!hubNeedsAreaGate(req.path)) { next(); return; }

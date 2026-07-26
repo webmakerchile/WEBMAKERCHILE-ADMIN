@@ -127,4 +127,10 @@ describe("gates de área del flujo de ventas (routes/index.ts)", () => {
     expect(AREA_API_PREFIXES.ejecutivo).toContain("/hub");
     expect(AREA_API_PREFIXES.ejecutivo).toContain("/cotizaciones");
   });
+
+  it("AREA_API_PREFIXES documenta /hub/tasks para las áreas transversales de tareas", () => {
+    expect(AREA_API_PREFIXES.marketing).toContain("/hub/tasks");
+    expect(AREA_API_PREFIXES.edicion).toContain("/hub/tasks");
+    expect(AREA_API_PREFIXES.rrhh).toContain("/hub/tasks");
+  });
 });

@@ -57,12 +57,12 @@ export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
     "/linkedin", "/x", "/facebook", "/drive", "/library",
     "/transcriber", "/calendar", "/ideas", "/onboarding",
     "/saved-views", "/connections", "/notifications", "/social",
-    "/credentials", "/settings",
+    "/credentials", "/settings", "/hub/tasks",
   ],
   marketing: [
     "/analytics", "/community", "/inspirations", "/library",
     "/calendar", "/connections", "/notifications", "/social",
-    "/credentials", "/settings",
+    "/credentials", "/settings", "/hub/tasks",
   ],
   rrhh: ["/hub/tasks"],
 };

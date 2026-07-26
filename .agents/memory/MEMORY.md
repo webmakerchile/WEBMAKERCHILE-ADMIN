@@ -11,3 +11,4 @@
 - [Render de portadas](cover-rendering.md) — librsvg pierde espacios en bordes de tspan (unir con &#160;); fuentes nix invisibles para fontconfig → empaquetar TTFs + FONTCONFIG_FILE al boot.
 - [Dirección de arte portadas](cover-art-direction.md) — estilo único aprobado: familia "estudio spotlight" (variantes de luz); utilería física real, jamás stickers ni símbolos flotantes.
 - [Prod build skew](prod-build-skew.md) — el usuario prueba solo en la app publicada; ante "permiso denegado" en prod, sospechar primero build viejo: publicar suele ser el fix.
+- [Gates de /hub: área vs rol](hub-area-gates.md) — el gate por área corre antes que los routers montados; abrir por rol exige eximir el path en hub-gate.ts; los tests de router no ven ese middleware.

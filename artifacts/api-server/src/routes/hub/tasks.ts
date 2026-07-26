@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { hubTasks, users, hubTaskActivity, hubTaskComments, type HubTaskRow, type HubChecklistItem, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
 import { eq, and, asc, desc, sql, gte, lte, isNull, or, ne } from "drizzle-orm";
 import { z } from "zod";
-import { normalizeRole } from "@workspace/roles";
+import { hubWriteScopesFor, normalizeRole } from "@workspace/roles";
 import { createNotification } from "../../lib/notifications";
 import { recordActivity } from "../../lib/activity";
 
@@ -26,6 +26,17 @@ function isCeoOrEjecutivo(req: Request): boolean {
 function isCeoOrSuperAdmin(req: Request): boolean {
   const u = me(req);
   return u.role === "superadmin" || normalizeRole(u.teamRole) === "ceo";
+}
+
+/**
+ * ¿Puede este rol crear tareas del tablero? Misma fuente de verdad que el Hub:
+ * roles con `hubWrite` ⊇ "tasks" (dirección, programador, marketing). Así el
+ * equipo crea sus tareas sin pedirle al CEO, y un cambio en lib/roles se
+ * refleja aquí solo.
+ */
+function canWriteTasks(req: Request): boolean {
+  const u = me(req);
+  return hubWriteScopesFor(u.teamRole, u.role === "superadmin").includes("tasks");
 }
 
 /**
@@ -190,6 +201,10 @@ async function fetchTaskWithUsers(taskId: number) {
 
 /* GET /hub/tasks/team-members — approved users for the assignee picker */
 router.get("/hub/tasks/team-members", async (req: Request, res: Response) => {
+  // Lista de asignables: solo quien gestiona el tablero o puede crear tareas.
+  if (!isCeoOrEjecutivo(req) && !canWriteTasks(req)) {
+    res.status(403).json({ error: "Sin acceso" }); return;
+  }
   try {
     // Regla del dueño: el dueño (superadmin) no aparece como asignable para
     // el resto del equipo — solo él puede asignarse tareas.
@@ -225,8 +240,8 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
 
     const conditions = [];
     if (!canManageAll) {
-      // edicion/marketing can only see their own assigned tasks (if they ever get access)
-      conditions.push(eq(hubTasks.assigneeId, user.id));
+      // Sin gestión total ves lo tuyo: tareas asignadas a ti o creadas por ti.
+      conditions.push(or(eq(hubTasks.assigneeId, user.id), eq(hubTasks.createdById, user.id))!);
     } else if (assigneeId) {
       const aid = parseInt(assigneeId, 10);
       if (!isNaN(aid)) conditions.push(eq(hubTasks.assigneeId, aid));
@@ -299,8 +314,8 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
 
 /* POST /hub/tasks */
 router.post("/hub/tasks", async (req: Request, res: Response) => {
-  if (!isCeoOrSuperAdmin(req)) {
-    res.status(403).json({ error: "Solo el CEO puede crear tareas" });
+  if (!canWriteTasks(req)) {
+    res.status(403).json({ error: "Tu rol no puede crear tareas" });
     return;
   }
   const parsed = createSchema.safeParse(req.body);
@@ -361,8 +376,8 @@ router.post("/hub/tasks", async (req: Request, res: Response) => {
 
 /* POST /hub/tasks/batch */
 router.post("/hub/tasks/batch", async (req: Request, res: Response) => {
-  if (!isCeoOrSuperAdmin(req)) {
-    res.status(403).json({ error: "Solo el CEO puede crear tareas en lote" });
+  if (!canWriteTasks(req)) {
+    res.status(403).json({ error: "Tu rol no puede crear tareas en lote" });
     return;
   }
   const parsed = batchCreateSchema.safeParse(req.body);
@@ -552,7 +567,7 @@ router.get("/hub/tasks/:id", async (req: Request, res: Response) => {
     const task = await fetchTaskWithUsers(id);
     if (!task) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
     const user = me(req);
-    if (!isCeoOrEjecutivo(req) && task.assigneeId !== user.id) {
+    if (!isCeoOrEjecutivo(req) && task.assigneeId !== user.id && task.createdById !== user.id) {
       res.status(403).json({ error: "Sin acceso" }); return;
     }
     res.json({ task });
@@ -574,13 +589,16 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
     const [existing] = await db.select().from(hubTasks).where(eq(hubTasks.id, id)).limit(1);
     if (!existing) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
 
-    if (!canManageAll && existing.assigneeId !== user.id) {
+    // Autonomía con límites: dirección/ventas/rrhh gestionan todo; quien creó
+    // la tarea la edita completa; el asignado que no la creó solo mueve etapa
+    // y marca checklist.
+    const canFullEdit = canManageAll || existing.createdById === user.id;
+    if (!canFullEdit && existing.assigneeId !== user.id) {
       res.status(403).json({ error: "Sin acceso" }); return;
     }
 
-    // Non-CEO/ejecutivo can only move stage / tick checklist on their own tasks
     let bodyToValidate: Record<string, unknown> = req.body as Record<string, unknown>;
-    if (!canManageAll) {
+    if (!canFullEdit) {
       bodyToValidate = { stage: bodyToValidate["stage"], checklist: bodyToValidate["checklist"] };
     }
 
@@ -816,17 +834,26 @@ router.post("/hub/tasks/clear-completed", async (req: Request, res: Response) =>
 
 /* DELETE /hub/tasks/:id */
 router.delete("/hub/tasks/:id", async (req: Request, res: Response) => {
-  if (!isCeoOrSuperAdmin(req)) {
-    res.status(403).json({ error: "Solo el CEO puede eliminar tareas" }); return;
-  }
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
   try {
+    const user = me(req);
+    const [existing] = await db
+      .select({ id: hubTasks.id, title: hubTasks.title, createdById: hubTasks.createdById })
+      .from(hubTasks)
+      .where(eq(hubTasks.id, id))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
+    // Dirección elimina cualquier tarea; el resto, solo las que creó.
+    if (!isCeoOrSuperAdmin(req) && existing.createdById !== user.id) {
+      res.status(403).json({ error: "Solo la dirección o quien creó la tarea puede eliminarla" }); return;
+    }
     const [deleted] = await db
       .delete(hubTasks)
       .where(eq(hubTasks.id, id))
       .returning({ id: hubTasks.id });
     if (!deleted) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
+    recordActivity({ actorId: user.id, entityType: "task", entityId: id, entityLabel: existing.title, action: "deleted" });
     res.json({ ok: true });
   } catch (err) {
     console.error("[hub/tasks/:id DELETE]", err);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { diffHubEntities, entityLabel, entityState } from "./hub-diff";
+import { buildCeoAvisos, diffHubEntities, entityLabel, entityState } from "./hub-diff";
 
 describe("diffHubEntities", () => {
   it("detecta entidades creadas (id nuevo) e ignora las que no tienen id", () => {
@@ -60,5 +60,50 @@ describe("entityLabel / entityState", () => {
     expect(entityState({ stage: "dev" })).toBe("dev");
     expect(entityState({ etapa: "fin" })).toBe("fin");
     expect(entityState({})).toBe("");
+  });
+});
+
+describe("buildCeoAvisos", () => {
+  const actor = "Roberto";
+
+  it("contratos: avisa creación, cambio de estado y eliminación", () => {
+    const avisos = buildCeoAvisos("contracts", {
+      created: [{ id: "a", title: "Sitio X" }],
+      statusChanged: [{ entity: { id: "b", title: "Plan Y" }, from: "draft", to: "activo" }],
+      deleted: [{ id: "c", title: "Viejo Z" }],
+    }, actor);
+    expect(avisos).toHaveLength(3);
+    const titles = avisos.map((a) => a.title);
+    expect(titles).toContain("Nuevo contrato: Sitio X");
+    expect(titles).toContain("Contrato Plan Y: draft → activo");
+    expect(titles).toContain("Contrato eliminado: Viejo Z");
+    expect(avisos.every((a) => a.body.includes(actor))).toBe(true);
+  });
+
+  it("proyectos: usa vocabulario de proyecto e incluye cambios de estado", () => {
+    const avisos = buildCeoAvisos("projects", {
+      created: [],
+      statusChanged: [{ entity: { id: "p", name: "App móvil" }, from: "dev", to: "done" }],
+      deleted: [],
+    }, actor);
+    expect(avisos).toEqual([{ title: "Proyecto App móvil: dev → done", body: `${actor} cambió el estado.` }]);
+  });
+
+  it("clientes: solo alta y baja — la etapa del pipeline no genera aviso", () => {
+    const avisos = buildCeoAvisos("clients", {
+      created: [{ id: "c1", name: "Clínica Sur" }],
+      statusChanged: [{ entity: { id: "c2", name: "Otro" }, from: "lead", to: "propuesta" }],
+      deleted: [{ id: "c3", name: "Antiguo" }],
+    }, actor);
+    expect(avisos.map((a) => a.title)).toEqual(["Nuevo cliente: Clínica Sur", "Cliente eliminado: Antiguo"]);
+  });
+
+  it("estado vacío se muestra como 'sin estado'", () => {
+    const avisos = buildCeoAvisos("contracts", {
+      created: [],
+      statusChanged: [{ entity: { id: "x", title: "T" }, from: "", to: "activo" }],
+      deleted: [],
+    }, actor);
+    expect(avisos[0]!.title).toBe("Contrato T: sin estado → activo");
   });
 });

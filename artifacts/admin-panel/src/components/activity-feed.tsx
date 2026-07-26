@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, CheckCircle2, ClipboardList, Film, Flag, FileText, FolderKanban, Loader2, MessageSquare, UserPlus } from "lucide-react";
+import { Activity, CheckCircle2, ClipboardList, Film, Flag, FileText, FolderKanban, Loader2, MessageSquare, UserPlus, Users } from "lucide-react";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -25,6 +25,7 @@ const TYPE_META: Record<string, { label: string; icon: typeof Activity }> = {
   persona: { label: "Persona", icon: Activity },
   video: { label: "Video", icon: Film },
   contract: { label: "Contrato", icon: FileText },
+  client: { label: "Cliente", icon: Users },
   project: { label: "Proyecto", icon: FolderKanban },
 };
 

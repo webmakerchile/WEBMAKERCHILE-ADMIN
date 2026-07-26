@@ -12,6 +12,23 @@ describe("gate de /hub", () => {
     expect(hubNeedsAreaGate("/owner")).toBe(false);
   });
 
+  it("las rutas de tareas se guardan por rol dentro del router, no por área", () => {
+    for (const p of ["/tasks", "/tasks/12", "/tasks/12/comments", "/tasks/my-day", "/tasks/team-view"]) {
+      expect(hubNeedsAreaGate(p), `${p} no debería depender del área`).toBe(false);
+    }
+    // Prefijos parecidos no heredan la excepción.
+    expect(hubNeedsAreaGate("/tasksometa")).toBe(true);
+  });
+
+  it("los roles que escriben tareas llegan al router de tareas sin depender del área", () => {
+    for (const role of TEAM_ROLES) {
+      if (!hubWriteScopesFor(role).includes("tasks")) continue;
+      const area = areaOfRole(role);
+      const pasaPorArea = area !== null && AREAS_PERMITIDAS.has(area);
+      expect(pasaPorArea || !hubNeedsAreaGate("/tasks"), `el rol "${role}" no llegaría a /hub/tasks`).toBe(true);
+    }
+  });
+
   it("todo lo demás de /hub sigue gateado por área", () => {
     for (const p of ["/contracts/brief", "/contracts/ai-chat", "/contracts/c1/cobro", "/projects/ai-extract-tasks"]) {
       expect(hubNeedsAreaGate(p), `${p} debería seguir gateado`).toBe(true);

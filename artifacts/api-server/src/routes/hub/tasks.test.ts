@@ -23,6 +23,7 @@ const mockEjecutivoUser = { id: 3, role: "user", teamRole: "ejecutivo", email: "
 const mockEditorUser = { id: 2, role: "user", teamRole: "edicion", email: "ed@test.com" };
 const mockMarketingUser = { id: 4, role: "user", teamRole: "marketing", email: "mkt@test.com" };
 const mockOwnerUser = { id: 9, role: "superadmin", teamRole: "ceo", email: "owner@test.com" };
+const mockDevUser = { id: 5, role: "user", teamRole: "dev", email: "dev@test.com" };
 
 type TestUser =
   | typeof mockCeoUser
@@ -240,11 +241,20 @@ describe("POST /hub/tasks", () => {
     expect(res.status).toBe(403);
   });
 
-  it("marketing gets 403 on create", async () => {
+  it("marketing puede crear tareas (hubWrite incluye tasks)", async () => {
+    mockInsertChain([sampleTask]);
     const res = await request(await buildApp(mockMarketingUser))
       .post("/hub/tasks")
       .send({ title: "Task" });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+  });
+
+  it("dev puede crear tareas (hubWrite incluye tasks)", async () => {
+    mockInsertChain([sampleTask]);
+    const res = await request(await buildApp(mockDevUser))
+      .post("/hub/tasks")
+      .send({ title: "Task" });
+    expect(res.status).toBe(201);
   });
 });
 
@@ -385,25 +395,35 @@ describe("PATCH /hub/tasks/:id — stage transitions", () => {
 /* ─── DELETE /hub/tasks/:id ─── */
 
 describe("DELETE /hub/tasks/:id", () => {
-  it("CEO can delete", async () => {
+  it("CEO puede eliminar cualquier tarea", async () => {
+    mockSelectSeq([sampleTask]);
     mockDeleteChain([{ id: 1 }]);
     const res = await request(await buildApp(mockCeoUser)).delete("/hub/tasks/1");
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
   });
 
-  it("ejecutivo gets 403 (delete is CEO-only)", async () => {
+  it("quien creó la tarea puede eliminarla (autonomía)", async () => {
+    mockSelectSeq([{ ...sampleTask, createdById: 4 }]);
+    mockDeleteChain([{ id: 1 }]);
+    const res = await request(await buildApp(mockMarketingUser)).delete("/hub/tasks/1");
+    expect(res.status).toBe(200);
+  });
+
+  it("ejecutivo NO puede eliminar tareas creadas por otros", async () => {
+    mockSelectSeq([sampleTask]); // createdById 1 ≠ 3
     const res = await request(await buildApp(mockEjecutivoUser)).delete("/hub/tasks/1");
     expect(res.status).toBe(403);
   });
 
-  it("edicion gets 403", async () => {
+  it("edicion NO puede eliminar tareas creadas por otros", async () => {
+    mockSelectSeq([sampleTask]);
     const res = await request(await buildApp(mockEditorUser)).delete("/hub/tasks/1");
     expect(res.status).toBe(403);
   });
 
   it("returns 404 for missing task", async () => {
-    mockDeleteChain([]);
+    mockSelectSeq([]);
     const res = await request(await buildApp(mockCeoUser)).delete("/hub/tasks/999");
     expect(res.status).toBe(404);
   });
@@ -644,5 +664,32 @@ describe("Completion notification", () => {
       .send({ stage: "done" });
     expect(res.status).toBe(200);
     expect(vi.mocked(createNotification)).not.toHaveBeenCalled();
+  });
+});
+
+/* ─── Autonomía del creador ─── */
+
+describe("PATCH /hub/tasks/:id — creador", () => {
+  it("quien creó la tarea la edita completa aunque no sea el asignado", async () => {
+    const own = { ...sampleTask, createdById: 4, assigneeId: null };
+    mockTwoCalls(own, { ...own, title: "Editada" });
+    mockUpdateChain();
+    const res = await request(await buildApp(mockMarketingUser))
+      .patch("/hub/tasks/1")
+      .send({ title: "Editada" });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /hub/tasks/team-members — gate", () => {
+  it("marketing puede pedir la lista de asignables (crea tareas)", async () => {
+    mockSelectSeq([{ id: 4, name: "Marta", email: "mkt@test.com", picture: null, teamRole: "marketing" }]);
+    const res = await request(await buildApp(mockMarketingUser)).get("/hub/tasks/team-members");
+    expect(res.status).toBe(200);
+  });
+
+  it("edición no puede pedir la lista de asignables", async () => {
+    const res = await request(await buildApp(mockEditorUser)).get("/hub/tasks/team-members");
+    expect(res.status).toBe(403);
   });
 });

@@ -1905,7 +1905,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           onRefreshTasks(); onClose(); onToast("Tarea actualizada");
         } catch { onToast("Error de conexión"); }
       }}>Guardar cambios</button>
-      {canDeleteTasks && (
+      {(canDeleteTasks || t.createdById === authUser?.id) && (
         <button className="del-link" onClick={() => onConfirm("¿Eliminar esta tarea? No se puede deshacer.", async () => {
           try {
             await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "DELETE", credentials: "include" });

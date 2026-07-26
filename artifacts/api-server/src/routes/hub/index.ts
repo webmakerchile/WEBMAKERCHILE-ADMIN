@@ -12,7 +12,7 @@ import { resolveBoard, saveBoard } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
 import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
 import { handoffContractClosed, handoffProjectDelivered } from "../../lib/handoffs";
-import { diffHubEntities, entityLabel, entityState } from "../../lib/hub-diff";
+import { buildCeoAvisos, diffHubEntities, entityLabel, entityState } from "../../lib/hub-diff";
 import { notifyCeos } from "../../lib/notifications";
 
 const router: IRouter = Router();
@@ -165,11 +165,11 @@ router.patch("/hub", async (req: Request, res: Response) => {
   try {
     const actorName = String(me.name || me.email || "Alguien").slice(0, 80);
     const esDireccion = role === "ceo";
-    for (const scope of ["contracts", "projects"] as const) {
+    for (const scope of ["contracts", "projects", "clients"] as const) {
       if (!writeScopes.includes(scope)) continue;
       const before = Array.isArray(stored[scope]) ? (stored[scope] as HubEntity[]) : [];
       const after = Array.isArray(saved.data[scope]) ? (saved.data[scope] as HubEntity[]) : [];
-      const entityType = scope === "contracts" ? "contract" : "project";
+      const entityType = scope === "contracts" ? "contract" : scope === "projects" ? "project" : "client";
       const diff = diffHubEntities(before, after);
 
       for (const e of diff.created) {
@@ -210,26 +210,13 @@ router.patch("/hub", async (req: Request, res: Response) => {
         }
       }
 
-      // Dirección informada sin ser cuello de botella: cuando alguien que NO es
-      // CEO toca contratos, el CEO recibe el aviso (panel + push + DM si lo
-      // activó). Fire-and-forget: jamás frena el guardado del tablero. Los
-      // títulos usan el nombre de la entidad, que no lleva montos.
-      if (scope === "contracts" && !esDireccion) {
-        const avisos = [
-          ...diff.created.map((e) => ({
-            title: `Nuevo contrato: ${entityLabel(e)}`,
-            body: `${actorName} lo creó en el Hub.`,
-          })),
-          ...diff.statusChanged.map((c) => ({
-            title: `Contrato ${entityLabel(c.entity)}: ${c.from || "sin estado"} → ${c.to || "sin estado"}`,
-            body: `${actorName} cambió el estado.`,
-          })),
-          ...diff.deleted.map((e) => ({
-            title: `Contrato eliminado: ${entityLabel(e)}`,
-            body: `${actorName} lo quitó del tablero.`,
-          })),
-        ];
-        for (const aviso of avisos) {
+      // Dirección informada sin ser cuello de botella: cuando alguien que NO
+      // es CEO crea, cambia o elimina contratos, proyectos o clientes, el CEO
+      // recibe el aviso (panel + push + DM si lo activó). Fire-and-forget:
+      // jamás frena el guardado del tablero. Los títulos usan el nombre de la
+      // entidad, que no lleva montos.
+      if (!esDireccion) {
+        for (const aviso of buildCeoAvisos(scope, diff, actorName)) {
           void notifyCeos({ ...aviso, link: "/ejecutivo", excludeUserId: me.id }).catch((err) =>
             console.error("[hub PATCH] aviso a dirección falló", err),
           );
@@ -296,10 +283,31 @@ router.patch("/hub/contracts/:id/cobro", async (req: Request, res: Response) => 
   };
   // Se toca UNA entidad y se sube su `updatedAt`, para que la fusión por
   // entidad del tablero respete este cambio frente a ediciones simultáneas.
+  const prevEstado = String((contracts[idx]?.cobro as Record<string, unknown> | undefined)?.["estado"] ?? "");
   const next = [...contracts];
   next[idx] = { ...contracts[idx], cobro, updatedAt: Date.now() };
 
   await saveBoard(board.boardUserId, { ...board.data, contracts: next });
+
+  // Bitácora + aviso a dirección: la cobranza es movimiento sensible. El aviso
+  // dice el estado (pendiente/pagado/…), nunca montos.
+  const label = entityLabel(contracts[idx] as HubEntity);
+  recordActivity({
+    actorId: me.id,
+    entityType: "contract",
+    entityId: String(req.params.id),
+    entityLabel: label,
+    action: "status_change",
+    detail: { cobranza: true, from: prevEstado || null, to: parsed.data.estado },
+  });
+  if (role !== "ceo") {
+    void notifyCeos({
+      title: `Cobranza de ${label}: ${prevEstado || "sin gestión"} → ${parsed.data.estado}`,
+      body: `${String(me.name || me.email || "Alguien").slice(0, 80)} actualizó la cobranza.`,
+      link: "/reportes",
+      excludeUserId: me.id,
+    }).catch((err) => console.error("[hub cobro] aviso a dirección falló", err));
+  }
   res.json({ ok: true, cobro });
 });
 

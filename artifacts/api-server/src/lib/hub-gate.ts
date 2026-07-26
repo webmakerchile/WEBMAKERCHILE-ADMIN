@@ -15,5 +15,9 @@ export const HUB_ROLE_GATED_PATHS: ReadonlySet<string> = new Set(["/", "/owner"]
 
 /** ¿Este sub-path de `/hub` necesita además el gate por área? */
 export function hubNeedsAreaGate(path: string): boolean {
-  return !HUB_ROLE_GATED_PATHS.has(path);
+  if (HUB_ROLE_GATED_PATHS.has(path)) return false;
+  // Las tareas son transversales al equipo: cada endpoint del router se guarda
+  // solo (canWriteTasks, isCeoOrEjecutivo, asignado/creador). Gatearlas por
+  // área dejaría fuera a marketing (crea tareas) y a los asignados de edición.
+  return path !== "/tasks" && !path.startsWith("/tasks/");
 }

@@ -60,3 +60,38 @@ export function diffHubEntities(before: HubEntity[], after: HubEntity[]): HubCol
 
   return { created, statusChanged, deleted };
 }
+
+/** Colecciones que generan aviso a dirección cuando las toca alguien que no es CEO. */
+export type CeoAvisoScope = "contracts" | "projects" | "clients";
+
+const AVISO_WORDS: Record<CeoAvisoScope, { nuevo: string; cambio: string; eliminado: string; notifyStatus: boolean }> = {
+  contracts: { nuevo: "Nuevo contrato", cambio: "Contrato", eliminado: "Contrato eliminado", notifyStatus: true },
+  projects: { nuevo: "Nuevo proyecto", cambio: "Proyecto", eliminado: "Proyecto eliminado", notifyStatus: true },
+  // Los clientes cambian de etapa todo el tiempo (pipeline): solo alta y baja.
+  clients: { nuevo: "Nuevo cliente", cambio: "Cliente", eliminado: "Cliente eliminado", notifyStatus: false },
+};
+
+/**
+ * Construye los avisos a dirección para el diff de una colección. Los títulos
+ * usan el nombre de la entidad (nunca montos) y el cuerpo dice quién actuó.
+ */
+export function buildCeoAvisos(
+  scope: CeoAvisoScope,
+  diff: HubCollectionDiff,
+  actorName: string,
+): { title: string; body: string }[] {
+  const w = AVISO_WORDS[scope];
+  const avisos = [
+    ...diff.created.map((e) => ({ title: `${w.nuevo}: ${entityLabel(e)}`, body: `${actorName} lo creó en el Hub.` })),
+    ...diff.deleted.map((e) => ({ title: `${w.eliminado}: ${entityLabel(e)}`, body: `${actorName} lo quitó del tablero.` })),
+  ];
+  if (w.notifyStatus) {
+    avisos.push(
+      ...diff.statusChanged.map((c) => ({
+        title: `${w.cambio} ${entityLabel(c.entity)}: ${c.from || "sin estado"} → ${c.to || "sin estado"}`,
+        body: `${actorName} cambió el estado.`,
+      })),
+    );
+  }
+  return avisos;
+}
