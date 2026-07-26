@@ -9,9 +9,11 @@ import {
   SendGeminiMessageBody,
   GenerateGeminiImageBody,
   GenerateCoverBody,
+  ImproveCoverIdeaBody,
 } from "@workspace/api-zod";
 import { toFile } from "openai";
 import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit, listarOpcionesPortada } from "../../lib/cover-style.js";
+import { buildImproveIdeaPrompt, parseImprovedIdea } from "../../lib/improve-cover-idea.js";
 
 const router: IRouter = Router();
 
@@ -144,6 +146,45 @@ router.post("/gemini/generate-image", async (req, res) => {
 // Catálogo de variantes de luz y poses para la UI de personalización.
 router.get("/gemini/cover-options", (_req, res) => {
   res.json(listarOpcionesPortada());
+});
+
+// El usuario cuenta su idea "a lo bruto" y la IA la redacta: título corto de
+// miniatura + brief visual del set (misma dirección de arte del estudio).
+router.post("/gemini/improve-cover-idea", async (req, res) => {
+  // safeParse: el handler global convierte los ZodError en 500 con el dump
+  // crudo — aquí queremos un 400 con mensaje amable para la UI.
+  const parsedBody = ImproveCoverIdeaBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({ error: "Texto demasiado largo o inválido: el título acepta hasta 200 caracteres y la idea hasta 2000." });
+    return;
+  }
+  const title = (parsedBody.data.title ?? "").trim();
+  const idea = (parsedBody.data.idea ?? "").trim();
+  if (!title && !idea) {
+    res.status(400).json({ error: "Cuenta primero tu idea (aunque sea a lo bruto) para que la IA la redacte." });
+    return;
+  }
+
+  try {
+    const resp = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: [{ text: buildImproveIdeaPrompt(title, idea) }] }],
+      config: { maxOutputTokens: 700 },
+    });
+    const parsed = parseImprovedIdea(resp.text ?? "");
+    if (!parsed) {
+      res.status(502).json({ error: "La IA no devolvió una redacción válida. Intenta de nuevo." });
+      return;
+    }
+    res.json(parsed);
+  } catch (error: any) {
+    console.error(`[ImproveIdea] Falló la redacción: ${error?.message}`);
+    if (esErrorRateLimit(error)) {
+      res.status(429).json({ error: "El servicio de IA está saturado en este momento. Espera un momento e intenta de nuevo." });
+    } else {
+      res.status(502).json({ error: "No se pudo redactar la idea. Intenta de nuevo en unos momentos." });
+    }
+  }
 });
 
 router.post("/gemini/generate-cover", async (req, res) => {

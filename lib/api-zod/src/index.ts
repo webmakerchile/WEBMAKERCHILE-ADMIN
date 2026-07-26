@@ -8,6 +8,8 @@ export {
   GenerateCoverBody,
   GenerateGeminiImageBody,
   GenerateGeminiImageResponse,
+  ImproveCoverIdeaBody,
+  ImproveCoverIdeaResponse,
   ScheduleVideoBody,
   SendGeminiMessageBody,
   UpdateVideoBody,

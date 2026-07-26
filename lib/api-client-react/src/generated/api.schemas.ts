@@ -61,6 +61,18 @@ export interface GenerateCoverBody {
   utileria?: string;
 }
 
+export interface ImproveCoverIdeaBody {
+  /** @maxLength 200 */
+  title?: string;
+  /** @maxLength 2000 */
+  idea?: string;
+}
+
+export interface ImproveCoverIdeaResponse {
+  title: string;
+  idea: string;
+}
+
 export interface CoverDireccionOption {
   id: string;
   nombre: string;

@@ -143,6 +143,23 @@ export const GetCoverOptionsResponse = zod.object({
 });
 
 /**
+ * @summary Rewrite a rough cover idea into a polished thumbnail title and visual brief
+ */
+export const improveCoverIdeaBodyTitleMax = 200;
+
+export const improveCoverIdeaBodyIdeaMax = 2000;
+
+export const ImproveCoverIdeaBody = zod.object({
+  title: zod.string().max(improveCoverIdeaBodyTitleMax).optional(),
+  idea: zod.string().max(improveCoverIdeaBodyIdeaMax).optional(),
+});
+
+export const ImproveCoverIdeaResponse = zod.object({
+  title: zod.string(),
+  idea: zod.string(),
+});
+
+/**
  * @summary List files in a Google Drive folder
  */
 export const ListDriveFilesQueryParams = zod.object({

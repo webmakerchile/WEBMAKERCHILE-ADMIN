@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useGenerateCover, useGetCoverOptions } from "@workspace/api-client-react";
+import { useGenerateCover, useGetCoverOptions, useImproveCoverIdea } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
@@ -30,8 +30,45 @@ export default function CoverGeneratorPage() {
 
   const generateCover = useGenerateCover();
   const coverOptions = useGetCoverOptions();
+  const improveIdea = useImproveCoverIdea();
   const direccionSeleccionada = coverOptions.data?.direcciones.find((d) => d.id === direccionId) ?? null;
-  const ajustesActivos = [direccionId, poseId, utileria.trim() || null, style.trim() || null].filter(Boolean).length;
+  const ajustesActivos = [direccionId, poseId, utileria.trim() || null, style.trim() || null, !isDefaultRef ? "ref" : null].filter(Boolean).length;
+
+  // Refs espejo para leer el valor MÁS RECIENTE cuando vuelve la respuesta de
+  // la IA: si el usuario siguió escribiendo mientras tanto, no se le pisa el
+  // texto; y un contador de secuencia descarta respuestas viejas fuera de orden.
+  const titleRef = useRef(title);
+  titleRef.current = title;
+  const descriptionRef = useRef(description);
+  descriptionRef.current = description;
+  const improveSeqRef = useRef(0);
+  const improvingRef = useRef(false);
+
+  const handleImproveIdea = () => {
+    if (improvingRef.current || improveIdea.isPending) return;
+    const sentTitle = title.trim();
+    const sentIdea = description.trim();
+    if (!sentTitle && !sentIdea) return;
+    const seq = ++improveSeqRef.current;
+    improvingRef.current = true;
+    improveIdea.mutate(
+      { data: { title: sentTitle || undefined, idea: sentIdea || undefined } },
+      {
+        onSettled: () => {
+          if (seq === improveSeqRef.current) improvingRef.current = false;
+        },
+        onSuccess: (r) => {
+          if (seq !== improveSeqRef.current) return; // respuesta vieja: ignorar
+          const ideaUntouched = descriptionRef.current.trim() === sentIdea;
+          const applied = Boolean(r.idea) && ideaUntouched;
+          if (applied) setDescription(r.idea);
+          if (r.title && !titleRef.current.trim()) setTitle(r.title);
+          setToast(applied ? "✨ Listo — la IA redactó tu idea" : "Seguiste escribiendo — mantuve tu versión");
+          setTimeout(() => setToast(null), 3500);
+        },
+      }
+    );
+  };
 
   // Si el catálogo cambia y una selección ya no existe, volver a automático.
   useEffect(() => {
@@ -130,7 +167,7 @@ export default function CoverGeneratorPage() {
       <div className="max-w-5xl mx-auto space-y-8">
         <header>
           <h1 className="text-4xl font-display font-bold text-gradient mb-2">Generador AI de Portadas</h1>
-          <p className="text-muted-foreground text-lg">Estilo "Estudio Spotlight" de la marca — elige la luz, la pose y la utilería del set, o deja que roten solas.</p>
+          <p className="text-muted-foreground text-lg">Cuenta tu idea con tus palabras y aprieta "Escribir con IA" — el estilo "Estudio Spotlight" de la marca se aplica solo.</p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -141,19 +178,38 @@ export default function CoverGeneratorPage() {
                 <input 
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
+                  maxLength={200}
                   className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   placeholder="Texto destacado en la miniatura..."
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Contexto / Idea</label>
+                <label className="text-sm font-medium text-foreground">Tu idea</label>
                 <textarea 
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[100px]"
-                  placeholder="Describe la emoción, los elementos, colores..."
+                  maxLength={2000}
+                  className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all min-h-[110px]"
+                  placeholder="Cuéntala con tus palabras: qué quieres mostrar, qué emoción, qué elementos…"
                 />
+                <button
+                  type="button"
+                  onClick={handleImproveIdea}
+                  disabled={improveIdea.isPending || (!title.trim() && !description.trim())}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {improveIdea.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                  {improveIdea.isPending ? "Redactando tu idea..." : "Escribir con IA"}
+                </button>
+                <p className="text-xs text-muted-foreground/70">
+                  Escríbela a lo bruto — la IA la redacta mejor y te sugiere un título si falta.
+                </p>
+                {improveIdea.isError && (
+                  <p className="text-xs text-red-400">
+                    {(improveIdea.error as any)?.message || "No se pudo redactar la idea. Intenta de nuevo."}
+                  </p>
+                )}
               </div>
 
               <div className="border border-foreground/10 rounded-xl overflow-hidden">
@@ -246,46 +302,48 @@ export default function CoverGeneratorPage() {
                         placeholder="Ej: tono más dramático, ambiente festivo…"
                       />
                     </div>
-                  </div>
-                )}
-              </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Imagen de Referencia</label>
-                {previewUrl ? (
-                  <div className="relative rounded-xl overflow-hidden border border-foreground/10">
-                    <img src={previewUrl} alt="Referencia" className="w-full h-32 object-cover" />
-                    <button
-                      type="button"
-                      onClick={handleRemoveRef}
-                      className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
-                    >
-                      <X className="w-4 h-4 text-white" />
-                    </button>
-                    {isDefaultRef && (
-                      <div className="absolute bottom-2 left-2 bg-black/60 text-xs text-white/80 px-2 py-0.5 rounded-full">
-                        Zorro predeterminado
-                      </div>
-                    )}
-                    <label className="absolute inset-0 cursor-pointer opacity-0 hover:opacity-100 bg-black/40 flex items-center justify-center transition-opacity">
-                      <span className="text-sm text-white font-medium">Cambiar imagen</span>
-                      <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-                    </label>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-foreground/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group">
-                      <Upload className="w-8 h-8 text-muted-foreground group-hover:text-primary mb-2 transition-colors" />
-                      <span className="text-sm text-muted-foreground font-medium">Subir foto o captura</span>
-                      <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleRestoreDefault}
-                      className="w-full text-xs text-primary hover:text-orange-400 transition-colors py-1"
-                    >
-                      Restaurar imagen del zorro predeterminada
-                    </button>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Imagen de referencia <span className="text-xs text-muted-foreground font-normal">(el zorro va por defecto)</span>
+                      </label>
+                      {previewUrl ? (
+                        <div className="relative rounded-xl overflow-hidden border border-foreground/10">
+                          <img src={previewUrl} alt="Referencia" className="w-full h-24 object-cover" />
+                          <button
+                            type="button"
+                            onClick={handleRemoveRef}
+                            className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
+                          >
+                            <X className="w-4 h-4 text-white" />
+                          </button>
+                          {isDefaultRef && (
+                            <div className="absolute bottom-2 left-2 bg-black/60 text-xs text-white/80 px-2 py-0.5 rounded-full">
+                              Zorro predeterminado
+                            </div>
+                          )}
+                          <label className="absolute inset-0 cursor-pointer opacity-0 hover:opacity-100 bg-black/40 flex items-center justify-center transition-opacity">
+                            <span className="text-sm text-white font-medium">Cambiar imagen</span>
+                            <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-foreground/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group">
+                            <Upload className="w-6 h-6 text-muted-foreground group-hover:text-primary mb-1.5 transition-colors" />
+                            <span className="text-sm text-muted-foreground font-medium">Subir foto o captura</span>
+                            <input ref={fileInputRef} type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleRestoreDefault}
+                            className="w-full text-xs text-primary hover:text-orange-400 transition-colors py-1"
+                          >
+                            Restaurar imagen del zorro predeterminada
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -414,6 +472,54 @@ export default function CoverGeneratorPage() {
             </div>
           </div>
         </div>
+
+        {modalAjuste && (
+          <div
+            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setModalAjuste(false)}
+          >
+            <div
+              className="glass-card w-full max-w-md rounded-2xl border border-foreground/10 p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Settings className="w-5 h-5 text-primary" />
+                Ajustar portada
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Describe qué quieres cambiar y se regenera con tu indicación como máxima prioridad.
+              </p>
+              <textarea
+                value={ajusteTexto}
+                onChange={(e) => setAjusteTexto(e.target.value)}
+                autoFocus
+                className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary outline-none min-h-[90px]"
+                placeholder="Ej: que el zorro mire de frente, menos objetos en la mesa…"
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setModalAjuste(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-foreground/10 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmarAjusteCustom}
+                  disabled={!ajusteTexto.trim()}
+                  className="px-4 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-primary to-orange-500 text-white disabled:opacity-40 transition"
+                >
+                  Regenerar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {toast && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background/90 border border-primary/30 text-foreground text-sm font-medium px-4 py-2.5 rounded-xl shadow-xl backdrop-blur">
+            {toast}
+          </div>
+        )}
       </div>
     </Layout>
   );

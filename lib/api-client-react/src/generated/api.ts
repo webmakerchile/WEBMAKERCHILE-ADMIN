@@ -31,6 +31,8 @@ import type {
   GenerateGeminiImageBody,
   GenerateGeminiImageResponse,
   HealthStatus,
+  ImproveCoverIdeaBody,
+  ImproveCoverIdeaResponse,
   ListDriveFilesParams,
   ListDriveFoldersParams,
   ScheduleCheckResult,
@@ -883,6 +885,92 @@ export function useGetCoverOptions<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Rewrite a rough cover idea into a polished thumbnail title and visual brief
+ */
+export const getImproveCoverIdeaUrl = () => {
+  return `/api/gemini/improve-cover-idea`;
+};
+
+export const improveCoverIdea = async (
+  improveCoverIdeaBody: ImproveCoverIdeaBody,
+  options?: RequestInit,
+): Promise<ImproveCoverIdeaResponse> => {
+  return customFetch<ImproveCoverIdeaResponse>(getImproveCoverIdeaUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(improveCoverIdeaBody),
+  });
+};
+
+export const getImproveCoverIdeaMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof improveCoverIdea>>,
+    TError,
+    { data: BodyType<ImproveCoverIdeaBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof improveCoverIdea>>,
+  TError,
+  { data: BodyType<ImproveCoverIdeaBody> },
+  TContext
+> => {
+  const mutationKey = ["improveCoverIdea"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof improveCoverIdea>>,
+    { data: BodyType<ImproveCoverIdeaBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return improveCoverIdea(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImproveCoverIdeaMutationResult = NonNullable<
+  Awaited<ReturnType<typeof improveCoverIdea>>
+>;
+export type ImproveCoverIdeaMutationBody = BodyType<ImproveCoverIdeaBody>;
+export type ImproveCoverIdeaMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Rewrite a rough cover idea into a polished thumbnail title and visual brief
+ */
+export const useImproveCoverIdea = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof improveCoverIdea>>,
+    TError,
+    { data: BodyType<ImproveCoverIdeaBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof improveCoverIdea>>,
+  TError,
+  { data: BodyType<ImproveCoverIdeaBody> },
+  TContext
+> => {
+  return useMutation(getImproveCoverIdeaMutationOptions(options));
+};
 
 /**
  * @summary List files in a Google Drive folder

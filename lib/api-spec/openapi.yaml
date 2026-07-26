@@ -193,6 +193,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CoverOptionsResponse"
+  /gemini/improve-cover-idea:
+    post:
+      operationId: improveCoverIdea
+      tags: [gemini]
+      summary: Rewrite a rough cover idea into a polished thumbnail title and visual brief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImproveCoverIdeaBody"
+      responses:
+        "200":
+          description: Improved title and idea text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImproveCoverIdeaResponse"
   /drive/files:
     get:
       operationId: listDriveFiles
@@ -519,6 +537,25 @@ components:
       required:
         - title
         - description
+    ImproveCoverIdeaBody:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        idea:
+          type: string
+          maxLength: 2000
+    ImproveCoverIdeaResponse:
+      type: object
+      properties:
+        title:
+          type: string
+        idea:
+          type: string
+      required:
+        - title
+        - idea
     CoverDireccionOption:
       type: object
       properties:

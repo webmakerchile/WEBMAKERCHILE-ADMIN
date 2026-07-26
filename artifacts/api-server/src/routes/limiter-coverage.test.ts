@@ -27,6 +27,7 @@ const MUST_AI = [
   "/api/gemini/conversations/abc/messages",
   "/api/gemini/generate-image",
   "/api/gemini/generate-cover",
+  "/api/gemini/improve-cover-idea",
   "/api/studio/ideas/generate",
   "/api/studio/ideas/77/generate-cover",
   "/api/community/sorprendeme",

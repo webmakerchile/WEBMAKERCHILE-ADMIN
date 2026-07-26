@@ -22,6 +22,8 @@ export * from "./generateCoverBody";
 export * from "./generateGeminiImageBody";
 export * from "./generateGeminiImageResponse";
 export * from "./healthStatus";
+export * from "./improveCoverIdeaBody";
+export * from "./improveCoverIdeaResponse";
 export * from "./listDriveFilesParams";
 export * from "./listDriveFoldersParams";
 export * from "./scheduleCheckResult";
