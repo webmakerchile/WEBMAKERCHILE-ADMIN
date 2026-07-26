@@ -27,7 +27,10 @@ async function main() {
   setupFonts();
   const outDir = path.join(process.cwd(), "public", "uploads", "covers");
   await mkdir(outDir, { recursive: true });
-  for (const demo of DEMOS) {
+  // SOLO=demo-1.png,demo-2.png para regenerar un subconjunto.
+  const solo = process.env.SOLO?.split(",").map(s => s.trim());
+  const seleccion = solo ? DEMOS.filter(d => solo.includes(d.archivo)) : DEMOS;
+  for (const demo of seleccion) {
     const t0 = Date.now();
     const { direccion, pose, prompt } = prepararPortada(`${demo.titulo}. ${demo.tema}`);
     console.log(`→ ${demo.archivo}: dirección=${direccion.id}, pose=${pose.id}`);

@@ -77,16 +77,16 @@ title = "Historia v3 — layout corregido (1080×1920 forzado)"
 id = "CtPIblnfNgNyvWkPkM7EG"
 uri = "file://artifacts/api-server/public/uploads/covers/demo-1.png"
 type = "image"
-title = "Demo 1 · Estudio spotlight — 3 errores que matan tus ventas"
+title = "Portada · Estudio medianoche — utilería real"
 
 [[outputs]]
 id = "hftWDxQa1gNNHr71O_-Ma"
 uri = "file://artifacts/api-server/public/uploads/covers/demo-2.png"
 type = "image"
-title = "Demo 2 · Taller de papel — El secreto del marketing"
+title = "Portada · Estudio carmesí — utilería real"
 
 [[outputs]]
 id = "9uvXrw3CWjcXn2Skk2EdR"
 uri = "file://artifacts/api-server/public/uploads/covers/demo-3.png"
 type = "image"
-title = "Demo 3 · Atardecer retro — Crea tu página web en 7 días"
+title = "Portada · Estudio contraluz — utilería real"

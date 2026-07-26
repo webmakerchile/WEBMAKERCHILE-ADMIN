@@ -1,14 +1,15 @@
-// Sistema de direcciones de arte para portadas verticales (TikTok / 9:16).
+// Sistema de dirección de arte para portadas verticales (TikTok / 9:16).
 //
-// Antes todas las portadas compartían UNA receta fija (fondo slate + glow
-// naranja + franja amarilla con texto blanco). Ahora cada portada combina:
-//   · una DIRECCIÓN DE ARTE rotativa (fondo, luz, paleta, tipografía propia),
-//   · un detalle escenográfico aleatorio dentro de la dirección,
+// Identidad visual aprobada por el usuario: ESTUDIO SPOTLIGHT — el zorro Webi
+// (flat cartoon, referencia master) parado en un estudio fotográfico en
+// penumbra, bajo un foco de luz. Cada portada combina:
+//   · una VARIANTE de iluminación del estudio (color/posición de la luz,
+//     paleta y tipografía propias), con memoria FIFO anti-repetición,
+//   · un detalle escenográfico aleatorio dentro de la variante,
 //   · una pose del banco de poses (pose-bank),
+//   · UTILERÍA REAL del set — props físicos apoyados e iluminados por el
+//     foco, JAMÁS stickers/iconos flotantes — que cuenta el tema del video,
 //   · palabras del título destacadas en color de acento.
-// La selección usa memoria FIFO anti-repetición: dos portadas seguidas nunca
-// comparten dirección. El zorro Webi (flat cartoon, referencia master) se
-// mantiene intacto: lo que cambia es TODO lo demás.
 
 import { readFile } from "fs/promises";
 import path from "path";
@@ -29,7 +30,7 @@ const TEXT_SIDE_PADDING = 60;
 /* ========================= Tipos ========================================= */
 
 export interface EstiloTitular {
-  /** "display" = Bebas Neue (condensada, alto impacto) · "sans" = Montserrat Black. */
+  /** "display" = Oswald Bold (condensada, alto impacto) · "sans" = Montserrat Black. */
   fuente: "display" | "sans";
   /** "chips" = cada línea sobre una placa redondeada · "limpio" = texto directo con sombra. */
   modo: "chips" | "limpio";
@@ -48,6 +49,7 @@ export interface DireccionArte {
   nombre: string;
   /** Bloque de prompt que describe el fondo/atmósfera (NO el personaje). */
   fondo: string;
+  /** Paleta de la utilería y cómo se comporta bajo la luz de esta variante. */
   paletaObjetos: string;
   /** Detalles escenográficos: se elige 1 al azar para que cada portada sea única. */
   detalles: string[];
@@ -58,34 +60,14 @@ export interface DireccionArte {
 
 export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
-    id: "neon_nocturno",
-    nombre: "Neón nocturno",
-    fondo: `Ciudad nocturna abstracta y elegante: gradiente vertical de azul índigo profundo (#0B1026 arriba, casi negro) a violeta oscuro (#1E1B4B) hacia abajo. Siluetas minimalistas de edificios al fondo en un tono apenas más claro. Dos o tres trazos de luz de neón (cian #22D3EE y magenta #E879F9) como líneas geométricas elegantes detrás del zorro, con glow suave. El piso refleja levemente los neones como pavimento mojado (reflejos sutiles, no espejo). La franja superior se mantiene en el azul índigo más oscuro y plano, limpia.`,
-    paletaObjetos: `objetos flat con contorno negro grueso en cian eléctrico, magenta, naranja del zorro y blanco; pequeños acentos de glow neón en bordes de pantallas u objetos tecnológicos`,
-    detalles: [
-      "una luna llena pequeña y estilizada con halo suave en una esquina lateral del cielo, a media altura",
-      "lluvia fina sugerida con trazos diagonales muy sutiles al 8% de opacidad",
-      "un cartel de neón ABSTRACTO (formas geométricas, sin letras) colgando a un costado",
-    ],
-    titular: {
-      fuente: "display",
-      modo: "chips",
-      colorTexto: "#FFFFFF",
-      colorAcento: "#22D3EE",
-      chipFondo: "#0E1130",
-      scrim: { r: 11, g: 16, b: 38 },
-      inclinacion: -1.5,
-    },
-  },
-  {
     id: "estudio_spotlight",
-    nombre: "Estudio spotlight",
+    nombre: "Estudio spotlight ámbar",
     fondo: `Estudio fotográfico premium en penumbra: fondo carbón (#101012 arriba) a gris grafito (#26262B) hacia el piso, como un ciclorama infinito. Un spotlight cónico cálido cae desde arriba sobre el zorro, iluminando un círculo suave en el piso; partículas de polvo diminutas flotan visibles dentro del haz de luz. Sombra elíptica suave y marcada bajo el zorro. Todo fuera del haz queda en penumbra elegante. La franja superior es carbón casi negro, limpia y plana.`,
-    paletaObjetos: `objetos flat con contorno negro grueso en naranja cálido, blanco marfil y verde de la marca; los objetos dentro del haz de luz se ven saturados, con leve borde de luz cálida`,
+    paletaObjetos: `utilería en tonos cálidos: naranja, madera clara, blanco marfil y el verde de la marca; los props dentro del haz se ven cálidos y saturados, los que quedan al borde del círculo de luz caen en penumbra`,
     detalles: [
       "un segundo haz de luz lateral tenue de color ámbar cruzando el fondo en diagonal",
-      "un círculo de escenario (tarima baja redonda) bajo el zorro, estilo flat",
-      "humo bajo muy sutil arrastrándose por el piso, apenas visible",
+      "una tarima circular baja de escenario bajo el zorro, iluminada por el foco",
+      "humo bajo muy sutil arrastrándose por el piso, apenas visible dentro del haz",
     ],
     titular: {
       fuente: "sans",
@@ -97,121 +79,140 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
     },
   },
   {
-    id: "aurora_gradiente",
-    nombre: "Aurora gradiente",
-    fondo: `Gradiente rico y moderno tipo aurora: violeta profundo (#31104F) en la franja superior, fundiéndose en magenta (#831843) al centro y naranja quemado (#7C2D12) cerca del piso, con GRANO fino de película sobre todo el fondo (textura sutil, no ruido fuerte). Dos formas orgánicas de "vidrio esmerilado" translúcido flotan detrás del zorro desenfocadas, captando el gradiente. Piso apenas más oscuro que el fondo con sombra suave bajo el zorro. La franja superior se mantiene en el violeta más profundo, limpia.`,
-    paletaObjetos: `objetos flat con contorno negro grueso en amarillo dorado, magenta claro, blanco y el naranja del zorro`,
+    id: "estudio_medianoche",
+    nombre: "Estudio medianoche",
+    fondo: `Estudio fotográfico en penumbra azul noche: ciclorama infinito de azul carbón (#0A0F1E arriba) a azul grafito (#182136) hacia el piso. Un spotlight cónico de luz FRÍA azul hielo cae desde arriba sobre el zorro, dibujando un círculo de luz fría en el piso; un rim light cian muy sutil recorta la silueta del zorro. Fuera del haz, penumbra azulada elegante. Sombra elíptica nítida bajo el zorro. La franja superior es azul casi negro, plana y limpia.`,
+    paletaObjetos: `utilería en azules fríos, plateado, blanco y el naranja del zorro como único acento cálido; los props toman la luz fría del haz con brillos suaves de lado`,
     detalles: [
-      "estrellas diminutas dispersas solo en el tercio medio, como polvo brillante",
-      "un arco delgado de luz dorada curvándose detrás del zorro como un halo gigante",
-      "burbujas de vidrio pequeñas flotando a un costado, semitransparentes",
-    ],
-    titular: {
-      fuente: "display",
-      modo: "chips",
-      colorTexto: "#2A0E3F",
-      colorAcento: "#C026D3",
-      chipFondo: "#FFFFFF",
-      scrim: { r: 42, g: 14, b: 63 },
-      inclinacion: -2,
-    },
-  },
-  {
-    id: "taller_papel",
-    nombre: "Taller de papel",
-    fondo: `Collage de papel recortado hecho a mano: fondo azul petróleo profundo (#082F49 arriba, #0C4A6E abajo) con textura de papel sutil. Capas de "papel recortado" en tonos petróleo más claros forman colinas u ondas superpuestas en el tercio inferior, cada capa con su sombra suave proyectada (efecto profundidad de diorama). Algunos trozos de cinta adhesiva decorativa (washi tape) en las esquinas de las capas. El zorro está "parado" sobre la capa frontal del diorama. La franja superior es papel azul petróleo oscuro, limpia.`,
-    paletaObjetos: `objetos flat como recortes de papel con contorno negro grueso, en coral #FF6B4A, crema, amarillo mostaza y el verde de la marca, cada uno con sombrita de papel`,
-    detalles: [
-      "nubes de papel recortado con sombra flotando a un costado a media altura",
-      "un sol de papel con rayos geométricos asomándose por un borde lateral",
-      "pequeñas montañas de papel plegado al fondo del diorama",
-    ],
-    titular: {
-      fuente: "sans",
-      modo: "chips",
-      colorTexto: "#FFFFFF",
-      colorAcento: "#FFE08A",
-      chipFondo: "#FF6B4A",
-      scrim: { r: 6, g: 36, b: 58 },
-      inclinacion: 1.5,
-    },
-  },
-  {
-    id: "blueprint_tech",
-    nombre: "Blueprint técnico",
-    fondo: `Plano técnico de ingeniería premium: fondo azul blueprint profundo (#101F46 arriba, #1E3A8A muy sutil abajo). Líneas técnicas blancas finas al 8% de opacidad: una cuadrícula de plano, círculos de compás, flechas de cota y trazos de esquema rodeando la zona media SIN saturar. Detrás del zorro, un "esquema técnico" abstracto dibujado en líneas blancas finas (como si el escenario estuviera siendo diseñado). Piso con línea de horizonte técnica y sombra elíptica bajo el zorro. Franja superior azul profundo plano, limpia.`,
-    paletaObjetos: `objetos flat con contorno negro grueso en verde lima #A3E635, blanco, cian claro y el naranja del zorro; algunos objetos con esquinas "marcadas" con cruces técnicas`,
-    detalles: [
-      "un engranaje gigante delineado (solo contorno fino blanco) girado detrás de la escena",
-      "reglas y escuadras delineadas flotando a un costado como marcas de agua",
-      "una espiral de compás delineada en una esquina lateral media",
+      "un telón de fondo azul noche con pliegues suaves apenas insinuados en la penumbra",
+      "un segundo haz cian rasante entrando desde un costado a la altura del piso",
+      "un reflejo frío apenas perceptible del zorro sobre el piso pulido",
     ],
     titular: {
       fuente: "display",
       modo: "limpio",
       colorTexto: "#FFFFFF",
-      colorAcento: "#A3E635",
-      scrim: { r: 13, g: 25, b: 60 },
+      colorAcento: "#38BDF8",
+      scrim: { r: 10, g: 15, b: 30 },
       inclinacion: 0,
     },
   },
   {
-    id: "selva_digital",
-    nombre: "Selva digital",
-    fondo: `Jungla estilizada nocturna: gradiente de verde bosque casi negro (#04210F arriba) a verde profundo (#14532D) abajo. Hojas tropicales GRANDES estilo flat (monstera, palma) enmarcan las esquinas inferiores y un borde lateral, en verdes más claros con contorno oscuro, algunas por delante creando profundidad. Luciérnagas doradas como puntos de luz suaves dispersos en la zona media. Sombra suave bajo el zorro sobre un claro del suelo. La franja superior es verde casi negro, limpia y sin hojas.`,
-    paletaObjetos: `objetos flat con contorno negro grueso en dorado #FBBF24, verde claro, blanco y el naranja del zorro, integrados como si estuvieran en el claro de la selva`,
+    id: "estudio_esmeralda",
+    nombre: "Estudio esmeralda",
+    fondo: `Estudio fotográfico en penumbra verde profundo: ciclorama de verde casi negro (#06120D arriba) a verde bosque oscuro (#123227) hacia el piso. Un spotlight cónico verde esmeralda suave cae desde arriba sobre el zorro con partículas finas flotando en el haz. Una neblina baja muy tenue se arrastra por el piso alrededor del círculo de luz. Sombra elíptica suave bajo el zorro. Fuera del haz, penumbra verdosa elegante. La franja superior es verde casi negro, plana y limpia.`,
+    paletaObjetos: `utilería en verdes profundos, dorado apagado, crema y el naranja del zorro; los props dentro del haz toman un matiz esmeralda suave en su cara iluminada`,
     detalles: [
-      "un rayo de luna verdosa cayendo en diagonal entre las hojas",
-      "flores tropicales flat de color naranja asomando entre las hojas de un costado",
-      "una liana con una hoja colgando desde un borde lateral, a media altura",
+      "una cortina de terciopelo verde oscuro asomando con su caída por un borde lateral",
+      "una tarima circular baja bajo el zorro, con el canto apenas iluminado",
+      "motas de polvo doradas visibles solo dentro del haz de luz",
     ],
     titular: {
       fuente: "sans",
       modo: "chips",
       colorTexto: "#FFFFFF",
-      colorAcento: "#FBBF24",
-      chipFondo: "#06301B",
-      scrim: { r: 4, g: 26, b: 12 },
+      colorAcento: "#6EE7B7",
+      chipFondo: "#0B2E20",
+      scrim: { r: 5, g: 18, b: 13 },
       inclinacion: -1.5,
     },
   },
   {
-    id: "pop_brutalista",
-    nombre: "Pop brutalista",
-    fondo: `Diseño gráfico pop brutalista de alto contraste: fondo dividido en bloques geométricos GRANDES y diagonales de negro humo (#0D0D0F) y naranja de marca (#E86A30), con un bloque blanco roto pequeño como acento. Patrón de semitono (puntos halftone) grande y visible dentro de UNO de los bloques. Formas geométricas gruesas (círculo, flecha maciza, zigzag) como elementos decorativos con contorno negro. El zorro se para sobre el borde de un bloque como si fuera una tarima. La franja superior cae dentro del bloque NEGRO, plana y limpia.`,
-    paletaObjetos: `objetos flat con contorno negro extra grueso en blanco, negro y naranja SOLAMENTE (paleta restringida de 3 colores + el verde de la polera del zorro)`,
+    id: "estudio_purpura",
+    nombre: "Estudio púrpura",
+    fondo: `Estudio fotográfico en penumbra púrpura: ciclorama de púrpura casi negro (#120A1E arriba) a violeta profundo (#251540) hacia el piso. Un spotlight cónico violeta suave cae desde arriba sobre el zorro; partículas brillantes diminutas flotan SOLO dentro del haz. Un segundo haz magenta muy tenue cruza el fondo en diagonal sin tocar al zorro. Sombra elíptica marcada bajo el zorro. Fuera de los haces, penumbra púrpura elegante. La franja superior es púrpura casi negro, plana y limpia.`,
+    paletaObjetos: `utilería en violetas profundos, magenta apagado, plata y el naranja del zorro; la cara iluminada de cada prop toma el matiz violeta del haz`,
     detalles: [
-      "una flecha maciza naranja apuntando hacia el zorro desde un costado",
-      "un círculo de semitono gigante detrás del zorro como sol pop",
-      "tres líneas de velocidad gruesas cruzando un bloque en diagonal",
+      "un telón púrpura profundo con caída suave insinuado al fondo en penumbra",
+      "un aro de luz tenue dibujado en el piso alrededor del círculo del foco",
+      "una siluetas de focos de estudio con trípode en penumbra a un costado del fondo",
     ],
     titular: {
       fuente: "display",
       modo: "chips",
       colorTexto: "#FFFFFF",
-      colorAcento: "#FF7A29",
-      chipFondo: "#111114",
-      scrim: { r: 13, g: 13, b: 15 },
-      inclinacion: -2.5,
+      colorAcento: "#E879F9",
+      chipFondo: "#1C1030",
+      scrim: { r: 16, g: 10, b: 28 },
+      inclinacion: -2,
     },
   },
   {
-    id: "atardecer_retro",
-    nombre: "Atardecer retro",
-    fondo: `Atardecer retro-moderno suave: gradiente de púrpura profundo (#2B1147 arriba) a durazno (#F97362) en el horizonte bajo. Un sol grande estilizado con 3-4 bandas horizontales recortadas se hunde tras montañas en silueta minimalista púrpura oscuro. Nubes alargadas flat en rosa y naranja cruzan el cielo medio. El piso es una llanura en sombra púrpura con la sombra del zorro alargada hacia un costado por la luz del atardecer. La franja superior es púrpura profundo casi plano, limpia.`,
-    paletaObjetos: `objetos flat con contorno negro grueso en rosa #FF8FB1, dorado #FFD166, blanco cálido y el naranja del zorro`,
+    id: "estudio_carmesi",
+    nombre: "Estudio carmesí",
+    fondo: `Estudio fotográfico en penumbra dramática: ciclorama de negro humo (#0C0A0A arriba) a granate muy oscuro (#221114) hacia el piso. Un spotlight cónico de luz roja cálida cae desde arriba sobre el zorro, con humo fino y elegante atravesando el haz. El círculo de luz en el piso es rojizo y suave. Sombra elíptica intensa bajo el zorro. Fuera del haz, penumbra casi negra. La franja superior es negro humo, plana y limpia.`,
+    paletaObjetos: `utilería en rojos profundos, negro, gris humo y el naranja del zorro; la cara iluminada de cada prop se tiñe del rojo cálido del foco y la opuesta cae en penumbra`,
     detalles: [
-      "pájaros lejanos como pequeñas 'v' oscuras cruzando el cielo medio",
-      "una franja de destello dorado horizontal justo sobre el horizonte",
-      "palmeras o cactus en silueta minimalista en un borde lateral",
+      "volutas de humo fino cruzando el haz a media altura, apenas visibles",
+      "un telón carmesí muy oscuro con pliegues insinuados al fondo",
+      "un borde de luz roja rasante recortando el piso desde un costado",
     ],
     titular: {
       fuente: "sans",
       modo: "limpio",
-      colorTexto: "#FFF7ED",
-      colorAcento: "#FFD166",
-      scrim: { r: 43, g: 17, b: 71 },
+      colorTexto: "#FFFFFF",
+      colorAcento: "#F87171",
+      scrim: { r: 14, g: 9, b: 10 },
       inclinacion: 0,
+    },
+  },
+  {
+    id: "estudio_dorado",
+    nombre: "Estudio dorado lateral",
+    fondo: `Estudio fotográfico en penumbra con luz LATERAL dorada: ciclorama de carbón (#111013 arriba) a bronce muy oscuro (#241A0E) hacia el piso. Un haz dorado cálido entra desde UN COSTADO a media altura (no desde arriba), iluminando al zorro de lado: una mitad cálida y brillante, la otra en penumbra suave. La sombra del zorro se proyecta ALARGADA hacia el lado opuesto de la luz. Motas de polvo flotan visibles dentro del haz lateral. La franja superior es carbón casi negro, plana y limpia.`,
+    paletaObjetos: `utilería en dorados, madera oscura, crema y el naranja del zorro; cada prop con su mitad hacia la luz dorada encendida y la otra mitad en penumbra, sombras alargadas como la del zorro`,
+    detalles: [
+      "un panel softbox de estudio en silueta al fondo, apenas visible en penumbra",
+      "una franja de luz dorada barriendo el piso en diagonal desde el costado iluminado",
+      "polvo dorado suspendido denso solo dentro del haz lateral",
+    ],
+    titular: {
+      fuente: "display",
+      modo: "limpio",
+      colorTexto: "#FFF8E7",
+      colorAcento: "#FBBF24",
+      scrim: { r: 18, g: 14, b: 8 },
+      inclinacion: 0,
+    },
+  },
+  {
+    id: "estudio_contraluz",
+    nombre: "Estudio contraluz",
+    fondo: `Estudio fotográfico con contraluz cálido: ciclorama de carbón oscuro (#0E0C0B arriba) a marrón humo (#1E1510) hacia el piso. Un resplandor naranja cálido difuso brilla DETRÁS del zorro a la altura del piso (como un foco apuntando hacia la cámara desde atrás, oculto por el personaje), creando un rim light naranja marcado en todo su contorno. Una luz de relleno frontal suave mantiene visibles los colores del zorro. Halo de luz difusa alrededor de su silueta. Sombra proyectada hacia adelante. La franja superior es carbón casi negro, plana y limpia.`,
+    paletaObjetos: `utilería en marrones cálidos, ámbar, crema y el naranja del zorro; los props cercanos al resplandor se recortan a contraluz con su propio borde de luz naranja`,
+    detalles: [
+      "siluetas de dos focos de estudio con trípode en penumbra a los costados del fondo",
+      "un destello de lente sutil y elegante justo en el borde del hombro del zorro",
+      "neblina fina retroiluminada de naranja flotando a la altura del piso",
+    ],
+    titular: {
+      fuente: "sans",
+      modo: "chips",
+      colorTexto: "#FFFFFF",
+      colorAcento: "#FDBA74",
+      chipFondo: "#1A120C",
+      scrim: { r: 16, g: 11, b: 7 },
+      inclinacion: 1.5,
+    },
+  },
+  {
+    id: "estudio_duotono",
+    nombre: "Estudio duotono cine",
+    fondo: `Estudio fotográfico con iluminación cruzada de cine: ciclorama de grafito oscuro (#121116 arriba a #1C1B22 abajo). Dos luces cruzadas bañan la escena: un haz ÁMBAR cálido desde un costado y un haz AZUL frío desde el costado opuesto, tiñendo cada mitad del ciclorama con su temperatura. El zorro recibe un doble rim light sutil (borde cálido de un lado, frío del otro) manteniendo sus colores planos reconocibles. Dos sombras suaves cruzadas bajo el zorro. Neblina muy fina revela ambos haces. La franja superior es grafito casi negro, plana y limpia.`,
+    paletaObjetos: `utilería en neutros (gris, negro mate, blanco) más el naranja del zorro; cada prop toma ámbar por un lado y azul por el otro, igual que el personaje`,
+    detalles: [
+      "un piso grafito con doble reflejo tenue (cálido y frío) bajo el zorro",
+      "los dos haces visibles como conos de luz cruzados gracias a la neblina fina",
+      "un taburete de estudio de madera en penumbra al borde de la escena",
+    ],
+    titular: {
+      fuente: "display",
+      modo: "chips",
+      colorTexto: "#FFFFFF",
+      colorAcento: "#F59E0B",
+      chipFondo: "#141318",
+      scrim: { r: 12, g: 12, b: 16 },
+      inclinacion: -1.5,
     },
   },
 ];
@@ -265,8 +266,16 @@ PERSONAJE - ESTILO FLAT CARTOON (copiar EXACTAMENTE de la imagen de referencia a
 
 ESCENA A ILUSTRAR:
 TEMA DEL VIDEO: "${tema}"
-${extraEstilo ? `ESTILO ADICIONAL PEDIDO POR EL USUARIO: ${extraEstilo}\n` : ""}Construye una MINI-ESCENA con profundidad alrededor del zorro que cuente visualmente el tema: 2 a 4 objetos de apoyo RELEVANTES al tema (ni uno más), algunos ligeramente detrás del zorro y otros delante, agrupados hacia UN lado para dejar aire al otro lado. El zorro SIEMPRE anclado al piso con su sombra suave — nunca flotando. PROHIBIDO el collage de iconos y PROHIBIDO rodear al zorro de objetos por todos lados.
-Los objetos deben ser ESPECÍFICOS de este tema, no genéricos: PROHIBIDO el kit cliché de marketing (cohete, embudo, carrito de compras, lupa, gráfico de barras genérico) salvo que el título los mencione literalmente. Pregúntate qué objetos reales saldrían en una foto editorial sobre este tema exacto y dibuja ESOS en flat cartoon, integrados a la escenografía de la dirección de arte.
+${extraEstilo ? `ESTILO ADICIONAL PEDIDO POR EL USUARIO: ${extraEstilo}\n` : ""}Construye una MINI-ESCENA DE SET FOTOGRÁFICO alrededor del zorro que cuente visualmente el tema: 2 a 4 piezas de UTILERÍA relevantes al tema (ni una más), algunas ligeramente detrás del zorro y otras delante, agrupadas hacia UN lado para dejar aire al otro lado. El zorro SIEMPRE anclado al piso con su sombra suave — nunca flotando.
+
+UTILERÍA REAL, NO STICKERS (CRÍTICO - NO NEGOCIABLE):
+- Cada objeto es un PROP FÍSICO del set: tiene volumen, materiales creíbles (cartón, madera, metal, tela, vidrio, plástico) y está APOYADO en el piso del estudio o sobre otro objeto — NUNCA flotando en el aire
+- Cada objeto recibe la MISMA luz de la escena: cara iluminada hacia el foco, cara opuesta en penumbra, y proyecta su sombra sobre el piso en la MISMA dirección que la sombra del zorro
+- Escala natural respecto al zorro: una caja es una caja real, un notebook es de tamaño real, nada de miniaturas ni gigantes decorativos
+- Los objetos alejados del haz de luz quedan parcialmente en penumbra, fundidos con la atmósfera del estudio
+- PROHIBIDO: objetos estilo sticker/pegatina/icono plano, contornos gruesos negros alrededor de los objetos, objetos flotantes, glow o borde de recorte, collage de iconos, rodear al zorro de objetos por todos lados
+- PROHIBIDO TAMBIÉN: símbolos abstractos dibujados en el aire — signos de interrogación o exclamación, flechas, gráficos, corazones, monedas o estrellas flotantes. Si necesitas comunicar una idea abstracta, ponla DENTRO de un objeto físico del set: una pizarra o letrero apoyado con el símbolo impreso, una pantalla encendida mostrando el gráfico, una caja de cartón con el símbolo estampado en su cara
+La utilería debe ser ESPECÍFICA de este tema, no genérica: PROHIBIDO el kit cliché de marketing (cohete, embudo, carrito de compras, lupa, gráfico de barras) — y si el título menciona uno de estos literalmente, se dibuja como objeto FÍSICO real del set (un carrito de supermercado de metal de tamaño real parado en el piso, por ejemplo), jamás como icono. Pregúntate qué utilería pondría un director de arte en una foto editorial sobre este tema exacto y pon ESA en el set.
 
 ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
 - El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE el fondo de la dirección de arte en su versión más plana y oscura, SIN elementos
@@ -274,15 +283,15 @@ ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
 - Toda la acción visual comienza DEBAJO del píxel 670
 
 CONTRASTE DE ESTILOS (IMPORTANTE):
-- El ZORRO y los OBJETOS se dibujan en estilo FLAT CARTOON: contornos gruesos negros, colores planos y vibrantes, sin degradados ni sombras realistas
-- El FONDO es una dirección de arte trabajada y atmosférica (ver abajo), con profundidad, luz y textura
-- Este contraste entre personaje cartoon sobre fondo cinematográfico es intencional: es la firma visual de la marca
+- SOLO el ZORRO se dibuja en estilo FLAT CARTOON: contornos gruesos negros, colores planos y vibrantes, sin degradados
+- El FONDO y la UTILERÍA pertenecen al mundo del set: iluminación cinematográfica, volumen y sombreado suave, SIN contornos gruesos de cartoon en los objetos
+- Este contraste — la mascota cartoon parada dentro de un set fotográfico estilizado con props reales — es la firma visual de la marca
 
 DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" (solo el fondo, NO el personaje):
 ${direccion.fondo}
 DETALLE ÚNICO DE ESTA PORTADA: ${detalle}
 
-PALETA DE OBJETOS DE APOYO:
+UTILERÍA — PALETA Y COMPORTAMIENTO BAJO LA LUZ:
 ${direccion.paletaObjetos}
 
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), protagonista sobre un fondo "${direccion.nombre}" trabajado y con atmósfera.

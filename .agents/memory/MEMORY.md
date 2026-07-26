@@ -9,3 +9,4 @@
 - [Handoffs & playbooks](handoffs-playbooks.md) — claim-then-release idempotency in handoff_log; atomic jsonb append for board writes from background jobs; DST-safe Santiago scheduling.
 - [Monorepo lib builds](monorepo-lib-builds.md) — after task merges, run pnpm install + tsc -b on lib/* before assuming merged code is broken; custom user names must never be overwritten by Google profile on login.
 - [Render de portadas](cover-rendering.md) — librsvg pierde espacios en bordes de tspan (unir con &#160;); fuentes nix invisibles para fontconfig → empaquetar TTFs + FONTCONFIG_FILE al boot.
+- [Dirección de arte portadas](cover-art-direction.md) — estilo único aprobado: familia "estudio spotlight" (variantes de luz); utilería física real, jamás stickers ni símbolos flotantes.
