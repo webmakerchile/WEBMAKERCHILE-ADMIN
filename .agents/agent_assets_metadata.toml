@@ -90,3 +90,9 @@ id = "9uvXrw3CWjcXn2Skk2EdR"
 uri = "file://artifacts/api-server/public/uploads/covers/demo-3.png"
 type = "image"
 title = "Portada · Estudio contraluz — utilería real"
+
+[[outputs]]
+id = "MEhjbmfLKBAddnssvmQ50"
+uri = "file://artifacts/api-server/public/uploads/covers/demo-custom.png"
+type = "image"
+title = "Portada personalizada: luz esmeralda + pulgar arriba + utilería pedida"

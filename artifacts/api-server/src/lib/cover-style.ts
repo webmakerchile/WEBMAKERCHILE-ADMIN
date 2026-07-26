@@ -18,6 +18,8 @@ import { firstInlineData } from "./gemini-parts";
 import {
   seleccionarPosePortada,
   bloquePoseRequerida,
+  PORTADA_POSES,
+  detectarEmocion,
   type PoseSeleccionada,
 } from "./pose-bank";
 
@@ -47,6 +49,8 @@ export interface EstiloTitular {
 export interface DireccionArte {
   id: string;
   nombre: string;
+  /** Descripción corta para la UI de selección de variantes. */
+  descripcionUi: string;
   /** Bloque de prompt que describe el fondo/atmósfera (NO el personaje). */
   fondo: string;
   /** Paleta de la utilería y cómo se comporta bajo la luz de esta variante. */
@@ -62,6 +66,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_spotlight",
     nombre: "Estudio spotlight ámbar",
+    descripcionUi: "El clásico aprobado: foco cálido ámbar con partículas de polvo.",
     fondo: `Estudio fotográfico premium en penumbra: fondo carbón (#101012 arriba) a gris grafito (#26262B) hacia el piso, como un ciclorama infinito. Un spotlight cónico cálido cae desde arriba sobre el zorro, iluminando un círculo suave en el piso; partículas de polvo diminutas flotan visibles dentro del haz de luz. Sombra elíptica suave y marcada bajo el zorro. Todo fuera del haz queda en penumbra elegante. La franja superior es carbón casi negro, limpia y plana.`,
     paletaObjetos: `utilería en tonos cálidos: naranja, madera clara, blanco marfil y el verde de la marca; los props dentro del haz se ven cálidos y saturados, los que quedan al borde del círculo de luz caen en penumbra`,
     detalles: [
@@ -81,6 +86,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_medianoche",
     nombre: "Estudio medianoche",
+    descripcionUi: "Luz fría azul de medianoche, ambiente sereno y tecnológico.",
     fondo: `Estudio fotográfico en penumbra azul noche: ciclorama infinito de azul carbón (#0A0F1E arriba) a azul grafito (#182136) hacia el piso. Un spotlight cónico de luz FRÍA azul hielo cae desde arriba sobre el zorro, dibujando un círculo de luz fría en el piso; un rim light cian muy sutil recorta la silueta del zorro. Fuera del haz, penumbra azulada elegante. Sombra elíptica nítida bajo el zorro. La franja superior es azul casi negro, plana y limpia.`,
     paletaObjetos: `utilería en azules fríos, plateado, blanco y el naranja del zorro como único acento cálido; los props toman la luz fría del haz con brillos suaves de lado`,
     detalles: [
@@ -100,6 +106,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_esmeralda",
     nombre: "Estudio esmeralda",
+    descripcionUi: "Luz verde esmeralda, fresca y con el color de la marca.",
     fondo: `Estudio fotográfico en penumbra verde profundo: ciclorama de verde casi negro (#06120D arriba) a verde bosque oscuro (#123227) hacia el piso. Un spotlight cónico verde esmeralda suave cae desde arriba sobre el zorro con partículas finas flotando en el haz. Una neblina baja muy tenue se arrastra por el piso alrededor del círculo de luz. Sombra elíptica suave bajo el zorro. Fuera del haz, penumbra verdosa elegante. La franja superior es verde casi negro, plana y limpia.`,
     paletaObjetos: `utilería en verdes profundos, dorado apagado, crema y el naranja del zorro; los props dentro del haz toman un matiz esmeralda suave en su cara iluminada`,
     detalles: [
@@ -120,6 +127,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_purpura",
     nombre: "Estudio púrpura",
+    descripcionUi: "Luz violeta, moderna y creativa.",
     fondo: `Estudio fotográfico en penumbra púrpura: ciclorama de púrpura casi negro (#120A1E arriba) a violeta profundo (#251540) hacia el piso. Un spotlight cónico violeta suave cae desde arriba sobre el zorro; partículas brillantes diminutas flotan SOLO dentro del haz. Un segundo haz magenta muy tenue cruza el fondo en diagonal sin tocar al zorro. Sombra elíptica marcada bajo el zorro. Fuera de los haces, penumbra púrpura elegante. La franja superior es púrpura casi negro, plana y limpia.`,
     paletaObjetos: `utilería en violetas profundos, magenta apagado, plata y el naranja del zorro; la cara iluminada de cada prop toma el matiz violeta del haz`,
     detalles: [
@@ -140,6 +148,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_carmesi",
     nombre: "Estudio carmesí",
+    descripcionUi: "Luz roja dramática, para temas de urgencia o impacto.",
     fondo: `Estudio fotográfico en penumbra dramática: ciclorama de negro humo (#0C0A0A arriba) a granate muy oscuro (#221114) hacia el piso. Un spotlight cónico de luz roja cálida cae desde arriba sobre el zorro, con humo fino y elegante atravesando el haz. El círculo de luz en el piso es rojizo y suave. Sombra elíptica intensa bajo el zorro. Fuera del haz, penumbra casi negra. La franja superior es negro humo, plana y limpia.`,
     paletaObjetos: `utilería en rojos profundos, negro, gris humo y el naranja del zorro; la cara iluminada de cada prop se tiñe del rojo cálido del foco y la opuesta cae en penumbra`,
     detalles: [
@@ -159,6 +168,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_dorado",
     nombre: "Estudio dorado lateral",
+    descripcionUi: "Luz dorada lateral con sombras largas, look editorial.",
     fondo: `Estudio fotográfico en penumbra con luz LATERAL dorada: ciclorama de carbón (#111013 arriba) a bronce muy oscuro (#241A0E) hacia el piso. Un haz dorado cálido entra desde UN COSTADO a media altura (no desde arriba), iluminando al zorro de lado: una mitad cálida y brillante, la otra en penumbra suave. La sombra del zorro se proyecta ALARGADA hacia el lado opuesto de la luz. Motas de polvo flotan visibles dentro del haz lateral. La franja superior es carbón casi negro, plana y limpia.`,
     paletaObjetos: `utilería en dorados, madera oscura, crema y el naranja del zorro; cada prop con su mitad hacia la luz dorada encendida y la otra mitad en penumbra, sombras alargadas como la del zorro`,
     detalles: [
@@ -178,6 +188,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_contraluz",
     nombre: "Estudio contraluz",
+    descripcionUi: "Contraluz naranja: silueta con borde de luz encendido.",
     fondo: `Estudio fotográfico con contraluz cálido: ciclorama de carbón oscuro (#0E0C0B arriba) a marrón humo (#1E1510) hacia el piso. Un resplandor naranja cálido difuso brilla DETRÁS del zorro a la altura del piso (como un foco apuntando hacia la cámara desde atrás, oculto por el personaje), creando un rim light naranja marcado en todo su contorno. Una luz de relleno frontal suave mantiene visibles los colores del zorro. Halo de luz difusa alrededor de su silueta. Sombra proyectada hacia adelante. La franja superior es carbón casi negro, plana y limpia.`,
     paletaObjetos: `utilería en marrones cálidos, ámbar, crema y el naranja del zorro; los props cercanos al resplandor se recortan a contraluz con su propio borde de luz naranja`,
     detalles: [
@@ -198,6 +209,7 @@ export const DIRECCIONES_PORTADA: DireccionArte[] = [
   {
     id: "estudio_duotono",
     nombre: "Estudio duotono cine",
+    descripcionUi: "Doble luz de cine: ámbar y azul cruzados.",
     fondo: `Estudio fotográfico con iluminación cruzada de cine: ciclorama de grafito oscuro (#121116 arriba a #1C1B22 abajo). Dos luces cruzadas bañan la escena: un haz ÁMBAR cálido desde un costado y un haz AZUL frío desde el costado opuesto, tiñendo cada mitad del ciclorama con su temperatura. El zorro recibe un doble rim light sutil (borde cálido de un lado, frío del otro) manteniendo sus colores planos reconocibles. Dos sombras suaves cruzadas bajo el zorro. Neblina muy fina revela ambos haces. La franja superior es grafito casi negro, plana y limpia.`,
     paletaObjetos: `utilería en neutros (gris, negro mate, blanco) más el naranja del zorro; cada prop toma ámbar por un lado y azul por el otro, igual que el personaje`,
     detalles: [
@@ -250,6 +262,7 @@ export function buildCoverIllustrationPrompt(
   detalle: string,
   pose: PoseSeleccionada,
   extraEstilo?: string | null,
+  utileria?: string | null,
 ): string {
   return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles).
 
@@ -276,7 +289,10 @@ UTILERÍA REAL, NO STICKERS (CRÍTICO - NO NEGOCIABLE):
 - PROHIBIDO: objetos estilo sticker/pegatina/icono plano, contornos gruesos negros alrededor de los objetos, objetos flotantes, glow o borde de recorte, collage de iconos, rodear al zorro de objetos por todos lados
 - PROHIBIDO TAMBIÉN: símbolos abstractos dibujados en el aire — signos de interrogación o exclamación, flechas, gráficos, corazones, monedas o estrellas flotantes. Si necesitas comunicar una idea abstracta, ponla DENTRO de un objeto físico del set: una pizarra o letrero apoyado con el símbolo impreso, una pantalla encendida mostrando el gráfico, una caja de cartón con el símbolo estampado en su cara
 La utilería debe ser ESPECÍFICA de este tema, no genérica: PROHIBIDO el kit cliché de marketing (cohete, embudo, carrito de compras, lupa, gráfico de barras) — y si el título menciona uno de estos literalmente, se dibuja como objeto FÍSICO real del set (un carrito de supermercado de metal de tamaño real parado en el piso, por ejemplo), jamás como icono. Pregúntate qué utilería pondría un director de arte en una foto editorial sobre este tema exacto y pon ESA en el set.
-
+${utileria ? `
+UTILERÍA PEDIDA POR EL USUARIO (OBLIGATORIA): ${utileria}
+Dibuja EXACTAMENTE esa utilería como los props protagonistas del set — mismas reglas físicas de arriba: apoyada, con volumen, iluminada por el foco y con sombras coherentes — sin agregar otros objetos protagonistas por tu cuenta.
+` : ""}
 ZONA SUPERIOR VACÍA (CRÍTICO - NO NEGOCIABLE):
 - El 35% SUPERIOR de la imagen (de 0px a 670px desde arriba) debe ser ÚNICAMENTE el fondo de la dirección de arte en su versión más plana y oscura, SIN elementos
 - NADA puede existir en esa zona: ni el zorro, ni objetos, ni sombras, ni líneas, ni bordes
@@ -299,13 +315,60 @@ RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen.
 ${bloquePoseRequerida(pose)}`;
 }
 
-/** Selecciona dirección + detalle + pose y arma el prompt en una llamada. */
-export function prepararPortada(tema: string, extraEstilo?: string | null): PortadaPreparada {
-  const direccion = seleccionarDireccion();
+/** Opciones de personalización manual: cada campo fija UN punto del prompt. */
+export interface OpcionesPortada {
+  /** Fija la variante de iluminación del estudio (id de DIRECCIONES_PORTADA). */
+  direccionId?: string | null;
+  /** Fija la pose del zorro (id del banco de poses). */
+  poseId?: string | null;
+  /** Utilería pedida por el usuario: se dibuja como props físicos del set. */
+  utileria?: string | null;
+}
+
+/** Direcciones y poses disponibles, en formato listo para una UI de selección. */
+export function listarOpcionesPortada() {
+  return {
+    direcciones: DIRECCIONES_PORTADA.map(d => ({
+      id: d.id,
+      nombre: d.nombre,
+      descripcion: d.descripcionUi,
+      colorAcento: d.titular.colorAcento,
+    })),
+    poses: PORTADA_POSES.map(p => ({ id: p.id, etiqueta: p.etiqueta })),
+  };
+}
+
+/** Selecciona dirección + detalle + pose y arma el prompt en una llamada.
+ *  `opciones` fija manualmente dirección, pose y/o utilería; lo no fijado
+ *  sigue el comportamiento automático con rotación anti-repetición. */
+export function prepararPortada(tema: string, extraEstilo?: string | null, opciones?: OpcionesPortada | null): PortadaPreparada {
+  const fijada = opciones?.direccionId
+    ? DIRECCIONES_PORTADA.find(d => d.id === opciones.direccionId)
+    : undefined;
+  let direccion: DireccionArte;
+  if (fijada) {
+    direccion = fijada;
+    // Registrar en la memoria FIFO para que la rotación automática no la repita enseguida.
+    ultimasDirecciones.push(fijada.id);
+    if (ultimasDirecciones.length > MEMORIA_DIRECCIONES) ultimasDirecciones.shift();
+  } else {
+    direccion = seleccionarDireccion();
+  }
+
   const detalle = elegirDetalle(direccion);
-  const pose = seleccionarPosePortada(tema);
-  const prompt = buildCoverIllustrationPrompt(tema, direccion, detalle, pose, extraEstilo);
-  console.log(`[PORTADA] Dirección: ${direccion.id} · Pose: ${pose.id} (emoción: ${pose.emocion || "ninguna"})`);
+
+  const poseFija = opciones?.poseId
+    ? PORTADA_POSES.find(p => p.id === opciones.poseId)
+    : undefined;
+  const pose: PoseSeleccionada = poseFija
+    ? { id: poseFija.id, descripcion: poseFija.descripcion, emocion: detectarEmocion(tema) }
+    : seleccionarPosePortada(tema);
+
+  // Normalizar entradas de texto libre (clientes no-UI pueden mandar solo espacios).
+  const utileria = opciones?.utileria?.trim() || null;
+  const estilo = extraEstilo?.trim() || null;
+  const prompt = buildCoverIllustrationPrompt(tema, direccion, detalle, pose, estilo, utileria);
+  console.log(`[PORTADA] Dirección: ${direccion.id}${fijada ? " (fijada)" : ""} · Pose: ${pose.id}${poseFija ? " (fijada)" : ""} (emoción: ${pose.emocion || "ninguna"})${utileria ? " · Utilería personalizada" : ""}`);
   return { direccion, detalle, pose, prompt };
 }
 

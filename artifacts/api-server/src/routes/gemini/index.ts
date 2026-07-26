@@ -11,7 +11,7 @@ import {
   GenerateCoverBody,
 } from "@workspace/api-zod";
 import { toFile } from "openai";
-import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit } from "../../lib/cover-style.js";
+import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit, listarOpcionesPortada } from "../../lib/cover-style.js";
 
 const router: IRouter = Router();
 
@@ -141,11 +141,30 @@ router.post("/gemini/generate-image", async (req, res) => {
   }
 });
 
+// Catálogo de variantes de luz y poses para la UI de personalización.
+router.get("/gemini/cover-options", (_req, res) => {
+  res.json(listarOpcionesPortada());
+});
+
 router.post("/gemini/generate-cover", async (req, res) => {
   const body = GenerateCoverBody.parse(req.body);
 
+  const catalogo = listarOpcionesPortada();
+  if (body.direccionId && !catalogo.direcciones.some(d => d.id === body.direccionId)) {
+    res.status(400).json({ error: `direccionId inválido: ${body.direccionId}` });
+    return;
+  }
+  if (body.poseId && !catalogo.poses.some(p => p.id === body.poseId)) {
+    res.status(400).json({ error: `poseId inválido: ${body.poseId}` });
+    return;
+  }
+
   const tema = `${body.title} ${body.description || ""}`.trim();
-  const { direccion, prompt: basePrompt } = prepararPortada(tema, body.style);
+  const { direccion, prompt: basePrompt } = prepararPortada(tema, body.style, {
+    direccionId: body.direccionId,
+    poseId: body.poseId,
+    utileria: body.utileria,
+  });
 
   const MAX_RETRIES = 4;
   const RETRY_DELAYS = [5000, 15000, 30000];

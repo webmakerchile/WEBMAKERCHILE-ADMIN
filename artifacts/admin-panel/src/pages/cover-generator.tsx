@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { useGenerateCover } from "@workspace/api-client-react";
+import { useGenerateCover, useGetCoverOptions } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2
+  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { RETRY_PRESETS } from "@/lib/retry-presets";
@@ -13,7 +13,11 @@ const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-d
 export default function CoverGeneratorPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [style, setStyle] = useState("Youtube Gaming Thumbnail, high contrast, vibrant colors");
+  const [style, setStyle] = useState("");
+  const [direccionId, setDireccionId] = useState<string | null>(null);
+  const [poseId, setPoseId] = useState<string | null>(null);
+  const [utileria, setUtileria] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(DEFAULT_REFERENCE_URL);
   const [isDefaultRef, setIsDefaultRef] = useState(true);
   const [customRefBase64, setCustomRefBase64] = useState<string | null>(null);
@@ -25,6 +29,16 @@ export default function CoverGeneratorPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const generateCover = useGenerateCover();
+  const coverOptions = useGetCoverOptions();
+  const direccionSeleccionada = coverOptions.data?.direcciones.find((d) => d.id === direccionId) ?? null;
+  const ajustesActivos = [direccionId, poseId, utileria.trim() || null, style.trim() || null].filter(Boolean).length;
+
+  // Si el catálogo cambia y una selección ya no existe, volver a automático.
+  useEffect(() => {
+    if (!coverOptions.data) return;
+    if (direccionId && !coverOptions.data.direcciones.some((d) => d.id === direccionId)) setDireccionId(null);
+    if (poseId && !coverOptions.data.poses.some((p) => p.id === poseId)) setPoseId(null);
+  }, [coverOptions.data, direccionId, poseId]);
 
   useEffect(() => {
     fetch(DEFAULT_REFERENCE_URL)
@@ -81,7 +95,15 @@ export default function CoverGeneratorPage() {
 
     generateCover.mutate(
       {
-        data: { title, description: descripcionExtendida, style, referenceImageBase64: base64 },
+        data: {
+          title,
+          description: descripcionExtendida,
+          style: style.trim() || undefined,
+          referenceImageBase64: base64,
+          direccionId: direccionId ?? undefined,
+          poseId: poseId ?? undefined,
+          utileria: utileria.trim() || undefined,
+        },
       },
       {
         onSuccess: () => {
@@ -108,7 +130,7 @@ export default function CoverGeneratorPage() {
       <div className="max-w-5xl mx-auto space-y-8">
         <header>
           <h1 className="text-4xl font-display font-bold text-gradient mb-2">Generador AI de Portadas</h1>
-          <p className="text-muted-foreground text-lg">Crea miniaturas espectaculares usando Gemini 3.1 Pro.</p>
+          <p className="text-muted-foreground text-lg">Estilo "Estudio Spotlight" de la marca — elige la luz, la pose y la utilería del set, o deja que roten solas.</p>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -134,13 +156,98 @@ export default function CoverGeneratorPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Estilo Visual</label>
-                <input 
-                  value={style}
-                  onChange={(e) => setStyle(e.target.value)}
-                  className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
-                />
+              <div className="border border-foreground/10 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-background/40 hover:bg-background/60 transition-colors"
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <SlidersHorizontal className="w-4 h-4 text-primary" />
+                    Personalización del set
+                    {ajustesActivos > 0 ? (
+                      <span className="text-[10px] font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
+                        {ajustesActivos} activo{ajustesActivos > 1 ? "s" : ""}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                    )}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                </button>
+
+                {showAdvanced && (
+                  <div className="p-4 space-y-5 border-t border-foreground/10">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Iluminación del estudio</label>
+                      {coverOptions.isError && (
+                        <p className="text-xs text-amber-400/80">No se pudieron cargar las opciones — la portada usará rotación automática.</p>
+                      )}
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setDireccionId(null)}
+                          className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition ${direccionId === null ? "border-primary bg-primary/15 text-foreground" : "border-foreground/10 bg-background/40 text-muted-foreground hover:border-foreground/30"}`}
+                        >
+                          <Sparkles className="w-3 h-3 shrink-0" />
+                          Automática
+                        </button>
+                        {coverOptions.data?.direcciones.map((d) => (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onClick={() => setDireccionId(direccionId === d.id ? null : d.id)}
+                            title={d.descripcion}
+                            className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition ${direccionId === d.id ? "border-primary bg-primary/15 text-foreground" : "border-foreground/10 bg-background/40 text-muted-foreground hover:border-foreground/30"}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: d.colorAcento }} />
+                            <span className="truncate">{d.nombre.replace(/^Estudio /, "")}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground/70">
+                        {direccionSeleccionada ? direccionSeleccionada.descripcion : "Rota sola entre las 8 luces del estudio para que ninguna portada se repita."}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Pose de Webi</label>
+                      <select
+                        value={poseId ?? ""}
+                        onChange={(e) => setPoseId(e.target.value || null)}
+                        className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
+                      >
+                        <option value="">Automática (según el tema)</option>
+                        {coverOptions.data?.poses.map((p) => (
+                          <option key={p.id} value={p.id}>{p.etiqueta}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Utilería del set</label>
+                      <input
+                        value={utileria}
+                        onChange={(e) => setUtileria(e.target.value)}
+                        className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary outline-none transition-all"
+                        placeholder="Ej: un notebook abierto, una taza de café, cajas de cartón"
+                      />
+                      <p className="text-xs text-muted-foreground/70">
+                        Se dibujan como objetos reales apoyados en el set e iluminados por el foco — nunca stickers.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Toque de estilo extra</label>
+                      <input
+                        value={style}
+                        onChange={(e) => setStyle(e.target.value)}
+                        className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary outline-none transition-all"
+                        placeholder="Ej: tono más dramático, ambiente festivo…"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

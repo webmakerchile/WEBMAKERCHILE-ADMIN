@@ -56,6 +56,26 @@ export interface GenerateCoverBody {
   description: string;
   referenceImageBase64?: string;
   style?: string;
+  direccionId?: string;
+  poseId?: string;
+  utileria?: string;
+}
+
+export interface CoverDireccionOption {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  colorAcento: string;
+}
+
+export interface CoverPoseOption {
+  id: string;
+  etiqueta: string;
+}
+
+export interface CoverOptionsResponse {
+  direcciones: CoverDireccionOption[];
+  poses: CoverPoseOption[];
 }
 
 export interface DriveFile {

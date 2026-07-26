@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  CoverOptionsResponse,
   CreateGeminiConversationBody,
   CreateVideoBody,
   DriveFile,
@@ -807,6 +808,81 @@ export const useGenerateCover = <
 > => {
   return useMutation(getGenerateCoverMutationOptions(options));
 };
+
+/**
+ * @summary List selectable studio-light variants and poses for cover generation
+ */
+export const getGetCoverOptionsUrl = () => {
+  return `/api/gemini/cover-options`;
+};
+
+export const getCoverOptions = async (
+  options?: RequestInit,
+): Promise<CoverOptionsResponse> => {
+  return customFetch<CoverOptionsResponse>(getGetCoverOptionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCoverOptionsQueryKey = () => {
+  return [`/api/gemini/cover-options`] as const;
+};
+
+export const getGetCoverOptionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoverOptions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverOptions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCoverOptionsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCoverOptions>>> = ({
+    signal,
+  }) => getCoverOptions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverOptions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoverOptionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoverOptions>>
+>;
+export type GetCoverOptionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List selectable studio-light variants and poses for cover generation
+ */
+
+export function useGetCoverOptions<
+  TData = Awaited<ReturnType<typeof getCoverOptions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverOptions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoverOptionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List files in a Google Drive folder

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DIRECCIONES_PORTADA,
   seleccionarDireccion,
+  prepararPortada,
+  listarOpcionesPortada,
   elegirDetalle,
   elegirPalabrasAcento,
   esErrorRateLimit,
@@ -136,5 +138,50 @@ describe("splitTextIntoLines", () => {
     const lines = splitTextIntoLines("UNO DOS TRES CUATRO CINCO SEIS", 10);
     for (const l of lines) expect(l.length).toBeLessThanOrEqual(10);
     expect(lines.join(" ")).toBe("UNO DOS TRES CUATRO CINCO SEIS");
+  });
+});
+
+describe("personalización de portadas (opciones)", () => {
+  it("respeta la dirección fijada por id", () => {
+    const r = prepararPortada("Tema de prueba", null, { direccionId: "estudio_carmesi" });
+    expect(r.direccion.id).toBe("estudio_carmesi");
+  });
+
+  it("cae en rotación automática si la direccionId no existe", () => {
+    const r = prepararPortada("Tema de prueba", null, { direccionId: "no_existe" });
+    expect(DIRECCIONES_PORTADA.some((d) => d.id === r.direccion.id)).toBe(true);
+  });
+
+  it("respeta la pose fijada por id y la incluye en el prompt", () => {
+    const r = prepararPortada("Tema de prueba", null, { poseId: "superhero_stance" });
+    expect(r.pose.id).toBe("superhero_stance");
+    expect(r.prompt).toContain("superhéroe");
+  });
+
+  it("inyecta la utilería pedida como bloque obligatorio del prompt", () => {
+    const r = prepararPortada("Tema", null, { utileria: "una taza de café humeante" });
+    expect(r.prompt).toContain("UTILERÍA PEDIDA POR EL USUARIO (OBLIGATORIA): una taza de café humeante");
+  });
+
+  it("sin utilería pedida no aparece el bloque obligatorio", () => {
+    const r = prepararPortada("Tema", null);
+    expect(r.prompt).not.toContain("UTILERÍA PEDIDA POR EL USUARIO");
+  });
+
+  it("ignora utilería y estilo extra de solo espacios", () => {
+    const r = prepararPortada("Tema", "   ", { utileria: "   " });
+    expect(r.prompt).not.toContain("UTILERÍA PEDIDA POR EL USUARIO");
+    expect(r.prompt).not.toContain("ESTILO ADICIONAL PEDIDO POR EL USUARIO");
+  });
+
+  it("listarOpcionesPortada expone 8 direcciones con color y 14 poses etiquetadas", () => {
+    const cat = listarOpcionesPortada();
+    expect(cat.direcciones).toHaveLength(8);
+    for (const d of cat.direcciones) {
+      expect(d.colorAcento).toMatch(/^#/);
+      expect(d.descripcion.length).toBeGreaterThan(0);
+    }
+    expect(cat.poses).toHaveLength(14);
+    for (const p of cat.poses) expect(p.etiqueta.length).toBeGreaterThan(0);
   });
 });

@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./coverDireccionOption";
+export * from "./coverOptionsResponse";
+export * from "./coverPoseOption";
 export * from "./createGeminiConversationBody";
 export * from "./createVideoBody";
 export * from "./driveFile";

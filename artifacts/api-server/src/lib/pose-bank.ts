@@ -20,24 +20,26 @@ export type PoseId =
 
 export interface PoseEntry {
   id: PoseId;
+  /** Etiqueta corta en español para selects de UI. */
+  etiqueta: string;
   descripcion: string;
 }
 
 export const PORTADA_POSES: PoseEntry[] = [
-  { id: "pointing_right", descripcion: "cuerpo girado 3/4 a la derecha, brazo derecho extendido señalando un elemento de la escena a la derecha, sonrisa segura, cejas levantadas" },
-  { id: "pointing_left", descripcion: "cuerpo girado 3/4 a la izquierda, brazo izquierdo extendido señalando un elemento de la escena a la izquierda, expresión curiosa, cabeza ligeramente inclinada" },
-  { id: "shocked_front", descripcion: "cuerpo de frente al espectador, ambas patas levantadas cerca de la cara en señal de sorpresa, ojos muy abiertos, boca abierta, expresión de shock total" },
-  { id: "thinking_hand_chin", descripcion: "cuerpo de 3/4, pata derecha apoyada en el mentón en pose pensativa, mirando hacia arriba como si estuviera reflexionando, expresión seria y contemplativa" },
-  { id: "arms_crossed_confident", descripcion: "cuerpo de frente, brazos cruzados firmemente sobre el pecho, sonrisa de lado segura, cabeza ligeramente inclinada, postura relajada y dominante" },
-  { id: "shrug_confused", descripcion: "cuerpo de frente, ambas patas levantadas en gesto de 'no sé' (palmas hacia arriba), expresión confundida o de pregunta, hombros encogidos" },
-  { id: "triumphant_arms_up", descripcion: "cuerpo de frente, ambos brazos levantados al cielo en pose de triunfo y celebración, sonrisa enorme, ojos cerrados de alegría" },
-  { id: "worried_head_hold", descripcion: "cuerpo de 3/4, una pata sosteniéndose la cabeza en gesto de preocupación o frustración, expresión de inquietud, boca ligeramente abierta" },
-  { id: "presenting_with_hand", descripcion: "cuerpo de 3/4, brazo derecho extendido con la palma hacia arriba como presentando algo, sonrisa cálida y acogedora, gesto invitante" },
-  { id: "whispering_secret", descripcion: "cuerpo de 3/4 inclinado hacia adelante hacia el espectador, una pata cerca de la boca como contando un secreto, expresión pícara, cejas levantadas" },
-  { id: "reading_document", descripcion: "cuerpo de 3/4, ambas patas sosteniendo un documento o tablet frente al pecho, mirando hacia abajo con expresión concentrada y enfocada" },
-  { id: "thumbs_up_confident", descripcion: "cuerpo de frente, pata derecha con pulgar arriba, sonrisa amplia y confiada, contacto visual directo con el espectador" },
-  { id: "superhero_stance", descripcion: "cuerpo de frente, manos en las caderas, pecho hacia adelante, mirada heroica al horizonte, postura de superhéroe" },
-  { id: "head_tilt_curious", descripcion: "cuerpo de 3/4, cabeza inclinada hacia un lado con expresión curiosa, una oreja más alta que la otra, mirada juguetona" },
+  { id: "pointing_right", etiqueta: "Señalando a la derecha", descripcion: "cuerpo girado 3/4 a la derecha, brazo derecho extendido señalando un elemento de la escena a la derecha, sonrisa segura, cejas levantadas" },
+  { id: "pointing_left", etiqueta: "Señalando a la izquierda", descripcion: "cuerpo girado 3/4 a la izquierda, brazo izquierdo extendido señalando un elemento de la escena a la izquierda, expresión curiosa, cabeza ligeramente inclinada" },
+  { id: "shocked_front", etiqueta: "Sorprendido (shock)", descripcion: "cuerpo de frente al espectador, ambas patas levantadas cerca de la cara en señal de sorpresa, ojos muy abiertos, boca abierta, expresión de shock total" },
+  { id: "thinking_hand_chin", etiqueta: "Pensativo", descripcion: "cuerpo de 3/4, pata derecha apoyada en el mentón en pose pensativa, mirando hacia arriba como si estuviera reflexionando, expresión seria y contemplativa" },
+  { id: "arms_crossed_confident", etiqueta: "Brazos cruzados (seguro)", descripcion: "cuerpo de frente, brazos cruzados firmemente sobre el pecho, sonrisa de lado segura, cabeza ligeramente inclinada, postura relajada y dominante" },
+  { id: "shrug_confused", etiqueta: "Confundido (¿qué pasó?)", descripcion: "cuerpo de frente, ambas patas levantadas en gesto de 'no sé' (palmas hacia arriba), expresión confundida o de pregunta, hombros encogidos" },
+  { id: "triumphant_arms_up", etiqueta: "Celebrando (brazos arriba)", descripcion: "cuerpo de frente, ambos brazos levantados al cielo en pose de triunfo y celebración, sonrisa enorme, ojos cerrados de alegría" },
+  { id: "worried_head_hold", etiqueta: "Preocupado", descripcion: "cuerpo de 3/4, una pata sosteniéndose la cabeza en gesto de preocupación o frustración, expresión de inquietud, boca ligeramente abierta" },
+  { id: "presenting_with_hand", etiqueta: "Presentando con la mano", descripcion: "cuerpo de 3/4, brazo derecho extendido con la palma hacia arriba como presentando algo, sonrisa cálida y acogedora, gesto invitante" },
+  { id: "whispering_secret", etiqueta: "Contando un secreto", descripcion: "cuerpo de 3/4 inclinado hacia adelante hacia el espectador, una pata cerca de la boca como contando un secreto, expresión pícara, cejas levantadas" },
+  { id: "reading_document", etiqueta: "Leyendo un documento", descripcion: "cuerpo de 3/4, ambas patas sosteniendo un documento o tablet frente al pecho, mirando hacia abajo con expresión concentrada y enfocada" },
+  { id: "thumbs_up_confident", etiqueta: "Pulgar arriba", descripcion: "cuerpo de frente, pata derecha con pulgar arriba, sonrisa amplia y confiada, contacto visual directo con el espectador" },
+  { id: "superhero_stance", etiqueta: "Pose de superhéroe", descripcion: "cuerpo de frente, manos en las caderas, pecho hacia adelante, mirada heroica al horizonte, postura de superhéroe" },
+  { id: "head_tilt_curious", etiqueta: "Curioso (cabeza inclinada)", descripcion: "cuerpo de 3/4, cabeza inclinada hacia un lado con expresión curiosa, una oreja más alta que la otra, mirada juguetona" },
 ];
 
 export type Emocion =

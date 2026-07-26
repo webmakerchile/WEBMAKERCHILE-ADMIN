@@ -181,6 +181,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GenerateGeminiImageResponse"
+  /gemini/cover-options:
+    get:
+      operationId: getCoverOptions
+      tags: [gemini]
+      summary: List selectable studio-light variants and poses for cover generation
+      responses:
+        "200":
+          description: Available cover customization options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverOptionsResponse"
   /drive/files:
     get:
       operationId: listDriveFiles
@@ -498,9 +510,55 @@ components:
           type: string
         style:
           type: string
+        direccionId:
+          type: string
+        poseId:
+          type: string
+        utileria:
+          type: string
       required:
         - title
         - description
+    CoverDireccionOption:
+      type: object
+      properties:
+        id:
+          type: string
+        nombre:
+          type: string
+        descripcion:
+          type: string
+        colorAcento:
+          type: string
+      required:
+        - id
+        - nombre
+        - descripcion
+        - colorAcento
+    CoverPoseOption:
+      type: object
+      properties:
+        id:
+          type: string
+        etiqueta:
+          type: string
+      required:
+        - id
+        - etiqueta
+    CoverOptionsResponse:
+      type: object
+      properties:
+        direcciones:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverDireccionOption"
+        poses:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverPoseOption"
+      required:
+        - direcciones
+        - poses
     DriveFile:
       type: object
       properties:

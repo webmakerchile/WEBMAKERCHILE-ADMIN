@@ -112,11 +112,34 @@ export const GenerateCoverBody = zod.object({
   description: zod.string(),
   referenceImageBase64: zod.string().optional(),
   style: zod.string().optional(),
+  direccionId: zod.string().optional(),
+  poseId: zod.string().optional(),
+  utileria: zod.string().optional(),
 });
 
 export const GenerateCoverResponse = zod.object({
   b64_json: zod.string(),
   mimeType: zod.string(),
+});
+
+/**
+ * @summary List selectable studio-light variants and poses for cover generation
+ */
+export const GetCoverOptionsResponse = zod.object({
+  direcciones: zod.array(
+    zod.object({
+      id: zod.string(),
+      nombre: zod.string(),
+      descripcion: zod.string(),
+      colorAcento: zod.string(),
+    }),
+  ),
+  poses: zod.array(
+    zod.object({
+      id: zod.string(),
+      etiqueta: zod.string(),
+    }),
+  ),
 });
 
 /**
