@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { useGenerateCover, useGetCoverOptions, useImproveCoverIdea } from "@workspace/api-client-react";
+import { useGenerateCover, useGenerateYoutubeCover, useGetCoverOptions, useImproveCoverIdea } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Image as ImageIcon, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown
+  Sparkles, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown, Youtube, Smartphone, UserRound, Maximize2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { RETRY_PRESETS } from "@/lib/retry-presets";
@@ -11,6 +11,7 @@ import { RETRY_PRESETS } from "@/lib/retry-presets";
 const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
 
 export default function CoverGeneratorPage() {
+  const [formato, setFormato] = useState<"vertical" | "youtube">("vertical");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [style, setStyle] = useState("");
@@ -23,16 +24,82 @@ export default function CoverGeneratorPage() {
   const [customRefBase64, setCustomRefBase64] = useState<string | null>(null);
   const [defaultRefBase64, setDefaultRefBase64] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Foto de la persona protagonista (solo miniaturas de YouTube).
+  const [personPreview, setPersonPreview] = useState<string | null>(null);
+  const [personBase64, setPersonBase64] = useState<string | null>(null);
+  const personInputRef = useRef<HTMLInputElement>(null);
   const [modalAjuste, setModalAjuste] = useState(false);
   const [ajusteTexto, setAjusteTexto] = useState("");
   const [intentos, setIntentos] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  // Previsualización a pantalla completa del resultado (clic en la imagen).
+  // La imagen se CAPTURA al hacer clic (no se lee del estado vivo): así un
+  // cambio de pestaña en segundo plano no puede alterar lo que se está viendo.
+  const [preview, setPreview] = useState<{ src: string; download: string; alt: string } | null>(null);
+  const previewOverlayRef = useRef<HTMLDivElement>(null);
+  const previewCloseRef = useRef<HTMLButtonElement>(null);
+  const previewReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const generateCover = useGenerateCover();
+  const generateYoutube = useGenerateYoutubeCover();
   const coverOptions = useGetCoverOptions();
   const improveIdea = useImproveCoverIdea();
+  const esYoutube = formato === "youtube";
+  // Estado de generación del formato activo (cada pestaña recuerda su último resultado).
+  const activeGen = esYoutube ? generateYoutube : generateCover;
   const direccionSeleccionada = coverOptions.data?.direcciones.find((d) => d.id === direccionId) ?? null;
-  const ajustesActivos = [direccionId, poseId, utileria.trim() || null, style.trim() || null, !isDefaultRef ? "ref" : null].filter(Boolean).length;
+
+  const abrirPreview = () => {
+    if (!activeGen.data) return;
+    previewReturnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setModalAjuste(false); // nunca dos overlays a la vez
+    setPreview({
+      src: `data:${activeGen.data.mimeType};base64,${activeGen.data.b64_json}`,
+      download: `${esYoutube ? "miniatura-youtube" : "portada"}-${title || "webmakerchile"}.png`,
+      alt: esYoutube ? "Miniatura de YouTube en grande" : "Portada vertical en grande",
+    });
+  };
+
+  const cerrarPreview = () => {
+    setPreview(null);
+    const prev = previewReturnFocusRef.current;
+    if (prev && document.contains(prev)) prev.focus();
+  };
+
+  // Lightbox modal de verdad: foco inicial en "cerrar", Escape cierra y Tab
+  // queda atrapado dentro del overlay (no se puede operar el fondo).
+  useEffect(() => {
+    if (!preview) return;
+    previewCloseRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        cerrarPreview();
+        return;
+      }
+      if (e.key === "Tab") {
+        const overlay = previewOverlayRef.current;
+        if (!overlay) return;
+        const focusables = overlay.querySelectorAll<HTMLElement>("button, a[href]");
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && (active === first || !overlay.contains(active))) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && (active === last || !overlay.contains(active))) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+  const ajustesActivos = esYoutube
+    ? [direccionId, utileria.trim() || null, style.trim() || null].filter(Boolean).length
+    : [direccionId, poseId, utileria.trim() || null, style.trim() || null, !isDefaultRef ? "ref" : null].filter(Boolean).length;
 
   // Refs espejo para leer el valor MÁS RECIENTE cuando vuelve la respuesta de
   // la IA: si el usuario tocó un campo mientras tanto, ese campo no se pisa;
@@ -47,6 +114,8 @@ export default function CoverGeneratorPage() {
   styleRef.current = style;
   const direccionIdRef = useRef(direccionId);
   direccionIdRef.current = direccionId;
+  const formatoRef = useRef(formato);
+  formatoRef.current = formato;
   const improveSeqRef = useRef(0);
   const improvingRef = useRef(false);
 
@@ -61,13 +130,27 @@ export default function CoverGeneratorPage() {
     const seq = ++improveSeqRef.current;
     improvingRef.current = true;
     improveIdea.mutate(
-      { data: { title: sentTitle || undefined, idea: sentIdea || undefined } },
+      {
+        data: {
+          title: sentTitle || undefined,
+          idea: sentIdea || undefined,
+          formato,
+          conPersona: esYoutube ? Boolean(personBase64) : undefined,
+        },
+      },
       {
         onSettled: () => {
           if (seq === improveSeqRef.current) improvingRef.current = false;
         },
         onSuccess: (r) => {
           if (seq !== improveSeqRef.current) return; // respuesta vieja: ignorar
+          // La redacción es específica del formato (persona youtuber vs Webi
+          // vertical): si cambió de pestaña mientras la IA respondía, descartarla.
+          if (formatoRef.current !== formato) {
+            setToast("Cambiaste de formato — descarté la redacción anterior");
+            setTimeout(() => setToast(null), 3500);
+            return;
+          }
           const ideaUntouched = descriptionRef.current.trim() === sentIdea;
           const applied = Boolean(r.idea) && ideaUntouched;
           if (applied) setDescription(r.idea);
@@ -152,6 +235,22 @@ export default function CoverGeneratorPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handlePersonFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPersonPreview(URL.createObjectURL(file));
+      fileToBase64(file).then(b64 => {
+        setPersonBase64(b64.split(",")[1]);
+      });
+    }
+  };
+
+  const handleRemovePerson = () => {
+    setPersonPreview(null);
+    setPersonBase64(null);
+    if (personInputRef.current) personInputRef.current.value = "";
+  };
+
   const handleGenerate = async (ajuste?: string) => {
     if (!title) return alert("El título es requerido");
 
@@ -165,6 +264,31 @@ export default function CoverGeneratorPage() {
     const descripcionExtendida = ajuste
       ? `${description || ""}\n\nAJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${ajuste}`.trim()
       : description;
+
+    if (esYoutube) {
+      generateYoutube.mutate(
+        {
+          data: {
+            title,
+            description: descripcionExtendida || undefined,
+            style: style.trim() || undefined,
+            personImageBase64: personBase64 ?? undefined,
+            direccionId: direccionId ?? undefined,
+            utileria: utileria.trim() || undefined,
+          },
+        },
+        {
+          onSuccess: () => {
+            setIntentos((n) => n + 1);
+            if (ajuste) {
+              setToast(`✅ Miniatura regenerada con ajuste`);
+              setTimeout(() => setToast(null), 3500);
+            }
+          },
+        }
+      );
+      return;
+    }
 
     generateCover.mutate(
       {
@@ -203,8 +327,42 @@ export default function CoverGeneratorPage() {
       <div className="max-w-5xl mx-auto space-y-8">
         <header>
           <h1 className="text-4xl font-display font-bold text-gradient mb-2">Generador AI de Portadas</h1>
-          <p className="text-muted-foreground text-lg">Cuenta tu idea con tus palabras y aprieta "Escribir con IA" — el estilo "Estudio Spotlight" de la marca se aplica solo.</p>
+          <p className="text-muted-foreground text-lg">
+            {esYoutube
+              ? "Miniaturas horizontales estilo youtuber: tu foto (o la de alguien) integrada al set de la marca."
+              : 'Cuenta tu idea con tus palabras y aprieta "Escribir con IA" — el estilo "Estudio Spotlight" de la marca se aplica solo.'}
+          </p>
         </header>
+
+        {/* Selector de formato: vertical (TikTok/Instagram) vs horizontal (YouTube) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setFormato("vertical")}
+            className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 transition-all text-left ${!esYoutube ? "border-primary bg-primary/10 shadow-lg shadow-primary/10" : "border-foreground/10 bg-background/40 opacity-60 hover:opacity-100 hover:border-foreground/25"}`}
+          >
+            <span className={`w-7 h-11 rounded-md border-2 shrink-0 flex items-center justify-center ${!esYoutube ? "border-primary bg-primary/20" : "border-foreground/30"}`}>
+              <Smartphone className={`w-4 h-4 ${!esYoutube ? "text-primary" : "text-muted-foreground"}`} />
+            </span>
+            <span>
+              <span className={`block font-bold text-sm ${!esYoutube ? "text-foreground" : "text-muted-foreground"}`}>TikTok / Instagram</span>
+              <span className="block text-xs text-muted-foreground">Portada VERTICAL 9:16 · protagonista Webi</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormato("youtube")}
+            className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 transition-all text-left ${esYoutube ? "border-red-500 bg-red-500/10 shadow-lg shadow-red-500/10" : "border-foreground/10 bg-background/40 opacity-60 hover:opacity-100 hover:border-foreground/25"}`}
+          >
+            <span className={`w-11 h-7 rounded-md border-2 shrink-0 flex items-center justify-center ${esYoutube ? "border-red-500 bg-red-500/20" : "border-foreground/30"}`}>
+              <Youtube className={`w-4 h-4 ${esYoutube ? "text-red-500" : "text-muted-foreground"}`} />
+            </span>
+            <span>
+              <span className={`block font-bold text-sm ${esYoutube ? "text-foreground" : "text-muted-foreground"}`}>YouTube</span>
+              <span className="block text-xs text-muted-foreground">Miniatura HORIZONTAL 16:9 · tu foto estilo youtuber</span>
+            </span>
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           <div className="lg:col-span-5 space-y-6">
@@ -247,6 +405,41 @@ export default function CoverGeneratorPage() {
                   </p>
                 )}
               </div>
+
+              {esYoutube && (
+                <div className="space-y-2 rounded-xl border border-red-500/25 bg-red-500/5 p-3">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                    <UserRound className="w-4 h-4 text-red-400" />
+                    La persona de la miniatura
+                    <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+                  </label>
+                  {personPreview ? (
+                    <div className="relative rounded-xl overflow-hidden border border-foreground/10">
+                      <img src={personPreview} alt="Persona de la miniatura" className="w-full h-28 object-cover" />
+                      <button
+                        type="button"
+                        onClick={handleRemovePerson}
+                        className="absolute top-2 right-2 z-10 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
+                      >
+                        <X className="w-4 h-4 text-white" />
+                      </button>
+                      <label className="absolute inset-0 cursor-pointer opacity-0 hover:opacity-100 bg-black/40 flex items-center justify-center transition-opacity">
+                        <span className="text-sm text-white font-medium">Cambiar foto</span>
+                        <input ref={personInputRef} type="file" className="hidden" accept="image/*" onChange={handlePersonFileChange} />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5 rounded-xl cursor-pointer transition-all group">
+                      <Upload className="w-6 h-6 text-muted-foreground group-hover:text-red-400 mb-1.5 transition-colors" />
+                      <span className="text-sm text-muted-foreground font-medium">Subir tu foto (o la de alguien)</span>
+                    <input ref={personInputRef} type="file" className="hidden" accept="image/*" onChange={handlePersonFileChange} />
+                    </label>
+                  )}
+                  <p className="text-xs text-muted-foreground/70">
+                    La IA integra a la persona al set con el rostro idéntico y expresión de youtuber. Sin foto, Webi el zorro es el protagonista.
+                  </p>
+                </div>
+              )}
 
               <div className="border border-foreground/10 rounded-xl overflow-hidden">
                 <button
@@ -302,19 +495,21 @@ export default function CoverGeneratorPage() {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground">Pose de Webi</label>
-                      <select
-                        value={poseId ?? ""}
-                        onChange={(e) => setPoseId(e.target.value || null)}
-                        className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
-                      >
-                        <option value="">Automática (según el tema)</option>
-                        {coverOptions.data?.poses.map((p) => (
-                          <option key={p.id} value={p.id}>{p.etiqueta}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {!esYoutube && (
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-foreground">Pose de Webi</label>
+                        <select
+                          value={poseId ?? ""}
+                          onChange={(e) => setPoseId(e.target.value || null)}
+                          className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
+                        >
+                          <option value="">Automática (según el tema)</option>
+                          {coverOptions.data?.poses.map((p) => (
+                            <option key={p.id} value={p.id}>{p.etiqueta}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">Utilería del set</label>
@@ -339,6 +534,7 @@ export default function CoverGeneratorPage() {
                       />
                     </div>
 
+                    {!esYoutube && (
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-foreground">
                         Imagen de referencia <span className="text-xs text-muted-foreground font-normal">(el zorro va por defecto)</span>
@@ -349,7 +545,7 @@ export default function CoverGeneratorPage() {
                           <button
                             type="button"
                             onClick={handleRemoveRef}
-                            className="absolute top-2 right-2 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
+                            className="absolute top-2 right-2 z-10 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
                           >
                             <X className="w-4 h-4 text-white" />
                           </button>
@@ -380,48 +576,53 @@ export default function CoverGeneratorPage() {
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                 )}
               </div>
 
               <button
                 onClick={() => handleGenerate()}
-                disabled={generateCover.isPending || !title}
-                className="w-full flex items-center justify-center px-6 py-4 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-xl shadow-primary/20 hover:shadow-primary/40 disabled:opacity-50 hover:-translate-y-0.5 transition-all duration-300"
+                disabled={activeGen.isPending || !title}
+                className={`w-full flex items-center justify-center px-6 py-4 text-white rounded-xl font-bold shadow-xl disabled:opacity-50 hover:-translate-y-0.5 transition-all duration-300 ${esYoutube ? "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 shadow-red-500/20 hover:shadow-red-500/40" : "bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 shadow-primary/20 hover:shadow-primary/40"}`}
               >
-                {generateCover.isPending ? (
+                {activeGen.isPending ? (
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : esYoutube ? (
+                  <Youtube className="w-5 h-5 mr-2" />
                 ) : (
                   <Sparkles className="w-5 h-5 mr-2" />
                 )}
-                {generateCover.isPending ? "Generando Magia..." : "Generar Portada"}
+                {activeGen.isPending ? "Generando Magia..." : esYoutube ? "Generar Miniatura de YouTube" : "Generar Portada Vertical"}
               </button>
             </div>
           </div>
 
           <div className="lg:col-span-7">
             <div className="glass-card rounded-3xl h-full min-h-[500px] border border-foreground/10 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-              {!generateCover.data && !generateCover.isPending && (
+              {!activeGen.data && !activeGen.isPending && (
                 <div className="absolute inset-0 z-0 opacity-20 pointer-events-none flex items-center justify-center">
                   <img src={`${import.meta.env.BASE_URL}images/auth-bg.png`} alt="Background" className="w-full h-full object-cover" />
                 </div>
               )}
 
-              {generateCover.isPending ? (
+              {activeGen.isPending ? (
                 <div className="flex flex-col items-center relative z-10">
                   <div className="w-20 h-20 relative">
-                    <div className="absolute inset-0 border-4 border-primary/20 rounded-full"></div>
-                    <div className="absolute inset-0 border-4 border-primary rounded-full border-t-transparent animate-spin"></div>
+                    <div className={`absolute inset-0 border-4 rounded-full ${esYoutube ? "border-red-500/20" : "border-primary/20"}`}></div>
+                    <div className={`absolute inset-0 border-4 rounded-full border-t-transparent animate-spin ${esYoutube ? "border-red-500" : "border-primary"}`}></div>
                   </div>
-                  <p className="mt-6 text-lg font-medium text-foreground animate-pulse">Gemini está creando tu portada...</p>
+                  <p className="mt-6 text-lg font-medium text-foreground animate-pulse">
+                    {esYoutube ? "Gemini está creando tu miniatura de YouTube..." : "Gemini está creando tu portada..."}
+                  </p>
                   <p className="mt-2 text-sm text-muted-foreground/60">Esto puede tomar hasta 30 segundos</p>
                 </div>
-              ) : generateCover.isError ? (
+              ) : activeGen.isError ? (
                 <div className="flex flex-col items-center relative z-10 text-center px-4">
                   <AlertTriangle className="w-16 h-16 text-orange-400 mb-4" />
                   <h3 className="text-xl font-medium text-foreground mb-2">Error al generar</h3>
                   <p className="text-sm text-muted-foreground/80 mb-6 max-w-sm">
-                    {(generateCover.error as any)?.message || "No se pudo generar la portada. Intenta de nuevo."}
+                    {(activeGen.error as any)?.message || "No se pudo generar la imagen. Intenta de nuevo."}
                   </p>
                   <button
                     onClick={() => handleGenerate()}
@@ -431,23 +632,36 @@ export default function CoverGeneratorPage() {
                     Reintentar
                   </button>
                 </div>
-              ) : generateCover.data ? (
+              ) : activeGen.data ? (
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   className="w-full relative z-10 space-y-4"
                 >
-                  <div className="rounded-2xl overflow-hidden shadow-2xl border border-foreground/10">
+                  {/* La imagen se muestra en su formato real: 16:9 apaisada o 9:16 vertical.
+                      Clic → previsualización a pantalla completa (sin necesidad de descargar). */}
+                  <button
+                    type="button"
+                    onClick={abrirPreview}
+                    title="Ver en grande"
+                    className={`group relative block w-full rounded-2xl overflow-hidden shadow-2xl border border-foreground/10 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${esYoutube ? "" : "max-w-[300px] mx-auto"}`}
+                  >
                     <img 
-                      src={`data:${generateCover.data.mimeType};base64,${generateCover.data.b64_json}`} 
-                      alt="Generated Cover" 
-                      className="w-full h-auto aspect-video object-cover"
+                      src={`data:${activeGen.data.mimeType};base64,${activeGen.data.b64_json}`} 
+                      alt={esYoutube ? "Miniatura de YouTube generada" : "Portada vertical generada"} 
+                      className={`w-full h-auto object-cover ${esYoutube ? "aspect-video" : "aspect-[9/16]"}`}
                     />
-                  </div>
+                    <span className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                      <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        Ver en grande
+                      </span>
+                    </span>
+                  </button>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <a 
-                      href={`data:${generateCover.data.mimeType};base64,${generateCover.data.b64_json}`} 
-                      download={`portada-${title || "webmakerchile"}.png`}
+                      href={`data:${activeGen.data.mimeType};base64,${activeGen.data.b64_json}`} 
+                      download={`${esYoutube ? "miniatura-youtube" : "portada"}-${title || "webmakerchile"}.png`}
                       className="flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:-translate-y-0.5 transition-all duration-300"
                     >
                       <Download className="w-5 h-5 mr-2" />
@@ -455,15 +669,15 @@ export default function CoverGeneratorPage() {
                     </a>
                     <button
                       onClick={() => handleGenerate()}
-                      disabled={generateCover.isPending}
+                      disabled={activeGen.isPending}
                       className="flex items-center justify-center px-4 py-3 bg-amber-500/90 hover:bg-amber-500 disabled:bg-amber-500/40 text-slate-900 rounded-xl font-bold transition-all"
                     >
                       <RefreshCw className="w-5 h-5 mr-2" />
                       Reintentar
                     </button>
                     <button
-                      onClick={() => { setModalAjuste(true); setAjusteTexto(""); }}
-                      disabled={generateCover.isPending}
+                      onClick={() => { setPreview(null); setModalAjuste(true); setAjusteTexto(""); }}
+                      disabled={activeGen.isPending}
                       className="flex items-center justify-center px-4 py-3 bg-foreground/10 hover:bg-foreground/20 disabled:bg-foreground/5 text-foreground rounded-xl font-bold transition-all"
                     >
                       <Settings className="w-5 h-5 mr-2" />
@@ -480,7 +694,7 @@ export default function CoverGeneratorPage() {
                         <button
                           key={preset.id}
                           onClick={() => handleGenerate(preset.prompt)}
-                          disabled={generateCover.isPending}
+                          disabled={activeGen.isPending}
                           title={preset.prompt.slice(0, 140) + "…"}
                           className="bg-foreground/5 hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed text-foreground text-[11px] font-medium px-2 py-1 rounded-md border border-foreground/10 transition flex items-center gap-1"
                         >
@@ -498,16 +712,72 @@ export default function CoverGeneratorPage() {
                 </motion.div>
               ) : (
                 <div className="text-center relative z-10">
-                  <ImageIcon className="w-16 h-16 text-muted-foreground/50 mx-auto mb-4" />
-                  <h3 className="text-xl font-medium text-muted-foreground">Tu portada aparecerá aquí</h3>
+                  {/* Marco con el aspecto real del formato activo, para que se note la diferencia */}
+                  <div className={`mx-auto mb-5 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 ${esYoutube ? "w-72 h-[162px] border-red-500/40 bg-red-500/5" : "w-40 h-[284px] border-primary/40 bg-primary/5"}`}>
+                    {esYoutube ? (
+                      <>
+                        <Youtube className="w-10 h-10 text-red-500/60" />
+                        <span className="text-[11px] font-bold tracking-wider text-red-400/80">HORIZONTAL 16:9</span>
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="w-10 h-10 text-primary/60" />
+                        <span className="text-[11px] font-bold tracking-wider text-primary/80">VERTICAL 9:16</span>
+                      </>
+                    )}
+                  </div>
+                  <h3 className="text-xl font-medium text-muted-foreground">
+                    {esYoutube ? "Tu miniatura de YouTube aparecerá aquí" : "Tu portada vertical aparecerá aquí"}
+                  </h3>
                   <p className="text-sm text-muted-foreground/60 mt-2 max-w-sm mx-auto">
-                    Completa los detalles a la izquierda y presiona generar para ver el resultado de la IA.
+                    {esYoutube
+                      ? "Sube tu foto si quieres salir en la miniatura, cuenta tu idea y presiona generar."
+                      : "Completa los detalles a la izquierda y presiona generar para ver el resultado de la IA."}
                   </p>
                 </div>
               )}
             </div>
           </div>
         </div>
+
+        {/* Lightbox: ver el resultado en grande antes de descargar */}
+        {preview && (
+          <motion.div
+            ref={previewOverlayRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Previsualización de la imagen"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 sm:p-8 cursor-zoom-out"
+            onClick={cerrarPreview}
+          >
+            <button
+              type="button"
+              ref={previewCloseRef}
+              onClick={cerrarPreview}
+              className="absolute top-4 right-4 z-10 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition-colors"
+              aria-label="Cerrar previsualización"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <img
+              src={preview.src}
+              alt={preview.alt}
+              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <a
+              href={preview.src}
+              download={preview.download}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-4 flex items-center px-5 py-2.5 bg-gradient-to-r from-primary to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white rounded-xl font-bold shadow-lg shadow-primary/20 transition-all"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Descargar
+            </a>
+          </motion.div>
+        )}
 
         {modalAjuste && (
           <div
@@ -520,7 +790,7 @@ export default function CoverGeneratorPage() {
             >
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
                 <Settings className="w-5 h-5 text-primary" />
-                Ajustar portada
+                {esYoutube ? "Ajustar miniatura" : "Ajustar portada"}
               </h3>
               <p className="text-sm text-muted-foreground">
                 Describe qué quieres cambiar y se regenera con tu indicación como máxima prioridad.
@@ -530,7 +800,7 @@ export default function CoverGeneratorPage() {
                 onChange={(e) => setAjusteTexto(e.target.value)}
                 autoFocus
                 className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary outline-none min-h-[90px]"
-                placeholder="Ej: que el zorro mire de frente, menos objetos en la mesa…"
+                placeholder={esYoutube && personBase64 ? "Ej: que la persona sonría más, menos objetos en el set…" : "Ej: que el zorro mire de frente, menos objetos en la mesa…"}
               />
               <div className="flex gap-2 justify-end">
                 <button

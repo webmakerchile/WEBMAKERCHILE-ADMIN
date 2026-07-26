@@ -5,10 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ImproveCoverIdeaBodyFormato } from "./improveCoverIdeaBodyFormato";
 
 export interface ImproveCoverIdeaBody {
   /** @maxLength 200 */
   title?: string;
   /** @maxLength 2000 */
   idea?: string;
+  formato?: ImproveCoverIdeaBodyFormato;
+  conPersona?: boolean;
 }

@@ -17,16 +17,38 @@ export interface DireccionResumen {
   descripcion: string;
 }
 
+export type FormatoPortada = "vertical" | "youtube";
+
 export function buildImproveIdeaPrompt(
   title: string,
   ideaBruta: string,
   direcciones: DireccionResumen[],
+  opts?: { formato?: FormatoPortada; conPersona?: boolean },
 ): string {
   const catalogoLuces = direcciones
     .map((d) => `  - "${d.id}": ${d.nombre} — ${d.descripcion}`)
     .join("\n");
 
-  return `Eres el redactor creativo de WebMaker (agencia digital, LATAM). Un compañero escribió a lo bruto la idea para la PORTADA vertical de un video. El estilo de marca es fijo: estudio fotográfico en penumbra con un foco de luz y el zorro Webi como protagonista, con utilería física real apoyada en el set.
+  const esYoutube = opts?.formato === "youtube";
+  const conPersona = esYoutube && Boolean(opts?.conPersona);
+
+  const contexto = esYoutube
+    ? `Un compañero escribió a lo bruto la idea para la MINIATURA HORIZONTAL (16:9) de un video de YOUTUBE. El estilo de marca es fijo: estudio fotográfico en penumbra con un foco de luz, el titular ocupa la franja izquierda, y el protagonista va grande al lado derecho: ${
+        conPersona
+          ? "una PERSONA REAL (la foto que él va a subir) con energía de youtuber — expresión exagerada, gesto expresivo"
+          : "el zorro Webi de la marca"
+      }. Con utilería física real apoyada en el set.`
+    : `Un compañero escribió a lo bruto la idea para la PORTADA vertical de un video. El estilo de marca es fijo: estudio fotográfico en penumbra con un foco de luz y el zorro Webi como protagonista, con utilería física real apoyada en el set.`;
+
+  const reglaIdea = esYoutube
+    ? `- "idea": 2 a 3 frases en español natural que describan la miniatura horizontal: ${
+        conPersona
+          ? "la EXPRESIÓN exagerada de youtuber de la persona (asombro, celebración, alerta, duda…) y su actitud"
+          : "la emoción o actitud del zorro Webi"
+      }, 1 a 3 objetos físicos reales de utilería (apoyados en el set — nunca stickers, iconos ni símbolos flotantes; si hay una idea abstracta, va impresa en un objeto físico como una pizarra, una pantalla encendida o una caja) y el ambiente o tono general.`
+    : `- "idea": 2 a 3 frases en español natural que describan la escena de la portada: la emoción o actitud del zorro, 1 a 3 objetos físicos reales de utilería (apoyados en el set — nunca stickers, iconos ni símbolos flotantes; si hay una idea abstracta, va impresa en un objeto físico como una pizarra, una pantalla encendida o una caja) y el ambiente o tono general.`;
+
+  return `Eres el redactor creativo de WebMaker (agencia digital, LATAM). ${contexto}
 
 Tu tarea: redactar mejor su idea, conservando SIEMPRE el tema que él quiso contar (no inventes un tema distinto), y proponer el set completo para que él solo revise y ajuste.
 
@@ -34,8 +56,8 @@ Devuelve EXCLUSIVAMENTE JSON válido (sin markdown, sin backticks) con esta form
 { "title": "...", "idea": "...", "utileria": "...", "estiloExtra": "...", "direccionId": "..." }
 
 Reglas:
-- "title": gancho corto para la miniatura, máximo 6 palabras, sin emojis, sin comillas internas y sin punto final. Si el compañero ya escribió un título, mejóralo sin cambiar su sentido.
-- "idea": 2 a 3 frases en español natural que describan la escena de la portada: la emoción o actitud del zorro, 1 a 3 objetos físicos reales de utilería (apoyados en el set — nunca stickers, iconos ni símbolos flotantes; si hay una idea abstracta, va impresa en un objeto físico como una pizarra, una pantalla encendida o una caja) y el ambiente o tono general.
+- "title": gancho corto para la miniatura, máximo ${esYoutube ? "5" : "6"} palabras, sin emojis, sin comillas internas y sin punto final. Si el compañero ya escribió un título, mejóralo sin cambiar su sentido.
+${reglaIdea}
 - "utileria": los MISMOS 1 a 3 objetos físicos que usaste en "idea", como lista breve separada por comas (ej: "un notebook abierto, una taza de café humeante"). Objetos reales con volumen, jamás símbolos.
 - "estiloExtra": una frase corta (máximo 12 palabras) con el tono o ambiente de la escena (ej: "tono dramático, ambiente de suspenso").
 - "direccionId": el id EXACTO de UNA de estas iluminaciones del estudio — elige la que mejor calce con la emoción del tema:

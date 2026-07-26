@@ -77,8 +77,12 @@ async function generateContentImpl(
     const size: SupportedImageSize = config?.imageSize ?? "1024x1536";
 
     if (imageParts.length > 0) {
-      const refBuf = Buffer.from(imageParts[0].inlineData.data, "base64");
-      const imageFile = await toFile(refBuf, "reference.png", { type: "image/png" });
+      const ref = imageParts[0].inlineData;
+      const refBuf = Buffer.from(ref.data, "base64");
+      // Respetar el MIME real de la referencia (foto de persona puede ser JPG/WebP).
+      const refMime = ref.mimeType || "image/png";
+      const ext = refMime.includes("jpeg") ? "jpg" : refMime.includes("webp") ? "webp" : "png";
+      const imageFile = await toFile(refBuf, `reference.${ext}`, { type: refMime });
       const resp = await openai.images.edit({
         model: "gpt-image-1",
         image: imageFile,

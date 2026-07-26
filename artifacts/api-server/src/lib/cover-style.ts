@@ -247,6 +247,18 @@ export function elegirDetalle(dir: DireccionArte): string {
   return dir.detalles[Math.floor(Math.random() * dir.detalles.length)]!;
 }
 
+/** Resuelve la dirección de arte: fijada por id (registrándola en la memoria
+ *  FIFO para que la rotación no la repita enseguida) o rotación automática. */
+export function resolverDireccion(direccionId?: string | null): DireccionArte {
+  const fijada = direccionId ? DIRECCIONES_PORTADA.find(d => d.id === direccionId) : undefined;
+  if (fijada) {
+    ultimasDirecciones.push(fijada.id);
+    if (ultimasDirecciones.length > MEMORIA_DIRECCIONES) ultimasDirecciones.shift();
+    return fijada;
+  }
+  return seleccionarDireccion();
+}
+
 /* ==================== Prompt de ilustración compartido =================== */
 
 export interface PortadaPreparada {
@@ -345,15 +357,7 @@ export function prepararPortada(tema: string, extraEstilo?: string | null, opcio
   const fijada = opciones?.direccionId
     ? DIRECCIONES_PORTADA.find(d => d.id === opciones.direccionId)
     : undefined;
-  let direccion: DireccionArte;
-  if (fijada) {
-    direccion = fijada;
-    // Registrar en la memoria FIFO para que la rotación automática no la repita enseguida.
-    ultimasDirecciones.push(fijada.id);
-    if (ultimasDirecciones.length > MEMORIA_DIRECCIONES) ultimasDirecciones.shift();
-  } else {
-    direccion = seleccionarDireccion();
-  }
+  const direccion = resolverDireccion(opciones?.direccionId);
 
   const detalle = elegirDetalle(direccion);
 
@@ -412,12 +416,20 @@ export function esErrorRateLimit(err: unknown): boolean {
 const MAX_RETRIES = 4;
 const RETRY_DELAYS = [5000, 15000, 30000];
 
-/** Genera la ilustración del zorro (sin texto) con reintentos y referencia master. */
-export async function generateFoxIllustration(prompt: string, refImageBase64?: string): Promise<Buffer> {
+/** Genera la ilustración (sin texto) con reintentos y una imagen de referencia
+ *  (el master del zorro por defecto, o p. ej. la foto de una persona).
+ *  `imageSize` elige el lienzo soportado más cercano al aspecto final
+ *  (vertical 1024x1536 por defecto; 1536x1024 para miniaturas horizontales). */
+export async function generateFoxIllustration(
+  prompt: string,
+  refImageBase64?: string,
+  imageSize: "1024x1536" | "1536x1024" = "1024x1536",
+  refMimeType?: string,
+): Promise<Buffer> {
   const refBase64 = refImageBase64 ?? (await loadFoxReference());
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    console.log(`[CoverGen] Generando ilustración (intento ${attempt}/${MAX_RETRIES})...`);
+    console.log(`[CoverGen] Generando ilustración ${imageSize} (intento ${attempt}/${MAX_RETRIES})...`);
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
@@ -425,12 +437,12 @@ export async function generateFoxIllustration(prompt: string, refImageBase64?: s
           {
             role: "user",
             parts: [
-              { inlineData: { data: refBase64, mimeType: "image/png" } },
+              { inlineData: { data: refBase64, mimeType: refMimeType ?? "image/png" } },
               { text: prompt },
             ],
           },
         ],
-        config: { responseModalities: ["TEXT", "IMAGE"] },
+        config: { responseModalities: ["TEXT", "IMAGE"], imageSize },
       });
 
       const inline = firstInlineData(response.candidates?.[0]?.content?.parts);
@@ -528,7 +540,7 @@ interface FuenteCfg {
   sizes: [number, number, number];
 }
 
-const FUENTES: Record<EstiloTitular["fuente"], FuenteCfg> = {
+export const FUENTES: Record<EstiloTitular["fuente"], FuenteCfg> = {
   display: {
     familia: "'Oswald','Montserrat','DejaVu Sans',sans-serif",
     peso: 700,
@@ -545,7 +557,7 @@ const FUENTES: Record<EstiloTitular["fuente"], FuenteCfg> = {
   },
 };
 
-function renderLineaTspans(line: string, acentos: Set<string>, colorBase: string, colorAcento: string): string {
+export function renderLineaTspans(line: string, acentos: Set<string>, colorBase: string, colorAcento: string): string {
   return line
     .split(/\s+/)
     .map((w, i) => {

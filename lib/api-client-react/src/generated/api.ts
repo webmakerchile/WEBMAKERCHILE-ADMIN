@@ -30,6 +30,7 @@ import type {
   GenerateCoverBody,
   GenerateGeminiImageBody,
   GenerateGeminiImageResponse,
+  GenerateYoutubeCoverBody,
   HealthStatus,
   ImproveCoverIdeaBody,
   ImproveCoverIdeaResponse,
@@ -970,6 +971,96 @@ export const useImproveCoverIdea = <
   TContext
 > => {
   return useMutation(getImproveCoverIdeaMutationOptions(options));
+};
+
+/**
+ * @summary Generate a horizontal 16:9 YouTube thumbnail (optionally starring a real person from a photo)
+ */
+export const getGenerateYoutubeCoverUrl = () => {
+  return `/api/gemini/generate-youtube-cover`;
+};
+
+export const generateYoutubeCover = async (
+  generateYoutubeCoverBody: GenerateYoutubeCoverBody,
+  options?: RequestInit,
+): Promise<GenerateGeminiImageResponse> => {
+  return customFetch<GenerateGeminiImageResponse>(
+    getGenerateYoutubeCoverUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(generateYoutubeCoverBody),
+    },
+  );
+};
+
+export const getGenerateYoutubeCoverMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateYoutubeCover>>,
+    TError,
+    { data: BodyType<GenerateYoutubeCoverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof generateYoutubeCover>>,
+  TError,
+  { data: BodyType<GenerateYoutubeCoverBody> },
+  TContext
+> => {
+  const mutationKey = ["generateYoutubeCover"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof generateYoutubeCover>>,
+    { data: BodyType<GenerateYoutubeCoverBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return generateYoutubeCover(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type GenerateYoutubeCoverMutationResult = NonNullable<
+  Awaited<ReturnType<typeof generateYoutubeCover>>
+>;
+export type GenerateYoutubeCoverMutationBody =
+  BodyType<GenerateYoutubeCoverBody>;
+export type GenerateYoutubeCoverMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Generate a horizontal 16:9 YouTube thumbnail (optionally starring a real person from a photo)
+ */
+export const useGenerateYoutubeCover = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof generateYoutubeCover>>,
+    TError,
+    { data: BodyType<GenerateYoutubeCoverBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof generateYoutubeCover>>,
+  TError,
+  { data: BodyType<GenerateYoutubeCoverBody> },
+  TContext
+> => {
+  return useMutation(getGenerateYoutubeCoverMutationOptions(options));
 };
 
 /**

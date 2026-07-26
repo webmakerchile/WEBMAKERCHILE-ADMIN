@@ -9,11 +9,13 @@ import {
   SendGeminiMessageBody,
   GenerateGeminiImageBody,
   GenerateCoverBody,
+  GenerateYoutubeCoverBody,
   ImproveCoverIdeaBody,
 } from "@workspace/api-zod";
 import { toFile } from "openai";
 import { prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit, listarOpcionesPortada } from "../../lib/cover-style.js";
 import { buildImproveIdeaPrompt, parseImprovedIdea } from "../../lib/improve-cover-idea.js";
+import { prepararMiniaturaYoutube, composeYoutubeCover, validarFotoPersona } from "../../lib/youtube-cover.js";
 
 const router: IRouter = Router();
 
@@ -169,7 +171,15 @@ router.post("/gemini/improve-cover-idea", async (req, res) => {
     const catalogo = listarOpcionesPortada();
     const resp = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: [{ role: "user", parts: [{ text: buildImproveIdeaPrompt(title, idea, catalogo.direcciones) }] }],
+      contents: [{
+        role: "user",
+        parts: [{
+          text: buildImproveIdeaPrompt(title, idea, catalogo.direcciones, {
+            formato: parsedBody.data.formato,
+            conPersona: parsedBody.data.conPersona,
+          }),
+        }],
+      }],
       config: { maxOutputTokens: 900 },
     });
     const parsed = parseImprovedIdea(resp.text ?? "", catalogo.direcciones.map((d) => d.id));
@@ -201,6 +211,17 @@ router.post("/gemini/generate-cover", async (req, res) => {
     return;
   }
 
+  // Validar la imagen de referencia personalizada antes de gastar IA.
+  let refValidada: { base64: string; mime: string } | null = null;
+  if (body.referenceImageBase64) {
+    const v = validarFotoPersona(body.referenceImageBase64);
+    if (!v.ok) {
+      res.status(400).json({ error: v.error });
+      return;
+    }
+    refValidada = { base64: v.base64, mime: v.mime };
+  }
+
   const tema = `${body.title} ${body.description || ""}`.trim();
   const { direccion, prompt: basePrompt } = prepararPortada(tema, body.style, {
     direccionId: body.direccionId,
@@ -219,9 +240,10 @@ router.post("/gemini/generate-cover", async (req, res) => {
   async function attemptGenerate(attempt: number): Promise<{ b64_json: string; mimeType: string }> {
     console.log(`[CoverGen] Attempt ${attempt}/${MAX_RETRIES}...`);
     try {
-      if (body.referenceImageBase64) {
-        const refBuffer = Buffer.from(body.referenceImageBase64, "base64");
-        const imageFile = await toFile(refBuffer, "reference.png", { type: "image/png" });
+      if (refValidada) {
+        const refBuffer = Buffer.from(refValidada.base64, "base64");
+        const ext = refValidada.mime.includes("jpeg") ? "jpg" : refValidada.mime.includes("webp") ? "webp" : "png";
+        const imageFile = await toFile(refBuffer, `reference.${ext}`, { type: refValidada.mime });
         const response = await ai.images.edit({
           model: "gpt-image-1",
           image: imageFile,
@@ -253,7 +275,7 @@ router.post("/gemini/generate-cover", async (req, res) => {
     // Con referencia del usuario → gpt-image-1 (edit). Sin referencia →
     // pipeline compartido Gemini con el master del zorro (reintentos internos).
     let result: { b64_json: string; mimeType: string };
-    if (body.referenceImageBase64) {
+    if (refValidada) {
       result = await attemptGenerate(1);
     } else {
       const buf = await generateFoxIllustration(basePrompt);
@@ -268,6 +290,61 @@ router.post("/gemini/generate-cover", async (req, res) => {
       res.status(429).json({ error: "El servicio de IA está saturado en este momento. Espera 1-2 minutos e intenta de nuevo." });
     } else {
       res.status(500).json({ error: "No se pudo generar la portada. Intenta de nuevo en unos momentos." });
+    }
+  }
+});
+
+// Miniatura de YouTube: horizontal 16:9, protagonista = persona real de la
+// foto (estilo youtuber, rostro idéntico) o Webi si no hay foto.
+router.post("/gemini/generate-youtube-cover", async (req, res) => {
+  const parsedBody = GenerateYoutubeCoverBody.safeParse(req.body);
+  if (!parsedBody.success) {
+    res.status(400).json({
+      error: "Datos inválidos para la miniatura: revisa el título (máx. 200), la descripción (máx. 2000) y los campos del set.",
+    });
+    return;
+  }
+  const body = parsedBody.data;
+
+  const catalogo = listarOpcionesPortada();
+  if (body.direccionId && !catalogo.direcciones.some(d => d.id === body.direccionId)) {
+    res.status(400).json({ error: `direccionId inválido: ${body.direccionId}` });
+    return;
+  }
+
+  // Validar la foto ANTES de gastar una llamada de IA: 400 determinista para
+  // base64 corrupto, formato no soportado o fotos de más de 8 MB.
+  let fotoPersona: { base64: string; mime: string } | null = null;
+  if (body.personImageBase64) {
+    const v = validarFotoPersona(body.personImageBase64);
+    if (!v.ok) {
+      res.status(400).json({ error: v.error });
+      return;
+    }
+    fotoPersona = { base64: v.base64, mime: v.mime };
+  }
+
+  const tema = `${body.title} ${body.description || ""}`.trim();
+  const conPersona = Boolean(fotoPersona);
+  const { direccion, prompt } = prepararMiniaturaYoutube(tema, body.style, {
+    direccionId: body.direccionId,
+    utileria: body.utileria,
+    conPersona,
+  });
+
+  try {
+    // Con foto → la persona es la imagen de referencia; sin foto → master del
+    // zorro (lo carga generateFoxIllustration por defecto). Lienzo horizontal.
+    const buf = await generateFoxIllustration(prompt, fotoPersona?.base64, "1536x1024", fotoPersona?.mime);
+    console.log(`[MiniaturaYT] Ilustración lista, componiendo titular (${direccion.id})...`);
+    const composited = await composeYoutubeCover(buf, body.title, direccion);
+    res.json({ b64_json: composited.toString("base64"), mimeType: "image/png" });
+  } catch (error: any) {
+    console.error(`[MiniaturaYT] Falló la generación: ${error?.message}`);
+    if (esErrorRateLimit(error)) {
+      res.status(429).json({ error: "El servicio de IA está saturado en este momento. Espera 1-2 minutos e intenta de nuevo." });
+    } else {
+      res.status(500).json({ error: "No se pudo generar la miniatura. Intenta de nuevo en unos momentos." });
     }
   }
 });

@@ -152,6 +152,8 @@ export const improveCoverIdeaBodyIdeaMax = 2000;
 export const ImproveCoverIdeaBody = zod.object({
   title: zod.string().max(improveCoverIdeaBodyTitleMax).optional(),
   idea: zod.string().max(improveCoverIdeaBodyIdeaMax).optional(),
+  formato: zod.enum(["vertical", "youtube"]).optional(),
+  conPersona: zod.boolean().optional(),
 });
 
 export const ImproveCoverIdeaResponse = zod.object({
@@ -160,6 +162,34 @@ export const ImproveCoverIdeaResponse = zod.object({
   utileria: zod.string().optional(),
   estiloExtra: zod.string().optional(),
   direccionId: zod.string().optional(),
+});
+
+/**
+ * @summary Generate a horizontal 16:9 YouTube thumbnail (optionally starring a real person from a photo)
+ */
+export const generateYoutubeCoverBodyTitleMax = 200;
+
+export const generateYoutubeCoverBodyDescriptionMax = 2000;
+
+export const generateYoutubeCoverBodyStyleMax = 300;
+
+export const generateYoutubeCoverBodyUtileriaMax = 300;
+
+export const GenerateYoutubeCoverBody = zod.object({
+  title: zod.string().max(generateYoutubeCoverBodyTitleMax),
+  description: zod
+    .string()
+    .max(generateYoutubeCoverBodyDescriptionMax)
+    .optional(),
+  style: zod.string().max(generateYoutubeCoverBodyStyleMax).optional(),
+  personImageBase64: zod.string().optional(),
+  direccionId: zod.string().optional(),
+  utileria: zod.string().max(generateYoutubeCoverBodyUtileriaMax).optional(),
+});
+
+export const GenerateYoutubeCoverResponse = zod.object({
+  b64_json: zod.string(),
+  mimeType: zod.string(),
 });
 
 /**

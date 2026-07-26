@@ -6,6 +6,7 @@ export {
   CreateGeminiConversationBody,
   CreateVideoBody,
   GenerateCoverBody,
+  GenerateYoutubeCoverBody,
   GenerateGeminiImageBody,
   GenerateGeminiImageResponse,
   ImproveCoverIdeaBody,

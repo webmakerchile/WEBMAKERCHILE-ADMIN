@@ -9,6 +9,6 @@
 - [Handoffs & playbooks](handoffs-playbooks.md) — claim-then-release idempotency in handoff_log; atomic jsonb append for board writes from background jobs; DST-safe Santiago scheduling.
 - [Monorepo lib builds](monorepo-lib-builds.md) — after task merges, run pnpm install + tsc -b on lib/* before assuming merged code is broken; custom user names must never be overwritten by Google profile on login.
 - [Render de portadas](cover-rendering.md) — librsvg pierde espacios en bordes de tspan (unir con &#160;); fuentes nix invisibles para fontconfig → empaquetar TTFs + FONTCONFIG_FILE al boot.
-- [Dirección de arte portadas](cover-art-direction.md) — estilo único aprobado: familia "estudio spotlight" (variantes de luz); utilería física real, jamás stickers ni símbolos flotantes.
+- [Dirección de arte portadas](cover-art-direction.md) — familia "estudio spotlight" en vertical 9:16 y miniaturas YouTube 16:9 (persona real fotorrealista o Webi); utilería física, jamás stickers.
 - [Prod build skew](prod-build-skew.md) — el usuario prueba solo en la app publicada; ante "permiso denegado" en prod, sospechar primero build viejo: publicar suele ser el fix.
 - [Gates de /hub: área vs rol](hub-area-gates.md) — el gate por área corre antes que los routers montados; abrir por rol exige eximir el path en hub-gate.ts; los tests de router no ven ese middleware.

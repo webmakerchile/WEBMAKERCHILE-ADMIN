@@ -61,11 +61,34 @@ export interface GenerateCoverBody {
   utileria?: string;
 }
 
+export interface GenerateYoutubeCoverBody {
+  /** @maxLength 200 */
+  title: string;
+  /** @maxLength 2000 */
+  description?: string;
+  /** @maxLength 300 */
+  style?: string;
+  personImageBase64?: string;
+  direccionId?: string;
+  /** @maxLength 300 */
+  utileria?: string;
+}
+
+export type ImproveCoverIdeaBodyFormato =
+  (typeof ImproveCoverIdeaBodyFormato)[keyof typeof ImproveCoverIdeaBodyFormato];
+
+export const ImproveCoverIdeaBodyFormato = {
+  vertical: "vertical",
+  youtube: "youtube",
+} as const;
+
 export interface ImproveCoverIdeaBody {
   /** @maxLength 200 */
   title?: string;
   /** @maxLength 2000 */
   idea?: string;
+  formato?: ImproveCoverIdeaBodyFormato;
+  conPersona?: boolean;
 }
 
 export interface ImproveCoverIdeaResponse {

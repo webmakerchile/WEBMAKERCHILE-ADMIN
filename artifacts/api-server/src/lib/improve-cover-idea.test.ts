@@ -143,3 +143,35 @@ describe("parseImprovedIdea", () => {
     expect(r?.estiloExtra).toHaveLength(IMPROVE_ESTILO_MAX);
   });
 });
+
+describe("buildImproveIdeaPrompt — formato youtube", () => {
+  const dirs = [{ id: "estudio_spotlight", nombre: "Spotlight ámbar", descripcion: "foco cálido" }];
+
+  it("por defecto (o vertical) habla de portada vertical con Webi", () => {
+    const p = buildImproveIdeaPrompt("t", "i", dirs);
+    expect(p).toContain("PORTADA vertical");
+    expect(p).not.toContain("YOUTUBE");
+  });
+
+  it("youtube sin persona: miniatura horizontal 16:9 protagonizada por Webi", () => {
+    const p = buildImproveIdeaPrompt("t", "i", dirs, { formato: "youtube" });
+    expect(p).toContain("MINIATURA HORIZONTAL");
+    expect(p).toContain("16:9");
+    expect(p).toContain("YOUTUBE");
+    expect(p).toContain("zorro Webi");
+    expect(p).not.toContain("PERSONA REAL");
+  });
+
+  it("youtube con persona: pide expresión youtuber de la persona real", () => {
+    const p = buildImproveIdeaPrompt("t", "i", dirs, { formato: "youtube", conPersona: true });
+    expect(p).toContain("PERSONA REAL");
+    expect(p).toContain("youtuber");
+    expect(p).toContain("EXPRESIÓN exagerada");
+  });
+
+  it("youtube mantiene el catálogo de luces y las reglas anti-sticker", () => {
+    const p = buildImproveIdeaPrompt("t", "i", dirs, { formato: "youtube", conPersona: true });
+    expect(p).toContain("estudio_spotlight");
+    expect(p).toContain("nunca stickers");
+  });
+});

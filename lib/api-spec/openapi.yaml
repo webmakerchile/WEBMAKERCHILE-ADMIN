@@ -211,6 +211,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ImproveCoverIdeaResponse"
+  /gemini/generate-youtube-cover:
+    post:
+      operationId: generateYoutubeCover
+      tags: [gemini]
+      summary: Generate a horizontal 16:9 YouTube thumbnail (optionally starring a real person from a photo)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateYoutubeCoverBody"
+      responses:
+        "200":
+          description: Generated thumbnail image data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateGeminiImageResponse"
   /drive/files:
     get:
       operationId: listDriveFiles
@@ -537,6 +555,27 @@ components:
       required:
         - title
         - description
+    GenerateYoutubeCoverBody:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        style:
+          type: string
+          maxLength: 300
+        personImageBase64:
+          type: string
+        direccionId:
+          type: string
+        utileria:
+          type: string
+          maxLength: 300
+      required:
+        - title
     ImproveCoverIdeaBody:
       type: object
       properties:
@@ -546,6 +585,11 @@ components:
         idea:
           type: string
           maxLength: 2000
+        formato:
+          type: string
+          enum: [vertical, youtube]
+        conPersona:
+          type: boolean
     ImproveCoverIdeaResponse:
       type: object
       properties:
