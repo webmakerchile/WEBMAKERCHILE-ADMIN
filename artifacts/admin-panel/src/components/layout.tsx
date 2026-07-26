@@ -31,6 +31,9 @@ import {
   ListChecks,
   IdCard,
   Ticket as TicketIcon,
+  Scissors,
+  Share2,
+  Megaphone,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
@@ -90,6 +93,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
     {
       label: t.navSectionAreas,
       items: [
+        { href: "/edicion", icon: Scissors, label: t.navEdicion, tour: "nav-edicion" },
+        { href: "/redes", icon: Share2, label: t.navRedes, tour: "nav-redes" },
+        { href: "/marketing", icon: Megaphone, label: t.navMarketing, tour: "nav-marketing" },
         { href: "/tickets", icon: TicketIcon, label: t.navTickets, tour: "nav-tickets" },
         { href: "/ventas", icon: Handshake, label: t.navSales, tour: "nav-ventas" },
         { href: "/mis-tareas", icon: ListChecks, label: t.navMyTasks, tour: "nav-mis-tareas" },

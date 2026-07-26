@@ -85,7 +85,12 @@ export const TICKET_AREA_LABELS: Record<TicketArea, string> = {
 
 /** Rutas que cualquier persona autenticada puede ver. */
 /** Rutas que cualquier persona autenticada puede ver (los tickets son el canal común del equipo). */
-export const COMMON_ROUTES = ["/tickets", "/ayuda", "/ajustes"] as const;
+/**
+ * Rutas de todo el equipo: su jornada, sus tickets y la ayuda.
+ * `/ajustes` NO está aquí a propósito: guarda credenciales de API y gestión de
+ * usuarios, así que es de dirección.
+ */
+export const COMMON_ROUTES = ["/mi-dia", "/tickets", "/ayuda"] as const;
 
 export const ROLES: Record<TeamRole, RoleDef> = {
   ceo: {
@@ -106,8 +111,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     id: "editora",
     label: "Editora de video",
     description: "Edición y producción: videos, estudio de grabación, portadas y transcripciones.",
-    home: "/videos",
-    routes: ["/videos", "/estudio", "/cover", "/transcriptor", "/drive", "/biblioteca", ...COMMON_ROUTES],
+    home: "/edicion",
+    routes: ["/edicion", "/videos", "/estudio", "/cover", "/transcriptor", "/drive", "/biblioteca", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
@@ -120,8 +125,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     id: "social",
     label: "Redes sociales",
     description: "Calendario de publicaciones, cuentas conectadas, historias y descripciones.",
-    home: "/",
-    routes: ["/", "/schedule", "/cuentas", "/videos", "/historias", "/descripciones", "/insights", "/biblioteca", "/campanas", ...COMMON_ROUTES],
+    home: "/redes",
+    routes: ["/redes", "/", "/schedule", "/cuentas", "/videos", "/historias", "/descripciones", "/insights", "/biblioteca", "/campanas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
@@ -162,8 +167,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     id: "marketing",
     label: "Marketing",
     description: "Métricas, campañas, biblioteca de contenido y aprobación de publicaciones.",
-    home: "/insights",
-    routes: ["/", "/insights", "/schedule", "/biblioteca", "/campanas", "/videos", "/historias", "/descripciones", "/cuentas", "/mis-tareas", ...COMMON_ROUTES],
+    home: "/marketing",
+    routes: ["/marketing", "/", "/insights", "/schedule", "/biblioteca", "/campanas", "/videos", "/historias", "/descripciones", "/cuentas", "/mis-tareas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: true,
@@ -191,7 +196,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     label: "Contador",
     description: "Reporte financiero: contratos facturados, IVA, vencimientos y cobros.",
     home: "/reportes",
-    routes: ["/reportes", "/tickets", "/ayuda"],
+    routes: ["/reportes", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canReview: false,
