@@ -82,6 +82,16 @@ describe("censura de montos en el contrato", () => {
     expect(json).not.toContain("150000");
   });
 
+  it("quita el estado de cobranza: facturas y pagos son información comercial", () => {
+    const conCobro = {
+      ...CONTRATO,
+      cobro: { estado: "facturado", factura: "F-2026-104", fechaPago: "", nota: "Pagan a 30 días" },
+    };
+    const out = redactContractMoney(conCobro);
+    expect(out.cobro).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain("F-2026-104");
+  });
+
   it("censura la colección completa y tolera basura", () => {
     const out = redactContracts([CONTRATO, null, "no soy un contrato"]);
     expect(out).toHaveLength(3);

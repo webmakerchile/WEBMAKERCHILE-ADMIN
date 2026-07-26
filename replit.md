@@ -91,8 +91,42 @@ Cada área tiene su **propia página**, no una plantilla configurable: van a div
 | Marketing | `/marketing` | Decisión y resultado: lo que espera su aprobación primero, rendimiento por red ordenado por alcance, proyectos y cartera (contratos sin montos) |
 | Ventas | `/ejecutivo` | El Hub Ejecutivo **es** su panel: contratos con wizard, PDF y chat IA, cartera, reuniones y proyectos, recortado a su alcance |
 | Programador | `/mis-tareas` | Scrumban por etapa y requerimientos técnicos |
-| Contador | `/reportes` | Neto, IVA, facturación por mes y vencimientos |
+| Contador | `/reportes` | Neto, IVA, facturación por mes, vencimientos y cobranza |
 | RRHH | `/rrhh` | Fichas laborales, asistencia y solicitudes de acceso |
+
+#### Cada pantalla ESCRIBE: nadie depende de otra sección para trabajar
+Las pantallas de área nacieron como tableros de lectura y eso obligaba a saltar
+al gestor de videos o al Hub para cualquier acción real. Ahora cada rol cierra
+su ciclo completo desde su propia página:
+
+| Rol | Qué puede hacer sin salir de su pantalla |
+|---|---|
+| Editora | Crear el video, completar los textos que faltan (título de YouTube, descripciones de TikTok/Instagram) y **enviar a revisión** eligiendo revisor, con mensaje. El archivo y la portada siguen en el gestor: necesitan subida, no un input |
+| Marketing | **Aprobar o pedir cambios** ahí mismo, con el motivo viajando en la notificación a quien editó. Era el cuello de botella del contenido: si hay que abrir otra pantalla para aprobar, no se aprueba |
+| Redes | **Programar, reprogramar y quitar fecha** desde las tres listas (atrasados, próximas, aprobados sin fecha) y **marcar en qué red salió** realmente cada publicación |
+| Programador | Mover tareas de etapa, crear tareas (también **desde un módulo del brief**, con sus requisitos como notas), editar notas y criticidad, e informar avance de proyectos sin tareas. Más dos señales que el tablero no daba: **WIP** (cuántas cosas abiertas a la vez) y **estancadas** (+3 días sin moverse) |
+| Contador | Registrar **cobranza** por contrato (por facturar / facturado / pagado / incobrable, N° de factura, fecha de pago y nota), con KPIs de "por cobrar" y "cobrado" y la columna en el CSV |
+
+**Confidencialidad de la cobranza**: el contador NO tiene escritura sobre
+`contracts` — tiene `PATCH /api/hub/contracts/:id/cobro`, un endpoint acotado
+que solo escribe el sub-objeto `cobro` y exige `canSeeMoney`. Así lleva la
+cobranza sin poder tocar precios, módulos ni alcance. El objeto `cobro` se
+elimina en `redactContractMoney`: para quien no ve montos, las facturas y los
+pagos tampoco existen.
+
+**Escritura sobre el tablero compartido** (`lib/hub-write.ts`): `/mis-tareas`
+pasó de `/api/hub/owner` a `/api/hub`, que además devuelve la versión y los
+`writeScopes` del rol. Se manda la colección completa y el servidor fusiona
+entidad por entidad con `baseVersion`; la regla al modificar es **siempre subir
+`updatedAt`**, o la copia guardada gana la fusión.
+
+**Corregido**: `router.use("/hub", requireArea(...))` gateaba también el tablero
+en sí, así que marketing —que tiene `hubScopes` pero pertenece al área
+`marketing`— recibía 403 en las tarjetas de proyectos y cartera de su propia
+pantalla. `lib/hub-gate.ts` deja `/hub` y `/hub/owner` gateados por ROL (que ya
+recorta colecciones y censura montos) y mantiene el gate por área en el resto
+(IA, briefs, cobranza). Con test de regresión: ningún rol con `hubScopes` puede
+quedar fuera del tablero por su área.
 
 Invariantes con test: ningún rol comparte pantalla de inicio con otro, cada uno entra a la suya, todos ven `/mi-dia` y `/tickets`, y nadie entra a la pantalla de otra área.
 

@@ -164,6 +164,61 @@ router.patch("/hub", async (req: Request, res: Response) => {
 });
 
 /* ------------------------------------------------------------------
+   Estado de cobro de un contrato.
+
+   El contador necesita llevar la cobranza (facturado, pagado, nº de factura)
+   sin poder tocar precios, módulos ni alcance: por eso NO se le da escritura
+   sobre `contracts` y se le da este PATCH acotado, que solo escribe el sub-
+   objeto `cobro`. Dirección y ventas lo comparten porque también ven montos.
+   ------------------------------------------------------------------ */
+
+export const COBRO_STATES = ["pendiente", "facturado", "pagado", "incobrable"] as const;
+
+const cobroSchema = z.object({
+  estado: z.enum(COBRO_STATES),
+  factura: z.string().max(60).optional().default(""),
+  fechaPago: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Usa formato YYYY-MM-DD").optional().default(""),
+  nota: z.string().max(500).optional().default(""),
+});
+
+router.patch("/hub/contracts/:id/cobro", async (req: Request, res: Response) => {
+  const me = await loadMe(req);
+  if (!me) { res.status(401).json({ error: "No autenticado" }); return; }
+
+  const role = normalizeRole(me.teamRole, me.role === "superadmin");
+  if (!canSeeMoney(role)) {
+    res.status(403).json({ error: "Tu rol no puede gestionar la cobranza" });
+    return;
+  }
+
+  const parsed = cobroSchema.safeParse((req.body as { cobro?: unknown })?.cobro ?? req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map(i => i.message).join("; ") });
+    return;
+  }
+
+  const board = await resolveBoard();
+  if (!board) { res.status(409).json({ error: "Todavía no hay un tablero de dirección" }); return; }
+
+  const contracts = Array.isArray(board.data.contracts) ? (board.data.contracts as Record<string, unknown>[]) : [];
+  const idx = contracts.findIndex(c => String(c?.id ?? "") === req.params.id);
+  if (idx === -1) { res.status(404).json({ error: "Contrato no encontrado" }); return; }
+
+  const cobro = {
+    ...parsed.data,
+    updatedAt: Date.now(),
+    by: me.name || me.email,
+  };
+  // Se toca UNA entidad y se sube su `updatedAt`, para que la fusión por
+  // entidad del tablero respete este cambio frente a ediciones simultáneas.
+  const next = [...contracts];
+  next[idx] = { ...contracts[idx], cobro, updatedAt: Date.now() };
+
+  await saveBoard(board.boardUserId, { ...board.data, contracts: next });
+  res.json({ ok: true, cobro });
+});
+
+/* ------------------------------------------------------------------
    Vista de solo lectura del Hub para el resto del equipo.
 
    El Hub Ejecutivo vive en un blob por usuario (el de la dirección). Los

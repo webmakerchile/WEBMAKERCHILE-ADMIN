@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { hubTasks, users, hubTaskActivity, hubTaskComments, type HubTaskRow, type HubChecklistItem, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
 import { eq, and, asc, desc, sql, gte, lte, isNull, or, ne } from "drizzle-orm";
 import { z } from "zod";
+import { normalizeRole } from "@workspace/roles";
 import { createNotification } from "../../lib/notifications";
 
 const router: IRouter = Router();
@@ -15,12 +16,15 @@ function me(req: Request): AuthUser {
 
 function isCeoOrEjecutivo(req: Request): boolean {
   const u = me(req);
-  return u.role === "superadmin" || u.teamRole === "ceo" || u.teamRole === "ejecutivo" || u.teamRole === "rrhh";
+  // Se resuelve por rol: quien dirige el tablero es dirección, ventas y RRHH.
+  // El programador NO entra aquí a propósito — ve y mueve solo sus tareas.
+  const role = normalizeRole(u.teamRole, u.role === "superadmin");
+  return role === "ceo" || role === "ventas" || role === "rrhh";
 }
 
 function isCeoOrSuperAdmin(req: Request): boolean {
   const u = me(req);
-  return u.role === "superadmin" || u.teamRole === "ceo";
+  return u.role === "superadmin" || normalizeRole(u.teamRole) === "ceo";
 }
 
 /**

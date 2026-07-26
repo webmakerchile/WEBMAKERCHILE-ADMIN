@@ -40,6 +40,10 @@ export function redactContractMoney(contract: Rec): Rec & RedactedFlags {
   delete out.pdfTitle;
   delete out.pdfUploadedAt;
 
+  // El estado de cobro (facturado, pagado, nº de factura) es información
+  // comercial: solo lo ve quien ve montos.
+  delete out.cobro;
+
   const doc = contract.doc;
   if (doc && typeof doc === "object" && !Array.isArray(doc)) {
     const d = { ...(doc as Rec) };

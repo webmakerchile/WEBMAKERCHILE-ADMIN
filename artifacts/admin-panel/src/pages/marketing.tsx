@@ -1,19 +1,20 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
 import { useHubOwner } from "@/lib/hub-owner";
 import {
-  useVideos, useAnalytics, publishedNetworks, fmtNumero, fmtFecha,
-  NETWORKS, NETWORK_LABELS, WORKFLOW_META, type WorkflowStatus,
+  useVideos, useAnalytics, useReviewDecision, publishedNetworks, fmtNumero, fmtFecha,
+  NETWORKS, NETWORK_LABELS, WORKFLOW_META, type ContentVideo, type WorkflowStatus,
 } from "@/lib/contenido";
 import {
-  Loader2, AlertTriangle, BarChart3, Library, CheckCheck, ArrowRight,
-  TrendingUp, Target, Users2, FileCode2,
+  Loader2, AlertTriangle, BarChart3, Library, CheckCheck,
+  TrendingUp, Target, Users2, FileCode2, ThumbsUp, RotateCcw, ExternalLink,
 } from "lucide-react";
 
 /**
@@ -23,6 +24,69 @@ import {
  * por resultado (qué está funcionando), por decisión pendiente (qué espera su
  * aprobación) y por cliente (para qué cuenta estamos trabajando).
  */
+/**
+ * Decisión de aprobación, ahí mismo.
+ *
+ * Marketing es el cuello de botella del contenido: si tiene que abrir el gestor
+ * de videos para aprobar, no aprueba. Aquí decide sin cambiar de pantalla, y al
+ * pedir cambios el motivo viaja con la notificación a quien editó.
+ */
+function FilaAprobacion({ video }: { video: ContentVideo }) {
+  const decidir = useReviewDecision();
+  const { toast } = useToast();
+  const [motivo, setMotivo] = useState("");
+  const [pidiendoCambios, setPidiendoCambios] = useState(false);
+
+  const decide = (decision: "approve" | "request_changes") => {
+    decidir.mutate({ videoId: video.id, decision, message: motivo }, {
+      onSuccess: () => {
+        setMotivo("");
+        setPidiendoCambios(false);
+        toast({
+          title: decision === "approve" ? "Aprobado" : "Cambios solicitados",
+          description: decision === "approve"
+            ? "Queda listo para que redes le ponga fecha."
+            : "Vuelve a borrador con tu comentario.",
+        });
+      },
+      onError: e => toast({ title: "No se pudo registrar", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  return (
+    <li className="rounded-lg border border-foreground/10 bg-card/40 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex-1 min-w-[10rem] text-sm truncate">{video.title}</span>
+        <span className="text-[11px] text-muted-foreground">{fmtFecha(video.updatedAt)}</span>
+        <Link href={`/videos?select=${video.id}`} className="text-[11px] text-muted-foreground hover:text-primary inline-flex items-center gap-1">
+          ver <ExternalLink className="w-2.5 h-2.5" />
+        </Link>
+        <Button size="sm" variant="outline" onClick={() => setPidiendoCambios(!pidiendoCambios)} disabled={decidir.isPending}>
+          <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Cambios
+        </Button>
+        <Button size="sm" onClick={() => decide("approve")} disabled={decidir.isPending}>
+          {decidir.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><ThumbsUp className="w-3.5 h-3.5 mr-1.5" /> Aprobar</>}
+        </Button>
+      </div>
+      {pidiendoCambios && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          <input
+            autoFocus
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && motivo.trim()) decide("request_changes"); }}
+            placeholder="Qué hay que corregir"
+            className="flex-1 min-w-[12rem] h-8 rounded-lg border border-foreground/15 bg-card/60 px-2 text-xs"
+          />
+          <Button size="sm" variant="outline" onClick={() => decide("request_changes")} disabled={!motivo.trim() || decidir.isPending}>
+            Enviar
+          </Button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 export default function MarketingPage() {
   const { data: videos = [], isLoading, error } = useVideos();
   const { data: analytics } = useAnalytics(7);
@@ -89,19 +153,8 @@ export default function MarketingPage() {
               <p className="text-[11px] text-muted-foreground mb-3">
                 Hasta que apruebes, este contenido no se puede programar.
               </p>
-              <ul className="space-y-1.5">
-                {enRevision.map(v => (
-                  <li key={v.id}>
-                    <Link
-                      href={`/videos?select=${v.id}`}
-                      className="flex flex-wrap items-center gap-2 rounded-lg border border-foreground/10 bg-card/40 px-3 py-2 hover:border-purple-500/40 transition-base"
-                    >
-                      <span className="flex-1 min-w-[10rem] text-sm truncate">{v.title}</span>
-                      <span className="text-[11px] text-muted-foreground">{fmtFecha(v.updatedAt)}</span>
-                      <ArrowRight className="w-3.5 h-3.5 text-purple-300" />
-                    </Link>
-                  </li>
-                ))}
+              <ul className="space-y-2">
+                {enRevision.map(v => <FilaAprobacion key={v.id} video={v} />)}
               </ul>
             </CardContent>
           </Card>
