@@ -19,6 +19,7 @@ export const TEAM_ROLES = [
   "dev",
   "marketing",
   "contador",
+  "rrhh",
 ] as const;
 
 export type TeamRole = (typeof TEAM_ROLES)[number];
@@ -36,8 +37,10 @@ export interface RoleDef {
    * (`/campanas` habilita `/campanas/:id`).
    */
   routes: readonly string[];
-  /** Puede cambiar roles y aprobar/rechazar accesos. */
+  /** Puede cambiar los roles del equipo. */
   canManageTeam: boolean;
+  /** Puede ver y editar las fichas laborales y aprobar accesos (RRHH). */
+  canManagePeople: boolean;
   /** Puede aprobar contenido que está en revisión. */
   canReview: boolean;
   /** Colecciones del Hub Ejecutivo que puede leer (ver `/api/hub/owner`). */
@@ -60,6 +63,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/",
     routes: ["*"],
     canManageTeam: true,
+    canManagePeople: true,
     canReview: true,
     hubScopes: ALL_HUB_SCOPES,
   },
@@ -70,6 +74,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/videos",
     routes: ["/videos", "/estudio", "/cover", "/transcriptor", "/drive", "/biblioteca", ...COMMON_ROUTES],
     canManageTeam: false,
+    canManagePeople: false,
     canReview: false,
     hubScopes: [],
   },
@@ -80,6 +85,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/",
     routes: ["/", "/schedule", "/cuentas", "/videos", "/historias", "/descripciones", "/insights", "/biblioteca", "/campanas", ...COMMON_ROUTES],
     canManageTeam: false,
+    canManagePeople: false,
     canReview: false,
     hubScopes: [],
   },
@@ -90,6 +96,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/ventas",
     routes: ["/ventas", ...COMMON_ROUTES],
     canManageTeam: false,
+    canManagePeople: false,
     canReview: false,
     hubScopes: ["contracts", "clients", "meetings"],
   },
@@ -100,6 +107,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/mis-tareas",
     routes: ["/mis-tareas", "/drive", ...COMMON_ROUTES],
     canManageTeam: false,
+    canManagePeople: false,
     canReview: false,
     hubScopes: ["projects", "tasks"],
   },
@@ -110,7 +118,19 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/insights",
     routes: ["/", "/insights", "/schedule", "/biblioteca", "/campanas", "/videos", "/historias", "/descripciones", "/cuentas", ...COMMON_ROUTES],
     canManageTeam: false,
+    canManagePeople: false,
     canReview: true,
+    hubScopes: [],
+  },
+  rrhh: {
+    id: "rrhh",
+    label: "Recursos Humanos",
+    description: "Fichas laborales del equipo, contratos, ingresos y solicitudes de acceso.",
+    home: "/rrhh",
+    routes: ["/rrhh", "/equipo", ...COMMON_ROUTES],
+    canManageTeam: true,
+    canManagePeople: true,
+    canReview: false,
     hubScopes: [],
   },
   contador: {
@@ -120,6 +140,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     home: "/reportes",
     routes: ["/reportes", "/ayuda"],
     canManageTeam: false,
+    canManagePeople: false,
     canReview: false,
     hubScopes: ["contracts"],
   },
@@ -161,6 +182,10 @@ export function roleHome(role: unknown, isSuperAdmin = false): string {
 
 export function canManageTeam(role: unknown, isSuperAdmin = false): boolean {
   return roleDef(role, isSuperAdmin).canManageTeam;
+}
+
+export function canManagePeople(role: unknown, isSuperAdmin = false): boolean {
+  return roleDef(role, isSuperAdmin).canManagePeople;
 }
 
 export function canReview(role: unknown, isSuperAdmin = false): boolean {

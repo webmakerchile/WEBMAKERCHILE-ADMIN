@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  ROLES, TEAM_ROLES, canAccessRoute, canManageTeam, canReview,
+  ROLES, TEAM_ROLES, canAccessRoute, canManagePeople, canManageTeam, canReview,
   hubScopesFor, isTeamRole, normalizeRole, roleHome,
 } from "@workspace/roles";
 
@@ -11,13 +11,27 @@ describe("roles del equipo", () => {
     }
   });
 
-  it("solo el CEO administra el equipo y ve todo el panel", () => {
+  it("el CEO ve todo el panel; solo dirección y RRHH tocan el equipo", () => {
     expect(canManageTeam("ceo")).toBe(true);
+    expect(canManageTeam("rrhh")).toBe(true);
     expect(canAccessRoute("ceo", "/cualquier-cosa-nueva")).toBe(true);
-    for (const role of TEAM_ROLES.filter(r => r !== "ceo")) {
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "rrhh")) {
       expect(canManageTeam(role), `${role} no debería administrar el equipo`).toBe(false);
       expect(canAccessRoute(role, "/equipo"), `${role} no debería ver /equipo`).toBe(false);
     }
+  });
+
+  it("las fichas laborales solo las ven dirección y RRHH", () => {
+    expect(canManagePeople("ceo")).toBe(true);
+    expect(canManagePeople("rrhh")).toBe(true);
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "rrhh")) {
+      expect(canManagePeople(role), `${role} no debería ver fichas laborales`).toBe(false);
+      expect(canAccessRoute(role, "/rrhh"), `${role} no debería ver /rrhh`).toBe(false);
+    }
+    // RRHH gestiona personas, no contenido ni el tablero ejecutivo.
+    expect(canReview("rrhh")).toBe(false);
+    expect(hubScopesFor("rrhh")).toEqual([]);
+    expect(canAccessRoute("rrhh", "/videos")).toBe(false);
   });
 
   it("aprobar contenido queda en dirección y marketing", () => {
