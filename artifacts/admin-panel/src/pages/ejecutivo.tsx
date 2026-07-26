@@ -9,6 +9,7 @@ import { ALL_HUB_SCOPES, type HubScope } from "@workspace/roles";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PushEnableBanner } from "@/components/push-enable-banner";
 import { ViewAsBar } from "@/components/view-as-bar";
+import { ActivityFeed } from "@/components/activity-feed";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
@@ -4386,6 +4387,9 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
           );
         })}
       </div>
+
+      {/* Bitácora global del equipo (filtrable por persona) */}
+      <ActivityFeed global people={selectable.map(m => ({ id: m.id, name: m.name, email: m.email }))} />
     </div>
   );
 }

@@ -29,6 +29,15 @@ export interface JornadaOpenSession {
   stale: boolean;
 }
 
+export interface DayCloseSummary {
+  totals: Record<string, number>;
+  highlights: { entityType: string; action: string; label: string; at: string }[];
+  checklistDone: number;
+  checklistTotal: number;
+  activityCount: number;
+  minutes?: number;
+}
+
 export interface JornadaLogItem {
   id: number;
   text: string;
@@ -112,6 +121,7 @@ export function JornadaCard() {
   const [discord, setDiscord] = useState(true);
   const [newItem, setNewItem] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [closeSummary, setCloseSummary] = useState<DayCloseSummary | null>(null);
   useNowTick(!!data?.open);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["jornada-me"] });
@@ -125,7 +135,12 @@ export function JornadaCard() {
   });
   const checkOut = useMutation({
     mutationFn: () => jfetch("/jornada/check-out", { method: "POST" }),
-    onSuccess: () => { setErr(null); inv(); },
+    onSuccess: (r: { summary?: DayCloseSummary | null }) => {
+      setErr(null);
+      setCloseSummary(r?.summary ?? null);
+      inv();
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
     onError: onErr,
   });
   const addLog = useMutation({
@@ -223,6 +238,25 @@ export function JornadaCard() {
         </div>
       ) : (
         <div className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-3 sm:p-4 mb-4">
+          {closeSummary && (
+            <div className="mb-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs space-y-1.5">
+              <p className="font-semibold text-sm">Resumen de tu jornada</p>
+              <p className="text-muted-foreground">
+                {typeof closeSummary.minutes === "number" && <>Trabajaste {fmtMin(closeSummary.minutes)} · </>}
+                {closeSummary.activityCount} movimiento{closeSummary.activityCount !== 1 ? "s" : ""} registrados
+                {closeSummary.checklistTotal > 0 && <> · checklist {closeSummary.checklistDone}/{closeSummary.checklistTotal}</>}
+              </p>
+              {closeSummary.highlights.length > 0 && (
+                <ul className="space-y-0.5">
+                  {closeSummary.highlights.slice(0, 5).map((h, i) => (
+                    <li key={i} className="truncate text-muted-foreground">
+                      • {h.action === "completed" ? "Completaste" : h.action === "created" ? "Creaste" : "Avanzaste"} “{h.label}”
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">

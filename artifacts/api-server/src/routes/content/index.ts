@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { videos, users, campaigns, templates } from "@workspace/db/schema";
 import { eq, desc, lte, and, or, inArray, ilike, isNotNull, sql } from "drizzle-orm";
+import { recordActivity } from "../../lib/activity";
 
 /**
  * Resolve a finite numeric library reference (campaignId/templateId) to either
@@ -878,6 +879,12 @@ router.patch("/content/videos/:id", async (req, res) => {
     updateData.templateId = resolved;
   }
 
+  // Para la bitácora: estado previo solo si esta request cambia estados.
+  const tracksStatus = body.status !== undefined || body.workflowStatus !== undefined;
+  const [prev] = tracksStatus
+    ? await db.select({ status: videos.status, workflowStatus: videos.workflowStatus }).from(videos).where(eq(videos.id, id)).limit(1)
+    : [undefined];
+
   const [row] = await db
     .update(videos)
     .set(updateData)
@@ -887,6 +894,29 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (!row) {
     res.status(404).json({ error: "Video not found" });
     return;
+  }
+  const actorId = (req.user as { id?: number } | undefined)?.id;
+  if (actorId && prev) {
+    if (body.status !== undefined && body.status !== prev.status) {
+      recordActivity({
+        actorId,
+        entityType: "video",
+        entityId: id,
+        entityLabel: row.title || `Video ${id}`,
+        action: body.status === "published" ? "completed" : "status_change",
+        detail: { field: "status", from: prev.status, to: body.status },
+      });
+    }
+    if (body.workflowStatus !== undefined && body.workflowStatus !== prev.workflowStatus) {
+      recordActivity({
+        actorId,
+        entityType: "video",
+        entityId: id,
+        entityLabel: row.title || `Video ${id}`,
+        action: "status_change",
+        detail: { field: "workflowStatus", from: prev.workflowStatus, to: body.workflowStatus },
+      });
+    }
   }
   res.json(row);
 });

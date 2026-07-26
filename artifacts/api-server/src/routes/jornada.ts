@@ -13,6 +13,7 @@ import {
   resolveGuild,
   voiceStatus,
 } from "../lib/discord";
+import { saveDaySummary } from "../lib/activity";
 
 /**
  * Jornada / asistencia del equipo.
@@ -223,7 +224,25 @@ router.post("/jornada/check-out", async (req: Request, res: Response) => {
       .where(eq(hubWorkSessions.id, open.id))
       .returning();
     const mins = session ? sessionMinutes(session) : 0;
-    res.json({ session, minutes: mins });
+    // Resumen automático de la jornada: computado desde la bitácora de
+    // actividad + checklist del día, persistido (re-ejecutable si hay varios
+    // check-outs) y devuelto al cliente para mostrarlo al cerrar.
+    const workDate = session?.workDate ?? localDate(now);
+    let daySummary: Awaited<ReturnType<typeof saveDaySummary>> | null = null;
+    try {
+      // Minutos TOTALES del día (todas las sesiones cerradas de esa fecha),
+      // no solo la sesión recién cerrada: con varios check-outs el resumen
+      // se recalcula y siempre refleja el acumulado.
+      const daySessions = await db.select().from(hubWorkSessions)
+        .where(and(eq(hubWorkSessions.userId, user.id), eq(hubWorkSessions.workDate, workDate)));
+      const totalMins = daySessions
+        .filter((s) => s.checkOut)
+        .reduce((acc, s) => acc + sessionMinutes(s, now), 0);
+      daySummary = await saveDaySummary(user.id, workDate, { minutes: totalMins });
+    } catch (err) {
+      console.error("[jornada/check-out] resumen falló", err);
+    }
+    res.json({ session, minutes: mins, summary: daySummary });
     // Reporte al canal de Discord (fire-and-forget).
     const [uRow] = await db.select({ name: users.name }).from(users).where(eq(users.id, user.id)).limit(1);
     const displayName = uRow?.name || user.email;

@@ -5,6 +5,7 @@ import { eq, and, asc, desc, sql, gte, lte, isNull, or, ne } from "drizzle-orm";
 import { z } from "zod";
 import { normalizeRole } from "@workspace/roles";
 import { createNotification } from "../../lib/notifications";
+import { recordActivity } from "../../lib/activity";
 
 const router: IRouter = Router();
 
@@ -349,6 +350,7 @@ router.post("/hub/tasks", async (req: Request, res: Response) => {
     }
     if (inserted) {
       await logActivity({ taskId: inserted.id, taskTitle: inserted.title, userId: user.id, action: "created" }).catch(() => {});
+      recordActivity({ actorId: user.id, entityType: "task", entityId: inserted.id, entityLabel: inserted.title, action: "created" });
     }
     res.status(201).json({ task: inserted });
   } catch (err) {
@@ -635,9 +637,18 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
     // Log activity
     if (d.stage !== undefined && d.stage !== existing.stage) {
       await logActivity({ taskId: id, taskTitle: existing.title, userId: user.id, action: "stage_change", oldStage: existing.stage, newStage: d.stage }).catch(() => {});
+      recordActivity({
+        actorId: user.id,
+        entityType: "task",
+        entityId: id,
+        entityLabel: existing.title,
+        action: d.stage === "done" ? "completed" : "stage_change",
+        detail: { from: existing.stage, to: d.stage },
+      });
     }
     if (canManageAll && d.assigneeId !== undefined && d.assigneeId !== null && d.assigneeId !== existing.assigneeId) {
       await logActivity({ taskId: id, taskTitle: existing.title, userId: user.id, action: "assigned" }).catch(() => {});
+      recordActivity({ actorId: user.id, entityType: "task", entityId: id, entityLabel: existing.title, action: "assigned", detail: { assigneeId: d.assigneeId } });
     }
 
     // Notify on assignee change
@@ -764,6 +775,7 @@ router.post("/hub/tasks/:id/comments", async (req: Request, res: Response) => {
       .values({ taskId: id, userId: user.id, body: parsed.data.body.trim() })
       .returning();
     await logActivity({ taskId: id, taskTitle: task.title, userId: user.id, action: "commented" }).catch(() => {});
+    recordActivity({ actorId: user.id, entityType: "task", entityId: id, entityLabel: task.title, action: "commented" });
     // Aviso al interlocutor natural: asignado si comenta otro; creador si comenta el asignado.
     const counterpart = task.assigneeId && task.assigneeId !== user.id
       ? task.assigneeId

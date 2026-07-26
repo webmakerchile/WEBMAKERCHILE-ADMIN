@@ -7,6 +7,7 @@ import {
 } from "@workspace/roles";
 import { z } from "zod";
 import { createNotification } from "../../lib/notifications";
+import { recordActivity } from "../../lib/activity";
 import { resolveBoard, saveBoard } from "../../lib/hub-board";
 
 const router: IRouter = Router();
@@ -179,6 +180,7 @@ router.post("/tickets", async (req: Request, res: Response) => {
     }
   }
 
+  recordActivity({ actorId: me.id, entityType: "ticket", entityId: row!.id, entityLabel: row!.title, action: "created", detail: { area: d.area } });
   res.status(201).json(row);
 });
 
@@ -209,6 +211,17 @@ router.patch("/tickets/:id", async (req: Request, res: Response) => {
   if (d.status && d.status !== "resuelto" && d.status !== "cerrado") { patch.resolvedAt = null; patch.closedAt = null; }
 
   const [row] = await db.update(tickets).set(patch).where(eq(tickets.id, id)).returning();
+
+  if (d.status && d.status !== current.status) {
+    recordActivity({
+      actorId: me.id,
+      entityType: "ticket",
+      entityId: id,
+      entityLabel: current.title,
+      action: d.status === "resuelto" || d.status === "cerrado" ? "completed" : "status_change",
+      detail: { from: current.status, to: d.status },
+    });
+  }
 
   // El autor quiere saber cuándo avanza su pedido.
   if (d.status && d.status !== current.status && current.createdBy !== me.id) {

@@ -32,6 +32,7 @@ import goalsRouter from "./goals";
 import hubTasksRouter from "./hub/tasks";
 import hubServicesRouter from "./hub/services";
 import jornadaRouter from "./jornada";
+import activityRouter from "./activity";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
 import { requireArea } from "../lib/require-area";
@@ -81,6 +82,10 @@ router.use(calendarRouter);
 // TODAS las áreas aprobadas — por eso va FUERA del gate de /hub. La
 // supervisión (overview/historial de terceros) se gatea por rol en el router.
 router.use(jornadaRouter);
+
+// Bitácora de actividad: la propia para todos; la global gateada por rol
+// dentro del router (dirección/ventas/rrhh) — mismo patrón que jornada.
+router.use(activityRouter);
 
 // Hub routes: ejecutivo area only
 // hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y

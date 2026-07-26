@@ -9,6 +9,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { mergeCollection, type HubEntity } from "../../lib/hub-merge";
 import { resolveBoard, saveBoard } from "../../lib/hub-board";
+import { recordActivity } from "../../lib/activity";
 import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
 
 const router: IRouter = Router();
@@ -154,6 +155,41 @@ router.patch("/hub", async (req: Request, res: Response) => {
   }
 
   const saved = await saveBoard(board.boardUserId, merged);
+
+  // Bitácora: contratos y proyectos nuevos o con cambio de estado/etapa.
+  // El tablero es un blob, así que el "diff" se hace aquí comparando lo
+  // almacenado antes del merge con lo que quedó guardado.
+  try {
+    for (const scope of ["contracts", "projects"] as const) {
+      if (!writeScopes.includes(scope)) continue;
+      const before = Array.isArray(stored[scope]) ? (stored[scope] as HubEntity[]) : [];
+      const after = Array.isArray(saved.data[scope]) ? (saved.data[scope] as HubEntity[]) : [];
+      const beforeById = new Map(before.map((e) => [String(e?.id ?? ""), e]));
+      const entityType = scope === "contracts" ? "contract" : "project";
+      const label = (e: HubEntity) =>
+        String(e?.title ?? e?.name ?? e?.nombre ?? e?.client ?? e?.id ?? "").slice(0, 200) || "(sin título)";
+      const stateOf = (e: HubEntity) => String(e?.status ?? e?.stage ?? e?.etapa ?? "");
+      for (const e of after) {
+        const id = String(e?.id ?? "");
+        if (!id) continue;
+        const old = beforeById.get(id);
+        if (!old) {
+          recordActivity({ actorId: me.id, entityType, entityId: id, entityLabel: label(e), action: "created" });
+        } else if (stateOf(old) !== stateOf(e)) {
+          recordActivity({
+            actorId: me.id,
+            entityType,
+            entityId: id,
+            entityLabel: label(e),
+            action: "status_change",
+            detail: { from: stateOf(old), to: stateOf(e) },
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[hub PATCH] activity diff failed", err);
+  }
 
   res.json({
     data: scopeBoard(saved.data, scopes, canSeeMoney(role)),

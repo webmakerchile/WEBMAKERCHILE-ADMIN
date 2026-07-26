@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/App";
 import { PushEnableBanner } from "@/components/push-enable-banner";
 import { JornadaCard } from "@/components/jornada-card";
+import { ActivityFeed } from "@/components/activity-feed";
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 type Priority = "crítica" | "alta" | "media" | "baja";
@@ -361,6 +362,9 @@ export default function MiDiaPage() {
             )}
           </div>
         )}
+
+        {/* Bitácora personal del día */}
+        <ActivityFeed today limit={30} />
       </div>
     </Layout>
   );

@@ -5,6 +5,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { canAssignGoals, normalizeRole } from "@workspace/roles";
 import { z } from "zod";
 import { createNotification } from "../../lib/notifications";
+import { recordActivity } from "../../lib/activity";
 import { PERIODS, currentKeys, isPeriod, periodKey, type Period } from "../../lib/periods";
 
 const router: IRouter = Router();
@@ -117,6 +118,8 @@ router.post("/goals", async (req: Request, res: Response) => {
     })
     .returning();
 
+  recordActivity({ actorId: me.id, entityType: "goal", entityId: row!.id, entityLabel: row!.title, action: "created", detail: { assignedTo: d.assignedTo } });
+
   if (d.assignedTo !== me.id) {
     await createNotification({
       userId: d.assignedTo,
@@ -166,6 +169,17 @@ router.patch("/goals/:id", async (req: Request, res: Response) => {
   if (d.status && d.status !== "cumplida") patch.completedAt = null;
 
   const [row] = await db.update(goals).set(patch).where(eq(goals.id, id)).returning();
+
+  if (d.status && d.status !== actual.status) {
+    recordActivity({
+      actorId: me.id,
+      entityType: "goal",
+      entityId: id,
+      entityLabel: actual.title,
+      action: d.status === "cumplida" ? "completed" : "status_change",
+      detail: { from: actual.status, to: d.status },
+    });
+  }
 
   if (d.status === "cumplida" && actual.createdBy !== me.id) {
     await createNotification({
