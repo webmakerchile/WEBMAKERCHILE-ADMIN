@@ -62,6 +62,8 @@ const profileSchema = z.object({
   notes: z.string().trim().max(4000).default(""),
   /** Días hábiles de vacaciones al año (saldo anual). */
   vacationDaysPerYear: z.coerce.number().int().min(0).max(90).default(15),
+  /** % de comisión sobre lo cobrado (ejecutivos de venta). */
+  commissionPct: z.coerce.number().min(0).max(100).default(0),
 });
 
 router.get("/hr/people", async (req: Request, res: Response) => {

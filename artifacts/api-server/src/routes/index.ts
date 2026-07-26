@@ -34,6 +34,7 @@ import goalsRouter from "./goals";
 import hubTasksRouter from "./hub/tasks";
 import hubServicesRouter from "./hub/services";
 import hubPlaybooksRouter from "./hub/playbooks";
+import hubVentasRouter from "./hub/ventas";
 import jornadaRouter from "./jornada";
 import slaRouter from "./sla";
 import activityRouter from "./activity";
@@ -110,6 +111,7 @@ router.use("/hub", (req, res, next) => {
 router.use(hubTasksRouter);
 router.use(hubServicesRouter);
 router.use(hubPlaybooksRouter);
+router.use(hubVentasRouter);
 router.use(slaRouter);
 router.use(hubRouter);
 router.use(hrRouter);

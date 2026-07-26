@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, real, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
 /**
@@ -40,6 +40,8 @@ export const employeeProfiles = pgTable("employee_profiles", {
   notes: text("notes").notNull().default(""),
   /** Días hábiles de vacaciones al año (Chile: 15 legales por defecto). */
   vacationDaysPerYear: integer("vacation_days_per_year").notNull().default(15),
+  /** % de comisión sobre lo efectivamente cobrado (solo ejecutivos de venta). */
+  commissionPct: real("commission_pct").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

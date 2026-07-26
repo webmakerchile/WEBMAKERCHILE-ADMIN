@@ -16,6 +16,7 @@ import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections"
 import { getCredential } from "./lib/credentials";
 import { checkSlaBreaches } from "./lib/sla";
 import { checkDocumentExpiryAlerts } from "./lib/hr-ops";
+import { checkSalesFollowUps, checkContractRenewals } from "./lib/ventas";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -1302,6 +1303,17 @@ async function tick() {
       await checkDocumentExpiryAlerts();
     } catch (err: any) {
       console.error("[Scheduler] checkDocumentExpiryAlerts failed:", err?.message || err);
+    }
+    // Ventas: seguimientos vencidos y renovaciones próximas (dedupe en DB).
+    try {
+      await checkSalesFollowUps();
+    } catch (err: any) {
+      console.error("[Scheduler] checkSalesFollowUps failed:", err?.message || err);
+    }
+    try {
+      await checkContractRenewals();
+    } catch (err: any) {
+      console.error("[Scheduler] checkContractRenewals failed:", err?.message || err);
     }
   }
   await processScheduledVideos();

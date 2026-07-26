@@ -13,8 +13,9 @@ import { ActivityFeed } from "@/components/activity-feed";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp,
 } from "lucide-react";
+import VentasPanel from "@/components/ventas-panel";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -58,7 +59,7 @@ interface TeamMember {
   approvalStatus: string | null;
 }
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "svc" | "drive" | "team" | "att";
+type Tab = "dash" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "svc" | "drive" | "team" | "att";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
@@ -74,7 +75,10 @@ interface Contract { id: string; title: string; client: string; value: string; s
   /** Versión técnica del contrato: los requerimientos sin un solo monto. */
   brief?: ContractBrief; briefUrl?: string; briefTitle?: string; briefUploadedAt?: number;
   /** Lo marca el servidor cuando censuró los montos para este rol. */
-  moneyRedacted?: boolean; }
+  moneyRedacted?: boolean;
+  /** Pipeline de ventas (solo borradores = oportunidades). Ver torre de Ventas. */
+  pipelineStage?: string; probability?: number; nextFollowUp?: string; expectedClose?: string;
+  salesOwnerId?: number | null; renewalOfId?: string; }
 
 interface BriefModule { modulo: string; descripcion: string; entregables: string[]; requisitos: string[] }
 interface ContractBrief {
@@ -131,6 +135,7 @@ const TAB_TITLES: Record<Tab, [string, string]> = {
   meet: ["Reuniones", "Notas, resúmenes y seguimiento"],
   notes: ["Notas", "Ideas, acuerdos y estrategia"],
   contracts: ["Contratos", "Acuerdos, términos y vencimientos"],
+  ventas: ["Ventas", "Pipeline · renovaciones · comisiones"],
   svc: ["Servicios", "Catálogo de referencia"],
   drive: ["Drive", "Explorador de archivos del proyecto"],
 };
@@ -5061,6 +5066,7 @@ const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
   meet: CalendarClock,
   notes: FileText,
   contracts: FileCheck2,
+  ventas: TrendingUp,
   drive: FolderTree,
   svc: Package,
 };
@@ -5076,6 +5082,7 @@ const TabIcons: Record<Tab, React.ReactNode> = {
   meet: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   notes: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
   contracts: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>,
+  ventas: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
   svc: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
   drive: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
 };
@@ -5203,7 +5210,7 @@ export default function EjecutivoPage() {
     };
     const scope = tabScope[tab];
     // La pestaña guardada puede no corresponder al rol (o al alcance del tablero).
-    if ((tab === "svc" && !canSeeSvc) || (scope && !scopes.includes(scope))) {
+    if ((tab === "svc" && !canSeeSvc) || (tab === "ventas" && !canManageSvc) || (scope && !scopes.includes(scope))) {
       setTabRaw("dash");
       try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
     }
@@ -5316,13 +5323,15 @@ export default function EjecutivoPage() {
     { id: "meet" as Tab, cnt: state.meetings.length },
     { id: "notes" as Tab, cnt: state.notes.length },
     { id: "contracts" as Tab, cnt: state.contracts.length },
+    // Torre de Ventas: misma gente que gestiona el catálogo (dirección/ventas).
+    ...(canManageSvc ? [{ id: "ventas" as Tab, cnt: state.contracts.filter(c => c.status === "borrador").length }] : []),
     { id: "drive" as Tab },
     ...(canSeeSvc ? [{ id: "svc" as Tab }] : []),
   ] as { id: Tab; cnt?: number }[]).filter(t => {
     const scope = TAB_SCOPE[t.id];
     return !scope || scopes.includes(scope);
   });
-  const TAB_LABELS: Record<Tab, string> = { team: "Equipo", att: "Asistencia", dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", svc: "Servicios", drive: "Drive" };
+  const TAB_LABELS: Record<Tab, string> = { team: "Equipo", att: "Asistencia", dash: "Dashboard", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", svc: "Servicios", drive: "Drive" };
 
   return (
     <>
@@ -5445,6 +5454,7 @@ export default function EjecutivoPage() {
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
             {tab === "att" && <AttendanceView />}
             {tab === "svc" && canSeeSvc && <SvcView canManage={canManageSvc} showToast={showToast} />}
+            {tab === "ventas" && canManageSvc && <VentasPanel showToast={showToast} />}
           </div>
 
           {/* ---- MOBILE FAB: crear según el tab activo ---- */}

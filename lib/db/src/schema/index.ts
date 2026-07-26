@@ -15,6 +15,7 @@ export * from "./brand-tone";
 export * from "./credentials";
 export * from "./hub-state";
 export * from "./hr";
+export * from "./sales";
 export * from "./tickets";
 export * from "./goals";
 export * from "./hub-services";
