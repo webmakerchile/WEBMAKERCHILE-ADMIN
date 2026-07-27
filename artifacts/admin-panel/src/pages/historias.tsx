@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import {
@@ -30,7 +30,9 @@ const FORMATOS = [
 type Formato = "unica" | "serie" | "auto";
 type RolFrame = "unica" | "hook" | "contexto" | "problema" | "desarrollo" | "solucion" | "cta";
 
-const ROL_LABELS: Record<RolFrame, { label: string; emoji: string; color: string }> = {
+type RolMeta = { label: string; emoji: string; color: string };
+
+const ROL_LABELS: Record<string, RolMeta> = {
   unica: { label: "Historia", emoji: "📖", color: "text-foreground" },
   hook: { label: "Hook", emoji: "🎣", color: "text-amber-300" },
   contexto: { label: "Contexto", emoji: "📊", color: "text-sky-300" },
@@ -38,17 +40,82 @@ const ROL_LABELS: Record<RolFrame, { label: string; emoji: string; color: string
   desarrollo: { label: "Desarrollo", emoji: "📚", color: "text-indigo-300" },
   solucion: { label: "Solución", emoji: "💡", color: "text-emerald-300" },
   cta: { label: "CTA", emoji: "📞", color: "text-primary" },
+  // Pasos de los formatos narrativos (story-formats del backend)
+  presentacion: { label: "Presentación", emoji: "👋", color: "text-sky-300" },
+  el_sintoma: { label: "El síntoma", emoji: "🔍", color: "text-amber-300" },
+  el_problema: { label: "El problema", emoji: "⚠️", color: "text-red-300" },
+  el_diagnostico: { label: "Diagnóstico", emoji: "📊", color: "text-indigo-300" },
+  el_cambio: { label: "El cambio", emoji: "🔀", color: "text-emerald-300" },
+  el_resultado: { label: "Resultado", emoji: "✅", color: "text-emerald-300" },
+  antes: { label: "Antes", emoji: "⏮️", color: "text-red-300" },
+  despues: { label: "Después", emoji: "⏭️", color: "text-emerald-300" },
+  el_costo: { label: "El costo", emoji: "💸", color: "text-amber-300" },
+  el_giro: { label: "El giro", emoji: "🔑", color: "text-indigo-300" },
+  primeros_dias: { label: "Primeros días", emoji: "🌱", color: "text-sky-300" },
+  el_mito: { label: "El mito", emoji: "💭", color: "text-amber-300" },
+  de_donde_viene: { label: "De dónde viene", emoji: "📜", color: "text-sky-300" },
+  que_cambio: { label: "Qué cambió", emoji: "🔄", color: "text-indigo-300" },
+  por_que_falla: { label: "Por qué falla", emoji: "⚠️", color: "text-red-300" },
+  la_verdad: { label: "La verdad", emoji: "💡", color: "text-emerald-300" },
+  la_pregunta: { label: "La pregunta", emoji: "❓", color: "text-amber-300" },
+  senal_1: { label: "Señal 1", emoji: "1️⃣", color: "text-sky-300" },
+  senal_2: { label: "Señal 2", emoji: "2️⃣", color: "text-indigo-300" },
+  senal_3: { label: "Señal 3", emoji: "3️⃣", color: "text-red-300" },
+  el_veredicto: { label: "Veredicto", emoji: "⚖️", color: "text-emerald-300" },
+  el_momento: { label: "El momento", emoji: "🎬", color: "text-amber-300" },
+  el_contexto: { label: "Contexto", emoji: "📊", color: "text-sky-300" },
+  lo_que_costo: { label: "Lo que costó", emoji: "💸", color: "text-red-300" },
+  el_detalle: { label: "El detalle", emoji: "🔎", color: "text-indigo-300" },
+  lo_que_queda: { label: "Lo que queda", emoji: "✨", color: "text-emerald-300" },
+  el_instante: { label: "El instante", emoji: "⚡", color: "text-amber-300" },
+  como_llegamos: { label: "Cómo llegamos", emoji: "🛤️", color: "text-sky-300" },
+  lo_que_estaba_en_juego: { label: "En juego", emoji: "🎯", color: "text-red-300" },
+  la_decision: { label: "La decisión", emoji: "🔑", color: "text-indigo-300" },
+  la_salida: { label: "La salida", emoji: "✅", color: "text-emerald-300" },
 };
 
+/** Etiqueta de un paso narrativo; los pasos nuevos caen en un formato legible. */
+function rolMeta(rol: string): RolMeta {
+  return (
+    ROL_LABELS[rol] ?? {
+      label: rol.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()),
+      emoji: "•",
+      color: "text-foreground",
+    }
+  );
+}
+
 type TextoHistoria = { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
+
+type GuionFrame = {
+  numero: number;
+  paso: string;
+  layoutId: string;
+  copy_principal: string;
+  sub_copy: string;
+  dato: string;
+  dato_label: string;
+  cta: string;
+  hashtags: string;
+  prompt_visual: string;
+};
 
 type Frame = {
   numero_frame: number;
   total_frames: number;
-  rol: RolFrame;
+  rol: RolFrame | string;
+  layout?: string;
   imagen: string;
   texto: TextoHistoria;
+  guion?: GuionFrame;
   error?: string;
+};
+
+type FormatoNarrativo = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  porQueRetiene: string;
 };
 
 type Resultado = {
@@ -58,6 +125,9 @@ type Resultado = {
   concepto: string;
   texto_en_imagen: boolean;
   estilo_titular?: string;
+  formato_narrativo?: string;
+  formato_narrativo_nombre?: string;
+  hilo?: string;
   frames: Frame[];
   fecha: string;
 };
@@ -76,6 +146,9 @@ export default function HistoriasPage() {
   // Estilo tipográfico del título (motor de impacto compartido con portadas);
   // null = rotación automática entre los estilos más impactantes.
   const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
+  // Formato narrativo: qué historia se cuenta y cómo progresa entre frames.
+  const [formatoNarrativo, setFormatoNarrativo] = useState<string | null>(null);
+  const [formatosNarrativos, setFormatosNarrativos] = useState<FormatoNarrativo[]>([]);
   const [formato, setFormato] = useState<Formato>("auto");
   const [cantidadFrames, setCantidadFrames] = useState<number>(3);
   const [loading, setLoading] = useState(false);
@@ -127,6 +200,13 @@ export default function HistoriasPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  useEffect(() => {
+    fetch(`${API_BASE}/community/historias/formatos`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => { if (d?.success && Array.isArray(d.data)) setFormatosNarrativos(d.data); })
+      .catch(() => {});
+  }, []);
+
   const lanzarGeneracion = async (
     formatoFinal: "unica" | "serie",
     cantidad?: number,
@@ -145,6 +225,7 @@ export default function HistoriasPage() {
           concepto: concepto.trim(),
           texto_en_imagen: textoEnImagen,
           estilo_titular: estiloTitular ?? undefined,
+          formato_narrativo: formatoNarrativo ?? undefined,
           formato: formatoFinal,
           ...(formatoFinal === "serie" ? { cantidad_frames: cantidad || cantidadFrames } : {}),
         }),
@@ -226,6 +307,13 @@ export default function HistoriasPage() {
           texto_actual: frame.texto,
           texto_en_imagen: resultado.texto_en_imagen,
           estilo_titular: resultado.estilo_titular ?? undefined,
+          formato_narrativo: resultado.formato_narrativo ?? undefined,
+          hilo: resultado.hilo ?? undefined,
+          guion_frame: frame.guion ?? undefined,
+          otros_titulares: resultado.frames
+            .filter((f) => f.numero_frame !== frame.numero_frame)
+            .map((f) => f.texto?.copy_principal)
+            .filter((t): t is string => Boolean(t)),
           modo,
           prompt_personalizado: promptPersonalizado,
           imagen_actual_base64: imagenActualBase64,
@@ -449,6 +537,44 @@ export default function HistoriasPage() {
             )}
           </div>
 
+          <div className="bg-foreground/5 rounded-xl p-4 border border-foreground/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-foreground">Formato narrativo</label>
+              <span className="text-[11px] text-muted-foreground">Cómo se cuenta la historia</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setFormatoNarrativo(null)}
+                aria-pressed={formatoNarrativo === null}
+                className={`flex flex-col items-start gap-0.5 px-2.5 py-2 rounded-lg border text-left transition ${formatoNarrativo === null ? "border-primary bg-primary/15" : "border-foreground/10 bg-background/40 hover:border-foreground/30"}`}
+              >
+                <span className="flex items-center gap-1.5 text-[11px] font-bold text-foreground">
+                  <Sparkles className="w-3 h-3 text-primary" />Automático
+                </span>
+                <span className="text-[9px] text-muted-foreground leading-tight">Va rotando solo</span>
+              </button>
+              {formatosNarrativos.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setFormatoNarrativo(formatoNarrativo === f.id ? null : f.id)}
+                  aria-pressed={formatoNarrativo === f.id}
+                  title={f.porQueRetiene}
+                  className={`flex flex-col items-start gap-0.5 px-2.5 py-2 rounded-lg border text-left transition ${formatoNarrativo === f.id ? "border-primary bg-primary/15" : "border-foreground/10 bg-background/40 hover:border-foreground/30"}`}
+                >
+                  <span className="text-[11px] font-bold text-foreground truncate w-full">{f.nombre}</span>
+                  <span className="text-[9px] text-muted-foreground leading-tight line-clamp-2">{f.descripcion}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground/70">
+              {formatoNarrativo
+                ? formatosNarrativos.find((f) => f.id === formatoNarrativo)?.porQueRetiene
+                : "Cada serie se escribe como UN guion completo: mismo protagonista, mismas cifras y progresión real entre frames."}
+            </p>
+          </div>
+
           {textoEnImagen && (
             <div className="bg-foreground/5 rounded-xl p-4 border border-foreground/10">
               <EstiloTitularPicker
@@ -518,7 +644,7 @@ export default function HistoriasPage() {
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {recomendacion.estructura.map((rol, i) => (
                       <span key={i} className="bg-foreground/5 border border-foreground/10 text-xs px-2 py-1 rounded-md">
-                        {ROL_LABELS[rol]?.emoji} {ROL_LABELS[rol]?.label}
+                        {rolMeta(rol).emoji} {rolMeta(rol).label}
                       </span>
                     ))}
                   </div>
@@ -586,7 +712,7 @@ export default function HistoriasPage() {
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2">
                   {resultado.frames.map((f, i) => {
-                    const rolMeta = ROL_LABELS[f.rol];
+                    const meta = rolMeta(f.rol);
                     const activo = i === frameActivo;
                     return (
                       <button
@@ -612,8 +738,8 @@ export default function HistoriasPage() {
                             <Loader2 className="w-6 h-6 text-primary animate-spin" />
                           </div>
                         )}
-                        <div className={`absolute bottom-0 left-0 right-0 bg-slate-950/85 text-[10px] font-semibold py-1 text-center ${rolMeta.color}`}>
-                          {rolMeta.emoji} {rolMeta.label}
+                        <div className={`absolute bottom-0 left-0 right-0 bg-slate-950/85 text-[10px] font-semibold py-1 text-center ${meta.color}`}>
+                          {meta.emoji} {meta.label}
                         </div>
                       </button>
                     );
@@ -629,8 +755,8 @@ export default function HistoriasPage() {
                   <h2 className="text-lg font-display font-bold flex items-center gap-2">
                     {esSerie ? (
                       <>
-                        <span className={ROL_LABELS[frameActual.rol].color}>
-                          {ROL_LABELS[frameActual.rol].emoji} {ROL_LABELS[frameActual.rol].label}
+                        <span className={rolMeta(frameActual.rol).color}>
+                          {rolMeta(frameActual.rol).emoji} {rolMeta(frameActual.rol).label}
                         </span>
                         <span className="text-xs text-muted-foreground font-normal">
                           (Frame {frameActual.numero_frame}/{frameActual.total_frames})
@@ -783,7 +909,7 @@ export default function HistoriasPage() {
                   <button
                     onClick={() => {
                       const all = resultado.frames
-                        .map((f) => `[Frame ${f.numero_frame}/${f.total_frames} — ${ROL_LABELS[f.rol].label}]\n${f.texto.copy_principal}\n${f.texto.sub_copy}\nCTA: ${f.texto.cta}\n${f.texto.hashtags}`)
+                        .map((f) => `[Frame ${f.numero_frame}/${f.total_frames} — ${rolMeta(f.rol).label}]\n${f.texto.copy_principal}\n${f.texto.sub_copy}\nCTA: ${f.texto.cta}\n${f.texto.hashtags}`)
                         .join("\n\n");
                       copiar(all, "serie_completa");
                     }}

@@ -262,6 +262,121 @@ export function medirTexto(texto: string, fuenteId: FuenteTitularId, letterSpaci
   return w + letterSpacing * texto.length;
 }
 
+/* ==================== Texto secundario medido ============================ */
+
+export interface TextoAjustado {
+  lineas: string[];
+  fontSize: number;
+  lineHeight: number;
+  /** Ancho de la línea más ancha, en px. Nunca supera `maxWidth`. */
+  ancho: number;
+  alto: number;
+}
+
+export interface OpcionesAjusteTexto {
+  maxWidth: number;
+  /** Alto disponible; si se excede, igual se respeta el ancho. */
+  maxHeight?: number;
+  maxLineas?: number;
+  maxFontSize: number;
+  minFontSize: number;
+  fuenteId: FuenteTitularId;
+  lineHeight?: number;
+  letterSpacing?: number;
+}
+
+/** Parte el texto en líneas que caben en `maxWidth` a un font-size dado,
+ *  cortando incluso dentro de una palabra si esa palabra sola no cabe. */
+function partirPorAncho(
+  palabras: string[],
+  fuenteId: FuenteTitularId,
+  letterSpacing: number,
+  fontSize: number,
+  maxWidth: number,
+): string[] {
+  const m: MetricasFuente = FONT_METRICS[fuenteId];
+  const anchoDe = (t: string) => medirTexto(t, fuenteId, letterSpacing) * fontSize;
+  const anchoEspacio = (m.espacio + letterSpacing) * fontSize;
+
+  const lineas: string[] = [];
+  let actual = "";
+  let anchoActual = 0;
+
+  const empujar = () => {
+    if (actual) lineas.push(actual);
+    actual = "";
+    anchoActual = 0;
+  };
+
+  for (const palabra of palabras) {
+    let w = anchoDe(palabra);
+    // Palabra más ancha que la columna: se parte por caracteres.
+    if (w > maxWidth) {
+      empujar();
+      let resto = palabra;
+      while (resto && anchoDe(resto) > maxWidth) {
+        let corte = resto.length - 1;
+        while (corte > 1 && anchoDe(resto.slice(0, corte)) > maxWidth) corte--;
+        lineas.push(resto.slice(0, corte));
+        resto = resto.slice(corte);
+      }
+      actual = resto;
+      anchoActual = anchoDe(resto);
+      continue;
+    }
+    const anchoConEspacio = actual ? anchoActual + anchoEspacio + w : w;
+    if (anchoConEspacio > maxWidth) {
+      empujar();
+      actual = palabra;
+      anchoActual = w;
+    } else {
+      actual = actual ? `${actual} ${palabra}` : palabra;
+      anchoActual = anchoConEspacio;
+    }
+  }
+  empujar();
+  return lineas;
+}
+
+/**
+ * Ajusta un bloque de texto secundario (sub-copy, CTA, hashtags) midiendo con
+ * las métricas REALES de una fuente empaquetada, no con un ratio estimado.
+ *
+ * Garantía: la línea más ancha del resultado NUNCA supera `maxWidth`. Antes
+ * este texto se medía suponiendo "Inter" —que no está empaquetada y caía en
+ * DejaVu Sans, bastante más ancha—, así que se salía del lienzo.
+ */
+export function ajustarTextoMedido(texto: string, opts: OpcionesAjusteTexto): TextoAjustado {
+  const lh = opts.lineHeight ?? 1.22;
+  const ls = opts.letterSpacing ?? 0;
+  const limpio = texto.replace(/\s+/g, " ").trim();
+  const palabras = limpio.split(" ").filter(Boolean);
+  if (palabras.length === 0) {
+    return { lineas: [], fontSize: opts.minFontSize, lineHeight: opts.minFontSize * lh, ancho: 0, alto: 0 };
+  }
+
+  const maxLineas = opts.maxLineas ?? 4;
+  const armar = (fontSize: number): TextoAjustado => {
+    const lineas = partirPorAncho(palabras, opts.fuenteId, ls, fontSize, opts.maxWidth);
+    const ancho = lineas.reduce(
+      (max, l) => Math.max(max, medirTexto(l, opts.fuenteId, ls) * fontSize),
+      0,
+    );
+    const lineHeight = fontSize * lh;
+    return { lineas, fontSize, lineHeight, ancho, alto: lineas.length * lineHeight };
+  };
+
+  for (let fs = Math.round(opts.maxFontSize); fs >= opts.minFontSize; fs -= 2) {
+    const r = armar(fs);
+    if (r.lineas.length > maxLineas) continue;
+    if (opts.maxHeight !== undefined && r.alto > opts.maxHeight) continue;
+    return r;
+  }
+  // Piso: el ancho SIEMPRE se respeta (partirPorAncho corta lo que haga falta);
+  // solo puede excederse el alto, que es preferible a perder texto.
+  return armar(opts.minFontSize);
+}
+
 /* ==================== Palabras de acento ================================= */
 
 const PALABRAS_CLAVE = new Set([

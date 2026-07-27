@@ -33,3 +33,18 @@ Regla: los borradores del generador de portadas viven en `community_content` con
 ## Títulos de Historias/Posts IA con el motor de portadas
 Regla: en `routes/community/index.ts` SOLO el título pasa por `construirOverlayTitular` (capa full-canvas compositada aparte, scrim "ninguno" porque topfade/botfade ya existen); sub-copy, CTA y hashtags conservan su render Inter con filtros feGaussianBlur (que sí funcionan en esta librsvg). Un `estilo_titular` por historia/carrusel completo, resuelto una vez en la ruta y persistido en data — los reintentos lo reciben del frontend para no cambiar el diseño.
 **Why:** el usuario pidió "el mismo nivel" que portadas en estos apartados; la galería canon de ilustración (aprobada 10/10) NO se toca — solo la tipografía del título.
+
+## Historias: guion único, no texto por frame
+Regla: el texto de una serie de historias se genera con UNA sola llamada al LLM que devuelve el guion completo (`lib/story-script.ts`), nunca frame por frame. El guion incluye hilo conductor, protagonista, cifras y el `prompt_visual` de cada frame (que dirige la ilustración). Las IMÁGENES sí van en paralelo, porque ya comparten guion.
+**Why:** el usuario reportó que las series "no tienen un auténtico sentido": la causa exacta era que `generarTextoHistoria` se llamaba por frame en `Promise.allSettled`, sin contexto cruzado. Un guion único resuelve coherencia de personaje, cifras y progresión de golpe.
+**How to apply:** cualquier contenido multi-pieza (series, carruseles) debe generar el guion completo primero. Para reintentos de UN frame se pasa `hilo` + `otros_titulares` para no romper la serie ni repetir titulares.
+
+## Historias: el CTA y los hashtags NO van en todos los frames
+Regla: los bloques que dibuja cada frame los decide su LAYOUT (`story-formats.ts`), y solo los layouts de cierre incluyen `cta`/`hashtags`. `parseGuion` fuerza cadena vacía en los frames intermedios aunque el modelo los devuelva.
+**Why:** el usuario se quejó de que "todas dicen Hablamos por WhatsApp, hashtags y sigue viendo". El prompt viejo tenía HARDCODEADO un microCTA de retención por frame (`CTA_INTERMEDIO_INSTRUCTION`) y el render pintaba los 4 bloques siempre.
+**How to apply:** la retención se gana con el guion, no con un botón. Al agregar layouts, declarar `bloques` explícitamente y verificar con `story-formats.test.ts` (valida que las zonas no se pisen y que todo arco termine en un layout con CTA).
+
+## Texto secundario: medir con fuente empaquetada, nunca con ratio estimado
+Regla: sub-copy, CTA, hashtags y etiquetas de cifra se ajustan con `ajustarTextoMedido` (title-style) usando `montserrat_bold`, que SÍ está en assets/fonts y calibrada. Garantía: la línea más ancha nunca supera `maxWidth` (parte palabras por carácter si hace falta).
+**Why:** el código pedía `font-family: 'Inter'`, pero Inter NO está empaquetada: fontconfig caía en **DejaVu Sans**, bastante más ancha que la estimación `charWidthRatio: 0.5`. Resultado: el texto de abajo se salía por los costados (el usuario lo reportó con capturas). `fitTextBlock` (estimación por caracteres) queda solo para casos legados.
+**How to apply:** cualquier texto nuevo rasterizado server-side debe (a) usar una familia presente en `assets/fonts` y (b) medirse con `medirTexto`/`ajustarTextoMedido`. Si hace falta otra fuente, agregarla al banco y correr `scripts/calibrate-font-metrics.ts` (el charset ya incluye minúsculas). Verificar con `story-formats.test.ts` + el test de no-desbordamiento en `title-style.test.ts`.

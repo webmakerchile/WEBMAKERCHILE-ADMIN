@@ -14,7 +14,7 @@ import path from "path";
 import { setupFonts } from "../src/lib/fonts";
 
 const FONT_SIZE = 200;
-const CHARSET = `ABCDEFGHIJKLMNOPQRSTUVWXYZÁÉÍÓÚÜÑ0123456789¿?¡!:;,."'()%$#&@+-*/º°`;
+const CHARSET = `ABCDEFGHIJKLMNOPQRSTUVWXYZÁÉÍÓÚÜÑabcdefghijklmnopqrstuvwxyzáéíóúüñ0123456789¿?¡!:;,."'()%$#&@+-*/º°`;
 
 interface FuenteACalibrar {
   id: string;
@@ -30,6 +30,10 @@ const FUENTES: FuenteACalibrar[] = [
   { id: "passion_black", familia: "Passion One", peso: 900 },
   { id: "oswald_bold", familia: "Oswald", peso: 700 },
   { id: "montserrat_black", familia: "Montserrat", peso: 900 },
+  // Texto secundario de historias/carruseles (sub-copy, CTA, hashtags):
+  // antes se pedía "Inter", que NO está empaquetada y caía en DejaVu Sans —
+  // mucho más ancha que la estimación, así que el texto se salía del lienzo.
+  { id: "montserrat_bold", familia: "Montserrat", peso: 700 },
 ];
 
 function escapeXml(s: string): string {
