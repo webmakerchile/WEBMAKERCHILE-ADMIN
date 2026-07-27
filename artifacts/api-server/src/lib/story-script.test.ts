@@ -5,6 +5,9 @@ import {
   parseGuion,
   revisarGuion,
   limpiarFrasesProhibidas,
+  recortarLimpio,
+  sanearDato,
+  sanearHashtags,
   resolverModoCierre,
   FRASES_PROHIBIDAS,
   MODOS_CIERRE,
@@ -92,6 +95,72 @@ describe("limpiarFrasesProhibidas", () => {
   });
 });
 
+describe("recortarLimpio", () => {
+  it("nunca corta una palabra por la mitad", () => {
+    const largo = "El horno seguía prendido y el teléfono en silencio toda la tarde";
+    for (let limite = 10; limite <= 70; limite++) {
+      const r = recortarLimpio(largo, limite);
+      expect(r.length, `límite ${limite}`).toBeLessThanOrEqual(limite);
+      // Todo lo que sobrevive tiene que ser una palabra completa del original.
+      for (const palabra of r.split(" ")) {
+        expect(largo.split(" "), `"${palabra}" no es una palabra entera (límite ${limite})`).toContain(palabra);
+      }
+    }
+  });
+
+  it("deja el texto intacto si ya cabe", () => {
+    expect(recortarLimpio("Nadie contestaba", 44)).toBe("Nadie contestaba");
+  });
+
+  it("no deja la frase colgando de una preposición o conjunción", () => {
+    expect(recortarLimpio("El horno prendido y el teléfono", 22)).toBe("El horno prendido");
+    expect(recortarLimpio("Cerró la caja de noche", 15)).toBe("Cerró la caja");
+  });
+
+  it("devuelve entera una palabra única más larga que el límite", () => {
+    // Media palabra nunca es mejor que una palabra chica: la achica el motor.
+    expect(recortarLimpio("Extraordinariamentedesproporcionado", 44)).toBe("Extraordinariamentedesproporcionado");
+  });
+
+  it("sí corta un token absurdo, que ya no es una palabra", () => {
+    expect(recortarLimpio("x".repeat(300), 44)).toHaveLength(44);
+  });
+
+  it("no deja puntuación suelta al principio ni al final", () => {
+    expect(recortarLimpio(": Ana perdía pedidos —", 60)).toBe("Ana perdía pedidos");
+  });
+});
+
+describe("sanearDato", () => {
+  it("acepta cifras dibujables", () => {
+    expect(sanearDato("40")).toBe("40");
+    expect(sanearDato("72%")).toBe("72%");
+    expect(sanearDato("1.250")).toBe("1.250");
+    expect(sanearDato("3 h")).toBe("3 h");
+  });
+
+  it("rechaza lo que no es una cifra en vez de recortarlo", () => {
+    // "cuarenta".slice(0,7) daba "cuarent": una palabra cortada gigante.
+    expect(sanearDato("cuarenta")).toBe("");
+    expect(sanearDato("muchos pedidos")).toBe("");
+    expect(sanearDato("")).toBe("");
+    expect(sanearDato("40 pedidos perdidos al mes")).toBe("");
+  });
+});
+
+describe("sanearHashtags", () => {
+  it("normaliza, deduplica y acota a 5", () => {
+    expect(sanearHashtags("WebMakerLatam #pymes")).toBe("#WebMakerLatam #pymes");
+    expect(sanearHashtags("#a #WebMakerLatam #webmakerlatam")).toBe("#WebMakerLatam");
+    expect(sanearHashtags("#a1 #b2 #c3 #d4 #e5 #f6 #g7").split(" ")).toHaveLength(5);
+  });
+
+  it("aguanta basura sin romper", () => {
+    expect(sanearHashtags("")).toBe("");
+    expect(sanearHashtags("### , ,, #")).toBe("");
+  });
+});
+
 describe("parseGuion", () => {
   it("alinea el guion con el arco y respeta los layouts", () => {
     const g = parseGuion(guionJson(), arco3, formato.id)!;
@@ -144,6 +213,20 @@ describe("parseGuion", () => {
     )!;
     expect(g.frames[0]!.copy_principal.length).toBeLessThanOrEqual(LIMITES_GUION.titularLargo);
     expect(g.frames[0]!.sub_copy.length).toBeLessThanOrEqual(LIMITES_GUION.subCopy);
+  });
+
+  it("recorta el copy largo por palabra, no a media letra", () => {
+    const frase = "El horno seguía prendido y el teléfono en silencio toda la tarde entera";
+    const g = parseGuion(
+      guionJson([{ copy_principal: frase, sub_copy: frase }]),
+      arco3,
+      formato.id,
+    )!;
+    const palabras = frase.split(" ");
+    for (const campo of [g.frames[0]!.copy_principal, g.frames[0]!.sub_copy]) {
+      expect(campo.length).toBeGreaterThan(10);
+      for (const p of campo.split(" ")) expect(palabras, `"${p}" quedó partida`).toContain(p);
+    }
   });
 
   it("acepta JSON envuelto en markdown", () => {

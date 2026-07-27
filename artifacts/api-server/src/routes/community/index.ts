@@ -12,15 +12,19 @@ import {
   construirOverlayTitular,
   resolverEstiloTitular,
   obtenerEstiloTitular,
-  medirTexto,
   ajustarTextoMedido,
-  type TextoAjustado,
   type ZonaTexto,
 } from "../../lib/title-style";
-import { FONT_METRICS } from "../../lib/font-metrics.generated";
 import {
-  HIST_WIDTH,
-  HIST_HEIGHT,
+  PALETA_COMMUNITY,
+  SVG_DEFS,
+  FUENTE_SECUNDARIA,
+  bloqueSecundarioSvg,
+  escapeXml,
+  stripEmojis,
+  renderTextoEnHistoria,
+} from "../../lib/story-render";
+import {
   resolverFormatoHistoria,
   obtenerFormatoHistoria,
   obtenerLayoutHistoria,
@@ -36,6 +40,7 @@ import {
   buildGuionUserPrompt,
   parseGuion,
   revisarGuion,
+  sanearFrameGuion,
   resolverModoCierre,
   type FrameGuion,
   type GuionHistoria,
@@ -281,221 +286,6 @@ async function pickCanonReferences(
 // HELPERS DE TEXTO Y RENDER
 // ============================================
 
-function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]!));
-}
-
-// Quita emojis y símbolos pictográficos para render seguro en SVG
-function stripEmojis(s: string): string {
-  return s
-    .replace(/\p{Extended_Pictographic}/gu, "")
-    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, "")
-    .replace(/[\u200D\uFE0F\u20E3]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function wrapTextByChars(text: string, maxCharsPerLine: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [];
-  const lines: string[] = [];
-  let current = "";
-  for (const w of words) {
-    const tentative = current ? current + " " + w : w;
-    if (tentative.length <= maxCharsPerLine) {
-      current = tentative;
-    } else {
-      if (current) lines.push(current);
-      // Si la palabra solita excede, cortarla duro
-      if (w.length > maxCharsPerLine) {
-        let chunk = w;
-        while (chunk.length > maxCharsPerLine) {
-          lines.push(chunk.slice(0, maxCharsPerLine));
-          chunk = chunk.slice(maxCharsPerLine);
-        }
-        current = chunk;
-      } else {
-        current = w;
-      }
-    }
-  }
-  if (current) lines.push(current);
-  return lines;
-}
-
-interface FitResult {
-  lines: string[];
-  fontSize: number;
-  lineHeight: number;
-  blockWidth: number;
-  blockHeight: number;
-}
-
-// Auto-fit: prueba tamaños de fuente decrecientes hasta que quepa en el área
-// Distribuye tokens (hashtags, palabras) entre N líneas, minimizando la
-// diferencia de longitud entre líneas (líneas balanceadas). Devuelve null si
-// no es posible meter todos los tokens en `numLines` sin exceder `maxChars`.
-function balanceTokensAcrossLines(
-  tokens: string[],
-  maxChars: number,
-  numLines: number,
-): string[] | null {
-  if (numLines < 1 || tokens.length === 0) return null;
-  type BestT = { lines: string[]; maxLen: number };
-  let best: BestT | null = null;
-  function recurse(start: number, linesSoFar: string[]) {
-    const remaining = numLines - linesSoFar.length;
-    if (remaining === 1) {
-      const line = tokens.slice(start).join(" ");
-      if (line.length > maxChars) return;
-      const all = [...linesSoFar, line];
-      const maxLen = Math.max(...all.map((l) => l.length));
-      const cur: BestT | null = best;
-      if (!cur || maxLen < cur.maxLen) best = { lines: all, maxLen };
-      return;
-    }
-    for (let end = start + 1; end <= tokens.length - (remaining - 1); end++) {
-      const line = tokens.slice(start, end).join(" ");
-      if (line.length > maxChars) break; // tokens contiguos: si excede, los siguientes también
-      recurse(end, [...linesSoFar, line]);
-    }
-  }
-  recurse(0, []);
-  return best ? (best as BestT).lines : null;
-}
-
-// Ajusta el font size para que tokens (hashtags) quepan en hasta `maxLines`
-// líneas balanceadas dentro del ancho disponible. Garantiza padding visual a los lados.
-function fitHashtagsBlock(
-  text: string,
-  opts: {
-    maxWidth: number;
-    maxFontSize: number;
-    minFontSize: number;
-    maxLines: number;
-    charWidthRatio?: number;
-    lineHeightRatio?: number;
-  },
-): FitResult {
-  const charW = opts.charWidthRatio ?? 0.58; // hashtags = mezcla mayús+minús, ratio realista
-  const lhRatio = opts.lineHeightRatio ?? 1.22;
-  const tokens = text.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) {
-    return { lines: [], fontSize: opts.minFontSize, lineHeight: opts.minFontSize * lhRatio, blockWidth: 0, blockHeight: 0 };
-  }
-  for (let fs = opts.maxFontSize; fs >= opts.minFontSize; fs -= 2) {
-    const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
-    // Buscar la cantidad MÍNIMA de líneas (1, luego 2, … hasta maxLines).
-    for (let n = 1; n <= opts.maxLines; n++) {
-      const lines = balanceTokensAcrossLines(tokens, maxChars, n);
-      if (!lines) continue;
-      const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
-      const blockWidth = longest * fs * charW;
-      const lineHeight = fs * lhRatio;
-      const blockHeight = lines.length * lineHeight;
-      return { lines, fontSize: fs, lineHeight, blockWidth, blockHeight };
-    }
-  }
-  // Fallback: minFontSize + greedy llenado (evita perder hashtags si nada calza balanceado).
-  const fs = opts.minFontSize;
-  const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
-  const lines: string[] = [];
-  let cur = "";
-  for (const t of tokens) {
-    const candidate = cur ? cur + " " + t : t;
-    if (candidate.length > maxChars && cur) {
-      lines.push(cur);
-      cur = t;
-    } else {
-      cur = candidate;
-    }
-  }
-  if (cur) lines.push(cur);
-  const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
-  const lineHeight = fs * lhRatio;
-  return { lines, fontSize: fs, lineHeight, blockWidth: longest * fs * charW, blockHeight: lines.length * lineHeight };
-}
-
-function fitTextBlock(
-  text: string,
-  opts: {
-    maxWidth: number;
-    maxHeight: number;
-    maxFontSize: number;
-    minFontSize: number;
-    charWidthRatio?: number; // ancho promedio de char relativo al fontSize
-    lineHeightRatio?: number;
-  },
-): FitResult {
-  const charW = opts.charWidthRatio ?? 0.56; // bold sans-serif aprox
-  const lhRatio = opts.lineHeightRatio ?? 1.18;
-
-  const sizes: number[] = [];
-  for (let fs = opts.maxFontSize; fs >= opts.minFontSize; fs -= 2) sizes.push(fs);
-
-  for (const fs of sizes) {
-    const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
-    const lines = wrapTextByChars(text, maxChars);
-    const lineHeight = fs * lhRatio;
-    const blockHeight = lines.length * lineHeight;
-    const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
-    const blockWidth = longest * fs * charW;
-    if (blockHeight <= opts.maxHeight && blockWidth <= opts.maxWidth) {
-      return { lines, fontSize: fs, lineHeight, blockWidth, blockHeight };
-    }
-  }
-
-  // Fallback: usar mínimo y devolver TODAS las líneas (NO truncar con "...")
-  // Si overflow leve es preferible a perder texto. El llamador decide qué hacer.
-  const fs = opts.minFontSize;
-  const maxChars = Math.max(4, Math.floor(opts.maxWidth / (fs * charW)));
-  const lines = wrapTextByChars(text, maxChars);
-  const lineHeight = fs * (opts.lineHeightRatio ?? 1.18);
-  const longest = lines.reduce((a, l) => Math.max(a, l.length), 0);
-  return { lines, fontSize: fs, lineHeight, blockWidth: longest * fs * charW, blockHeight: lines.length * lineHeight };
-}
-
-// Genera SVG de un bloque de texto con fondo semi-transparente y centrado horizontal
-function renderTextBlockSvg(
-  fit: FitResult,
-  opts: {
-    canvasWidth: number;
-    centerY: number; // centro vertical del bloque
-    fontWeight: 600 | 700 | 800 | 900;
-    color: string;
-    bgColor?: string; // por defecto semi-transparente negro
-    bgOpacity?: number; // 0-1
-    bgPadding?: number;
-    bgRadius?: number;
-    filterId: string;
-  },
-): string {
-  if (fit.lines.length === 0) return "";
-  const bgPadding = opts.bgPadding ?? 24;
-  const bgRadius = opts.bgRadius ?? 18;
-  const bgColor = opts.bgColor ?? "#000000";
-  const bgOpacity = opts.bgOpacity ?? 0.55;
-
-  const bgWidth = Math.min(opts.canvasWidth - 40, fit.blockWidth + bgPadding * 2);
-  const bgHeight = fit.blockHeight + bgPadding * 2;
-  const bgX = (opts.canvasWidth - bgWidth) / 2;
-  const bgY = opts.centerY - bgHeight / 2;
-
-  // baseline de cada línea
-  const firstBaselineY = bgY + bgPadding + fit.fontSize * 0.85;
-
-  const letterSpacing = (opts as any).letterSpacing ?? 0;
-  return `
-    ${bgOpacity > 0 ? `<rect x="${bgX.toFixed(1)}" y="${bgY.toFixed(1)}" width="${bgWidth.toFixed(1)}" height="${bgHeight.toFixed(1)}" rx="${bgRadius}" fill="${bgColor}" fill-opacity="${bgOpacity}" />` : ""}
-    ${fit.lines.map((line, i) => `
-      <text x="${opts.canvasWidth / 2}" y="${(firstBaselineY + i * fit.lineHeight).toFixed(1)}"
-        text-anchor="middle" font-family="'Inter','Helvetica Neue',Arial,sans-serif"
-        font-weight="${opts.fontWeight}" font-size="${fit.fontSize}" letter-spacing="${letterSpacing}"
-        fill="${opts.color}" filter="url(#${opts.filterId})">${escapeXml(line)}</text>
-    `).join("")}
-  `;
-}
-
 // ============================================
 // TÍTULOS CON EL MOTOR DE TIPOGRAFÍA DE IMPACTO
 // El mismo motor del generador de portadas (title-style: métricas reales por
@@ -503,8 +293,6 @@ function renderTextBlockSvg(
 // historias y slides como capa full-canvas que se composita aparte. El resto
 // del texto (sub-copy, CTA, hashtags) conserva su render Inter original.
 // ============================================
-const PALETA_COMMUNITY = { colorAcento: "#FB923C", scrim: { r: 15, g: 23, b: 42 } };
-
 /** Resuelve el estilo del título para UNA generación: id pedido y validado, o
  *  rotación automática de los estilos impactantes. Una historia en serie o un
  *  carrusel completo usan el MISMO estilo en todos sus frames/slides. */
@@ -533,48 +321,6 @@ function overlayTituloImpacto(
     paleta: PALETA_COMMUNITY,
   });
 }
-
-/** Fuente empaquetada del texto secundario. "Inter" NO está instalada en el
- *  servidor (cae en DejaVu Sans, más ancha) — por eso el sub-copy se salía del
- *  lienzo: se medía como Inter y se dibujaba como DejaVu. */
-const FUENTE_SECUNDARIA = FONT_METRICS.montserrat_bold;
-
-/** Bloque de texto secundario centrado, medido con métricas reales. */
-function bloqueSecundarioSvg(
-  fit: TextoAjustado,
-  opts: { canvasWidth: number; centerY: number; color: string; opacidad?: number; conSombra?: boolean },
-): string {
-  if (fit.lineas.length === 0) return "";
-  const primeraBase = opts.centerY - fit.alto / 2 + fit.fontSize * 0.82;
-  const filtro = opts.conSombra === false ? "" : ' filter="url(#textds)"';
-  const op = opts.opacidad !== undefined ? ` fill-opacity="${opts.opacidad}"` : "";
-  return fit.lineas
-    .map((linea, i) => `<text x="${opts.canvasWidth / 2}" y="${(primeraBase + i * fit.lineHeight).toFixed(1)}" text-anchor="middle" font-family="'${FUENTE_SECUNDARIA.familia}'" font-weight="${FUENTE_SECUNDARIA.peso}" font-size="${fit.fontSize}" fill="${opts.color}"${op}${filtro}>${escapeXml(linea)}</text>`)
-    .join("\n    ");
-}
-
-// Defs SVG: gradientes premium para zonas reservadas + drop-shadow fuerte
-const SVG_DEFS = `
-  <defs>
-    <linearGradient id="topfade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.92"/>
-      <stop offset="60%" stop-color="#0F172A" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="botfade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0F172A" stop-opacity="0"/>
-      <stop offset="20%" stop-color="#0F172A" stop-opacity="0.85"/>
-      <stop offset="40%" stop-color="#0F172A" stop-opacity="0.97"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="1"/>
-    </linearGradient>
-    <filter id="textds" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
-      <feOffset dx="0" dy="2" result="off"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
-      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-  </defs>
-`;
 
 // Especificación rigurosa del zorro de marca - obligatoria en TODOS los prompts de imagen
 // Basado en la IMAGEN MASTER OFICIAL: artifacts/api-server/public/fox-reference.png
@@ -1226,182 +972,6 @@ async function generarFrameHistoria(args: {
 // que solo llevan titular, otros que llevan una cifra gigante y solo el frame
 // de cierre lleva botón de invitación y hashtags. Antes se pintaban los cuatro
 // bloques siempre, en todos los frames — eso era lo que se sentía a plantilla.
-async function renderTextoEnHistoria(
-  imagenBase64: string,
-  frame: FrameGuion,
-  layout: LayoutHistoria,
-  opts?: { frameInfo?: { numero: number; total: number }; estiloTitularId?: string },
-): Promise<string> {
-  // Forzar 9:16 (1080x1920): el modelo suele devolver tamaños menores y las
-  // zonas del layout están en píxeles absolutos de ese lienzo.
-  const imgBuffer = await sharp(Buffer.from(imagenBase64, "base64"))
-    .resize(HIST_WIDTH, HIST_HEIGHT, { fit: "cover", position: "center" })
-    .png().toBuffer();
-  const w = HIST_WIDTH;
-  const h = HIST_HEIGHT;
-  const sidePadding = 80;
-  const innerWidth = w - sidePadding * 2;
-
-  const titular = stripEmojis(frame.copy_principal);
-  const sub = layout.bloques.includes("subcopy") && layout.subCopyCenterY !== null
-    ? stripEmojis(frame.sub_copy)
-    : "";
-  const cta = layout.bloques.includes("cta") ? stripEmojis(frame.cta) : "";
-  const hashtags = layout.bloques.includes("hashtags") ? stripEmojis(frame.hashtags) : "";
-  const dato = layout.bloques.includes("dato_gigante") ? stripEmojis(frame.dato) : "";
-  const datoLabel = layout.bloques.includes("dato_gigante") ? stripEmojis(frame.dato_label) : "";
-
-  const estiloId = opts?.estiloTitularId ?? resolverEstiloTitulo();
-  const estilo = obtenerEstiloTitular(estiloId) ?? obtenerEstiloTitular("impacto")!;
-  const acento = PALETA_COMMUNITY.colorAcento;
-
-  // Todo el texto secundario se mide con las métricas reales de Montserrat
-  // (empaquetada): así ninguna línea puede salirse del lienzo.
-  const subFit = sub ? ajustarTextoMedido(sub, {
-    maxWidth: w - 200,
-    maxHeight: 190,
-    maxLineas: 3,
-    maxFontSize: 52,
-    minFontSize: 30,
-    fuenteId: "montserrat_bold",
-    lineHeight: 1.2,
-  }) : null;
-
-  const ctaFit = cta ? ajustarTextoMedido(cta, {
-    maxWidth: innerWidth - 160,
-    maxHeight: 120,
-    maxLineas: 2,
-    maxFontSize: 44,
-    minFontSize: 28,
-    fuenteId: "montserrat_bold",
-    lineHeight: 1.18,
-  }) : null;
-
-  const hashSidePadding = 140;
-  const hashFit = hashtags ? ajustarTextoMedido(hashtags, {
-    maxWidth: w - hashSidePadding * 2,
-    maxHeight: 130,
-    maxLineas: 3,
-    maxFontSize: 32,
-    minFontSize: 20,
-    fuenteId: "montserrat_bold",
-    lineHeight: 1.22,
-  }) : null;
-
-  // Botón de invitación: solo existe si el frame trae CTA (o sea, el cierre).
-  const ctaSvg = ctaFit ? (() => {
-    const padX = 64, padY = 26;
-    // El botón se dimensiona con el ancho MEDIDO y nunca excede el lienzo.
-    const btnWidth = Math.min(innerWidth, ctaFit.ancho + padX * 2);
-    const btnHeight = Math.max(88, ctaFit.alto + padY * 2);
-    const btnX = (w - btnWidth) / 2;
-    const btnY = layout.ctaCenterY - btnHeight / 2;
-    return `
-      <rect x="${btnX.toFixed(1)}" y="${(btnY + 8).toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
-        rx="${btnHeight / 2}" fill="#E86A30" fill-opacity="0.30" filter="url(#ctashadow)"/>
-      <rect x="${btnX.toFixed(1)}" y="${btnY.toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
-        rx="${btnHeight / 2}" fill="#E86A30"/>
-      ${bloqueSecundarioSvg(ctaFit, { canvasWidth: w, centerY: layout.ctaCenterY, color: "#ffffff", conSombra: false })}
-    `;
-  })() : "";
-
-  // Cifra protagonista: se dibuja con la display del titular, centrada por
-  // métricas reales (mismo motor que las portadas) y con su etiqueta debajo.
-  const datoSvg = dato && layout.zonaDato ? (() => {
-    const m = FONT_METRICS.anton;
-    const alto = layout.zonaDato.alto;
-    const fsNum = Math.min(alto * 0.78, (innerWidth * 0.9) / Math.max(0.4, medirTexto(dato, "anton")));
-    const anchoNum = medirTexto(dato, "anton") * fsNum;
-    const baseNum = layout.zonaDato.y + alto * 0.72;
-    const xNum = (w - anchoNum) / 2;
-    const attrs = `font-family="'${m.familia}'" font-weight="${m.peso}" font-size="${fsNum.toFixed(0)}"`;
-    const sombra = fsNum * 0.03;
-    const etiqueta = datoLabel ? (() => {
-      const fit = ajustarTextoMedido(datoLabel, {
-        maxWidth: innerWidth - 60, maxHeight: 110, maxLineas: 2,
-        maxFontSize: 44, minFontSize: 26, fuenteId: "montserrat_bold", lineHeight: 1.2,
-      });
-      return bloqueSecundarioSvg(fit, {
-        canvasWidth: w,
-        centerY: layout.zonaDato!.y + alto + 14 + fit.alto / 2,
-        color: "#f1f5f9",
-        opacidad: 0.92,
-      });
-    })() : "";
-    return `
-      <text x="${(xNum + sombra).toFixed(1)}" y="${(baseNum + sombra).toFixed(1)}" ${attrs} fill="#0B1120" fill-opacity="0.8">${escapeXml(dato)}</text>
-      <text x="${xNum.toFixed(1)}" y="${baseNum.toFixed(1)}" ${attrs} fill="${acento}">${escapeXml(dato)}</text>
-      ${etiqueta}
-    `;
-  })() : "";
-
-  // Comillas decorativas para los layouts de cita.
-  const comillasSvg = layout.bloques.includes("comillas") ? (() => {
-    const q = FONT_METRICS.alfa_slab;
-    const fsQ = Math.round(w * 0.26);
-    return `<text x="${(layout.zonaTitular.x - fsQ * 0.05).toFixed(1)}" y="${(layout.zonaTitular.y + fsQ * 0.2).toFixed(1)}"
-      font-family="'${q.familia}'" font-weight="${q.peso}" font-size="${fsQ}" fill="${acento}" fill-opacity="0.32">&#8220;</text>`;
-  })() : "";
-
-  // Contador discreto de la serie (arriba a la derecha).
-  const info = opts?.frameInfo;
-  const contadorSvg = layout.bloques.includes("contador") && info && info.total > 1 ? `
-    <rect x="${(w - 160).toFixed(1)}" y="40" width="120" height="56" rx="28" fill="#0F172A" fill-opacity="0.55"/>
-    <text x="${(w - 100).toFixed(1)}" y="78" text-anchor="middle"
-      font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="700"
-      font-size="30" fill="#ffffff" fill-opacity="0.85">${info.numero}/${info.total}</text>
-  ` : "";
-
-  // Scrims: solo donde el layout pone texto, para no ensuciar la ilustración.
-  const despejadaSuperior = layout.zonasDespejadas.find(z => z.desde === 0);
-  const despejadaInferior = layout.zonasDespejadas.find(z => z.hasta >= HIST_HEIGHT);
-  const scrimTop = (layout.scrim === "superior" || layout.scrim === "ambos") && despejadaSuperior
-    ? `<rect x="0" y="0" width="${w}" height="${Math.round(despejadaSuperior.hasta + 60)}" fill="url(#topfade)"/>`
-    : "";
-  const scrimBottom = (layout.scrim === "inferior" || layout.scrim === "ambos") && despejadaInferior
-    ? `<rect x="0" y="${Math.round(despejadaInferior.desde - 100)}" width="${w}" height="${Math.round(h - despejadaInferior.desde + 100)}" fill="url(#botfade)"/>`
-    : "";
-
-  const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    ${SVG_DEFS}
-    <filter id="ctashadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="14"/>
-    </filter>
-    ${scrimTop}
-    ${scrimBottom}
-    ${comillasSvg}
-    ${datoSvg}
-    ${subFit && layout.subCopyCenterY !== null ? bloqueSecundarioSvg(subFit, {
-      canvasWidth: w, centerY: layout.subCopyCenterY, color: "#f1f5f9",
-    }) : ""}
-    ${ctaSvg}
-    ${hashFit ? bloqueSecundarioSvg(hashFit, {
-      canvasWidth: w, centerY: layout.hashtagsCenterY, color: "#fb923c",
-    }) : ""}
-    ${contadorSvg}
-  </svg>`;
-
-  // El TITULAR va en capa aparte, con el motor de tipografía de impacto.
-  const capas: sharp.OverlayOptions[] = [{ input: Buffer.from(svg), top: 0, left: 0 }];
-  if (titular) {
-    capas.push({
-      input: construirOverlayTitular({
-        canvas: { width: w, height: h },
-        zona: layout.zonaTitular,
-        scrim: "ninguno", // los gradientes de arriba ya hacen de scrim
-        titulo: titular,
-        estilo,
-        paleta: PALETA_COMMUNITY,
-      }),
-      top: 0, left: 0,
-    });
-  }
-  const composed = await sharp(imgBuffer)
-    .composite(capas)
-    .png().toBuffer();
-  return composed.toString("base64");
-}
-
 const GenerarHistoriaBody = z.object({
   tipo_historia: z.enum(["tip_tech", "motivacional", "comunidad"]),
   concepto: z.string().min(1).max(200),
@@ -2350,10 +1920,10 @@ const ReintentarHistoriaBody = z.object({
   tipo_historia: z.enum(["tip_tech", "motivacional", "comunidad"]),
   concepto: z.string().min(1).max(200),
   texto_actual: z.object({
-    copy_principal: z.string(),
-    sub_copy: z.string(),
-    cta: z.string(),
-    hashtags: z.string(),
+    copy_principal: z.string().max(200),
+    sub_copy: z.string().max(300),
+    cta: z.string().max(80),
+    hashtags: z.string().max(300),
   }).optional(),
   texto_en_imagen: z.boolean().optional().default(false),
   modo: z.enum(["imagen", "texto", "ambos", "personalizado", "auto-diagnose"]).default("imagen"),
@@ -2434,8 +2004,11 @@ router.post("/community/historias/reintentar", async (req, res) => {
     const arco = arcoParaFrames(formatoNarrativo, total);
     const pasoDelFrame = arco[Math.min(numero - 1, arco.length - 1)]!;
 
-    // Guion base del frame: el que vino del cliente, o uno derivado del texto actual.
-    let frameGuion: FrameGuion = body.guion_frame
+    // Guion base del frame: el que vino del cliente, o uno derivado del texto
+    // actual. Pase por donde pase, se sanea igual que uno recién generado —
+    // el texto que el usuario editó a mano también tiene que respetar los
+    // límites, si no llega al renderizador sin recortar.
+    let frameGuion: FrameGuion = sanearFrameGuion(body.guion_frame
       ? { ...body.guion_frame, numero }
       : {
           numero,
@@ -2448,7 +2021,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
           cta: body.texto_actual?.cta ?? "",
           hashtags: body.texto_actual?.hashtags ?? "",
           prompt_visual: "",
-        };
+        });
 
     // 1) Regenerar texto si el modo lo requiere, manteniendo el hilo de la serie.
     if (body.modo === "texto" || body.modo === "ambos" ||
@@ -2465,7 +2038,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
         ajuste: (body.modo === "texto" || body.modo === "ambos") ? body.prompt_personalizado : undefined,
         toneSuffix,
       });
-      if (nuevo) frameGuion = nuevo;
+      if (nuevo) frameGuion = sanearFrameGuion(nuevo);
     }
 
     const layout = obtenerLayoutHistoria(frameGuion.layoutId) ?? layoutHistoriaPorDefecto();
