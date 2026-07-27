@@ -40,11 +40,13 @@ import {
   buildGuionUserPrompt,
   parseGuion,
   revisarGuion,
+  recortarLimpio,
   sanearFrameGuion,
   resolverModoCierre,
   type FrameGuion,
   type GuionHistoria,
 } from "../../lib/story-script";
+import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
 import { readFile } from "fs/promises";
 import path from "path";
 
@@ -393,16 +395,6 @@ CTAs reales del sitio: "Solicitar Cotización", "Cotizar por WhatsApp", "Agendar
 REGLA DE VARIEDAD: en una serie de contenidos NO hables solo de webs. Rota entre los servicios según la audiencia: tiendas físicas → POS + ERP, equipos de venta → CRM + chatbot, startups → SaaS + app, comercios online → e-commerce + chatbot, empresas medianas → ERP + integraciones, etc.`;
 
 // Regla de idioma compartida — se inyecta en TODOS los prompts de texto.
-const REGLA_ESPANOL_NEUTRO = `IDIOMA — REGLA OBLIGATORIA E INNEGOCIABLE:
-- Usa SIEMPRE español NEUTRO LATINOAMERICANO, formal-cercano, comprensible para cualquier país de habla hispana (México, Colombia, Perú, Argentina, Chile, España).
-- Trata SIEMPRE al lector de "tú" (tuteo estándar): "tú vendes", "tu negocio", "tienes", "necesitas", "configura", "conecta".
-- PROHIBIDO el voseo argentino/uruguayo: NUNCA uses "vos", "vos te enfocás", "tenés", "podés", "querés", "sabés", "hacés", "decís", "mirá", "fijate", "dale", "che".
-- PROHIBIDOS chilenismos, mexicanismos, colombianismos o cualquier modismo regional: nada de "po", "weón", "cachái", "chévere", "guay", "órale", "padrísimo", "chamba", "platica", "pana".
-- PROHIBIDO el voseo verbal en imperativos: NO "enfocate", "fijate", "andá", "vení" — usa "enfócate", "fíjate", "ve", "ven".
-- Vocabulario universal: usa "computadora" o "PC" (no "compu" sola), "celular" o "teléfono", "dinero" (no "plata", "lana", "pasta"), "trabajo" (no "chamba", "pega", "curro"), "amigo/cliente" (no "pana", "weón").
-- Acentos correctos en todas las palabras (estás, más, también, número, fácil, rápido).
-`;
-
 const SORPRENDEME_SYSTEM = `Eres el estratega senior de contenido de WebMakerLatam, AGENCIA digital LATAM que ayuda a EMPRENDEDORES, PYMES y EMPRESAS a crecer con tecnología.
 
 ${CATALOGO_SERVICIOS}
@@ -1700,14 +1692,16 @@ Solo el JSON.`;
       ? aiData.slides.slice(0, cantidad).map((s: any, i: number): SlidePlan => ({
           numero: s.numero || i + 1,
           rol: (s.rol as SlideRol) || (cantidad === 1 ? "unica" : (i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo")),
-          titulo: String(s.titulo || "").slice(0, 70),
-          subtitulo: String(s.subtitulo || "").slice(0, 110),
-          prompt_visual: s.prompt_visual ? String(s.prompt_visual).slice(0, 280) : undefined,
+          // Recorte por palabra, igual que en historias: `.slice()` partía la
+          // última palabra a media letra y esa era la causa del texto cortado.
+          titulo: recortarLimpio(String(s.titulo || ""), 70),
+          subtitulo: recortarLimpio(String(s.subtitulo || ""), 110),
+          prompt_visual: s.prompt_visual ? recortarLimpio(String(s.prompt_visual), 280) : undefined,
         }))
       : Array.from({ length: cantidad }, (_, i): SlidePlan => ({
           numero: i + 1,
           rol: cantidad === 1 ? "unica" : (i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo"),
-          titulo: body.tema.slice(0, 70),
+          titulo: recortarLimpio(body.tema, 70),
           subtitulo: "",
         }));
 
@@ -1746,11 +1740,14 @@ Solo el JSON.`;
       }),
     );
 
-    const descripciones = aiData.redes || {};
+    // Español neutro garantizado, no solo pedido en el prompt: el modelo cuela
+    // españolismos ("empalmadas") y esta capa los corrige en todo el objeto.
+    const descripciones = neutralizarProfundo(aiData.redes || {});
     // X/Twitter: clamp duro a 280 caracteres — el modelo a veces se pasa
     // aunque el prompt lo prohíba, y la UI promete el límite real de la red.
+    // Por palabra: cortar el post a media letra se veía como texto roto.
     if (typeof descripciones?.twitter?.post_completo === "string") {
-      descripciones.twitter.post_completo = descripciones.twitter.post_completo.slice(0, PLATFORM_LIMITS.x);
+      descripciones.twitter.post_completo = recortarLimpio(descripciones.twitter.post_completo, PLATFORM_LIMITS.x);
     }
 
     const [row] = await db.insert(communityContent).values({
