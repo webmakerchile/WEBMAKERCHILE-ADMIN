@@ -68,6 +68,14 @@ export interface HubProject {
   id: string; name: string; client: string; type: string; prio: string; status: string;
   owner: string; prog: number; notes: string; link: string; due?: string;
   contractId?: string; createdAt: number; updatedAt: number;
+  /**
+   * true = el área de marketing trabaja en este proyecto.
+   *
+   * Opt-in explícito, a diferencia de Programación, que recibe todos los
+   * proyectos automáticamente: no todos los clientes contratan publicidad, así
+   * que heredarlos todos llenaba el apartado de trabajo que no le toca.
+   */
+  marketing?: boolean;
 }
 export interface HubTask {
   id: string; title: string; projectId: string; crit: string; stage: string;

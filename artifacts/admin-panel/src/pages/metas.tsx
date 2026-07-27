@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AsistenteRedaccion } from "@/components/asistente-redaccion";
+import { RepartoIA } from "@/components/reparto-ia";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/App";
 import { useToast } from "@/hooks/use-toast";
@@ -127,16 +129,50 @@ export default function MetasPage() {
           </div>
         )}
 
+        {puedeAsignar && vista === "team" && (
+          <RepartoIA
+            personas={miembros.map(m => ({ id: m.id, nombre: m.name || m.email, rol: m.teamRole }))}
+            contexto={`Se van a crear metas del período "${PERIOD_LABELS[draft.period]}" en el panel de WebMakerLatam.`}
+            etiquetaAplicar="Crear las metas"
+            onAplicar={async (tareas) => {
+              // Secuencial a propósito: si una falla, las anteriores ya
+              // quedaron creadas y se ve cuál se cayó, en vez de perderlas
+              // todas o duplicarlas al reintentar.
+              for (const t of tareas) {
+                await crear.mutateAsync({
+                  title: t.titulo.slice(0, 200),
+                  description: t.detalle,
+                  period: draft.period,
+                  assignedTo: t.personaId,
+                  target: null,
+                });
+              }
+              toast({ title: `${tareas.length} meta${tareas.length !== 1 ? "s" : ""} creada${tareas.length !== 1 ? "s" : ""}` });
+            }}
+          />
+        )}
+
         {creando && puedeAsignar && (
           <Card className="bg-card/40 border-primary/20">
             <CardContent className="p-4 space-y-3">
               <div className="grid sm:grid-cols-2 gap-3">
-                <label className="sm:col-span-2">
-                  <span className="text-[11px] text-muted-foreground">¿Qué hay que lograr?</span>
-                  <input className={`${inputClass} mt-1`} maxLength={200} value={draft.title}
-                    onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
-                    placeholder="Ej: Cerrar 3 reuniones con clientes nuevos" />
-                </label>
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="block">
+                    <span className="text-[11px] text-muted-foreground">¿Qué hay que lograr?</span>
+                    <input className={`${inputClass} mt-1`} maxLength={200} value={draft.title}
+                      onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+                      placeholder="Escríbelo como te salga: la IA lo deja presentable" />
+                  </label>
+                  <AsistenteRedaccion
+                    tipo="meta"
+                    valor={draft.title}
+                    contexto={`Meta ${PERIOD_LABELS[draft.period].toLowerCase()} para ${
+                      miembros.find(m => m.id === (draft.assignedTo || me?.id))?.name || "el equipo"
+                    }.`}
+                    onAceptar={(texto) => setDraft(d => ({ ...d, title: texto.split("\n")[0]!.slice(0, 200) }))}
+                    etiqueta="Mejorar la meta"
+                  />
+                </div>
                 <label className="sm:col-span-2">
                   <span className="text-[11px] text-muted-foreground">Detalle (opcional)</span>
                   <textarea rows={2} className="mt-1 w-full rounded-lg border border-foreground/15 bg-card/60 px-2.5 py-2 text-sm"

@@ -311,14 +311,26 @@ export default function RrhhPage() {
                       .sort((a, b) => Number(!!b.today?.open) - Number(!!a.today?.open) || b.weekTotal - a.weekTotal)
                       .map((a: AsistenciaMiembro) => (
                         <li key={a.id} className="flex flex-wrap items-center gap-3 py-2">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.today?.open ? "bg-emerald-400" : a.today ? "bg-zinc-500" : "bg-zinc-700"}`} />
+                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            a.today?.pausa ? "bg-amber-400" : a.today?.open ? "bg-emerald-400" : a.today ? "bg-zinc-500" : "bg-zinc-700"
+                          }`} />
                           <span className="flex-1 min-w-[8rem] text-sm truncate">{a.name || a.email}</span>
+                          {a.today?.pausa && (
+                            <span className="text-[11px] text-amber-400" title={a.today.pausa.motivo || undefined}>
+                              en pausa
+                            </span>
+                          )}
                           {!a.discord?.linked && <span className="text-[11px] text-amber-400">Discord sin vincular</span>}
                           {a.discord?.inVoiceNow === true && <span className="text-[11px] text-emerald-400">en voz</span>}
                           {a.discord?.pct !== null && a.discord?.pct !== undefined && (
                             <span className="text-[11px] text-muted-foreground">{a.discord.pct}% verificado</span>
                           )}
-                          <span className="text-xs tabular-nums w-16 text-right">{formatMinutes(a.today?.minutes ?? 0)}</span>
+                          <span
+                            className="text-xs tabular-nums w-16 text-right"
+                            title={a.today && a.today.pausedMinutes > 0 ? `${formatMinutes(a.today.pausedMinutes)} en pausas, ya descontados` : undefined}
+                          >
+                            {formatMinutes(a.today?.minutes ?? 0)}
+                          </span>
                           <span className="text-[11px] text-muted-foreground tabular-nums w-20 text-right">
                             {formatMinutes(a.weekTotal)} sem
                           </span>

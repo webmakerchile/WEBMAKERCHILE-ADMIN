@@ -1,3 +1,4 @@
+import { AsistenteRedaccion } from "@/components/asistente-redaccion";
 import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -104,16 +105,24 @@ function CobroEditor({ contract, onClose }: { contract: HubContract; onClose: ()
           />
         </label>
 
-        <label className="block">
-          <span className="text-[11px] text-muted-foreground">Nota interna</span>
-          <textarea
-            rows={2}
-            value={nota}
-            onChange={e => setNota(e.target.value)}
-            placeholder="Acuerdo de pago, retención, gestión de cobranza…"
-            className="mt-0.5 w-full rounded-lg border border-foreground/15 bg-card/60 px-2.5 py-1.5 text-sm resize-y"
+        <div className="space-y-1">
+          <label className="block">
+            <span className="text-[11px] text-muted-foreground">Nota interna</span>
+            <textarea
+              rows={2}
+              value={nota}
+              onChange={e => setNota(e.target.value)}
+              placeholder="Acuerdo de pago, retención, gestión de cobranza…"
+              className="mt-0.5 w-full rounded-lg border border-foreground/15 bg-card/60 px-2.5 py-1.5 text-sm resize-y"
+            />
+          </label>
+          <AsistenteRedaccion
+            tipo="reporte"
+            valor={nota}
+            onAceptar={setNota}
+            etiqueta="Ordenar la nota"
           />
-        </label>
+        </div>
 
         <div className="flex items-center gap-2 pt-1">
           <Button className="flex-1" onClick={submit} disabled={guardar.isPending}>

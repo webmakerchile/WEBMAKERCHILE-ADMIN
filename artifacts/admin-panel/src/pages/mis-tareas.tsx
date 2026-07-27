@@ -1,3 +1,4 @@
+import { AsistenteRedaccion } from "@/components/asistente-redaccion";
 import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -585,6 +586,13 @@ function TarjetaTarea({
             rows={3}
             placeholder="Notas técnicas, bloqueos, decisiones…"
             className="w-full rounded-lg border border-foreground/15 bg-card/60 px-2 py-1.5 text-[11px] resize-y"
+          />
+          <AsistenteRedaccion
+            tipo="reporte"
+            valor={notas}
+            contexto={`Notas de avance de la tarea "${tarea.title}".`}
+            onAceptar={(texto) => { setNotas(texto); onActualizar({ notes: texto }); }}
+            etiqueta="Ordenar mis notas"
           />
           <div className="flex flex-wrap gap-1">
             {CRITS.map(c => (

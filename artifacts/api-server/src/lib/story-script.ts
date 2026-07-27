@@ -11,6 +11,7 @@
 
 import type { FormatoHistoria, PasoNarrativo } from "./story-formats.js";
 import { obtenerLayoutHistoria, layoutHistoriaPorDefecto } from "./story-formats.js";
+import { neutralizarEspanolismos, detectarEspanolismos } from "./lenguaje-neutro.js";
 
 /* ========================= Tipos ========================================= */
 
@@ -308,7 +309,11 @@ function sinSubCopy(layoutId: string): boolean {
 /* ==================== Parseo y saneado =================================== */
 
 function limpiar(v: unknown): string {
-  return typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
+  if (typeof v !== "string") return "";
+  // La neutralización va AQUÍ, en el único punto por el que pasa todo el copy
+  // del guion: el prompt pide español neutro, pero pedirlo no es garantizarlo
+  // (se coló "empalmadas", que es de España).
+  return neutralizarEspanolismos(v.replace(/\s+/g, " ").trim());
 }
 
 /** Palabras que no pueden quedar al final de un texto recortado: si el corte
@@ -551,5 +556,17 @@ export function revisarGuion(guion: GuionHistoria, arco: PasoNarrativo[]): strin
 
   const cierre = guion.frames[arco.length - 1];
   if (cierre && !cierre.cta) issues.push("el frame de cierre se quedó sin invitación (cta)");
+
+  // Españolismos que no se pueden corregir solos porque en LATAM significan
+  // otra cosa: se le devuelven al modelo para que reescriba con contexto.
+  const texto = guion.frames
+    .map(f => [f.copy_principal, f.sub_copy, f.cta].join(" "))
+    .join(" ");
+  const espanolismos = detectarEspanolismos(texto);
+  if (espanolismos.length > 0) {
+    issues.push(
+      `el guion usa español de España (${espanolismos.join(", ")}): reescríbelo en español neutro latinoamericano`,
+    );
+  }
   return issues;
 }

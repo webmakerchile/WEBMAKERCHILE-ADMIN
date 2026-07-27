@@ -1,3 +1,4 @@
+import { CuentasAds } from "@/components/cuentas-ads";
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
@@ -122,7 +123,11 @@ export default function MarketingPage() {
   const maxVistas = Math.max(1, ...porRed.map(r => r.vistas));
   const totales = analytics?.totals;
 
-  const proyectos = board?.data.projects ?? [];
+  // Proyectos SOLO por asignación explícita. A diferencia de Programación, que
+  // recibe todo lo que entra, no todos los clientes contratan publicidad: que
+  // el listado llegue solo por estar en curso no significa nada para esta área.
+  const proyectos = (board?.data.projects ?? []).filter(p => p.marketing === true);
+  const proyectosTotales = (board?.data.projects ?? []).length;
   const clientes = board?.data.clients ?? [];
   const contratos = board?.data.contracts ?? [];
 
@@ -219,17 +224,27 @@ export default function MarketingPage() {
               </CardContent>
             </Card>
 
+            <CuentasAds />
+
             <div className="grid lg:grid-cols-2 gap-4">
               <Card className="bg-card/40 border-foreground/10">
                 <CardContent className="p-4">
                   <p className="text-sm font-semibold mb-1 flex items-center gap-2">
-                    <Target className="w-4 h-4 text-primary" /> Proyectos en curso
+                    <Target className="w-4 h-4 text-primary" /> Proyectos asignados
                   </p>
                   <p className="text-[11px] text-muted-foreground mb-3">
-                    Para qué cuentas está trabajando la agencia ahora mismo.
+                    Solo los proyectos que se asignaron a marketing.
                   </p>
                   {proyectos.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-6 text-center">Sin proyectos activos.</p>
+                    <p className="text-sm text-muted-foreground py-6 text-center px-2">
+                      Ningún proyecto asignado a marketing todavía.
+                      {proyectosTotales > 0 && (
+                        <span className="block mt-1 text-[11px]">
+                          Hay {proyectosTotales} proyecto{proyectosTotales === 1 ? "" : "s"} en la agencia; se asignan
+                          uno a uno desde el Hub Ejecutivo, porque no todos los clientes contratan publicidad.
+                        </span>
+                      )}
+                    </p>
                   ) : (
                     <ul className="space-y-2">
                       {proyectos.filter(p => p.status !== "done").slice(0, 8).map(p => (

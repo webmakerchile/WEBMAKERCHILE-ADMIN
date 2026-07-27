@@ -27,3 +27,4 @@ export * from "./hub-attendance";
 export * from "./activity-log";
 export * from "./playbooks";
 export * from "./sla";
+export * from "./marketing";

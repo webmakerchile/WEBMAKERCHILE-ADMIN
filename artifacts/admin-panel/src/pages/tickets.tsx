@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AsistenteRedaccion } from "@/components/asistente-redaccion";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/App";
 import { useToast } from "@/hooks/use-toast";
@@ -111,12 +112,21 @@ export default function TicketsPage() {
                     onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
                     placeholder="Ej: Cambiar el checkout del cliente ACME" />
                 </label>
-                <label className="sm:col-span-2">
-                  <span className="text-[11px] text-muted-foreground">Detalle</span>
-                  <textarea rows={3} className="mt-1 w-full rounded-lg border border-foreground/15 bg-card/60 px-2.5 py-2 text-sm"
-                    value={draft.description} onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
-                    placeholder="Contexto, enlaces, qué se espera y para cuándo…" />
-                </label>
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="block">
+                    <span className="text-[11px] text-muted-foreground">Detalle</span>
+                    <textarea rows={3} className="mt-1 w-full rounded-lg border border-foreground/15 bg-card/60 px-2.5 py-2 text-sm"
+                      value={draft.description} onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+                      placeholder="Cuéntalo como puedas: qué pasa, dónde y desde cuándo. La IA lo ordena." />
+                  </label>
+                  <AsistenteRedaccion
+                    tipo="ticket"
+                    valor={draft.description}
+                    contexto={draft.title ? `Título del ticket: ${draft.title}` : undefined}
+                    onAceptar={(texto) => setDraft(d => ({ ...d, description: texto }))}
+                    etiqueta="Ordenar el ticket"
+                  />
+                </div>
                 <label>
                   <span className="text-[11px] text-muted-foreground">Área que lo resuelve</span>
                   <select className={`${inputClass} mt-1`} value={draft.area}

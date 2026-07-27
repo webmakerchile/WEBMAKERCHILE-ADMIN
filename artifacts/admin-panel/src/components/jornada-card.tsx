@@ -13,6 +13,8 @@ import {
   Loader2,
   AlertTriangle,
   StopCircle,
+  Pause,
+  Play,
 } from "lucide-react";
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -47,12 +49,23 @@ export interface JornadaLogItem {
   createdAt: string;
 }
 
+/** Pausa en curso: mientras exista, el reloj de la jornada no corre. */
+export interface JornadaPausa {
+  id: number;
+  startedAt: string;
+  motivo: string;
+  /** true si la abrió otra persona (dirección, ventas o RRHH). */
+  ajena: boolean;
+}
+
 export interface JornadaMe {
   date: string;
   open: JornadaOpenSession | null;
+  pausa: JornadaPausa | null;
   todayMinutes: number;
-  todaySessions: { id: number; checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number }[];
-  week: { start: string; days: { date: string; minutes: number }[]; total: number };
+  todayPausedMinutes: number;
+  todaySessions: { id: number; checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; pausedMinutes: number }[];
+  week: { start: string; days: { date: string; minutes: number; pausedMinutes: number }[]; total: number };
   logs: JornadaLogItem[];
   /** true si un admin emparejó esta cuenta con Discord (verificación automática). */
   discordLinked: boolean;
@@ -68,9 +81,23 @@ export function fmtMin(min: number): string {
   return h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
 }
 
-function openElapsedMin(open: JornadaOpenSession): number {
+/**
+ * Minutos trabajados de la sesión abierta, descontando la pausa en curso.
+ *
+ * Sin este descuento el contador seguiría subiendo durante el descanso y el
+ * número en pantalla contradiría a las horas que guarda el servidor.
+ */
+function openElapsedMin(open: JornadaOpenSession, pausa?: JornadaPausa | null): number {
   const el = Math.floor((Date.now() - new Date(open.checkIn).getTime()) / 60000);
-  return Math.min(Math.max(0, el), MAX_SESSION_MIN);
+  const enPausa = pausa
+    ? Math.floor((Date.now() - new Date(pausa.startedAt).getTime()) / 60000)
+    : 0;
+  return Math.min(Math.max(0, el - Math.max(0, enPausa)), MAX_SESSION_MIN);
+}
+
+/** Minutos que lleva la pausa en curso. */
+function pausaElapsedMin(pausa: JornadaPausa): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(pausa.startedAt).getTime()) / 60000));
 }
 
 function hhmm(iso: string): string {
@@ -161,6 +188,17 @@ export function JornadaCard() {
     onSuccess: inv,
     onError: onErr,
   });
+  const pausar = useMutation({
+    mutationFn: (motivo: string) =>
+      jfetch("/jornada/pausa", { method: "POST", body: JSON.stringify({ motivo }) }),
+    onSuccess: () => { setErr(null); inv(); },
+    onError: onErr,
+  });
+  const reanudar = useMutation({
+    mutationFn: () => jfetch("/jornada/reanudar", { method: "POST" }),
+    onSuccess: () => { setErr(null); inv(); },
+    onError: onErr,
+  });
 
   if (isLoading) {
     return (
@@ -172,7 +210,8 @@ export function JornadaCard() {
   if (!data) return null;
 
   const open = data.open;
-  const openMin = open ? openElapsedMin(open) : 0;
+  const pausa = data.pausa;
+  const openMin = open ? openElapsedMin(open, pausa) : 0;
   const closedToday = data.todaySessions.filter((s) => s.checkOut).reduce((a, s) => a + s.minutes, 0);
   const todayMin = open && open.workDate === data.date ? closedToday + openMin : data.todayMinutes;
   const maxWeek = Math.max(...data.week.days.map((d) => d.minutes), 60);
@@ -214,18 +253,52 @@ export function JornadaCard() {
 
       {/* Estado / acciones */}
       {open ? (
-        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3 sm:p-4 mb-4">
+        <div className={cn(
+          "rounded-xl border p-3 sm:p-4 mb-4",
+          pausa ? "border-amber-500/30 bg-amber-500/5" : "border-emerald-500/25 bg-emerald-500/5",
+        )}>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-            </span>
+            {pausa ? (
+              <span className="flex h-2.5 w-2.5 flex-shrink-0 rounded-full bg-amber-500" />
+            ) : (
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+              </span>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">
-                Trabajando · <span className="font-mono">{fmtMin(openMin)}</span>
+                {pausa ? "En pausa" : "Trabajando"} · <span className="font-mono">{fmtMin(openMin)}</span>
               </p>
-              <p className="text-[11px] text-muted-foreground">Entrada {hhmm(open.checkIn)}</p>
+              <p className="text-[11px] text-muted-foreground">
+                Entrada {hhmm(open.checkIn)}
+                {pausa && <> · en pausa desde {hhmm(pausa.startedAt)} ({fmtMin(pausaElapsedMin(pausa))})</>}
+                {!pausa && data.todayPausedMinutes > 0 && <> · {fmtMin(data.todayPausedMinutes)} en pausas hoy</>}
+              </p>
+              {pausa?.motivo && <p className="text-[11px] text-amber-500">Motivo: {pausa.motivo}</p>}
+              {pausa?.ajena && (
+                <p className="text-[11px] text-amber-500">La pausó tu supervisión.</p>
+              )}
             </div>
+            {pausa ? (
+              <button
+                onClick={() => reanudar.mutate()}
+                disabled={reanudar.isPending}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors disabled:opacity-50"
+              >
+                {reanudar.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                Reanudar
+              </button>
+            ) : (
+              <button
+                onClick={() => pausar.mutate(window.prompt("¿Motivo de la pausa? (opcional)")?.trim() || "")}
+                disabled={pausar.isPending}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border border-foreground/15 hover:border-amber-400/50 hover:text-amber-400 hover:bg-amber-500/5 transition-colors disabled:opacity-50"
+              >
+                {pausar.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />}
+                Pausar
+              </button>
+            )}
             <button
               onClick={() => checkOut.mutate()}
               disabled={checkOut.isPending}

@@ -63,7 +63,19 @@ type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
 type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "svc" | "drive" | "team" | "att";
 type ProjView = "board" | "list" | "scrum";
 
-interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
+interface Project {
+  id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus;
+  owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string;
+  createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>;
+  /**
+   * true = el área de marketing trabaja en este proyecto.
+   *
+   * Opt-in explícito: a diferencia de Programación, que recibe todos los
+   * proyectos automáticamente, no todos los clientes contratan publicidad. Sin
+   * esta marca, Marketing se llenaba de trabajo que no le toca.
+   */
+  marketing?: boolean;
+}
 interface Client { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number; }
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
@@ -1584,6 +1596,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
   const [taskChecklist, setTaskChecklist] = useState<ChecklistItem[]>([]);
   const [driveFolderLink, setDriveFolderLink] = useState("");
+  /** Si el área de marketing trabaja en el proyecto abierto (opt-in explícito). */
+  const [marketingOn, setMarketingOn] = useState(false);
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [wizStep, setWizStep] = useState(1);
@@ -1656,7 +1670,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
+      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); setMarketingOn(p.marketing === true); }
       // Reset Scrum proposals when switching to a different project
       if (lastScrumProjIdRef.current !== (sheet as { id: string }).id) {
         setScrumProposed([]); setScrumLoading(false);
@@ -1667,6 +1681,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       const pf = projPreFillRef.current;
       const hasPrefill = Object.keys(pf).length > 0;
       setDriveFolderLink("");
+      setMarketingOn(false);
       setProjNameDraft(hasPrefill ? (pf.name || "") : "");
       setProjPrefilledByAI(hasPrefill);
       newProjFromContractIdRef.current = pf.fromContractId || null;
@@ -2033,6 +2048,16 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       })()}
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
       <div className="field">
+        <label>Áreas involucradas</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85em", cursor: "pointer" }}>
+          <input type="checkbox" checked={marketingOn} onChange={(e) => setMarketingOn(e.target.checked)} />
+          <span>Marketing trabaja en este proyecto</span>
+        </label>
+        <p style={{ fontSize: "0.75em", color: "var(--muted)", margin: "4px 0 0" }}>
+          Programación recibe todos los proyectos. Marketing solo los que marques aquí, porque no todos los clientes contratan publicidad.
+        </p>
+      </div>
+      <div className="field">
         <label>Carpeta de Drive</label>
         <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={p.name} onToast={onToast} />
       </div>
@@ -2041,7 +2066,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
           const computedProg = projProg(x.id, apiTasks).pct;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, updatedAt: Date.now() };
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, marketing: marketingOn, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });
@@ -4661,12 +4686,18 @@ const ATT_DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 interface AttMember {
   id: number; name: string | null; email: string; picture: string | null; teamRole: string | null;
   discordUserId: string | null; discordTag: string | null;
-  today: { checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean } | null;
+  today: {
+    checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean;
+    /** Minutos en pausa del día: ya descontados de `minutes`. */
+    pausedMinutes: number;
+    /** Pausa en curso, o null si el reloj está corriendo. */
+    pausa: { id: number; startedAt: string; motivo: string } | null;
+  } | null;
   discord: {
     linked: boolean; tag: string | null; checkin: boolean | null;
     pct: number | null; lastSeenMin: number | null; inVoiceNow: boolean | null;
   } | null;
-  weekByDay: { date: string; minutes: number }[];
+  weekByDay: { date: string; minutes: number; pausedMinutes: number }[];
   weekTotal: number;
   logs: { id: number; text: string; done: boolean }[];
 }
@@ -4765,6 +4796,27 @@ function AttendanceView() {
       setNameDraft("");
       qc.invalidateQueries({ queryKey: ["jornada-overview"] });
     },
+  });
+
+  // Pausar/reanudar la jornada de OTRA persona. El servidor solo lo permite a
+  // dirección, ventas y RRHH; aquí el control simplemente no se pinta para el
+  // resto porque esta vista ya está gateada por rol.
+  const pausaMut = useMutation({
+    mutationFn: async (p: { userId: number; pausar: boolean; motivo?: string }) => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/${p.pausar ? "pausa" : "reanudar"}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: p.userId, motivo: p.motivo ?? "" }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo cambiar la pausa");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jornada-overview"] }),
+    onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al pausar"),
   });
 
   const mapMut = useMutation({
@@ -4912,7 +4964,8 @@ function AttendanceView() {
       {!isLoading && !isError && (
         <div className="att-list">
           {members.map((m) => {
-            const st = m.today ? (m.today.open ? "work" : "done") : "abs";
+            const enPausa = !!m.today?.pausa;
+            const st = m.today ? (m.today.open ? (enPausa ? "pause" : "work") : "done") : "abs";
             return (
               <div key={m.id} className="gcard att-card" onClick={() => setHistUser(m)} role="button" tabIndex={0}
                 onKeyDown={(e) => { if (e.key === "Enter") setHistUser(m); }}>
@@ -4954,7 +5007,25 @@ function AttendanceView() {
                       return <Headphones className="w-3.5 h-3.5 att-disc dim" aria-label="Autodeclarado en Discord" />;
                     return null;
                   })()}
-                  <span className={cn("att-st", st)}>{st === "work" ? "Trabajando" : st === "done" ? "Terminó" : "Sin marcar"}</span>
+                  {isToday && m.today?.open && (
+                    <button
+                      className="att-pause"
+                      title={enPausa ? "Reanudar su jornada" : "Pausar su jornada"}
+                      disabled={pausaMut.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pausaMut.mutate({ userId: m.id, pausar: !enPausa });
+                      }}
+                    >
+                      {enPausa ? "▶" : "⏸"}
+                    </button>
+                  )}
+                  <span
+                    className={cn("att-st", st)}
+                    title={m.today && m.today.pausedMinutes > 0 ? `${attFmtMin(m.today.pausedMinutes)} en pausas (ya descontados)` : undefined}
+                  >
+                    {st === "work" ? "Trabajando" : st === "pause" ? "En pausa" : st === "done" ? "Terminó" : "Sin marcar"}
+                  </span>
                 </div>
                 {m.logs.length > 0 && (
                   <div className="att-logs">
