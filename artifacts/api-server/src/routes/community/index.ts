@@ -47,6 +47,7 @@ import {
   type GuionHistoria,
 } from "../../lib/story-script";
 import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
+import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
 
@@ -1197,6 +1198,34 @@ FORMATO DE SALIDA (JSON ESTRICTO, sin markdown, sin texto adicional):
 
 Solo incluye en "redes" las que fueron solicitadas. Siempre incluye "slides" con la cantidad pedida.`;
 
+/**
+ * Convierte la respuesta cruda del modelo en el plan de slides.
+ *
+ * Está fuera del handler porque lo usan las DOS pasadas de generación, y una
+ * copia del mapeo se desincroniza en cuanto se toca un límite.
+ */
+function mapearSlides(data: any, cantidad: number, tema: string): SlidePlan[] {
+  const rolPorIndice = (i: number): SlideRol =>
+    cantidad === 1 ? "unica" : i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo";
+  if (Array.isArray(data?.slides) && data.slides.length > 0) {
+    return data.slides.slice(0, cantidad).map((s: any, i: number): SlidePlan => ({
+      numero: s.numero || i + 1,
+      rol: (s.rol as SlideRol) || rolPorIndice(i),
+      // Recorte por palabra, igual que en historias: `.slice()` partía la
+      // última palabra a media letra y esa era la causa del texto cortado.
+      titulo: recortarLimpio(String(s.titulo || ""), 70),
+      subtitulo: recortarLimpio(String(s.subtitulo || ""), 110),
+      prompt_visual: s.prompt_visual ? recortarLimpio(String(s.prompt_visual), 280) : undefined,
+    }));
+  }
+  return Array.from({ length: cantidad }, (_, i): SlidePlan => ({
+    numero: i + 1,
+    rol: rolPorIndice(i),
+    titulo: recortarLimpio(tema, 70),
+    subtitulo: "",
+  }));
+}
+
 const GenerarDescripcionesBody = z.object({
   tema: z.string().min(1).max(300),
   tipo_contenido: z.string().min(1),
@@ -1688,22 +1717,41 @@ Solo el JSON.`;
       return;
     }
 
-    const slidesPlan: SlidePlan[] = Array.isArray(aiData.slides) && aiData.slides.length > 0
-      ? aiData.slides.slice(0, cantidad).map((s: any, i: number): SlidePlan => ({
-          numero: s.numero || i + 1,
-          rol: (s.rol as SlideRol) || (cantidad === 1 ? "unica" : (i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo")),
-          // Recorte por palabra, igual que en historias: `.slice()` partía la
-          // última palabra a media letra y esa era la causa del texto cortado.
-          titulo: recortarLimpio(String(s.titulo || ""), 70),
-          subtitulo: recortarLimpio(String(s.subtitulo || ""), 110),
-          prompt_visual: s.prompt_visual ? recortarLimpio(String(s.prompt_visual), 280) : undefined,
-        }))
-      : Array.from({ length: cantidad }, (_, i): SlidePlan => ({
-          numero: i + 1,
-          rol: cantidad === 1 ? "unica" : (i === 0 ? "portada" : i === cantidad - 1 ? "cta" : "desarrollo"),
-          titulo: recortarLimpio(body.tema, 70),
-          subtitulo: "",
-        }));
+    const slidesPlan: SlidePlan[] = mapearSlides(aiData, cantidad, body.tema);
+
+    // Segunda pasada de coherencia, igual que en historias: el carrusel ya se
+    // generaba en UNA llamada (así que las slides comparten contexto), pero
+    // nadie comprobaba el resultado y los titulares repetidos, las aperturas de
+    // manual y los subtítulos que repiten el título llegaban tal cual.
+    const observaciones = revisarCarrusel(slidesPlan, body.tipo_publicacion === "carrusel");
+    if (observaciones.length > 0) {
+      console.log(`[Descripciones] carrusel con observaciones, segunda pasada: ${observaciones.join("; ")}`);
+      try {
+        const reintento = await openaiShim.messages.create({
+          model: OPENAI_TEXT_MODEL,
+          max_tokens: 8192,
+          system: SYSTEM_PROMPT_DESC + toneSuffix,
+          messages: [{
+            role: "user",
+            content: `${userMessage}\n\nTu intento anterior tuvo estos problemas: ${observaciones.join("; ")}. Reescribe el JSON COMPLETO corrigiéndolos, respetando el tema, la cantidad de slides y los roles.`,
+          }],
+        });
+        const b2 = reintento.content[0];
+        const raw2 = b2 && b2.type === "text" ? b2.text.trim() : "";
+        const limpio2 = raw2.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+        const data2 = JSON.parse(limpio2);
+        const plan2 = mapearSlides(data2, cantidad, body.tema);
+        // Solo se acepta si de verdad quedó mejor: una segunda pasada peor que
+        // la primera es un retroceso que el usuario no pidió.
+        if (revisarCarrusel(plan2, body.tipo_publicacion === "carrusel").length < observaciones.length) {
+          slidesPlan.splice(0, slidesPlan.length, ...plan2);
+          if (data2?.redes) aiData.redes = data2.redes;
+        }
+      } catch (e) {
+        console.warn(`[Descripciones] segunda pasada falló: ${(e as Error).message}`);
+      }
+    }
+
 
     const referenceBase64 = await getFoxRefBase64();
     // Un estilo tipográfico por carrusel: todas las slides comparten diseño.
