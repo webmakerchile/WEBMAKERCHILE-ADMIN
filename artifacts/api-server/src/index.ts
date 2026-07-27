@@ -65,6 +65,27 @@ async function runDataMigrations() {
     ON hub_work_breaks (session_id) WHERE ended_at IS NULL
   `);
 
+  // Cuentas publicitarias que administra marketing. Idempotente y en el
+  // arranque por el mismo motivo que las pausas de jornada.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS marketing_ad_accounts (
+      id             serial PRIMARY KEY,
+      client_name    text NOT NULL,
+      platform       text NOT NULL,
+      account_id     text NOT NULL DEFAULT '',
+      account_name   text NOT NULL DEFAULT '',
+      status         text NOT NULL DEFAULT 'activa',
+      monthly_budget integer,
+      currency       text NOT NULL DEFAULT 'CLP',
+      notes          text NOT NULL DEFAULT '',
+      owner_id       integer REFERENCES users(id) ON DELETE SET NULL,
+      created_at     timestamptz NOT NULL DEFAULT now(),
+      updated_at     timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_ad_accounts_client_idx ON marketing_ad_accounts (client_name)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_ad_accounts_platform_idx ON marketing_ad_accounts (platform)`);
+
   await migrateHubTasksFromBlob();
 }
 

@@ -63,7 +63,19 @@ type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
 type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "svc" | "drive" | "team" | "att";
 type ProjView = "board" | "list" | "scrum";
 
-interface Project { id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus; owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string; createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>; }
+interface Project {
+  id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus;
+  owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string;
+  createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>;
+  /**
+   * true = el área de marketing trabaja en este proyecto.
+   *
+   * Opt-in explícito: a diferencia de Programación, que recibe todos los
+   * proyectos automáticamente, no todos los clientes contratan publicidad. Sin
+   * esta marca, Marketing se llenaba de trabajo que no le toca.
+   */
+  marketing?: boolean;
+}
 interface Client { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number; }
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
@@ -1584,6 +1596,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const V = (k: string) => (r.current[k] as HTMLInputElement | null)?.value ?? "";
   const [taskChecklist, setTaskChecklist] = useState<ChecklistItem[]>([]);
   const [driveFolderLink, setDriveFolderLink] = useState("");
+  /** Si el área de marketing trabaja en el proyecto abierto (opt-in explícito). */
+  const [marketingOn, setMarketingOn] = useState(false);
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [wizStep, setWizStep] = useState(1);
@@ -1656,7 +1670,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); }
+      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); setMarketingOn(p.marketing === true); }
       // Reset Scrum proposals when switching to a different project
       if (lastScrumProjIdRef.current !== (sheet as { id: string }).id) {
         setScrumProposed([]); setScrumLoading(false);
@@ -1667,6 +1681,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       const pf = projPreFillRef.current;
       const hasPrefill = Object.keys(pf).length > 0;
       setDriveFolderLink("");
+      setMarketingOn(false);
       setProjNameDraft(hasPrefill ? (pf.name || "") : "");
       setProjPrefilledByAI(hasPrefill);
       newProjFromContractIdRef.current = pf.fromContractId || null;
@@ -2033,6 +2048,16 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       })()}
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
       <div className="field">
+        <label>Áreas involucradas</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85em", cursor: "pointer" }}>
+          <input type="checkbox" checked={marketingOn} onChange={(e) => setMarketingOn(e.target.checked)} />
+          <span>Marketing trabaja en este proyecto</span>
+        </label>
+        <p style={{ fontSize: "0.75em", color: "var(--muted)", margin: "4px 0 0" }}>
+          Programación recibe todos los proyectos. Marketing solo los que marques aquí, porque no todos los clientes contratan publicidad.
+        </p>
+      </div>
+      <div className="field">
         <label>Carpeta de Drive</label>
         <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={p.name} onToast={onToast} />
       </div>
@@ -2041,7 +2066,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
           const computedProg = projProg(x.id, apiTasks).pct;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, updatedAt: Date.now() };
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, marketing: marketingOn, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });

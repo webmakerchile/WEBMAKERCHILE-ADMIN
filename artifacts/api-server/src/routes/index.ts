@@ -38,6 +38,7 @@ import hubVentasRouter from "./hub/ventas";
 import hubTorreRouter from "./hub/torre";
 import jornadaRouter from "./jornada";
 import redactarRouter from "./redactar";
+import marketingRouter from "./marketing";
 import slaRouter from "./sla";
 import activityRouter from "./activity";
 import cotizacionesRouter from "./cotizaciones";
@@ -71,6 +72,9 @@ router.use(facebookRouter);
 // Community + analytics + inspirations: marketing area only
 router.use("/community", requireArea("ceo", "marketing"));
 router.use(communityRouter);
+// Cuentas publicitarias de clientes: del área de marketing (y dirección).
+router.use("/marketing", requireArea("ceo", "marketing"));
+router.use(marketingRouter);
 router.use("/analytics", requireArea("ceo", "marketing"));
 router.use(analyticsRouter);
 router.use("/inspirations", requireArea("ceo", "marketing"));
