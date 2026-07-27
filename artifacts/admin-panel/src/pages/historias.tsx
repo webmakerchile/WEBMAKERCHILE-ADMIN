@@ -332,6 +332,11 @@ export default function HistoriasPage() {
           ...current,
           imagen: data.data.imagen ?? current.imagen,
           texto: data.data.texto ?? current.texto,
+          // El guion también se actualiza: si no, el siguiente reintento
+          // reenviaba el guion viejo y revivía el texto que acabábamos de
+          // cambiar (y el guion dejaba de coincidir con la imagen).
+          guion: data.data.guion ?? current.guion,
+          layout: data.data.layout ?? current.layout,
           error: undefined,
         };
         return { ...prev, frames: newFrames };

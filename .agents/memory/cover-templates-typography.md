@@ -8,7 +8,7 @@ description: Sistema de plantillas de composición + motor de tipografía de imp
 ## Motor de titulares con métricas reales
 Regla: el layout de titulares NO estima anchos con ratios promedio — usa `font-metrics.generated.ts` (avance real de cada carácter por fuente, fracción del font-size) y ajusta el font-size DE CADA LÍNEA para llenar el ancho de su columna, con partición balanceada de palabras (DP de partición lineal) y tope de contraste 2.2x entre líneas.
 **Why:** el usuario reportó "las letras no encajan" y tipografía "básica"; el bloque macizo por línea es la firma de las miniaturas de canales grandes. Los ratios estimados fallaban hasta ±15% según las letras.
-**How to apply:** para recalibrar (fuente nueva o cambio de librsvg): agregar la fuente a `scripts/calibrate-font-metrics.ts` y correr `npx tsx scripts/calibrate-font-metrics.ts` (mide rasterizando "XcX" vs "XX" con la MISMA librsvg del render). Nunca editar el generated a mano.
+**How to apply:** para recalibrar (fuente nueva o cambio de librsvg): agregar la fuente a `scripts/calibrate-font-metrics.ts` y correr `npx tsx scripts/calibrate-font-metrics.ts`. Nunca editar el generated a mano.
 
 ## Efectos librsvg-safe por capas
 Regla: los efectos tipográficos (contorno, sombra dura, extrusión 3D, glow neón, gradiente) se componen como CAPAS de `<text>` apiladas — sin `filter`, sin `paint-order`, sin tspans. Cada palabra va en su propio `<text>` con `x` calculado por métricas (elimina de raíz el bug de espacios de librsvg entre tspans).
@@ -48,3 +48,33 @@ Regla: los bloques que dibuja cada frame los decide su LAYOUT (`story-formats.ts
 Regla: sub-copy, CTA, hashtags y etiquetas de cifra se ajustan con `ajustarTextoMedido` (title-style) usando `montserrat_bold`, que SÍ está en assets/fonts y calibrada. Garantía: la línea más ancha nunca supera `maxWidth` (parte palabras por carácter si hace falta).
 **Why:** el código pedía `font-family: 'Inter'`, pero Inter NO está empaquetada: fontconfig caía en **DejaVu Sans**, bastante más ancha que la estimación `charWidthRatio: 0.5`. Resultado: el texto de abajo se salía por los costados (el usuario lo reportó con capturas). `fitTextBlock` (estimación por caracteres) queda solo para casos legados.
 **How to apply:** cualquier texto nuevo rasterizado server-side debe (a) usar una familia presente en `assets/fonts` y (b) medirse con `medirTexto`/`ajustarTextoMedido`. Si hace falta otra fuente, agregarla al banco y correr `scripts/calibrate-font-metrics.ts` (el charset ya incluye minúsculas). Verificar con `story-formats.test.ts` + el test de no-desbordamiento en `title-style.test.ts`.
+
+## Calibrar avances: el kerning contamina la sonda "XcX"
+Regla: el avance de un carácter se mide como `tinta("cc") - tinta("c")` (dos glifos IGUALES, ningún par heterogéneo que pueda kernear), se toma el máximo contra la sonda vieja `tinta("XcX") - tinta("XX")`, y se aplica un `MARGEN_SEGURIDAD` del 1.5%. Al final el script VALIDA la suma de avances contra frases de control reales y **falla** si subestima.
+**Why:** la sonda "XcX" incluía el kerning de los pares X-c y c-X. En las display (Anton, Archivo Black) es ~0 y no se notaba, pero Montserrat tiene tabla de kerning rica y cada avance salía ~8px corto de 200: el ancho de una línea entera se subestimaba **5-6%** y el titular se salía de su zona. Medido: `I` avanza 70px reales, la sonda vieja daba 62.
+**How to apply:** subestimar el ancho CORTA TEXTO; sobreestimar solo dibuja la línea un pelo más chica. Ante la duda, siempre el estimador mayor. Si la validación falla, subir `MARGEN_SEGURIDAD` antes que relajar la comprobación.
+
+## Solo se dibuja lo que se puede medir
+Regla: `normalizarParaFuente(texto, fuenteId)` se aplica DENTRO de `layoutTitular` y `ajustarTextoMedido`: sustituye espacios/guiones raros por equivalentes calibrados, quita tildes cuando la letra base sí existe y DESCARTA lo que no tiene métrica. Lo que se mide y lo que se pinta son la misma cadena, siempre.
+**Why:** un carácter sin calibrar caía en `promedio` (~0.6) cuando una raya larga mide 1.01 y unos puntos suspensivos 0.8 — el modelo escribe "—" y "…" constantemente. Además, un glifo sin métrica suele faltar también en la display y librsvg lo pinta como cajita vacía: descartarlo arregla las dos cosas.
+**How to apply:** si hace falta un signo nuevo, añadirlo al `CHARSET` del calibrador y recalibrar; nunca ensancharlo "a ojo" en el generated.
+
+## El efecto pinta más ancho que el avance: `sangradoEstilo`
+Regla: el ancho útil de una zona es `zona.width - 2·sangradoEstilo(estilo)·fs`, y las líneas alineadas a la izquierda arrancan en `zona.x + sangrado·fs`. `sangradoEstilo` cubre contorno, sombra desplazada, extrusión, halo neón, la placa de chips (0.28) y la placa de la palabra de acento (0.14). El font-size final se redondea con `floor`, nunca con `round`.
+**Why:** `medirTexto` mide el avance de los glifos, no la tinta. Un titular ajustado al ancho pelado se salía de su columna e invadía al protagonista; con `round` la línea se ensanchaba hasta 6px más de lo calculado. La placa de chips a la izquierda se salía 29px.
+**How to apply:** todo efecto nuevo tiene que declarar su sangrado en `sangradoEstilo`. El test de mutación de `story-render.test.ts` lo verifica: quitarlo hace fallar 12 casos.
+
+## Recortar copy: nunca `.slice()` a media palabra
+Regla: los límites de longitud del guion se aplican con `recortarLimpio` (corta en el último espacio que quepa, poda preposiciones y conjunciones colgantes y puntuación suelta). Una palabra única más larga que el límite se devuelve ENTERA salvo que sea absurda (>1.6x). `sanearDato` exige que la cifra sea numérica y `sanearHashtags` normaliza a 5 como máximo.
+**Why:** era la causa DIRECTA de los "textos cortados" que reportó el usuario: `copy_principal.slice(0, 44)` convertía "…y el teléfono en silencio" en "…y el teléfono en si", y `dato.slice(0, 7)` convertía "cuarenta" en "cuarent".
+**How to apply:** todo campo de texto que llegue al renderizador pasa por `sanearFrameGuion`, venga del modelo, de un borrador guardado o editado a mano en la UI.
+
+## Los bloques inferiores se apilan, no se colocan en centros fijos
+Regla: sub-copy, invitación y hashtags se posicionan con `apilarBloquesInferiores` (story-render): de abajo hacia arriba, con las alturas MEDIDAS, aire mínimo garantizado entre bloques y margen contra el borde. El scrim inferior arranca donde arranque la pila.
+**Why:** los layouts declaraban un centro fijo para cada bloque mientras su alto dependía del texto: un sub-copy de tres líneas quedaba a 17px del botón y un botón alto empujaba los hashtags fuera del lienzo.
+**How to apply:** el layout declara el centro PREFERIDO; el apilador solo sube bloques, nunca los baja. Layout nuevo → el test recorre 27 combinaciones de longitudes por layout y falla si dos cajas se tocan.
+
+## El compositor de historias vive en `lib/story-render.ts`, no en la ruta
+Regla: `componerHistoria` (geometría + SVG) y `renderTextoEnHistoria` (composición con sharp) están fuera de `routes/community` para poder renderizar en tests sin Express, base de datos ni IA. El demo `scripts/demo-historias.ts` llama al MISMO compositor.
+**Why:** los bugs de texto cortado solo se detectan rasterizando de verdad, y una copia del compositor en el demo se desincroniza y enseña un render que no es el que la app genera (pasó).
+**How to apply:** `story-render.test.ts` recorre 6 layouts x 7 estilos x 10 textos hostiles, rasteriza con librsvg y mide la caja de tinta contra la ZONA (no contra el borde del lienzo, que no detecta nada). Sus tolerancias se calculan de la geometría real (inclinación, techo de altura, sangrado), no son números mágicos. Verificado por mutación: cada protección, al quitarla, rompe el test.

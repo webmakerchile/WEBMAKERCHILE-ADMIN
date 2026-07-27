@@ -249,6 +249,47 @@ export function listarEstilosTitular() {
 
 /* ==================== Medición con métricas reales ======================= */
 
+/** Caracteres que se sustituyen antes de medir/dibujar por otro equivalente
+ *  que SÍ está calibrado (espacios raros, guiones especiales, invisibles). */
+const EQUIVALENCIAS: Record<string, string> = {
+  " ": " ", " ": " ", " ": " ", " ": " ", " ": " ",
+  " ": " ", "　": " ", " ": " ", " ": " ",
+  "‑": "-", "‒": "-", "−": "-", "－": "-",
+  "​": "", "‌": "", "‍": "", "⁠": "", "﻿": "", "️": "",
+};
+
+/**
+ * Deja el texto compuesto SOLO por caracteres cuyo avance está calibrado.
+ *
+ * Es la invariante que sostiene todo el motor: si medimos un carácter que no
+ * tenemos calibrado caemos en el promedio de la fuente (~0.6) cuando una raya
+ * larga o unos puntos suspensivos miden ~1.0, así que el bloque se estima más
+ * angosto de lo que se dibuja y se sale del lienzo. Además, un carácter sin
+ * métrica suele ser también un glifo ausente en las display, que librsvg pinta
+ * como cajita vacía — quitarlo arregla las dos cosas a la vez.
+ *
+ * Se aplica DENTRO de layoutTitular y ajustarTextoMedido, de modo que lo que
+ * se mide y lo que se pinta son exactamente la misma cadena.
+ */
+export function normalizarParaFuente(texto: string, fuenteId: FuenteTitularId): string {
+  const m: MetricasFuente = FONT_METRICS[fuenteId];
+  let out = "";
+  for (const ch of texto) {
+    const eq = EQUIVALENCIAS[ch];
+    const c = eq !== undefined ? eq : ch;
+    if (c === "" ) continue;
+    if (c === " " || m.avances[c] !== undefined) { out += c; continue; }
+    // Último intento: la misma letra sin tilde (p. ej. "ā" → "a").
+    const plano = c.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (plano && plano !== c && [...plano].every(p => m.avances[p] !== undefined)) {
+      out += plano;
+      continue;
+    }
+    // Sin métrica y sin equivalente: se descarta antes que mentir el ancho.
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
 /** Ancho de un texto en unidades de font-size (multiplicar por el fs en px). */
 export function medirTexto(texto: string, fuenteId: FuenteTitularId, letterSpacing = 0): number {
   const m: MetricasFuente = FONT_METRICS[fuenteId];
@@ -260,6 +301,41 @@ export function medirTexto(texto: string, fuenteId: FuenteTitularId, letterSpaci
   // librsvg aplica letter-spacing después de CADA glifo (incluido el último):
   // sobreestimar apenas es seguro para el ajuste al ancho.
   return w + letterSpacing * texto.length;
+}
+
+/**
+ * Cuánta tinta pinta un estilo MÁS ALLÁ del ancho de avance del texto, a cada
+ * lado y como fracción del font-size: contorno, sombra desplazada, extrusión y
+ * las placas de fondo. `medirTexto` solo mide el avance de los glifos, así que
+ * sin descontar esto el contorno de un titular que llena la zona se sale de
+ * ella (y en las plantillas laterales se mete encima del protagonista).
+ */
+export function sangradoEstilo(estilo: EstiloTitular): number {
+  const ef = estilo.efecto;
+  let s = 0;
+  switch (ef.tipo) {
+    case "relleno":
+      s = ef.sombra ? Math.abs(ef.sombra.dx) : 0;
+      break;
+    case "contorno":
+      s = ef.grosor / 2 + (ef.sombra ? Math.abs(ef.sombra.dx) + ef.grosor / 2 : 0);
+      break;
+    case "extrusion":
+      s = ef.paso * ef.profundidad + (ef.grosor * 1.6) / 2;
+      break;
+    case "neon":
+      s = Math.max(...ef.capas.map(c => c.grosor)) / 2;
+      break;
+    case "gradiente":
+      s = ef.grosor / 2 + (ef.sombra ? Math.abs(ef.sombra.dx) + ef.grosor / 2 : 0);
+      break;
+    case "chips":
+      s = 0.28; // padX de la placa de línea completa
+      break;
+  }
+  // La placa de la palabra de acento sobresale 0.14 del font-size por lado.
+  if (estilo.acento.modo === "caja") s = Math.max(s, 0.14);
+  return s;
 }
 
 /* ==================== Texto secundario medido ============================ */
@@ -314,9 +390,13 @@ function partirPorAncho(
     if (w > maxWidth) {
       empujar();
       let resto = palabra;
-      while (resto && anchoDe(resto) > maxWidth) {
+      while (resto.length > 1 && anchoDe(resto) > maxWidth) {
         let corte = resto.length - 1;
         while (corte > 1 && anchoDe(resto.slice(0, corte)) > maxWidth) corte--;
+        // Sin este piso, un carácter suelto más ancho que la columna dejaba
+        // `corte` en 0: se empujaba "" y `resto` no menguaba nunca (bucle
+        // infinito que colgaba la generación entera).
+        corte = Math.max(1, corte);
         lineas.push(resto.slice(0, corte));
         resto = resto.slice(corte);
       }
@@ -349,7 +429,8 @@ function partirPorAncho(
 export function ajustarTextoMedido(texto: string, opts: OpcionesAjusteTexto): TextoAjustado {
   const lh = opts.lineHeight ?? 1.22;
   const ls = opts.letterSpacing ?? 0;
-  const limpio = texto.replace(/\s+/g, " ").trim();
+  // Se mide y se dibuja EXACTAMENTE la misma cadena.
+  const limpio = normalizarParaFuente(texto, opts.fuenteId);
   const palabras = limpio.split(" ").filter(Boolean);
   if (palabras.length === 0) {
     return { lineas: [], fontSize: opts.minFontSize, lineHeight: opts.minFontSize * lh, ancho: 0, alto: 0 };
@@ -483,7 +564,10 @@ export interface TitularLayout {
  * ninguna quede ridículamente más grande que las demás).
  */
 export function layoutTitular(titulo: string, zona: ZonaTexto, estilo: EstiloTitular): TitularLayout {
-  const limpio = titulo.replace(/\*\*/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+  const limpio = normalizarParaFuente(
+    titulo.replace(/\*\*/g, "").toUpperCase(),
+    estilo.fuenteId,
+  );
   const palabras = limpio.split(" ").filter(Boolean);
   if (palabras.length === 0) return { lineas: [], altoTotal: 0 };
 
@@ -491,16 +575,20 @@ export function layoutTitular(titulo: string, zona: ZonaTexto, estilo: EstiloTit
   const anchos = palabras.map(p => medirTexto(p, estilo.fuenteId, estilo.letterSpacing));
   const espacios = palabras.slice(0, -1).map(() => m.espacio + estilo.letterSpacing);
 
+  // El contorno, la sombra y las placas pintan MÁS ancho que el avance de los
+  // glifos: si se ajusta al ancho pelado, la tinta se sale de la zona. Cada
+  // línea se dimensiona como fs = ancho_zona / (avance + sangrado_a_ambos_lados).
+  const sangrado = sangradoEstilo(estilo) * 2;
+  const fsPorAncho = (g: number[]): number =>
+    Math.min(zona.maxFontSize, zona.width / (anchoDeGrupo(g, anchos, espacios) + sangrado));
+
   // Probar particiones de 1 a 4 líneas y quedarse con la que maximiza el
   // tamaño de la línea MÁS CHICA (bloque macizo estilo youtuber).
   const maxLineas = Math.min(4, palabras.length);
   let mejor: { grupos: number[][]; puntaje: number } | null = null;
   for (let n = 1; n <= maxLineas; n++) {
     const grupos = particionBalanceada(anchos, espacios, n);
-    const fsLineas = grupos.map(g => {
-      const ancho = anchoDeGrupo(g, anchos, espacios);
-      return Math.min(zona.maxFontSize, zona.width / ancho);
-    });
+    const fsLineas = grupos.map(fsPorAncho);
     // Altura disponible limita el tamaño global.
     const altura = fsLineas.reduce((acc, fs) => acc + fs * estilo.lineHeight, 0);
     const factorAltura = altura > zona.height ? zona.height / altura : 1;
@@ -509,10 +597,7 @@ export function layoutTitular(titulo: string, zona: ZonaTexto, estilo: EstiloTit
   }
 
   const grupos = mejor!.grupos;
-  let fsLineas = grupos.map(g => {
-    const ancho = anchoDeGrupo(g, anchos, espacios);
-    return Math.min(zona.maxFontSize, zona.width / ancho);
-  });
+  let fsLineas = grupos.map(fsPorAncho);
 
   // Límite de contraste: ninguna línea más de 2.2x la más chica.
   const fsMin = Math.min(...fsLineas);
@@ -521,25 +606,30 @@ export function layoutTitular(titulo: string, zona: ZonaTexto, estilo: EstiloTit
   // Encajar en la altura de la zona (escala proporcional), contando el aire
   // entre placas cuando el estilo es de chips.
   const gapLinea = estilo.efecto.tipo === "chips" ? 8 : 0;
-  const altura =
-    fsLineas.reduce((acc, fs) => acc + fs * estilo.lineHeight, 0) + gapLinea * (fsLineas.length - 1);
-  if (altura > zona.height) {
-    const factor = (zona.height - gapLinea * (fsLineas.length - 1)) / (altura - gapLinea * (fsLineas.length - 1));
+  const aire = gapLinea * (fsLineas.length - 1);
+  const alturaDe = (fss: number[]) =>
+    fss.reduce((acc, fs) => acc + fs * estilo.lineHeight, 0) + aire;
+  if (alturaDe(fsLineas) > zona.height) {
+    const factor = (zona.height - aire) / (alturaDe(fsLineas) - aire);
     fsLineas = fsLineas.map(fs => fs * factor);
   }
-  // Piso de legibilidad (mejor pasarse un pelo del alto que un titular
-  // ilegible)… pero el ancho de la zona SIEMPRE manda: una línea con una
-  // palabra muy larga jamás debe desbordar la franja despejada e invadir al
-  // protagonista — ahí el piso cede y la línea se achica lo necesario.
-  fsLineas = fsLineas.map((fs, i) => {
-    const conPiso = Math.max(fs, zona.minFontSize);
-    const anchoLinea = anchoDeGrupo(grupos[i]!, anchos, espacios);
-    return Math.min(conPiso, zona.width / anchoLinea);
-  });
+  // Piso de legibilidad: mejor pasarse un pelo del alto que un titular
+  // ilegible… pero con DOS topes duros, porque antes este piso deshacía el
+  // ajuste de altura sin volver a comprobarlo y el bloque se salía de la zona:
+  //  1) el ancho de la zona SIEMPRE manda (nada invade al protagonista);
+  //  2) el alto puede excederse como mucho un 8%, no lo que haga falta.
+  fsLineas = fsLineas.map((fs, i) => Math.min(Math.max(fs, zona.minFontSize), fsPorAncho(grupos[i]!)));
+  const techoAlto = zona.height * 1.08;
+  if (alturaDe(fsLineas) > techoAlto) {
+    const factor = (techoAlto - aire) / (alturaDe(fsLineas) - aire);
+    fsLineas = fsLineas.map(fs => fs * factor);
+  }
 
   const lineas: LineaLayout[] = grupos.map((g, i) => {
     const texto = g.map(idx => palabras[idx]!).join(" ");
-    const fs = Math.round(fsLineas[i]!);
+    // floor, no round: redondear hacia arriba ensanchaba la línea por encima
+    // del ancho de la zona (hasta 6 px medidos en los layouts de historias).
+    const fs = Math.max(1, Math.floor(fsLineas[i]!));
     return {
       texto,
       palabras: g.map(idx => palabras[idx]!),
@@ -674,12 +764,21 @@ export function construirOverlayTitular(opts: OpcionesOverlayTitular): Buffer {
 
   const gapChips = estilo.efecto.tipo === "chips" ? 8 : 0;
   const altoBloque = layout.altoTotal + gapChips * Math.max(0, layout.lineas.length - 1);
-  const blockTop =
+  const topPreferido =
     zonaTexto.vertical === "top"
       ? zonaTexto.y
       : zonaTexto.vertical === "bottom"
         ? zonaTexto.y + zonaTexto.height - altoBloque
         : zonaTexto.y + Math.max(0, (zonaTexto.height - altoBloque) / 2);
+  // Red de seguridad final: pase lo que pase con el ajuste, el bloque nunca
+  // puede quedar medio fuera del lienzo (eso es texto literalmente cortado).
+  // La inclinación entra en la cuenta: rotar el bloque baja una esquina
+  // (ancho/2)·sen(ángulo), y sin contarlo esa esquina se salía igual.
+  const margen = 12 + (zona.width / 2) * Math.abs(Math.sin((estilo.inclinacion * Math.PI) / 180));
+  const blockTop = Math.max(
+    margen,
+    Math.min(topPreferido, canvas.height - altoBloque - margen),
+  );
   const blockCenterY = blockTop + altoBloque / 2;
   const blockCenterX = zona.x + zona.width / 2;
 
@@ -721,12 +820,19 @@ export function construirOverlayTitular(opts: OpcionesOverlayTitular): Buffer {
   }
 
   // Líneas del titular.
+  //
+  // Alineadas a la izquierda arrancan en zona.x MÁS el sangrado del efecto: el
+  // ancho ya reservó ese margen a ambos lados, y sin desplazar el arranque la
+  // placa de los estilos de chips (0.28 del font-size) se salía por el borde
+  // izquierdo de la zona.
+  const sangradoPx = sangradoEstilo(estilo);
   let cursorY = blockTop;
   for (const linea of layout.lineas) {
     const fs = linea.fontSize;
     const altoLinea = fs * estilo.lineHeight;
     const baseline = cursorY + altoLinea / 2 + fs * 0.36;
-    const xInicio = zona.align === "center" ? blockCenterX - linea.ancho / 2 : zona.x;
+    const xInicio =
+      zona.align === "center" ? blockCenterX - linea.ancho / 2 : zona.x + sangradoPx * fs;
     const palabras = posicionarPalabras(linea, estilo, acentos, xInicio);
     piezas.push(renderLinea(palabras, baseline, estilo, fs, colorAcento, altoLinea, cursorY));
     cursorY += altoLinea + gapChips;

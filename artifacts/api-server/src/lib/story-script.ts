@@ -311,6 +311,61 @@ function limpiar(v: unknown): string {
   return typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
 }
 
+/** Palabras que no pueden quedar al final de un texto recortado: si el corte
+ *  cae justo después de una de ellas, la frase queda colgando ("y", "de"…). */
+const PALABRAS_COLGANTES = new Set([
+  "y", "e", "o", "u", "ni", "que", "de", "del", "a", "al", "en", "con", "por",
+  "para", "sin", "sobre", "tras", "el", "la", "los", "las", "un", "una", "unos",
+  "unas", "lo", "su", "sus", "mi", "mis", "tu", "tus", "se", "le", "les", "me",
+  "te", "nos", "es", "son", "fue", "era", "pero", "porque", "como", "cuando",
+  "donde", "más", "mas", "muy", "ya", "no", "si", "sí", "desde", "hasta", "entre",
+]);
+
+/** Puntuación que no debe quedar suelta al principio o al final. */
+function podarPuntuacion(texto: string): string {
+  return texto
+    .replace(/^[\s.,;:!?¡¿…—–\-·•)\]}]+/u, "")
+    .replace(/[\s,;:—–\-·•(\[{]+$/u, "")
+    .trim();
+}
+
+/**
+ * Recorta un texto a `limite` caracteres SIN partir palabras.
+ *
+ * El recorte anterior era `texto.slice(0, limite)`, que cortaba a media letra
+ * y dejaba titulares como "…el teléfono en si" — literalmente el "texto
+ * cortado" que se veía en las historias. Aquí se corta en el último espacio
+ * que quepa y se podan las palabras colgantes y la puntuación suelta.
+ *
+ * Si el texto es UNA sola palabra más larga que el límite se devuelve entera:
+ * el motor de tipografía la achica hasta que quepa, y media palabra nunca es
+ * mejor que una palabra chica.
+ */
+export function recortarLimpio(texto: string, limite: number): string {
+  const t = limpiar(texto);
+  if (t.length <= limite) return podarPuntuacion(t);
+
+  const corte = t.lastIndexOf(" ", limite);
+  if (corte <= 0) {
+    // Una sola palabra. Si es de largo verosímil se devuelve ENTERA (el motor
+    // de tipografía la achica hasta que quepa; media palabra nunca es mejor).
+    // Muy por encima del límite ya no es una palabra sino basura, y ahí sí
+    // conviene cortar antes que dejar un titular microscópico.
+    return podarPuntuacion(t.length <= limite * 1.6 ? t : t.slice(0, limite));
+  }
+
+  let palabras = t.slice(0, corte).split(" ").filter(Boolean);
+  while (
+    palabras.length > 1 &&
+    PALABRAS_COLGANTES.has(palabras[palabras.length - 1]!.toLowerCase().replace(/[^\p{L}]/gu, ""))
+  ) {
+    palabras.pop();
+  }
+  const recortado = podarPuntuacion(palabras.join(" "));
+  // Si podar dejó casi nada, es preferible el corte por palabra sin podar.
+  return recortado.length >= Math.min(8, limite) ? recortado : podarPuntuacion(t.slice(0, corte));
+}
+
 /** Quita las frases de relleno robótico si el modelo las coló igual. */
 export function limpiarFrasesProhibidas(texto: string): string {
   let out = texto;
@@ -324,7 +379,39 @@ export function limpiarFrasesProhibidas(texto: string): string {
     );
     out = out.replace(re, " ");
   }
-  return out.replace(/\s+/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();
+  out = podarPuntuacion(out.replace(/\s+/g, " ").replace(/\s+([.,;:!?])/g, "$1"));
+  // Quitar la muletilla puede dejar la frase empezando en minúscula
+  // ("Mira esto: ana perdía…"): se restituye la mayúscula inicial.
+  if (out && texto.trim()[0] === texto.trim()[0]?.toUpperCase()) {
+    out = out[0]!.toUpperCase() + out.slice(1);
+  }
+  return out;
+}
+
+/** Deja el "dato" como una cifra dibujable: si el modelo escribió palabras
+ *  ("cuarenta") no hay cifra que mostrar y vale más no pintar el bloque que
+ *  pintar "cuarent" recortado. Acepta 40, 72%, 1.250, 3 h, $2.500, 2x. */
+export function sanearDato(valor: string): string {
+  const v = limpiar(valor).replace(/\s+/g, " ");
+  if (!v || !/\d/.test(v)) return "";
+  const m = v.match(/^[$€]?\s?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?\s?(?:%|x|h|k|K|M|min|hrs?|hs?)?$/u);
+  return m ? v.slice(0, LIMITES_GUION.dato) : "";
+}
+
+/** Normaliza los hashtags: máximo 5, todos con #, sin duplicados ni basura. */
+export function sanearHashtags(valor: string): string {
+  const vistos = new Set<string>();
+  const tags: string[] = [];
+  for (const token of limpiar(valor).split(/[\s,]+/)) {
+    const limpio = token.replace(/[^\p{L}\p{N}#_]/gu, "").replace(/^#+/, "");
+    if (limpio.length < 2) continue;
+    const clave = limpio.toLowerCase();
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    tags.push(`#${limpio}`);
+    if (tags.length === 5) break;
+  }
+  return tags.join(" ");
 }
 
 /**
@@ -367,10 +454,16 @@ export function parseGuion(
     const esCierre = i === ultimo;
     const layout = obtenerLayoutHistoria(paso.layoutId) ?? layoutHistoriaPorDefecto();
 
-    const titular = limpiarFrasesProhibidas(limpiar(f.copy_principal)).slice(0, limiteTitular(paso.layoutId));
+    // Recorte SIEMPRE por palabra: cortar a media letra era lo que producía los
+    // "textos cortados" que se veían en las historias generadas.
+    const titular = recortarLimpio(
+      limpiarFrasesProhibidas(limpiar(f.copy_principal)),
+      limiteTitular(paso.layoutId),
+    );
     const sub = sinSubCopy(paso.layoutId)
       ? ""
-      : limpiarFrasesProhibidas(limpiar(f.sub_copy)).slice(0, LIMITES_GUION.subCopy);
+      : recortarLimpio(limpiarFrasesProhibidas(limpiar(f.sub_copy)), LIMITES_GUION.subCopy);
+    const dato = necesitaDato(paso.layoutId) ? sanearDato(limpiar(f.dato)) : "";
 
     return {
       numero: i + 1,
@@ -378,12 +471,13 @@ export function parseGuion(
       layoutId: layout.id,
       copy_principal: titular,
       sub_copy: sub,
-      dato: necesitaDato(paso.layoutId) ? limpiar(f.dato).slice(0, LIMITES_GUION.dato) : "",
-      dato_label: necesitaDato(paso.layoutId) ? limpiar(f.dato_label).slice(0, LIMITES_GUION.datoLabel) : "",
+      dato,
+      // Sin cifra válida no hay etiqueta que explicar.
+      dato_label: dato ? recortarLimpio(limpiar(f.dato_label), LIMITES_GUION.datoLabel) : "",
       // CTA y hashtags SOLO en el cierre: es lo que mataba la naturalidad.
-      cta: esCierre ? limpiarFrasesProhibidas(limpiar(f.cta)).slice(0, LIMITES_GUION.cta) : "",
-      hashtags: esCierre ? limpiar(f.hashtags) : "",
-      prompt_visual: limpiar(f.prompt_visual).slice(0, LIMITES_GUION.promptVisual),
+      cta: esCierre ? recortarLimpio(limpiarFrasesProhibidas(limpiar(f.cta)), LIMITES_GUION.cta) : "",
+      hashtags: esCierre ? sanearHashtags(limpiar(f.hashtags)) : "",
+      prompt_visual: recortarLimpio(limpiar(f.prompt_visual), LIMITES_GUION.promptVisual),
     };
   });
 
@@ -398,6 +492,37 @@ export function parseGuion(
   };
 }
 
+/**
+ * Aplica a un frame ya construido las MISMAS reglas que a uno recién parseado.
+ *
+ * Hace falta porque un frame puede llegar por otra puerta —el reintento de un
+ * frame suelto, un borrador guardado, el texto que el usuario editó a mano— y
+ * esos caminos se saltaban el saneado: sin esto, un titular largo escrito en la
+ * UI llegaba al renderizador sin recortar y una cifra en palabras se dibujaba
+ * partida.
+ */
+export function sanearFrameGuion(frame: FrameGuion): FrameGuion {
+  const layout = obtenerLayoutHistoria(frame.layoutId) ?? layoutHistoriaPorDefecto();
+  const llevaDato = layout.bloques.includes("dato_gigante");
+  const dato = llevaDato ? sanearDato(frame.dato) : "";
+  return {
+    ...frame,
+    layoutId: layout.id,
+    copy_principal: recortarLimpio(
+      limpiarFrasesProhibidas(limpiar(frame.copy_principal)),
+      limiteTitular(layout.id),
+    ),
+    sub_copy: sinSubCopy(layout.id)
+      ? ""
+      : recortarLimpio(limpiarFrasesProhibidas(limpiar(frame.sub_copy)), LIMITES_GUION.subCopy),
+    dato,
+    dato_label: dato ? recortarLimpio(limpiar(frame.dato_label), LIMITES_GUION.datoLabel) : "",
+    cta: recortarLimpio(limpiarFrasesProhibidas(limpiar(frame.cta)), LIMITES_GUION.cta),
+    hashtags: sanearHashtags(frame.hashtags),
+    prompt_visual: recortarLimpio(limpiar(frame.prompt_visual), LIMITES_GUION.promptVisual),
+  };
+}
+
 /** Problemas de calidad que justifican pedirle al modelo una segunda pasada. */
 export function revisarGuion(guion: GuionHistoria, arco: PasoNarrativo[]): string[] {
   const issues: string[] = [];
@@ -406,7 +531,9 @@ export function revisarGuion(guion: GuionHistoria, arco: PasoNarrativo[]): strin
   for (const [i, f] of guion.frames.entries()) {
     if (!f.copy_principal) issues.push(`el frame ${i + 1} se quedó sin titular`);
     if (necesitaDato(f.layoutId) && !f.dato) {
-      issues.push(`el frame ${i + 1} necesita una cifra protagonista en "dato" y llegó vacía`);
+      issues.push(
+        `el frame ${i + 1} necesita una cifra protagonista en "dato" escrita con NÚMEROS (40, 72%, 3 h) y llegó vacía o en palabras`,
+      );
     }
     if (!sinSubCopy(f.layoutId) && !f.sub_copy) {
       issues.push(`el frame ${i + 1} necesita sub_copy y llegó vacío`);
