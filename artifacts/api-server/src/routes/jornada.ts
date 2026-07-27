@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { hubDayLogs, hubWorkSessions, users } from "@workspace/db/schema";
+import { hubDayLogs, hubWorkBreaks, hubWorkSessions, users } from "@workspace/db/schema";
 import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { normalizeRole } from "@workspace/roles";
@@ -14,6 +14,7 @@ import {
   voiceStatus,
 } from "../lib/discord";
 import { saveDaySummary } from "../lib/activity";
+import { minutosDePausas, minutosNetos, formatearDuracion } from "../lib/jornada-pausas";
 
 /**
  * Jornada / asistencia del equipo.
@@ -90,6 +91,162 @@ function isUniqueViolation(err: unknown): boolean {
   return code === "23505";
 }
 
+/* ============================== Pausas =================================== */
+
+/** Sesión abierta de un usuario, o null. */
+async function sesionAbiertaDe(userId: number) {
+  const [open] = await db.select().from(hubWorkSessions)
+    .where(and(eq(hubWorkSessions.userId, userId), isNull(hubWorkSessions.checkOut)))
+    .orderBy(desc(hubWorkSessions.checkIn))
+    .limit(1);
+  return open ?? null;
+}
+
+/** Pausas de un conjunto de sesiones, agrupadas por sesión. */
+async function pausasDeSesiones(sessionIds: number[]) {
+  const porSesion = new Map<number, (typeof hubWorkBreaks.$inferSelect)[]>();
+  if (sessionIds.length === 0) return porSesion;
+  const filas = await db.select().from(hubWorkBreaks)
+    .where(inArray(hubWorkBreaks.sessionId, sessionIds))
+    .orderBy(asc(hubWorkBreaks.startedAt));
+  for (const f of filas) {
+    const lista = porSesion.get(f.sessionId) ?? [];
+    lista.push(f);
+    porSesion.set(f.sessionId, lista);
+  }
+  return porSesion;
+}
+
+/**
+ * Minutos netos de un conjunto de sesiones: brutos menos pausas.
+ *
+ * Todo cálculo de horas debe pasar por aquí. Sumar los brutos y restar las
+ * pausas al final daría otro número, porque el tope de 16 h por sesión se
+ * aplica ANTES del descuento.
+ */
+function minutosNetosDeSesiones(
+  sesiones: (typeof hubWorkSessions.$inferSelect)[],
+  pausasPorSesion: Map<number, PausaFila[]>,
+  now: Date,
+): number {
+  return sesiones.reduce((acc, s) => {
+    const brutos = sessionMinutes(s, now);
+    const pausados = minutosDePausas(s, pausasPorSesion.get(s.id) ?? [], now);
+    return acc + minutosNetos(brutos, pausados);
+  }, 0);
+}
+
+type PausaFila = typeof hubWorkBreaks.$inferSelect;
+
+const pausaSchema = z.object({
+  motivo: z.string().trim().max(120).optional().default(""),
+  /** Solo para quien supervisa: pausar la jornada de otra persona. */
+  userId: z.number().int().positive().optional(),
+});
+
+/**
+ * Resuelve sobre QUIÉN se actúa y si está permitido.
+ *
+ * Cualquiera puede pausar la suya. Pausar la de otra persona queda reservado a
+ * dirección, ventas y RRHH, que es exactamente quienes miden al equipo.
+ */
+function objetivoPausa(req: Request, pedido?: number): { userId: number; ajena: boolean } | null {
+  const user = me(req);
+  if (!pedido || pedido === user.id) return { userId: user.id, ajena: false };
+  if (!canOversee(req)) return null;
+  return { userId: pedido, ajena: true };
+}
+
+/** POST /jornada/pausa — abre una pausa (propia, o de otra persona si supervisas). */
+router.post("/jornada/pausa", async (req: Request, res: Response) => {
+  const parsed = pausaSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Cuerpo inválido" });
+    return;
+  }
+  const objetivo = objetivoPausa(req, parsed.data.userId);
+  if (!objetivo) {
+    res.status(403).json({ error: "Solo dirección, ventas y RRHH pueden pausar la jornada de otra persona" });
+    return;
+  }
+  try {
+    const open = await sesionAbiertaDe(objetivo.userId);
+    if (!open) {
+      res.status(409).json({ error: "No hay una jornada abierta que pausar" });
+      return;
+    }
+    const [yaAbierta] = await db.select({ id: hubWorkBreaks.id }).from(hubWorkBreaks)
+      .where(and(eq(hubWorkBreaks.sessionId, open.id), isNull(hubWorkBreaks.endedAt)))
+      .limit(1);
+    if (yaAbierta) {
+      res.status(409).json({ error: "La jornada ya está en pausa" });
+      return;
+    }
+    const [pausa] = await db.insert(hubWorkBreaks).values({
+      sessionId: open.id,
+      userId: objetivo.userId,
+      reason: parsed.data.motivo,
+      createdBy: me(req).id,
+    }).returning();
+    res.status(201).json({ pausa });
+
+    const [uRow] = await db.select({ name: users.name }).from(users).where(eq(users.id, objetivo.userId)).limit(1);
+    const quien = uRow?.name || `usuario ${objetivo.userId}`;
+    const motivo = parsed.data.motivo ? ` (${parsed.data.motivo})` : "";
+    reportToChannel(`⏸️ **${quien}** puso su jornada en **pausa**${motivo}`).catch(() => {});
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      res.status(409).json({ error: "La jornada ya está en pausa" });
+      return;
+    }
+    console.error("[jornada/pausa POST]", err);
+    res.status(500).json({ error: "Error al pausar la jornada" });
+  }
+});
+
+/** POST /jornada/reanudar — cierra la pausa abierta y el reloj vuelve a correr. */
+router.post("/jornada/reanudar", async (req: Request, res: Response) => {
+  const parsed = pausaSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Cuerpo inválido" });
+    return;
+  }
+  const objetivo = objetivoPausa(req, parsed.data.userId);
+  if (!objetivo) {
+    res.status(403).json({ error: "Solo dirección, ventas y RRHH pueden reanudar la jornada de otra persona" });
+    return;
+  }
+  try {
+    const open = await sesionAbiertaDe(objetivo.userId);
+    if (!open) {
+      res.status(409).json({ error: "No hay una jornada abierta" });
+      return;
+    }
+    const [pausaAbierta] = await db.select().from(hubWorkBreaks)
+      .where(and(eq(hubWorkBreaks.sessionId, open.id), isNull(hubWorkBreaks.endedAt)))
+      .orderBy(desc(hubWorkBreaks.startedAt))
+      .limit(1);
+    if (!pausaAbierta) {
+      res.status(409).json({ error: "La jornada no está en pausa" });
+      return;
+    }
+    const now = new Date();
+    const [pausa] = await db.update(hubWorkBreaks)
+      .set({ endedAt: now })
+      .where(eq(hubWorkBreaks.id, pausaAbierta.id))
+      .returning();
+    const minutos = minutosDePausas(open, [pausa!], now);
+    res.json({ pausa, minutos });
+
+    const [uRow] = await db.select({ name: users.name }).from(users).where(eq(users.id, objetivo.userId)).limit(1);
+    const quien = uRow?.name || `usuario ${objetivo.userId}`;
+    reportToChannel(`▶️ **${quien}** **reanudó** su jornada tras ${formatearDuracion(minutos)} de pausa`).catch(() => {});
+  } catch (err) {
+    console.error("[jornada/reanudar POST]", err);
+    res.status(500).json({ error: "Error al reanudar la jornada" });
+  }
+});
+
 /* ========================= Mi jornada (self-service) ===================== */
 
 /** GET /jornada/me — estado propio: sesión abierta, hoy, semana y checklist de hoy. */
@@ -122,24 +279,46 @@ router.get("/jornada/me", async (req: Request, res: Response) => {
 
     const now = new Date();
     const open = openRows[0] ?? null;
+    // Las horas que se reportan son NETAS: el tiempo en pausa no es tiempo
+    // trabajado, y hasta ahora se contaba igual.
+    const pausasPorSesion = await pausasDeSesiones(sessions.map((s) => s.id));
     const days = Array.from({ length: 7 }, (_, i) => {
       const date = addDays(weekStart, i);
-      const minutes = sessions
-        .filter((s) => s.workDate === date)
-        .reduce((acc, s) => acc + sessionMinutes(s, now), 0);
-      return { date, minutes };
+      const delDia = sessions.filter((s) => s.workDate === date);
+      return {
+        date,
+        minutes: minutosNetosDeSesiones(delDia, pausasPorSesion, now),
+        pausedMinutes: delDia.reduce(
+          (acc, s) => acc + minutosDePausas(s, pausasPorSesion.get(s.id) ?? [], now),
+          0,
+        ),
+      };
     });
+    const pausaActiva = open
+      ? (pausasPorSesion.get(open.id) ?? []).find((p) => !p.endedAt) ?? null
+      : null;
 
     res.json({
       date: today,
       open: open
         ? { id: open.id, workDate: open.workDate, checkIn: open.checkIn, onDiscord: open.onDiscord, discordCheckin: open.discordCheckin ?? null, autoStarted: open.autoStarted, stale: open.workDate !== today }
         : null,
+      pausa: pausaActiva
+        ? { id: pausaActiva.id, startedAt: pausaActiva.startedAt, motivo: pausaActiva.reason, ajena: pausaActiva.createdBy !== user.id }
+        : null,
       discordLinked: !!meRows[0]?.discordUserId,
       todayMinutes: days.find((d) => d.date === today)?.minutes ?? 0,
+      todayPausedMinutes: days.find((d) => d.date === today)?.pausedMinutes ?? 0,
       todaySessions: sessions
         .filter((s) => s.workDate === today)
-        .map((s) => ({ id: s.id, checkIn: s.checkIn, checkOut: s.checkOut, onDiscord: s.onDiscord, minutes: sessionMinutes(s, now) })),
+        .map((s) => {
+          const pausados = minutosDePausas(s, pausasPorSesion.get(s.id) ?? [], now);
+          return {
+            id: s.id, checkIn: s.checkIn, checkOut: s.checkOut, onDiscord: s.onDiscord,
+            minutes: minutosNetos(sessionMinutes(s, now), pausados),
+            pausedMinutes: pausados,
+          };
+        }),
       week: { start: weekStart, days, total: days.reduce((a, d) => a + d.minutes, 0) },
       logs: logs.map((l) => ({ id: l.id, text: l.text, done: l.done, createdAt: l.createdAt })),
     });
@@ -390,6 +569,8 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
 
     const now = new Date();
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    // Pausas de toda la semana visible: las horas del equipo se muestran netas.
+    const pausasPorSesion = await pausasDeSesiones(sessions.map((s) => s.id));
 
     // Verificación EN VIVO (solo al mirar HOY): ¿está en un canal de voz ahora?
     const liveVoice = new Map<number, boolean | null>();
@@ -406,12 +587,23 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
     const result = members.map((m) => {
       const mySessions = sessions.filter((s) => s.userId === m.id);
       const daySessions = mySessions.filter((s) => s.workDate === date);
-      const weekByDay = days.map((d) => ({
-        date: d,
-        minutes: mySessions
-          .filter((s) => s.workDate === d)
-          .reduce((a, s) => a + sessionMinutes(s, now), 0),
-      }));
+      const weekByDay = days.map((d) => {
+        const delDia = mySessions.filter((s) => s.workDate === d);
+        return {
+          date: d,
+          minutes: minutosNetosDeSesiones(delDia, pausasPorSesion, now),
+          pausedMinutes: delDia.reduce(
+            (a, s) => a + minutosDePausas(s, pausasPorSesion.get(s.id) ?? [], now),
+            0,
+          ),
+        };
+      });
+      // Quién está en pausa AHORA MISMO: es lo que dirección, ventas y RRHH
+      // necesitan ver de un vistazo para medir al equipo.
+      const abierta = daySessions.find((s) => !s.checkOut) ?? null;
+      const pausaActiva = abierta
+        ? (pausasPorSesion.get(abierta.id) ?? []).find((p) => !p.endedAt) ?? null
+        : null;
       const first = daySessions[0] ?? null;
       const allClosed = daySessions.length > 0 && daySessions.every((s) => s.checkOut);
       const lastOut = allClosed ? daySessions[daySessions.length - 1]!.checkOut : null;
@@ -423,6 +615,10 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
               checkOut: lastOut,
               onDiscord: daySessions.some((s) => s.onDiscord),
               minutes: weekByDay.find((d) => d.date === date)?.minutes ?? 0,
+              pausedMinutes: weekByDay.find((d) => d.date === date)?.pausedMinutes ?? 0,
+              pausa: pausaActiva
+                ? { id: pausaActiva.id, startedAt: pausaActiva.startedAt, motivo: pausaActiva.reason }
+                : null,
               open: date === today && daySessions.some((s) => !s.checkOut),
             }
           : null,

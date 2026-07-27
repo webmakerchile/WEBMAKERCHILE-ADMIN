@@ -77,7 +77,49 @@ export const hubDayLogs = pgTable(
   }),
 );
 
+/**
+ * Pausas dentro de una jornada: baño, almuerzo, un imprevisto.
+ *
+ * Existen porque la jornada corría de corrido entre la entrada y la salida, y
+ * ese tiempo NO es tiempo trabajado. Se guardan como filas propias en vez de
+ * como un contador en la sesión para poder auditar cuándo y por qué se pausó,
+ * que es justo lo que dirección, ventas y RRHH necesitan para medir.
+ *
+ * `createdBy` distingue quién la abrió: la propia persona o alguien que
+ * supervisa. El índice único parcial garantiza a lo sumo UNA pausa abierta por
+ * sesión, igual que con las sesiones abiertas por usuario.
+ */
+export const hubWorkBreaks = pgTable(
+  "hub_work_breaks",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: integer("session_id")
+      .notNull()
+      .references(() => hubWorkSessions.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Null mientras la pausa sigue abierta. */
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Motivo declarado (opcional): "almuerzo", "trámite", … */
+    reason: text("reason").notNull().default(""),
+    /** Quién la abrió: la propia persona o quien supervisa. */
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    bySession: index("hub_work_breaks_session_idx").on(t.sessionId),
+    byUser: index("hub_work_breaks_user_idx").on(t.userId, t.startedAt),
+    openUniq: uniqueIndex("hub_work_breaks_open_uniq")
+      .on(t.sessionId)
+      .where(sql`${t.endedAt} IS NULL`),
+  }),
+);
+
 export type HubWorkSessionRow = typeof hubWorkSessions.$inferSelect;
+export type HubWorkBreakRow = typeof hubWorkBreaks.$inferSelect;
+export type InsertHubWorkBreak = typeof hubWorkBreaks.$inferInsert;
 export type InsertHubWorkSession = typeof hubWorkSessions.$inferInsert;
 export type HubDayLogRow = typeof hubDayLogs.$inferSelect;
 export type InsertHubDayLog = typeof hubDayLogs.$inferInsert;

@@ -4661,12 +4661,18 @@ const ATT_DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 interface AttMember {
   id: number; name: string | null; email: string; picture: string | null; teamRole: string | null;
   discordUserId: string | null; discordTag: string | null;
-  today: { checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean } | null;
+  today: {
+    checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean;
+    /** Minutos en pausa del día: ya descontados de `minutes`. */
+    pausedMinutes: number;
+    /** Pausa en curso, o null si el reloj está corriendo. */
+    pausa: { id: number; startedAt: string; motivo: string } | null;
+  } | null;
   discord: {
     linked: boolean; tag: string | null; checkin: boolean | null;
     pct: number | null; lastSeenMin: number | null; inVoiceNow: boolean | null;
   } | null;
-  weekByDay: { date: string; minutes: number }[];
+  weekByDay: { date: string; minutes: number; pausedMinutes: number }[];
   weekTotal: number;
   logs: { id: number; text: string; done: boolean }[];
 }
@@ -4765,6 +4771,27 @@ function AttendanceView() {
       setNameDraft("");
       qc.invalidateQueries({ queryKey: ["jornada-overview"] });
     },
+  });
+
+  // Pausar/reanudar la jornada de OTRA persona. El servidor solo lo permite a
+  // dirección, ventas y RRHH; aquí el control simplemente no se pinta para el
+  // resto porque esta vista ya está gateada por rol.
+  const pausaMut = useMutation({
+    mutationFn: async (p: { userId: number; pausar: boolean; motivo?: string }) => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/${p.pausar ? "pausa" : "reanudar"}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: p.userId, motivo: p.motivo ?? "" }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo cambiar la pausa");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jornada-overview"] }),
+    onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al pausar"),
   });
 
   const mapMut = useMutation({
@@ -4912,7 +4939,8 @@ function AttendanceView() {
       {!isLoading && !isError && (
         <div className="att-list">
           {members.map((m) => {
-            const st = m.today ? (m.today.open ? "work" : "done") : "abs";
+            const enPausa = !!m.today?.pausa;
+            const st = m.today ? (m.today.open ? (enPausa ? "pause" : "work") : "done") : "abs";
             return (
               <div key={m.id} className="gcard att-card" onClick={() => setHistUser(m)} role="button" tabIndex={0}
                 onKeyDown={(e) => { if (e.key === "Enter") setHistUser(m); }}>
@@ -4954,7 +4982,25 @@ function AttendanceView() {
                       return <Headphones className="w-3.5 h-3.5 att-disc dim" aria-label="Autodeclarado en Discord" />;
                     return null;
                   })()}
-                  <span className={cn("att-st", st)}>{st === "work" ? "Trabajando" : st === "done" ? "Terminó" : "Sin marcar"}</span>
+                  {isToday && m.today?.open && (
+                    <button
+                      className="att-pause"
+                      title={enPausa ? "Reanudar su jornada" : "Pausar su jornada"}
+                      disabled={pausaMut.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pausaMut.mutate({ userId: m.id, pausar: !enPausa });
+                      }}
+                    >
+                      {enPausa ? "▶" : "⏸"}
+                    </button>
+                  )}
+                  <span
+                    className={cn("att-st", st)}
+                    title={m.today && m.today.pausedMinutes > 0 ? `${attFmtMin(m.today.pausedMinutes)} en pausas (ya descontados)` : undefined}
+                  >
+                    {st === "work" ? "Trabajando" : st === "pause" ? "En pausa" : st === "done" ? "Terminó" : "Sin marcar"}
+                  </span>
                 </div>
                 {m.logs.length > 0 && (
                   <div className="att-logs">

@@ -15,7 +15,14 @@ export interface AsistenciaMiembro {
   email: string;
   teamRole: string;
   discordTag: string | null;
-  today: { checkIn: string; checkOut: string | null; onDiscord: boolean; minutes: number; open: boolean } | null;
+  today: {
+    checkIn: string; checkOut: string | null; onDiscord: boolean; open: boolean;
+    /** Minutos trabajados NETOS: las pausas ya vienen descontadas. */
+    minutes: number;
+    pausedMinutes: number;
+    /** Pausa en curso, o null si el reloj está corriendo. */
+    pausa: { id: number; startedAt: string; motivo: string } | null;
+  } | null;
   discord: {
     linked: boolean;
     tag: string | null;

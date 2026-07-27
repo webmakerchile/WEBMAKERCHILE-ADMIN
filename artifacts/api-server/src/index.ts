@@ -41,6 +41,30 @@ async function runDataMigrations() {
     WHERE stage IN ('pendiente', 'en_progreso', 'hecha')
   `);
 
+  // Pausas de jornada. Se crea aquí, de forma idempotente, porque
+  // `drizzle push` se cuelga en este entorno y el arranque es el único punto
+  // garantizado donde el esquema puede converger sin intervención manual.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS hub_work_breaks (
+      id          serial PRIMARY KEY,
+      session_id  integer NOT NULL REFERENCES hub_work_sessions(id) ON DELETE CASCADE,
+      user_id     integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      started_at  timestamptz NOT NULL DEFAULT now(),
+      ended_at    timestamptz,
+      reason      text NOT NULL DEFAULT '',
+      created_by  integer REFERENCES users(id) ON DELETE SET NULL,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS hub_work_breaks_session_idx ON hub_work_breaks (session_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS hub_work_breaks_user_idx ON hub_work_breaks (user_id, started_at)`);
+  // A lo sumo UNA pausa abierta por sesión: sin esto, dos clics seguidos
+  // descontarían el descanso dos veces.
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS hub_work_breaks_open_uniq
+    ON hub_work_breaks (session_id) WHERE ended_at IS NULL
+  `);
+
   await migrateHubTasksFromBlob();
 }
 
