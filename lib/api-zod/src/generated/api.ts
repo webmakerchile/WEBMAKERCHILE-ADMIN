@@ -246,6 +246,99 @@ export const AdjustCoverResponse = zod.object({
 });
 
 /**
+ * @summary List saved cover drafts (thumbnails only, newest first)
+ */
+export const ListCoverDraftsResponse = zod.object({
+  drafts: zod.array(
+    zod.object({
+      id: zod.number(),
+      formato: zod.enum(["vertical", "youtube"]),
+      title: zod.string(),
+      thumb: zod.string().describe("Miniatura webp en base64 para la lista"),
+      settings: zod.object({
+        description: zod.string().optional(),
+        style: zod.string().optional(),
+        direccionId: zod.string().optional(),
+        poseId: zod.string().optional(),
+        plantillaId: zod.string().optional(),
+        estiloTitularId: zod.string().optional(),
+        utileria: zod.string().optional(),
+      }),
+      createdAt: zod.string(),
+    }),
+  ),
+});
+
+/**
+ * @summary Save a generated cover as a persistent draft
+ */
+export const createCoverDraftBodyTitleMax = 200;
+
+export const CreateCoverDraftBody = zod.object({
+  formato: zod.enum(["vertical", "youtube"]),
+  title: zod.string().max(createCoverDraftBodyTitleMax),
+  imageBase64: zod.string(),
+  settings: zod
+    .object({
+      description: zod.string().optional(),
+      style: zod.string().optional(),
+      direccionId: zod.string().optional(),
+      poseId: zod.string().optional(),
+      plantillaId: zod.string().optional(),
+      estiloTitularId: zod.string().optional(),
+      utileria: zod.string().optional(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Get a cover draft with its full image
+ */
+export const GetCoverDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetCoverDraftResponse = zod.object({
+  id: zod.number(),
+  formato: zod.enum(["vertical", "youtube"]),
+  title: zod.string(),
+  imageBase64: zod.string(),
+  settings: zod.object({
+    description: zod.string().optional(),
+    style: zod.string().optional(),
+    direccionId: zod.string().optional(),
+    poseId: zod.string().optional(),
+    plantillaId: zod.string().optional(),
+    estiloTitularId: zod.string().optional(),
+    utileria: zod.string().optional(),
+  }),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Replace a draft's image (e.g. after an AI adjustment)
+ */
+export const UpdateCoverDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateCoverDraftBody = zod.object({
+  imageBase64: zod.string(),
+});
+
+export const UpdateCoverDraftResponse = zod.object({
+  id: zod.number(),
+  createdAt: zod.string(),
+});
+
+/**
+ * @summary Delete a cover draft
+ */
+export const DeleteCoverDraftParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
  * @summary Rewrite a rough adjustment request into a clear image-edit instruction
  */
 export const improveAdjustInstructionBodyInstructionMax = 1000;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat, Wand2 } from "lucide-react";
+import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import { motion } from "framer-motion";
 import JSZip from "jszip";
 import { RETRY_PRESETS } from "@/lib/retry-presets";
@@ -42,6 +43,7 @@ type Resultado = {
   tipo_contenido: string;
   tipo_publicacion: "unica" | "carrusel";
   texto_en_imagen: boolean;
+  estilo_titular?: string;
   imagenes: SlideImagen[];
   descripciones: Record<string, { descripcion?: string; hashtags?: string; post_completo?: string }>;
 };
@@ -55,6 +57,8 @@ export default function DescripcionesPage() {
   const [cantidadAuto, setCantidadAuto] = useState(true);
   const [autoInfo, setAutoInfo] = useState<{ cantidad: number; razon: string } | null>(null);
   const [textoEnImagen, setTextoEnImagen] = useState(false);
+  // Estilo tipográfico del título de las slides (motor de impacto de portadas).
+  const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [sorpresa, setSorpresa] = useState(false);
@@ -161,6 +165,7 @@ export default function DescripcionesPage() {
           tipo_publicacion: tipoPublicacion,
           cantidad_slides: cantidadFinal,
           texto_en_imagen: textoEnImagen,
+          estilo_titular: estiloTitular ?? undefined,
         }),
       });
       const data = await res.json();
@@ -207,6 +212,7 @@ export default function DescripcionesPage() {
           subtitulo: slide.subtitulo,
           formato: resultado.tipo_publicacion === "carrusel" ? "4:5" : "1:1",
           texto_en_imagen: resultado.texto_en_imagen,
+          estilo_titular: resultado.estilo_titular ?? undefined,
           total_slides: resultado.imagenes.length,
           modo,
           prompt_personalizado: promptPersonalizado,
@@ -478,6 +484,16 @@ export default function DescripcionesPage() {
               ))}
             </div>
           </div>
+
+          {textoEnImagen && (
+            <div className="bg-foreground/5 rounded-xl p-4 border border-foreground/10">
+              <EstiloTitularPicker
+                value={estiloTitular}
+                onChange={setEstiloTitular}
+                descripcionAuto="Los títulos de las slides usan el motor de tipografía de las portadas — en automático rota entre los estilos impactantes."
+              />
+            </div>
+          )}
 
           <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
             <div>

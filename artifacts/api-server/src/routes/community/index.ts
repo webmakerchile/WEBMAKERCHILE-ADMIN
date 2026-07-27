@@ -8,6 +8,12 @@ import { ai } from "@workspace/integrations-gemini-ai";
 import { firstText } from "../../lib/gemini-parts";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
 import { PLATFORM_LIMITS, PLATFORM_HASHTAGS } from "../../lib/platform-guides";
+import {
+  construirOverlayTitular,
+  resolverEstiloTitular,
+  obtenerEstiloTitular,
+  type ZonaTexto,
+} from "../../lib/title-style";
 import { readFile } from "fs/promises";
 import path from "path";
 
@@ -462,6 +468,44 @@ function renderTextBlockSvg(
         fill="${opts.color}" filter="url(#${opts.filterId})">${escapeXml(line)}</text>
     `).join("")}
   `;
+}
+
+// ============================================
+// TÍTULOS CON EL MOTOR DE TIPOGRAFÍA DE IMPACTO
+// El mismo motor del generador de portadas (title-style: métricas reales por
+// carácter, contorno/sombra/extrusión/neón/degradado) renderiza el TÍTULO de
+// historias y slides como capa full-canvas que se composita aparte. El resto
+// del texto (sub-copy, CTA, hashtags) conserva su render Inter original.
+// ============================================
+const PALETA_COMMUNITY = { colorAcento: "#FB923C", scrim: { r: 15, g: 23, b: 42 } };
+
+/** Resuelve el estilo del título para UNA generación: id pedido y validado, o
+ *  rotación automática de los estilos impactantes. Una historia en serie o un
+ *  carrusel completo usan el MISMO estilo en todos sus frames/slides. */
+function resolverEstiloTitulo(estiloId?: string | null): string {
+  if (estiloId) {
+    const e = obtenerEstiloTitular(estiloId);
+    if (e) return e.id;
+  }
+  return resolverEstiloTitular().id;
+}
+
+/** Capa SVG full-canvas con el título en tipografía de impacto. */
+function overlayTituloImpacto(
+  titulo: string,
+  canvas: { width: number; height: number },
+  zona: ZonaTexto,
+  estiloId: string,
+): Buffer {
+  const estilo = obtenerEstiloTitular(estiloId) ?? resolverEstiloTitular();
+  return construirOverlayTitular({
+    canvas,
+    zona,
+    scrim: "ninguno", // los gradientes topfade/botfade existentes hacen de scrim
+    titulo,
+    estilo,
+    paleta: PALETA_COMMUNITY,
+  });
 }
 
 // Defs SVG: gradientes premium para zonas reservadas + drop-shadow fuerte
@@ -1111,6 +1155,7 @@ async function generarFrameHistoria(args: {
   total: number;
   textoPreservado?: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
   toneSuffix?: string;
+  estiloTitular?: string;
 }): Promise<{
   numero_frame: number;
   total_frames: number;
@@ -1168,7 +1213,7 @@ async function generarFrameHistoria(args: {
   let outBase64 = imgBase64;
   if (args.textoEnImagen) {
     try {
-      outBase64 = await renderTextoEnHistoria(imgBase64, texto, args.total > 1 ? { numero: args.numero, total: args.total } : undefined);
+      outBase64 = await renderTextoEnHistoria(imgBase64, texto, args.total > 1 ? { numero: args.numero, total: args.total } : undefined, args.estiloTitular);
     } catch (e) {
       console.error("[Historia frame] render texto fallo:", e);
     }
@@ -1193,6 +1238,7 @@ async function renderTextoEnHistoria(
   imagenBase64: string,
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string },
   frameInfo?: { numero: number; total: number },
+  estiloTitularId?: string,
 ): Promise<string> {
   // Forzar 9:16 (1080x1920) — Gemini suele devolver tamaños menores (ej. 768x1376)
   // Sin este resize, las zonas hardcodeadas (Z3_TOP=1280, etc.) quedan fuera del canvas.
@@ -1225,19 +1271,9 @@ async function renderTextoEnHistoria(
   const Z4_TOP = 1540,    Z4_BOTTOM = 1700;
   const Z5_TOP = 1700,    Z5_BOTTOM = 1840;
 
-  const z1Center = (Z1_TOP + Z1_BOTTOM) / 2;       // 290
   const z3Center = (Z3_TOP + Z3_BOTTOM) / 2;       // 1450
   const z4Center = (Z4_TOP + Z4_BOTTOM) / 2;       // 1620
   const z5Center = (Z5_TOP + Z5_BOTTOM) / 2;       // 1770
-
-  // Título: 72-88px, máximo 2 líneas. Z1 = 280px, dejamos ~30px de padding interno.
-  const principalFit = principal ? fitTextBlock(principal, {
-    maxWidth: innerWidth,
-    maxHeight: Z1_BOTTOM - Z1_TOP - 60,
-    maxFontSize: 88,
-    minFontSize: 56,
-    charWidthRatio: 0.55,
-  }) : null;
 
   // Sub-copy: 44-52px Inter 600
   const subFit = sub ? fitTextBlock(sub, {
@@ -1304,10 +1340,6 @@ async function renderTextoEnHistoria(
     </filter>
     <rect x="0" y="0" width="${w}" height="${Z1_BOTTOM + 60}" fill="url(#topfade)"/>
     <rect x="0" y="${Z3_TOP - 100}" width="${w}" height="${h - (Z3_TOP - 100)}" fill="url(#botfade)"/>
-    ${principalFit ? renderTextBlockSvg(principalFit, {
-      canvasWidth: w, centerY: z1Center, fontWeight: 900, color: "#ffffff",
-      bgOpacity: 0, filterId: "textds", letterSpacing: -2,
-    } as any) : ""}
     ${separatorSvg}
     ${subFit ? renderTextBlockSvg(subFit, {
       canvasWidth: w, centerY: z3Center, fontWeight: 600, color: "#f1f5f9",
@@ -1327,8 +1359,20 @@ async function renderTextoEnHistoria(
     ` : ""}
   </svg>`;
 
+  // TÍTULO con el motor de tipografía de impacto (Z1), como capa aparte.
+  const capas: sharp.OverlayOptions[] = [{ input: Buffer.from(svg), top: 0, left: 0 }];
+  if (principal) {
+    const zonaTitulo: ZonaTexto = {
+      x: sidePadding, y: Z1_TOP, width: innerWidth, height: Z1_BOTTOM - Z1_TOP,
+      align: "center", vertical: "center", maxFontSize: 104, minFontSize: 50,
+    };
+    capas.push({
+      input: overlayTituloImpacto(principal, { width: w, height: h }, zonaTitulo, estiloTitularId ?? resolverEstiloTitulo()),
+      top: 0, left: 0,
+    });
+  }
   const composed = await sharp(imgBuffer)
-    .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+    .composite(capas)
     .png().toBuffer();
   return composed.toString("base64");
 }
@@ -1340,6 +1384,8 @@ const GenerarHistoriaBody = z.object({
   texto_en_imagen: z.boolean().optional().default(false),
   formato: z.enum(["unica", "serie"]).optional().default("unica"),
   cantidad_frames: z.number().int().min(2).max(5).optional(),
+  /** Estilo tipográfico del título (id de ESTILOS_TITULAR); vacío = rotación. */
+  estilo_titular: z.string().max(40).optional(),
 });
 
 router.post("/community/historias/generar", async (req, res) => {
@@ -1347,6 +1393,8 @@ router.post("/community/historias/generar", async (req, res) => {
     const body = GenerarHistoriaBody.parse(req.body);
     const referenceBase64 = await getFoxRefBase64();
     const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
+    // Un estilo tipográfico por historia: todos los frames de una serie comparten diseño.
+    const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
 
     // Determinar estructura de frames
     const estructura: RolFrame[] = body.formato === "serie"
@@ -1366,6 +1414,7 @@ router.post("/community/historias/generar", async (req, res) => {
         numero: i + 1,
         total,
         toneSuffix,
+        estiloTitular,
       })),
     );
 
@@ -1399,6 +1448,7 @@ router.post("/community/historias/generar", async (req, res) => {
         texto_en_imagen: body.texto_en_imagen,
         formato: body.formato,
         cantidad_frames: total,
+        estilo_titular: estiloTitular,
         frames,
         // Compat con vista de historial: el primer frame se expone también plano
         texto: frames[0]?.texto,
@@ -1414,6 +1464,7 @@ router.post("/community/historias/generar", async (req, res) => {
         tipo_historia: body.tipo_historia,
         concepto: body.concepto,
         texto_en_imagen: body.texto_en_imagen,
+        estilo_titular: estiloTitular,
         fecha: row!.createdAt,
         frames,
         // Compat con UI antigua (modo única siempre llena estos campos)
@@ -1539,6 +1590,8 @@ const GenerarDescripcionesBody = z.object({
   tipo_publicacion: z.enum(["unica", "carrusel"]).default("unica"),
   cantidad_slides: z.number().int().min(1).max(10).default(1),
   texto_en_imagen: z.boolean().optional().default(false),
+  /** Estilo tipográfico del título (id de ESTILOS_TITULAR); vacío = rotación. */
+  estilo_titular: z.string().max(40).optional(),
 });
 
 type SlideRol = "portada" | "desarrollo" | "cta" | "unica";
@@ -1864,6 +1917,7 @@ async function renderTextoEnSlide(
   slide: SlidePlan,
   totalSlides: number = 1,
   formatoForzado?: "1:1" | "4:5",
+  estiloTitularId?: string,
 ): Promise<string> {
   let imgBuffer = Buffer.from(imagenBase64, "base64");
   // Garantizar dimensiones exactas según formato (Gemini suele devolver 1:1 aunque pidamos 4:5)
@@ -1884,20 +1938,12 @@ async function renderTextoEnSlide(
   const topZoneEnd = isCuadrado ? 230 : 290;
   const bottomZoneStart = isCuadrado ? h - 230 : h - 290;
 
-  const topCenterY = (edgePad + topZoneEnd) / 2;
   const topMaxHeight = topZoneEnd - edgePad - 20;
   const bottomCenterY = (bottomZoneStart + h - edgePad) / 2;
   const bottomMaxHeight = (h - edgePad - bottomZoneStart) - 20;
 
   const titulo = stripEmojis(slide.titulo);
   const subtitulo = stripEmojis(slide.subtitulo);
-
-  const tituloFit = titulo ? fitTextBlock(titulo, {
-    maxWidth: innerWidth - 48,
-    maxHeight: topMaxHeight - 48,
-    maxFontSize: 76,
-    minFontSize: 48,
-  }) : null;
 
   const subFit = subtitulo ? fitTextBlock(subtitulo, {
     maxWidth: innerWidth - 48,
@@ -1916,10 +1962,6 @@ async function renderTextoEnSlide(
     ${SVG_DEFS}
     <rect x="0" y="0" width="${w}" height="${topZoneEnd}" fill="url(#topfade)"/>
     <rect x="0" y="${bottomZoneStart}" width="${w}" height="${h - bottomZoneStart}" fill="url(#botfade)"/>
-    ${tituloFit ? renderTextBlockSvg(tituloFit, {
-      canvasWidth: w, centerY: topCenterY, fontWeight: 900, color: "#ffffff",
-      bgOpacity: 0, filterId: "textds", letterSpacing: -2,
-    } as any) : ""}
     ${subFit ? renderTextBlockSvg(subFit, {
       canvasWidth: w, centerY: bottomCenterY, fontWeight: 600, color: "#f1f5f9",
       bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
@@ -1927,8 +1969,20 @@ async function renderTextoEnSlide(
     ${indicador}
   </svg>`;
 
+  // TÍTULO con el motor de tipografía de impacto (zona superior), capa aparte.
+  const capas: sharp.OverlayOptions[] = [{ input: Buffer.from(svg), top: 0, left: 0 }];
+  if (titulo) {
+    const zonaTitulo: ZonaTexto = {
+      x: sidePadding + 24, y: edgePad, width: innerWidth - 48, height: topMaxHeight,
+      align: "center", vertical: "center", maxFontSize: isCuadrado ? 82 : 90, minFontSize: 44,
+    };
+    capas.push({
+      input: overlayTituloImpacto(titulo, { width: w, height: h }, zonaTitulo, estiloTitularId ?? resolverEstiloTitulo()),
+      top: 0, left: 0,
+    });
+  }
   const composed = await sharp(imgBuffer)
-    .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+    .composite(capas)
     .png().toBuffer();
   return composed.toString("base64");
 }
@@ -2035,6 +2089,8 @@ Solo el JSON.`;
         }));
 
     const referenceBase64 = await getFoxRefBase64();
+    // Un estilo tipográfico por carrusel: todas las slides comparten diseño.
+    const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
 
     const settled = await Promise.allSettled(
       slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad)),
@@ -2053,7 +2109,7 @@ Solo el JSON.`;
         let imgBase64 = r.value.imagen;
         if (body.texto_en_imagen) {
           try {
-            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato);
+            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato, estiloTitular);
           } catch (e) {
             console.error("[Descripciones] render texto fallo slide", slide.numero, e);
           }
@@ -2081,7 +2137,8 @@ Solo el JSON.`;
       data: {
         tema: body.tema, tipo_contenido: body.tipo_contenido, redes: body.redes,
         tipo_publicacion: body.tipo_publicacion, cantidad_slides: cantidad,
-        texto_en_imagen: body.texto_en_imagen, descripciones, slides_textos: slidesPlan,
+        texto_en_imagen: body.texto_en_imagen, estilo_titular: estiloTitular,
+        descripciones, slides_textos: slidesPlan,
       },
       imageUrl: imagenes.find((i) => i.imagen)?.imagen || null,
     }).returning();
@@ -2091,7 +2148,8 @@ Solo el JSON.`;
       data: {
         id: row!.id, fecha: row!.createdAt, tema: body.tema,
         tipo_contenido: body.tipo_contenido, tipo_publicacion: body.tipo_publicacion,
-        texto_en_imagen: body.texto_en_imagen, imagenes, descripciones,
+        texto_en_imagen: body.texto_en_imagen, estilo_titular: estiloTitular,
+        imagenes, descripciones,
       },
     });
   } catch (err: any) {
@@ -2114,6 +2172,8 @@ const ReintentarSlideBody = z.object({
   modo: z.enum(["imagen", "texto", "ambos", "personalizado", "auto-diagnose"]).optional().default("imagen"),
   prompt_personalizado: z.string().max(2000).optional(),
   imagen_actual_base64: z.string().optional(), // sin prefijo data:; usado por auto-diagnose
+  /** Estilo tipográfico del carrusel original: el reintento mantiene el diseño. */
+  estilo_titular: z.string().max(40).optional(),
 });
 
 // Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
@@ -2197,7 +2257,7 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
     }
     let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides);
     if (body.texto_en_imagen) {
-      try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato); } catch {}
+      try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato, resolverEstiloTitulo(body.estilo_titular)); } catch {}
     }
     res.json({
       success: true,
@@ -2237,6 +2297,8 @@ const ReintentarHistoriaBody = z.object({
   numero_frame: z.number().int().min(1).max(5).optional(),
   total_frames: z.number().int().min(1).max(5).optional(),
   rol: z.enum(["unica", "hook", "contexto", "problema", "desarrollo", "solucion", "cta"]).optional(),
+  /** Estilo tipográfico de la historia original: el reintento mantiene el diseño. */
+  estilo_titular: z.string().max(40).optional(),
 });
 
 router.post("/community/historias/reintentar", async (req, res) => {
@@ -2281,6 +2343,8 @@ router.post("/community/historias/reintentar", async (req, res) => {
     const textoPreservado = (body.modo === "imagen" || body.modo === "personalizado" || body.modo === "auto-diagnose") && body.texto_actual
       ? body.texto_actual
       : undefined;
+    // El reintento conserva el estilo tipográfico de la historia original.
+    const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
     const frame = await generarFrameHistoria({
       tipoHistoria: body.tipo_historia,
       concepto: body.concepto,
@@ -2292,6 +2356,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
       total,
       textoPreservado,
       toneSuffix,
+      estiloTitular,
     });
     // El frame ya devuelve el texto correcto (preservado o nuevo)
     const textoFinal = frame.texto;
@@ -2304,7 +2369,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
         // Extraer base64 puro del data URL para re-render
         const m = frame.imagen.match(/^data:[^;]+;base64,(.+)$/);
         if (m) {
-          const reRendered = await renderTextoEnHistoria(m[1]!, body.texto_actual, total > 1 ? { numero, total } : undefined);
+          const reRendered = await renderTextoEnHistoria(m[1]!, body.texto_actual, total > 1 ? { numero, total } : undefined, estiloTitular);
           imagenFinal = `data:image/png;base64,${reRendered}`;
         }
       } catch (e) {

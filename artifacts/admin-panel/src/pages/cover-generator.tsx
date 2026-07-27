@@ -1,27 +1,21 @@
 import { useState, useEffect, useRef } from "react";
-import { useGenerateCover, useGenerateYoutubeCover, useGetCoverOptions, useImproveCoverIdea, useAdjustCover, useImproveAdjustInstruction } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useGenerateCover, useGenerateYoutubeCover, useGetCoverOptions, useImproveCoverIdea, useAdjustCover, useImproveAdjustInstruction,
+  useListCoverDrafts, useCreateCoverDraft, useUpdateCoverDraft, useDeleteCoverDraft, getCoverDraft,
+  getListCoverDraftsQueryKey,
+} from "@workspace/api-client-react";
+import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import { Layout } from "@/components/layout";
 import { fileToBase64 } from "@/lib/utils";
 import { 
-  Sparkles, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown, Youtube, Smartphone, UserRound, Maximize2, MessageSquare, Send
+  Sparkles, Upload, Loader2, Download, X, AlertTriangle, RefreshCw, Settings, Wand2, SlidersHorizontal, ChevronDown, Youtube, Smartphone, UserRound, Maximize2, MessageSquare, Send, FolderOpen, Trash2
 } from "lucide-react";
 import { motion } from "framer-motion";
 
 const DEFAULT_REFERENCE_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
 
 type FormatoPortada = "vertical" | "youtube";
-
-/* Previews CSS de los estilos tipográficos del titular (el render real lo
- * hace el servidor con estas mismas familias empaquetadas). */
-const PREVIEW_ESTILOS: Record<string, React.CSSProperties> = {
-  impacto: { fontFamily: "'Archivo Black','Arial Black',sans-serif", color: "#fff", WebkitTextStroke: "1.2px #000", textShadow: "2px 2px 0 rgba(0,0,0,.65)" },
-  titan: { fontFamily: "'Anton',Impact,sans-serif", color: "#141414", background: "#FB923C", padding: "0 5px", borderRadius: 3 },
-  slab_3d: { fontFamily: "'Alfa Slab One',serif", color: "#FFF6E3", textShadow: "1px 1px 0 #17110A, 2px 2px 0 #17110A, 3px 3px 0 #17110A" },
-  neon: { fontFamily: "'Bebas Neue',sans-serif", color: "#fff", textShadow: "0 0 5px #FB923C, 0 0 12px #FB923C, 0 0 20px #FB923C" },
-  fuego: { fontFamily: "'Anton',Impact,sans-serif", background: "linear-gradient(180deg,#FFE45C,#FF8A00)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", filter: "drop-shadow(1px 1px 0 rgba(0,0,0,.7))" },
-  placas: { fontFamily: "'Montserrat',sans-serif", fontWeight: 900, color: "#fff", background: "rgba(8,8,10,.85)", padding: "0 5px", borderRadius: 3 },
-  clasico: { fontFamily: "'Montserrat',sans-serif", fontWeight: 900, color: "#fff", textShadow: "1px 1px 2px rgba(0,0,0,.6)" },
-};
 
 /* Esquema en miniatura de cada plantilla: dónde va el texto (barras naranjas)
  * y dónde el protagonista (círculo claro). */
@@ -103,6 +97,16 @@ export default function CoverGeneratorPage() {
   const generateCover = useGenerateCover();
   const generateYoutube = useGenerateYoutubeCover();
   const coverOptions = useGetCoverOptions();
+  // Borradores persistentes: cada generación se auto-guarda en el servidor
+  // para que nada se pierda al salir de la página.
+  const queryClient = useQueryClient();
+  const listaBorradores = useListCoverDrafts();
+  const crearBorrador = useCreateCoverDraft();
+  const actualizarBorrador = useUpdateCoverDraft();
+  const eliminarBorrador = useDeleteCoverDraft();
+  const [cargandoBorrador, setCargandoBorrador] = useState<number | null>(null);
+  // id del borrador "vivo" de cada formato (la última generación o el cargado).
+  const borradorIdRef = useRef<Record<FormatoPortada, number | null>>({ vertical: null, youtube: null });
   const improveIdea = useImproveCoverIdea();
   const adjustCover = useAdjustCover();
   const improveAjuste = useImproveAdjustInstruction();
@@ -368,6 +372,40 @@ export default function CoverGeneratorPage() {
     });
   };
 
+  const refrescarBorradores = () => {
+    queryClient.invalidateQueries({ queryKey: getListCoverDraftsQueryKey() });
+  };
+
+  // Auto-guardado silencioso: la imagen recién generada queda como borrador
+  // en el servidor (best-effort: si falla, la generación no se ve afectada).
+  const autoGuardarBorrador = (formatoGen: FormatoPortada, b64: string, tituloGen: string) => {
+    crearBorrador.mutate(
+      {
+        data: {
+          formato: formatoGen,
+          title: tituloGen || "Sin título",
+          imageBase64: b64,
+          settings: {
+            description: descriptionRef.current || undefined,
+            style: styleRef.current || undefined,
+            direccionId: direccionIdRef.current ?? undefined,
+            poseId: poseId ?? undefined,
+            plantillaId: plantillaIdRef.current ?? undefined,
+            estiloTitularId: estiloTitularIdRef.current ?? undefined,
+            utileria: utileriaRef.current || undefined,
+          },
+        },
+      },
+      {
+        onSuccess: (r) => {
+          borradorIdRef.current[formatoGen] = r.id;
+          refrescarBorradores();
+        },
+        onError: () => { /* best-effort: no molestar al usuario */ },
+      },
+    );
+  };
+
   const handleGenerate = async (ajuste?: string) => {
     if (!title) return alert("El título es requerido");
 
@@ -403,8 +441,9 @@ export default function CoverGeneratorPage() {
           },
         },
         {
-          onSuccess: () => {
+          onSuccess: (r) => {
             setIntentos((n) => n + 1);
+            autoGuardarBorrador("youtube", r.b64_json, title);
             if (ajuste) {
               setToast(`✅ Miniatura regenerada con ajuste`);
               setTimeout(() => setToast(null), 3500);
@@ -430,8 +469,9 @@ export default function CoverGeneratorPage() {
         },
       },
       {
-        onSuccess: () => {
+        onSuccess: (r) => {
           setIntentos((n) => n + 1);
+          autoGuardarBorrador("vertical", r.b64_json, title);
           if (ajuste) {
             setToast(`✅ Portada regenerada con ajuste`);
             setTimeout(() => setToast(null), 3500);
@@ -458,6 +498,14 @@ export default function CoverGeneratorPage() {
           if (ajusteEpochRef.current[formatoEnviado] !== epochEnviada) return; // hubo regeneración: respuesta obsoleta
           setImagenAjustada((prev) => ({ ...prev, [formatoEnviado]: r }));
           setChatMensajes((prev) => ({ ...prev, [formatoEnviado]: [...prev[formatoEnviado], { role: "ia" as const, text: "Listo — apliqué el cambio manteniendo el resto igual." }] }));
+          // El borrador guardado sigue a la imagen: se actualiza con el ajuste.
+          const borradorId = borradorIdRef.current[formatoEnviado];
+          if (borradorId) {
+            actualizarBorrador.mutate(
+              { id: borradorId, data: { imageBase64: r.b64_json } },
+              { onSuccess: refrescarBorradores, onError: () => {} },
+            );
+          }
         },
         onError: (e: any) => {
           if (ajusteEpochRef.current[formatoEnviado] !== epochEnviada) return;
@@ -483,6 +531,50 @@ export default function CoverGeneratorPage() {
         onError: (e: any) => {
           setToast(`⚠️ ${e?.message || "No se pudo redactar la instrucción."}`);
           setTimeout(() => setToast(null), 3500);
+        },
+      },
+    );
+  };
+
+  const cargarBorrador = async (id: number) => {
+    if (cargandoBorrador !== null) return;
+    setCargandoBorrador(id);
+    try {
+      const d = await getCoverDraft(id);
+      const f: FormatoPortada = d.formato === "youtube" ? "youtube" : "vertical";
+      setFormato(f);
+      setTitle(d.title);
+      setDescription(d.settings.description ?? "");
+      setStyle(d.settings.style ?? "");
+      setUtileria(d.settings.utileria ?? "");
+      setDireccionId(d.settings.direccionId ?? null);
+      setPoseId(d.settings.poseId ?? null);
+      setPlantillaId(d.settings.plantillaId ?? null);
+      setEstiloTitularId(d.settings.estiloTitularId ?? null);
+      // La imagen del borrador pasa a ser la imagen activa del formato
+      // (mismo carril que usan los ajustes del chat).
+      ajusteEpochRef.current[f] += 1;
+      setChatMensajes((prev) => ({ ...prev, [f]: [] }));
+      setImagenAjustada((prev) => ({ ...prev, [f]: { b64_json: d.imageBase64, mimeType: "image/png" } }));
+      borradorIdRef.current[f] = d.id;
+      setToast("📂 Borrador cargado — puedes seguir ajustándolo o regenerar");
+      setTimeout(() => setToast(null), 3500);
+    } catch {
+      setToast("⚠️ No se pudo cargar el borrador. Intenta de nuevo.");
+      setTimeout(() => setToast(null), 3500);
+    } finally {
+      setCargandoBorrador(null);
+    }
+  };
+
+  const borrarBorrador = (id: number) => {
+    eliminarBorrador.mutate(
+      { id },
+      {
+        onSuccess: () => {
+          if (borradorIdRef.current.vertical === id) borradorIdRef.current.vertical = null;
+          if (borradorIdRef.current.youtube === id) borradorIdRef.current.youtube = null;
+          refrescarBorradores();
         },
       },
     );
@@ -658,36 +750,11 @@ export default function CoverGeneratorPage() {
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Tipografía del titular</label>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setEstiloTitularId(null)}
-                      aria-pressed={estiloTitularId === null}
-                      className={`flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border transition ${estiloTitularId === null ? "border-primary bg-primary/15" : "border-foreground/10 bg-background/40 hover:border-foreground/30"}`}
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-primary" />
-                      <span className="text-[9px] font-medium text-muted-foreground">Automática</span>
-                    </button>
-                    {coverOptions.data?.estilosTitular.map((e) => (
-                      <button
-                        key={e.id}
-                        type="button"
-                        onClick={() => setEstiloTitularId(estiloTitularId === e.id ? null : e.id)}
-                        aria-pressed={estiloTitularId === e.id}
-                        title={e.descripcion}
-                        className={`flex flex-col items-center justify-center gap-1 px-1 py-2 rounded-lg border transition overflow-hidden bg-[#1a1a1e] ${estiloTitularId === e.id ? "border-primary ring-1 ring-primary" : "border-foreground/10 hover:border-foreground/30"}`}
-                      >
-                        <span className="text-[13px] leading-none whitespace-nowrap" style={PREVIEW_ESTILOS[e.id] ?? {}}>ABC</span>
-                        <span className="text-[9px] font-medium text-muted-foreground truncate w-full text-center">{e.nombre}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground/70">
-                    {estiloTitularSeleccionado ? estiloTitularSeleccionado.descripcion : "Rota entre los estilos más impactantes; elige uno para fijarlo."}
-                  </p>
-                </div>
+                <EstiloTitularPicker
+                  estilos={coverOptions.data?.estilosTitular ?? null}
+                  value={estiloTitularId}
+                  onChange={setEstiloTitularId}
+                />
               </div>
 
               <div className="border border-foreground/10 rounded-xl overflow-hidden">
@@ -1040,6 +1107,74 @@ export default function CoverGeneratorPage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Borradores guardados: cada generación se auto-guarda en el servidor */}
+        <div className="glass-card rounded-3xl border border-foreground/10 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-foreground flex items-center gap-2">
+              <FolderOpen className="w-5 h-5 text-primary" />
+              Borradores guardados
+            </h2>
+            <span className="text-xs text-muted-foreground">
+              Cada portada que generas se guarda sola — nada se pierde al salir
+            </span>
+          </div>
+          {listaBorradores.isPending ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Cargando borradores…
+            </div>
+          ) : listaBorradores.isError ? (
+            <p className="text-sm text-muted-foreground py-4">No se pudieron cargar los borradores.</p>
+          ) : (listaBorradores.data?.drafts.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground/70 py-4 text-center">
+              Todavía no hay borradores — genera tu primera portada y aparecerá aquí automáticamente.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {listaBorradores.data!.drafts.map((d) => (
+                <div key={d.id} className="group relative rounded-xl overflow-hidden border border-foreground/10 bg-background/40">
+                  <button
+                    type="button"
+                    onClick={() => cargarBorrador(d.id)}
+                    disabled={cargandoBorrador !== null}
+                    className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    title={`Cargar "${d.title}"`}
+                  >
+                    <div className={`w-full bg-black/40 ${d.formato === "youtube" ? "aspect-video" : "aspect-[9/16] max-h-44"} overflow-hidden`}>
+                      {d.thumb ? (
+                        <img src={`data:image/webp;base64,${d.thumb}`} alt={d.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground/40 text-xs">Sin vista previa</div>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs font-semibold text-foreground truncate">{d.title}</p>
+                      <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                        {d.formato === "youtube" ? <Youtube className="w-3 h-3 text-red-400" /> : <Smartphone className="w-3 h-3 text-primary" />}
+                        {d.formato === "youtube" ? "YouTube 16:9" : "Vertical 9:16"}
+                        <span>· {new Date(d.createdAt).toLocaleDateString("es-CL", { day: "numeric", month: "short" })}</span>
+                      </p>
+                    </div>
+                    {cargandoBorrador === d.id && (
+                      <span className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 animate-spin text-white" />
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => borrarBorrador(d.id)}
+                    aria-label={`Eliminar borrador "${d.title}"`}
+                    className="absolute top-1.5 right-1.5 z-10 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full items-center justify-center transition-colors hidden group-hover:flex"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Lightbox: ver el resultado en grande antes de descargar */}

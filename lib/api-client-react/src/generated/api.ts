@@ -18,6 +18,11 @@ import type {
 
 import type {
   AdjustCoverBody,
+  CoverDraftCreateBody,
+  CoverDraftCreatedResponse,
+  CoverDraftListResponse,
+  CoverDraftResponse,
+  CoverDraftUpdateBody,
   CoverOptionsResponse,
   CreateGeminiConversationBody,
   CreateVideoBody,
@@ -1150,6 +1155,425 @@ export const useAdjustCover = <
   TContext
 > => {
   return useMutation(getAdjustCoverMutationOptions(options));
+};
+
+/**
+ * @summary List saved cover drafts (thumbnails only, newest first)
+ */
+export const getListCoverDraftsUrl = () => {
+  return `/api/gemini/cover-drafts`;
+};
+
+export const listCoverDrafts = async (
+  options?: RequestInit,
+): Promise<CoverDraftListResponse> => {
+  return customFetch<CoverDraftListResponse>(getListCoverDraftsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCoverDraftsQueryKey = () => {
+  return [`/api/gemini/cover-drafts`] as const;
+};
+
+export const getListCoverDraftsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCoverDrafts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCoverDrafts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCoverDraftsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listCoverDrafts>>> = ({
+    signal,
+  }) => listCoverDrafts({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCoverDrafts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCoverDraftsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCoverDrafts>>
+>;
+export type ListCoverDraftsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List saved cover drafts (thumbnails only, newest first)
+ */
+
+export function useListCoverDrafts<
+  TData = Awaited<ReturnType<typeof listCoverDrafts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCoverDrafts>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCoverDraftsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Save a generated cover as a persistent draft
+ */
+export const getCreateCoverDraftUrl = () => {
+  return `/api/gemini/cover-drafts`;
+};
+
+export const createCoverDraft = async (
+  coverDraftCreateBody: CoverDraftCreateBody,
+  options?: RequestInit,
+): Promise<CoverDraftCreatedResponse> => {
+  return customFetch<CoverDraftCreatedResponse>(getCreateCoverDraftUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(coverDraftCreateBody),
+  });
+};
+
+export const getCreateCoverDraftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCoverDraft>>,
+    TError,
+    { data: BodyType<CoverDraftCreateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCoverDraft>>,
+  TError,
+  { data: BodyType<CoverDraftCreateBody> },
+  TContext
+> => {
+  const mutationKey = ["createCoverDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCoverDraft>>,
+    { data: BodyType<CoverDraftCreateBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCoverDraft(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCoverDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCoverDraft>>
+>;
+export type CreateCoverDraftMutationBody = BodyType<CoverDraftCreateBody>;
+export type CreateCoverDraftMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Save a generated cover as a persistent draft
+ */
+export const useCreateCoverDraft = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCoverDraft>>,
+    TError,
+    { data: BodyType<CoverDraftCreateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCoverDraft>>,
+  TError,
+  { data: BodyType<CoverDraftCreateBody> },
+  TContext
+> => {
+  return useMutation(getCreateCoverDraftMutationOptions(options));
+};
+
+/**
+ * @summary Get a cover draft with its full image
+ */
+export const getGetCoverDraftUrl = (id: number) => {
+  return `/api/gemini/cover-drafts/${id}`;
+};
+
+export const getCoverDraft = async (
+  id: number,
+  options?: RequestInit,
+): Promise<CoverDraftResponse> => {
+  return customFetch<CoverDraftResponse>(getGetCoverDraftUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCoverDraftQueryKey = (id: number) => {
+  return [`/api/gemini/cover-drafts/${id}`] as const;
+};
+
+export const getGetCoverDraftQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCoverDraft>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverDraft>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCoverDraftQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCoverDraft>>> = ({
+    signal,
+  }) => getCoverDraft(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCoverDraft>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCoverDraftQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCoverDraft>>
+>;
+export type GetCoverDraftQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get a cover draft with its full image
+ */
+
+export function useGetCoverDraft<
+  TData = Awaited<ReturnType<typeof getCoverDraft>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCoverDraft>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCoverDraftQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace a draft's image (e.g. after an AI adjustment)
+ */
+export const getUpdateCoverDraftUrl = (id: number) => {
+  return `/api/gemini/cover-drafts/${id}`;
+};
+
+export const updateCoverDraft = async (
+  id: number,
+  coverDraftUpdateBody: CoverDraftUpdateBody,
+  options?: RequestInit,
+): Promise<CoverDraftCreatedResponse> => {
+  return customFetch<CoverDraftCreatedResponse>(getUpdateCoverDraftUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(coverDraftUpdateBody),
+  });
+};
+
+export const getUpdateCoverDraftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCoverDraft>>,
+    TError,
+    { id: number; data: BodyType<CoverDraftUpdateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCoverDraft>>,
+  TError,
+  { id: number; data: BodyType<CoverDraftUpdateBody> },
+  TContext
+> => {
+  const mutationKey = ["updateCoverDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCoverDraft>>,
+    { id: number; data: BodyType<CoverDraftUpdateBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateCoverDraft(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCoverDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCoverDraft>>
+>;
+export type UpdateCoverDraftMutationBody = BodyType<CoverDraftUpdateBody>;
+export type UpdateCoverDraftMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Replace a draft's image (e.g. after an AI adjustment)
+ */
+export const useUpdateCoverDraft = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCoverDraft>>,
+    TError,
+    { id: number; data: BodyType<CoverDraftUpdateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCoverDraft>>,
+  TError,
+  { id: number; data: BodyType<CoverDraftUpdateBody> },
+  TContext
+> => {
+  return useMutation(getUpdateCoverDraftMutationOptions(options));
+};
+
+/**
+ * @summary Delete a cover draft
+ */
+export const getDeleteCoverDraftUrl = (id: number) => {
+  return `/api/gemini/cover-drafts/${id}`;
+};
+
+export const deleteCoverDraft = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteCoverDraftUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteCoverDraftMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCoverDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCoverDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteCoverDraft"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCoverDraft>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteCoverDraft(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCoverDraftMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCoverDraft>>
+>;
+
+export type DeleteCoverDraftMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a cover draft
+ */
+export const useDeleteCoverDraft = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCoverDraft>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCoverDraft>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteCoverDraftMutationOptions(options));
 };
 
 /**
