@@ -8,6 +8,14 @@ import { randomBytes } from "crypto";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import path from "path";
 import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-serve";
+import {
+  prepararImagenInstagram,
+  motivoNoPublicable,
+  esMimeImagen,
+  esMimeVideo,
+  pareceImagenPorNombre,
+  type TipoMedioInstagram,
+} from "./lib/instagram-media";
 import { publishLinkedInPost, publishLinkedInVideo } from "./routes/linkedin";
 import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 import { publishToFacebook } from "./routes/facebook";
@@ -174,6 +182,44 @@ async function recordFailure(videoId: number, platform: PublishPlatform, errorMs
 }
 
 /** True if a platform is in a terminal failure state and should not be re-attempted. */
+/**
+ * Marca una plataforma como omitida DEJANDO CONSTANCIA del motivo.
+ *
+ * Antes, cualquier red que no se pudiera intentar (sin archivo, sin título,
+ * sin descripción) se resolvía con `{ success: true }` y nada más: la
+ * publicación quedaba en verde y el usuario no tenía forma de saber que esa
+ * red nunca se intentó. Un salto silencioso es indistinguible de un éxito, y
+ * eso es exactamente lo que hacía parecer que "se programa pero no publica".
+ *
+ * Lo que este helper NO hace es rellenar los huecos por su cuenta. Es tentador
+ * caer al `description` general cuando falta la descripción de una red, pero el
+ * esquema deja los estados por red en "pending" por defecto, así que ese estado
+ * NO es señal de que el usuario haya elegido esa red: el texto propio de la red
+ * sí lo es. Publicar en una cuenta real que nadie eligió es mucho peor que no
+ * publicar, y para eso está este aviso.
+ */
+async function omitirPlataforma(
+  videoId: number,
+  platform: PublishPlatform,
+  motivo: string,
+): Promise<void> {
+  const f = PLATFORM_FIELDS[platform];
+  const cambios: Record<string, unknown> = {
+    [f.status as string]: "skipped",
+    [f.error as string]: motivo,
+    updatedAt: new Date(),
+  };
+  await db.update(videos).set(cambios).where(eq(videos.id, videoId));
+  await logAttempt({
+    videoId,
+    platform,
+    attemptNumber: 0,
+    outcome: "skipped",
+    errorMessage: motivo,
+  });
+  console.log(`[Scheduler] ${platform} omitido: ${motivo}`);
+}
+
 function isTerminalError(video: typeof videos.$inferSelect, platform: PublishPlatform): boolean {
   return readField<string | null>(video, PLATFORM_FIELDS[platform].status) === "error";
 }
@@ -693,7 +739,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
     return { success: false, error };
   }
   if (!video.videoFileDriveId) {
-    const error = "No video file in Drive";
+    const error = "No hay archivo (imagen o video) en Drive para publicar";
     await persistPlatformError(video.id, "instagram", error);
     return { success: false, error };
   }
@@ -704,36 +750,78 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
   }
 
   let tempToken: string | null = null;
+  let tempPath: string | null = null;
 
   try {
     const auth = getOAuth2Client(user);
     const drive = google.drive({ version: "v3", auth });
+
     const driveRes = await drive.files.get(
       { fileId: video.videoFileDriveId, alt: "media" },
       { responseType: "arraybuffer" }
     );
-    const videoBuffer = Buffer.from(driveRes.data as ArrayBuffer);
+    const archivo = Buffer.from(driveRes.data as ArrayBuffer);
+
+    // El tipo del archivo decide TODO lo que sigue: antes se asumía video sin
+    // preguntar y por eso ninguna imagen generada por la app llegaba a
+    // Instagram. El Content-Type viene en la MISMA respuesta de la descarga,
+    // así que no hace falta un segundo viaje a Drive solo para el metadato.
+    const cabecera = (driveRes as { headers?: Record<string, string> }).headers?.["content-type"];
+    const mimeType = cabecera ? cabecera.split(";")[0]!.trim() : null;
+    const noPublicable = motivoNoPublicable(mimeType, video.videoFileName);
+    if (noPublicable) {
+      await persistPlatformError(video.id, "instagram", noPublicable);
+      return { success: false, error: noPublicable };
+    }
+
+    const tratarComoImagen =
+      esMimeImagen(mimeType) || (!esMimeVideo(mimeType) && pareceImagenPorNombre(video.videoFileName));
+
+    let cuerpo: Buffer;
+    let mediaType: TipoMedioInstagram;
+    let extension: string;
+    let mimeServido: string;
+    if (tratarComoImagen) {
+      const preparado = await prepararImagenInstagram(archivo);
+      cuerpo = preparado.buffer;
+      mediaType = preparado.tipo;
+      extension = preparado.extension;
+      mimeServido = preparado.mimeType;
+      console.log(`[Scheduler] Instagram imagen: ${preparado.nota}`);
+    } else {
+      cuerpo = archivo;
+      mediaType = "REELS";
+      extension = "mp4";
+      mimeServido = mimeType || "video/mp4";
+    }
 
     await mkdir(TEMP_DIR, { recursive: true });
     tempToken = randomBytes(32).toString("hex");
-    const filePath = path.join(TEMP_DIR, `${tempToken}.mp4`);
-    await writeFile(filePath, videoBuffer);
-    registerTempFile(tempToken, filePath);
+    tempPath = path.join(TEMP_DIR, `${tempToken}.${extension}`);
+    await writeFile(tempPath, cuerpo);
+    registerTempFile(tempToken, tempPath, mimeServido);
 
     const baseUrl = getPublicBaseUrl();
-    const publicVideoUrl = `${baseUrl}/api/instagram/temp-video/${tempToken}`;
+    const publicUrl = `${baseUrl}/api/instagram/temp-video/${tempToken}`;
 
     const caption = video.instagramDescription || video.description || "";
+
+    // El contenedor cambia de campo según el medio: `image_url` para foto e
+    // historia, `video_url` para reel.
+    const contenedor: Record<string, unknown> = {
+      media_type: mediaType,
+      caption,
+      access_token: igToken,
+    };
+    if (mediaType === "REELS") contenedor.video_url = publicUrl;
+    else contenedor.image_url = publicUrl;
+    // Las historias no llevan pie de foto.
+    if (mediaType === "STORIES") delete contenedor.caption;
 
     const containerRes = await fetch(`${IG_API_BASE}/${igUserId}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        media_type: "REELS",
-        video_url: publicVideoUrl,
-        caption,
-        access_token: igToken,
-      }),
+      body: JSON.stringify(contenedor),
     });
 
     const containerData = (await containerRes.json()) as IgContainerJson;
@@ -742,9 +830,12 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
     }
 
     const containerId = containerData.id;
-    console.log(`[Scheduler] Instagram container created: ${containerId}`);
+    console.log(`[Scheduler] Instagram container created (${mediaType}): ${containerId}`);
 
-    for (let i = 0; i < 60; i++) {
+    // Las fotos quedan listas casi al instante; el video necesita transcodificar.
+    // Se sondea igual en ambos casos, pero con menos vueltas para imagen.
+    const vueltas = mediaType === "REELS" ? 60 : 12;
+    for (let i = 0; i < vueltas; i++) {
       const statusRes = await fetch(
         `${IG_API_BASE}/${containerId}?fields=status_code,status&access_token=${igToken}`
       );
@@ -753,7 +844,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
       if (statusData.status_code === "ERROR") {
         throw new Error(`Instagram processing error: ${statusData.status || "Unknown"}`);
       }
-      await new Promise((r) => setTimeout(r, 5000));
+      await new Promise((r) => setTimeout(r, mediaType === "REELS" ? 5000 : 2000));
     }
 
     const publishRes = await fetch(`${IG_API_BASE}/${igUserId}/media_publish`, {
@@ -772,9 +863,9 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
 
     const mediaId = publishData.id;
 
-    // media_publish exitoso = el reel YA está publicado en Instagram; no hay
-    // un poll posterior (a diferencia de TikTok), así que dejamos el estado
-    // final "published" en vez de "uploaded" (que quedaba pegado para siempre).
+    // media_publish exitoso = ya está publicado en Instagram; no hay un poll
+    // posterior (a diferencia de TikTok), así que el estado final es
+    // "published" en vez de "uploaded" (que quedaba pegado para siempre).
     await db.update(videos).set({
       instagramMediaId: mediaId,
       instagramStatus: "published",
@@ -782,7 +873,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
       updatedAt: new Date(),
     }).where(eq(videos.id, video.id));
 
-    console.log(`[Scheduler] Instagram publish success: ${mediaId}`);
+    console.log(`[Scheduler] Instagram publish success (${mediaType}): ${mediaId}`);
     return { success: true };
   } catch (err: any) {
     console.error(`[Scheduler] Instagram upload error: ${err.message}`);
@@ -791,7 +882,7 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
   } finally {
     if (tempToken) {
       unregisterTempFile(tempToken);
-      try { await unlink(path.join(TEMP_DIR, `${tempToken}.mp4`)); } catch {}
+      if (tempPath) { try { await unlink(tempPath); } catch {} }
     }
   }
 }
@@ -887,10 +978,15 @@ export async function processScheduledVideos() {
       }
 
       if (!video.videoFileDriveId) {
+        // Sin archivo no hay nada que subir a las tres redes de medio. Se deja
+        // dicho en cada una en vez de darlas por buenas.
+        const motivo = "No se adjuntó imagen ni video: esta red necesita un archivo para publicar";
         results.youtube = { success: true };
         results.tiktok = { success: true };
         results.instagram = { success: true };
-        console.log(`[Scheduler] YT/TT/IG skipped (no video file in Drive)`);
+        for (const p of ["youtube", "tiktok", "instagram"] as const) {
+          if (!isSkippedByUser(video, p)) await omitirPlataforma(video.id, p, motivo);
+        }
       } else {
         if (isSkippedByUser(video, "youtube")) {
           results.youtube = { success: true };
@@ -903,7 +999,7 @@ export async function processScheduledVideos() {
           results.youtube = await uploadToYouTube(video, freshUser);
         } else {
           results.youtube = { success: true };
-          console.log(`[Scheduler] YouTube skipped (no title/desc configured)`);
+          await omitirPlataforma(video.id, "youtube", "Falta el título/descripción de YouTube: complétalo en el editor de la publicación");
         }
 
         const freshUser2 = await db.select().from(users).where(eq(users.id, adminUser.id)).limit(1).then(r => r[0]);
@@ -919,7 +1015,7 @@ export async function processScheduledVideos() {
             results.tiktok = await uploadToTikTok(video, freshUser2);
           } else {
             results.tiktok = { success: true };
-            console.log(`[Scheduler] TikTok skipped (no description)`);
+            await omitirPlataforma(video.id, "tiktok", "Falta la descripción de TikTok: complétala en el editor de la publicación");
           }
         }
 
@@ -936,7 +1032,7 @@ export async function processScheduledVideos() {
             results.instagram = await uploadToInstagram(video, freshUser3);
           } else {
             results.instagram = { success: true };
-            console.log(`[Scheduler] Instagram skipped (no description)`);
+            await omitirPlataforma(video.id, "instagram", "Falta la descripción de Instagram: complétala en el editor de la publicación");
           }
         }
       }
@@ -954,7 +1050,7 @@ export async function processScheduledVideos() {
           results.linkedin = await publishToLinkedIn(video, freshUser4);
         } else {
           results.linkedin = { success: true };
-          console.log(`[Scheduler] LinkedIn skipped (no description)`);
+          await omitirPlataforma(video.id, "linkedin", "Falta la descripción de LinkedIn: complétala en el editor de la publicación");
         }
       }
 
@@ -971,7 +1067,7 @@ export async function processScheduledVideos() {
           results.x = await publishToX(video, freshUser5);
         } else {
           results.x = { success: true };
-          console.log(`[Scheduler] X skipped (no description)`);
+          await omitirPlataforma(video.id, "x", "Falta la descripción de X: complétala en el editor de la publicación");
         }
       }
 
@@ -986,6 +1082,10 @@ export async function processScheduledVideos() {
         } else if (facebookIncluded) {
           attempted.facebook = true;
           results.facebook = await publishToFacebookStep(video, freshUser6);
+        } else if (video.facebookStatus === "pending" || video.facebookStatus === "retrying") {
+          // Pedida pero sin texto: se dice, en vez de darla por publicada.
+          results.facebook = { success: true };
+          await omitirPlataforma(video.id, "facebook", "Falta la descripción de Facebook: complétala en el editor de la publicación");
         } else {
           results.facebook = { success: true };
           console.log(`[Scheduler] Facebook skipped (not included by user)`);

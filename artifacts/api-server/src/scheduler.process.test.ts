@@ -176,6 +176,46 @@ beforeEach(() => {
   vi.resetModules();
 });
 
+describe("processScheduledVideos: ninguna red se salta en silencio", () => {
+  it("sin archivo, YouTube/TikTok/Instagram quedan 'skipped' CON el motivo", async () => {
+    // Antes estas tres se resolvían con { success: true } y un console.log: la
+    // publicación quedaba en verde y el usuario no tenía forma de saber que
+    // nunca se intentaron. Un salto invisible es indistinguible de un éxito.
+    state.dueVideos = [videoRow({ id: 40, videoFileDriveId: null, linkedinDescription: "hola" })];
+    linkedinPostMock.mockResolvedValueOnce({ success: true, postId: "urn:1" });
+    const { processScheduledVideos } = await import("./scheduler");
+    await processScheduledVideos();
+
+    for (const campo of ["youtubeStatus", "tiktokStatus", "instagramStatus"] as const) {
+      const u = state.updates.find((x) => x[campo] === "skipped");
+      expect(u, `${campo} no quedó marcado como omitido`).toBeTruthy();
+    }
+    const conMotivo = state.updates.find((u) => u.instagramStatus === "skipped");
+    expect(String(conMotivo!.instagramError)).toContain("imagen ni video");
+  });
+
+  it("una red pedida sin su descripción dice qué falta", async () => {
+    state.dueVideos = [videoRow({ id: 41, videoFileDriveId: "drive-id", xStatus: "pending" })];
+    driveGetMock.mockResolvedValue({ data: new ArrayBuffer(8) });
+    const { processScheduledVideos } = await import("./scheduler");
+    await processScheduledVideos();
+    const u = state.updates.find((x) => x.xStatus === "skipped");
+    expect(u).toBeTruthy();
+    expect(String(u!.xError)).toContain("descripción de X");
+  });
+
+  it("NO publica en una red que el usuario no eligió aunque haya descripción general", async () => {
+    // El esquema deja los estados por red en "pending" por defecto, así que
+    // ese estado no prueba intención: el texto propio de la red sí. Caer al
+    // `description` general publicaría en cuentas reales que nadie eligió.
+    state.dueVideos = [videoRow({ id: 42, description: "texto general", xDescription: null })];
+    const { processScheduledVideos } = await import("./scheduler");
+    await processScheduledVideos();
+    expect(xPostMock).not.toHaveBeenCalled();
+    expect(linkedinPostMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("processScheduledVideos: state transitions", () => {
   it("marks status='published' when LinkedIn-only video succeeds", async () => {
     state.dueVideos = [videoRow({ id: 11, linkedinDescription: "hola" })];
