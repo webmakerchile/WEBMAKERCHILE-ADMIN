@@ -12,8 +12,31 @@ import {
   construirOverlayTitular,
   resolverEstiloTitular,
   obtenerEstiloTitular,
+  medirTexto,
   type ZonaTexto,
 } from "../../lib/title-style";
+import { FONT_METRICS } from "../../lib/font-metrics.generated";
+import {
+  HIST_WIDTH,
+  HIST_HEIGHT,
+  resolverFormatoHistoria,
+  obtenerFormatoHistoria,
+  obtenerLayoutHistoria,
+  layoutHistoriaPorDefecto,
+  arcoParaFrames,
+  listarFormatosHistoria,
+  type LayoutHistoria,
+  type FormatoHistoria,
+  type PasoNarrativo,
+} from "../../lib/story-formats";
+import {
+  buildGuionSystemPrompt,
+  buildGuionUserPrompt,
+  parseGuion,
+  revisarGuion,
+  type FrameGuion,
+  type GuionHistoria,
+} from "../../lib/story-script";
 import { readFile } from "fs/promises";
 import path from "path";
 
@@ -853,55 +876,34 @@ function getEstructuraSerie(n: number): RolFrame[] {
   }
 }
 
-// Pose y elementos visuales del zorro según el rol del frame en la serie
-const POSE_POR_ROL: Record<RolFrame, { pose: string; visualHint: string }> = {
-  hook: {
-    pose: "expresión de pregunta/curiosidad: cabeza ligeramente inclinada, una pata en el mentón o señalando hacia el espectador, cejas levantadas. Cara amigable que invita a seguir mirando.",
-    visualHint: "ícono pequeño relacionado al tema acompañado de un símbolo sutil de interrogación visual (no texto)",
-  },
-  contexto: {
-    pose: "atento y didáctico: una pata abierta señalando un dato visual, expresión seria pero cercana, postura erguida.",
-    visualHint: "ícono de dato/estadística (gráfico de barras simple, lupa, ícono porcentual) — sin texto",
-  },
-  problema: {
-    pose: "preocupado/frustrado: cejas fruncidas hacia abajo, una pata en la cabeza o cruzada al pecho, cuerpo levemente encorvado. Muestra el dolor del problema sin caricaturizar.",
-    visualHint: "objeto del tema con una X roja o un pequeño símbolo de alerta naranja",
-  },
-  desarrollo: {
-    pose: "explicando con calma: una pata abierta hacia el espectador como en una mini-clase, expresión confiada y educativa.",
-    visualHint: "objeto del tema en estado neutro (lupa, libro, engranaje, monitor)",
-  },
-  solucion: {
-    pose: "confiado y resolutivo: bombilla de idea brillante sobre la cabeza o gesto de '¡ya está!', sonrisa satisfecha, postura erguida con energía positiva.",
-    visualHint: "objeto solución con un check verde o un brillo dorado/naranja positivo",
-  },
-  cta: {
-    pose: "saludando con la pata, sonriente y muy invitante. Postura abierta y receptiva, mostrando un teléfono o burbuja de WhatsApp verde como invitando a contactar.",
-    visualHint: "ícono verde de WhatsApp y/o ícono de calendario representando 'agendar reunión'",
-  },
-  unica: {
-    pose: "definida por el sistema según el concepto",
-    visualHint: "definido por el sistema según el concepto",
-  },
-};
-
 function buildHistoriaPrompt(
   tipoHistoria: string,
   concepto: string,
-  poseOverride?: string,
-  frame?: FrameContext,
+  opts: {
+    /** Dirección visual de ESTE frame, escrita por el guionista. */
+    promptVisual?: string;
+    /** Layout del frame: define qué franjas deben quedar despejadas. */
+    layout: LayoutHistoria;
+    frame?: FrameContext;
+    /** Ajuste libre del usuario (reintentos). */
+    poseOverride?: string;
+    /** Hilo conductor de la serie, para que la escena no se salga del relato. */
+    hilo?: string;
+  },
 ): string {
   const { categoria, pose: poseElegida } = elegirCategoriaPose(concepto, tipoHistoria);
-  let pose = poseOverride || poseElegida;
-  let visualHintSerie = "";
-  let frameRoleHeader = "";
+  // La dirección del guion manda; la pose del banco es solo respaldo.
+  const direccionEscena = opts.poseOverride || opts.promptVisual || poseElegida;
+  const { layout } = opts;
+  const escena = layout.zonaEscena;
 
-  if (frame && frame.rol !== "unica") {
-    const conf = POSE_POR_ROL[frame.rol];
-    pose = poseOverride || conf.pose;
-    visualHintSerie = `\nPISTA VISUAL adicional para este rol: ${conf.visualHint}.`;
-    frameRoleHeader = `\nEste frame forma parte de una SERIE de ${frame.total} stories conectadas. Frame actual: ${frame.numero} de ${frame.total} con rol "${frame.rol}". Mantén EXACTAMENTE el mismo gradiente de fondo, mismo glow naranja y mismas partículas que un story estándar — los frames de la serie deben verse como un set cohesivo. Solo cambia la POSE/EXPRESIÓN del zorro y los OBJETOS DE APOYO según el rol indicado.\n`;
-  }
+  const frameRoleHeader = opts.frame && opts.frame.total > 1
+    ? `\nEste frame es el ${opts.frame.numero} de ${opts.frame.total} de una SERIE conectada${opts.hilo ? ` que cuenta: "${opts.hilo}"` : ""}. Los frames deben verse como un SET: mismo gradiente de fondo, mismo halo naranja y mismas partículas. Lo único que cambia entre frames es la POSE/EXPRESIÓN del zorro y los OBJETOS de apoyo.\n`
+    : "";
+
+  const zonasTexto = layout.zonasDespejadas
+    .map(z => `  · de y=${z.desde} a y=${z.hasta}`)
+    .join("\n");
 
   return `Genera una ilustración VERTICAL en formato 9:16 (1080x1920 píxeles) para una HISTORIA de red social de WebMakerLatam (agencia digital para emprendedores y pymes en LATAM).
 ${frameRoleHeader}
@@ -913,40 +915,32 @@ ${FOX_BRAND_SPEC}
 REGLAS ADICIONALES PARA ESTA HISTORIA:
 - Cuerpo completo SIEMPRE visible (cabeza, torso, brazos, piernas, cola). Nunca cortado por los bordes ni recortado.
 - El zorro es el PROTAGONISTA ABSOLUTO. Ocupa el centro de la zona de imagen.
-- POSE Y EXPRESIÓN específica (categoría narrativa: "${categoria}"): ${pose}
-- POSICIÓN VERTICAL EXACTA Y NO NEGOCIABLE: la cabeza del zorro debe empezar DESPUÉS del píxel y=550, y sus PIES deben terminar ANTES del píxel y=1300. Es decir, todo el zorro vive ESTRICTAMENTE entre y=550 y y=1300 (750 px de altura). NUNCA invadas la franja inferior (y=1300-1920) — esa zona está reservada para sub-copy, botón CTA y hashtags. Si tu zorro queda demasiado abajo o demasiado grande, RECÓRTALO. Mejor un zorro mediano bien centrado verticalmente que un zorro grande que invada las zonas reservadas.
-- RESPIRACIÓN: el zorro debe tener al menos 100 px de aire vacío por TODOS sus lados (arriba, abajo, izquierda, derecha). Nada lo toca.
+- ESCENA DE ESTE FRAME (categoría narrativa "${categoria}"): ${direccionEscena}
+- POSICIÓN VERTICAL EXACTA Y NO NEGOCIABLE: la cabeza del zorro debe empezar DESPUÉS del píxel y=${escena.desde} y sus PIES deben terminar ANTES del píxel y=${escena.hasta}. Todo el zorro vive ESTRICTAMENTE entre y=${escena.desde} y y=${escena.hasta} (${escena.hasta - escena.desde} px de altura). Si tu zorro queda demasiado grande, RECÓRTALO: mejor un zorro mediano bien centrado que uno grande que invada las zonas reservadas.
+- RESPIRACIÓN: el zorro debe tener al menos 100 px de aire vacío por TODOS sus lados. Nada lo toca.
 
 CONTENIDO Y CONTEXTO:
 TIPO de historia: "${tipoHistoria}"
-CONCEPTO/TEMA del día: "${concepto}"
+CONCEPTO/TEMA: "${concepto}"
 
 OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
-- Extrae 1-2 PALABRAS CLAVE VISUALES del tema y úsalas como acompañantes pequeños. Ejemplos:
-  * "chatbot" / "responder" / "WhatsApp" → burbuja de chat verde
-  * "web" / "sitio" / "landing" → laptop/monitor con web abstracta (sin texto)
-  * "ventas" / "vender más" / "ingresos" → carrito O gráfico ascendente (uno solo)
-  * "rápido" / "carga" / "velocidad" → cohete O velocímetro
-  * "automatización" / "IA" / "ahorro de tiempo" → engranajes O reloj
-  * "clientes" / "atención" → 2-3 siluetas pequeñas O corazones
-  * "SEO" / "Google" / "encontrar" → lupa O podio
-  * "móvil" / "app" → smartphone con interfaz abstracta
-- MÁXIMO ABSOLUTO: 2 objetos de apoyo (no 3, no más). En historias el zorro es el rey.${visualHintSerie}
-- POSICIÓN DE LOS OBJETOS: a los LADOS del zorro (izquierda y/o derecha), a su altura, NUNCA detrás de él, NUNCA encima ni debajo invadiendo otra zona.
+- MÁXIMO ABSOLUTO: 2 objetos de apoyo (no 3, no más). En historias el zorro es el rey.
+- Los objetos salen de la escena descrita arriba: son props concretos del relato, no iconos decorativos sueltos.
+- POSICIÓN DE LOS OBJETOS: a los LADOS del zorro (izquierda y/o derecha), a su altura, NUNCA detrás de él, NUNCA invadiendo las zonas reservadas.
 - Los objetos PUEDEN ser señalados/sostenidos por el zorro, pero su silueta debe verse completa y separada del zorro.
 - PROHIBIDO: amontonar iconos, llenar el fondo de elementos, hacer un collage. Si dudas, elimina objetos.
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
-- 28% SUPERIOR (0px a 550px) = fondo limpio SIN elementos sólidos (reservado para título)
-- 32% INFERIOR (1300px a 1920px) = fondo limpio SIN elementos sólidos (reservado para sub-copy + CTA + hashtags)
-- Toda la acción visual (zorro + 1-2 objetos pequeños) va estrictamente entre los píxeles 550 y 1300 (zona central de 750 px)
-- NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo
+${zonasTexto}
+- Esas franjas deben quedar como fondo limpio, SIN elementos sólidos: ahí se monta el texto después.
+- Toda la acción visual (zorro + 1-2 objetos) va ESTRICTAMENTE entre y=${escena.desde} y y=${escena.hasta}.
+- NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo.
 
 VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
 1. ¿El zorro está 100% IDÉNTICO a la referencia (ojos pequeños, nariz negra, pelaje plano #E86A30, sin estilo Disney/Pixar)?
 2. ¿Hay un máximo de 2 objetos de apoyo y están a los lados, NUNCA detrás del zorro?
-3. ¿La franja superior 0-550 está LIMPIA sin objetos, y la inferior 1300-1920 también?
-4. ¿El zorro tiene 100+ px de aire alrededor?
+3. ¿Las franjas reservadas quedaron LIMPIAS?
+4. ¿El zorro tiene 100+ px de aire alrededor y vive entre y=${escena.desde} y y=${escena.hasta}?
 Si respondes NO a cualquiera, REGENERA mentalmente antes de devolver la imagen.
 
 FONDO PREMIUM (consistencia de marca):
@@ -968,132 +962,89 @@ PALETA: fondo slate oscuro + halo naranja radial. Zorro naranja PLANO + verde s�
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte.`;
 }
 
-const SYSTEM_PROMPT_HISTORIA_TEXTO = `Eres el Community Manager de WebMakerLatam, una AGENCIA DIGITAL que ayuda a EMPRENDEDORES, PYMES y EMPRESAS de Latinoamérica a crecer con tecnología. Tu mascota es Webi (zorro naranja con lentes).
+/* ==================== Guion completo de la serie ========================= */
 
-${CATALOGO_SERVICIOS}
-
-${REGLA_ESPANOL_NEUTRO}
-
-AUDIENCIA: dueños de negocio que NO son técnicos. Háblales en BENEFICIOS DE NEGOCIO (vender más, ahorrar tiempo, profesionalizar marca, atender 24/7), nunca jerga técnica.
-
-EJEMPLOS DE BUENOS COPIES:
-✅ "Tu web vende aunque tú duermas"
-✅ "Deja de perder clientes por responder tarde"
-✅ "De idea a negocio digital en 30 días"
-✅ "3 señales de que tu negocio necesita un chatbot"
-
-EJEMPLOS MALOS (PROHIBIDOS salvo audiencia dev explícita):
-❌ "git bisect: encuentra bugs en segundos"
-❌ "Mejores hooks de React"
-❌ "Tutorial de async/await"
-
-Genera el TEXTO que va a acompañar una HISTORIA (story 9:16).
-
-REGLAS ESTRICTAS DE LONGITUD (OBLIGATORIAS - NO NEGOCIABLES):
-- copy_principal: MÁXIMO 40 CARACTERES (incluyendo espacios). Debe caber en 2 líneas de ~20 caracteres. Hook punzante orientado a beneficio.
-- sub_copy: MÁXIMO 80 CARACTERES en 2 líneas. Contexto breve.
-- cta: MÁXIMO 25 CARACTERES, accionable, EMPIEZA con verbo (Agenda, Escríbenos, Descubre, Guarda, etc.)
-- hashtags: MÁXIMO 5 hashtags, deben caber en 2 líneas. Al menos 1 de marca (#WebMakerLatam, #WebMaker o #ComunidadWebMaker) y 2-3 de industria (#Emprendedores, #PymesLatam, #NegociosOnline, #Ecommerce, #Chatbot, #IA, #PaginasWeb, etc.)
-
-Si cualquier texto excede estos límites, REESCRÍBELO MÁS CORTO antes de responder. PREFIERE IMPACTO sobre información.
-
-EJEMPLOS DE COPY_PRINCIPAL QUE FUNCIONAN (≤40 chars):
-✅ "Tu web vende mientras duermes" (29)
-✅ "¿Tu web se ve mal en celular?" (29)
-✅ "Sé encontrado. O sé olvidado." (30)
-✅ "Clientes 24/7 con un chatbot" (28)
-✅ "Deja de perder clientes hoy" (27)
-
-EJEMPLOS QUE NO FUNCIONAN (muy largos - PROHIBIDOS):
-❌ "Tus clientes te buscan en Google y encuentran a tu competencia" (62)
-❌ "Por qué tu negocio pierde clientes cada día sin una web profesional" (66)
-
-Tono: cercano, latino, accesible, sin cringe. Habla de "tú". CERO emojis (interfieren con el render).
-
-FORMATO DE SALIDA: SOLO un objeto JSON válido, sin markdown, sin texto adicional. Estructura:
-{ "copy_principal": "...", "sub_copy": "...", "cta": "...", "hashtags": "#... #..." }`;
-
-async function callTextoHistoria(
-  tipoHistoria: string, concepto: string, extraInstruction?: string, toneSuffix = "",
-): Promise<{ copy_principal: string; sub_copy: string; cta: string; hashtags: string }> {
-  const userMessage = `TIPO de historia: ${tipoHistoria}
-TEMA/CONCEPTO: ${concepto}
-
-Genera el JSON con copy_principal, sub_copy, cta y hashtags. Solo el JSON.${extraInstruction ? "\n\n" + extraInstruction : ""}`;
-  const response = await openaiShim.messages.create({
-    model: OPENAI_TEXT_MODEL,
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT_HISTORIA_TEXTO + toneSuffix,
-    messages: [{ role: "user", content: userMessage }],
-  });
-  const block = response.content[0];
-  const raw = block && block.type === "text" ? block.text.trim() : "";
-  const cleaned = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-  const parsed = JSON.parse(cleaned);
-  return {
-    copy_principal: stripEmojis(String(parsed.copy_principal || "")),
-    sub_copy: stripEmojis(String(parsed.sub_copy || "")),
-    cta: stripEmojis(String(parsed.cta || "")),
-    hashtags: stripEmojis(String(parsed.hashtags || "")),
+/**
+ * Genera el GUION de toda la serie en UNA sola llamada: mismo protagonista,
+ * mismas cifras, progresión real entre frames. Si el guion vuelve con
+ * problemas de calidad (titulares repetidos, cifras vacías), se pide una
+ * segunda pasada indicándole exactamente qué corregir.
+ */
+async function generarGuionHistoria(args: {
+  tipoHistoria: string;
+  concepto: string;
+  formato: FormatoHistoria;
+  arco: PasoNarrativo[];
+  toneSuffix?: string;
+  ajuste?: string | null;
+}): Promise<GuionHistoria> {
+  const opts = {
+    tipoHistoria: args.tipoHistoria,
+    concepto: args.concepto,
+    formato: args.formato,
+    arco: args.arco,
+    ajuste: args.ajuste ?? null,
+    catalogoServicios: CATALOGO_SERVICIOS,
+    reglaIdioma: REGLA_ESPANOL_NEUTRO,
   };
-}
+  const system = buildGuionSystemPrompt(opts) + (args.toneSuffix || "");
+  const user = buildGuionUserPrompt(opts);
 
-// Limites estrictos del nuevo layout
-const HIST_LIMITS = { copy_principal: 40, sub_copy: 80, cta: 25 };
+  const pedir = async (extra?: string): Promise<GuionHistoria | null> => {
+    const resp = await openaiShim.messages.create({
+      model: OPENAI_TEXT_MODEL,
+      max_tokens: 2600,
+      system,
+      messages: [{ role: "user", content: extra ? `${user}\n\n${extra}` : user }],
+    });
+    const block = resp.content[0];
+    const raw = block && block.type === "text" ? block.text : "";
+    return parseGuion(raw, args.arco, args.formato.id);
+  };
 
-function excedeLimites(t: { copy_principal: string; sub_copy: string; cta: string }): string[] {
-  const issues: string[] = [];
-  if (t.copy_principal.length > HIST_LIMITS.copy_principal)
-    issues.push(`copy_principal tiene ${t.copy_principal.length} chars, máximo ${HIST_LIMITS.copy_principal}`);
-  if (t.sub_copy.length > HIST_LIMITS.sub_copy)
-    issues.push(`sub_copy tiene ${t.sub_copy.length} chars, máximo ${HIST_LIMITS.sub_copy}`);
-  if (t.cta.length > HIST_LIMITS.cta)
-    issues.push(`cta tiene ${t.cta.length} chars, máximo ${HIST_LIMITS.cta}`);
-  return issues;
-}
-
-// Refuerzo opcional para CTA de conversión (modo única o último frame de serie)
-const CTA_CONVERSION_INSTRUCTION = `Este es un story DE CIERRE: el usuario NO verá más después de este. El campo "cta" DEBE ser una invitación clara a contactar a WebMakerLatam — escríbenos al WhatsApp +56 9 5365 7460, agenda una reunión, o cotiza tu proyecto. Tono de AGENCIA, no de influencer. Ejemplos válidos (≤25 chars): "Agenda hoy", "Hablemos por WhatsApp", "Cotiza gratis", "Escríbenos hoy", "Agenda tu diagnóstico". PROHIBIDO: "Sígueme", "Dale like", "Comparte", "Comenta".`;
-
-// Refuerzo para frames intermedios (no son cierre, microCTA tipo "sigue viendo")
-const CTA_INTERMEDIO_INSTRUCTION = `Este story NO es el último de la serie — viene otro después. El campo "cta" debe ser un microCTA que invite a CONTINUAR viendo. Ejemplos válidos (≤25 chars): "Sigue viendo", "Mira esto", "Toca para seguir", "Continúa". Hashtags pueden quedar vacíos en este frame ya que solo el último frame los necesita.`;
-
-async function generarTextoHistoria(
-  tipoHistoria: string,
-  concepto: string,
-  options?: { rol?: RolFrame; numero?: number; total?: number; toneSuffix?: string },
-): Promise<{
-  copy_principal: string; sub_copy: string; cta: string; hashtags: string;
-}> {
-  // Si el frame pertenece a una serie, contextualizamos el copy según rol
-  let extraSerie = "";
-  let conceptoFinal = concepto;
-  if (options && options.total && options.total > 1) {
-    const esUltimo = options.numero === options.total;
-    const esPrimero = options.numero === 1;
-    extraSerie = `\n\nESTE COPY ES PARA UN FRAME DE UNA SERIE de ${options.total} stories conectadas.\nFrame actual: ${options.numero}/${options.total} con rol "${options.rol}".\nReglas adicionales:\n- Cada frame debe poder leerse SOLO (la gente entra a stories en cualquier punto).\n- copy_principal: titular específico para el rol "${options.rol}" (no repetir entre frames).\n- sub_copy: contexto breve consistente con la narrativa del rol.\n- ${esUltimo ? CTA_CONVERSION_INSTRUCTION : CTA_INTERMEDIO_INSTRUCTION}\n- ${esPrimero || esUltimo ? "Hashtags requeridos en este frame (es portada o cierre)." : "Hashtags pueden quedar vacíos."}`;
-    conceptoFinal = `${concepto} (rol del frame: ${options.rol})`;
-  }
-
-  const toneSuffix = options?.toneSuffix || "";
-  let texto = await callTextoHistoria(tipoHistoria, conceptoFinal, extraSerie || undefined, toneSuffix);
-  const issues = excedeLimites(texto);
-  if (issues.length > 0) {
-    console.log("[Historias] copy excede límites, pidiendo versión más corta:", issues);
-    try {
-      const extraRetry = `${extraSerie}\n\nIMPORTANTE: tu intento anterior excedió los límites: ${issues.join("; ")}. REESCRIBE TODO el JSON con versiones MÁS CORTAS y PUNZANTES que sí respeten los máximos. Prefiere impacto sobre información. MANTÉN las reglas de rol/CTA indicadas arriba.`;
-      texto = await callTextoHistoria(tipoHistoria, conceptoFinal, extraRetry, toneSuffix);
-    } catch (e) {
-      console.warn("[Historias] retry de copy falló, uso truncamiento duro:", e);
+  let guion = await pedir();
+  if (guion) {
+    const issues = revisarGuion(guion, args.arco);
+    if (issues.length > 0) {
+      console.log(`[Historias] guion con observaciones, segunda pasada: ${issues.join("; ")}`);
+      try {
+        const mejor = await pedir(
+          `Tu intento anterior tuvo estos problemas: ${issues.join("; ")}. Reescribe el JSON COMPLETO corrigiéndolos, respetando el arco, los límites de longitud y el hilo conductor.`,
+        );
+        if (mejor && revisarGuion(mejor, args.arco).length < issues.length) guion = mejor;
+      } catch (e) {
+        console.warn(`[Historias] segunda pasada del guion falló: ${(e as Error).message}`);
+      }
     }
   }
-  return {
-    copy_principal: texto.copy_principal.slice(0, HIST_LIMITS.copy_principal),
-    sub_copy: texto.sub_copy.slice(0, HIST_LIMITS.sub_copy),
-    cta: texto.cta.slice(0, HIST_LIMITS.cta),
-    hashtags: texto.hashtags,
-  };
+
+  if (!guion) {
+    // Fallback mínimo: la serie sale con el tema como titular en vez de romper.
+    console.warn("[Historias] el modelo no devolvió un guion parseable; uso fallback");
+    guion = {
+      hilo: args.concepto,
+      protagonista: "",
+      formatoId: args.formato.id,
+      frames: args.arco.map((paso, i) => ({
+        numero: i + 1,
+        paso: paso.paso,
+        layoutId: paso.layoutId,
+        copy_principal: args.concepto.slice(0, 44),
+        sub_copy: "",
+        dato: "",
+        dato_label: "",
+        cta: i === args.arco.length - 1 ? "Cuéntanos tu caso" : "",
+        hashtags: i === args.arco.length - 1 ? "#WebMakerLatam #PymesLatam #NegociosOnline" : "",
+        prompt_visual: "",
+      })),
+    };
+  }
+  console.log(`[Historias] Guion "${args.formato.id}" (${args.arco.length} frames) · hilo: ${guion.hilo.slice(0, 80)}`);
+  return guion;
 }
+
+// El texto de las historias ya NO se genera frame por frame: lo escribe el
+// guion completo (lib/story-script). Aquí solo quedan los helpers de imagen.
 
 // Detector automático: dada una idea, sugiere "unica" o "serie" con N frames
 async function detectarFormatoHistoria(concepto: string): Promise<{
@@ -1146,28 +1097,39 @@ DEVUELVE SOLO un JSON válido sin markdown:
 async function generarFrameHistoria(args: {
   tipoHistoria: string;
   concepto: string;
+  /** Guion de ESTE frame (texto + dirección visual). */
+  frameGuion: FrameGuion;
+  layout: LayoutHistoria;
+  hilo?: string;
   poseOverride?: string;
   promptOverride?: string;
   textoEnImagen: boolean;
   referenceBase64: string | null;
-  rol: RolFrame;
   numero: number;
   total: number;
-  textoPreservado?: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
-  toneSuffix?: string;
   estiloTitular?: string;
 }): Promise<{
   numero_frame: number;
   total_frames: number;
-  rol: RolFrame;
+  rol: string;
+  layout: string;
   imagen: string; // data url
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
+  guion: FrameGuion;
 }> {
   const frameCtx: FrameContext | undefined = args.total > 1
-    ? { numero: args.numero, total: args.total, rol: args.rol }
+    ? { numero: args.numero, total: args.total, rol: (args.frameGuion.paso as RolFrame) }
     : undefined;
-  const basePrompt = buildHistoriaPrompt(args.tipoHistoria, args.concepto, args.poseOverride, frameCtx);
-  const finalPrompt = args.promptOverride ? `${basePrompt}\n\nAJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${args.promptOverride}` : basePrompt;
+  const basePrompt = buildHistoriaPrompt(args.tipoHistoria, args.concepto, {
+    promptVisual: args.frameGuion.prompt_visual,
+    layout: args.layout,
+    frame: frameCtx,
+    poseOverride: args.poseOverride,
+    hilo: args.hilo,
+  });
+  const finalPrompt = args.promptOverride
+    ? `${basePrompt}\n\nAJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${args.promptOverride}`
+    : basePrompt;
   const contents = args.referenceBase64
     ? [{ role: "user" as const, parts: [
         { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
@@ -1190,7 +1152,7 @@ async function generarFrameHistoria(args: {
       });
       const finalImg = extractFinalImage(resp);
       if (!finalImg) throw new Error("Gemini no devolvió imagen final");
-      // Recorte SIEMPRE al 9:16 exacto prometido (1080x1920), venga o no texto en imagen
+      // Recorte SIEMPRE al 9:16 exacto prometido (1080x1920)
       imgBase64 = await ajustarAspectoExacto(finalImg.data, "9:16");
       mime = "image/png";
       break;
@@ -1204,16 +1166,13 @@ async function generarFrameHistoria(args: {
     }
   }
 
-  const texto = args.textoPreservado
-    ? args.textoPreservado
-    : await generarTextoHistoria(args.tipoHistoria, args.concepto, {
-        rol: args.rol, numero: args.numero, total: args.total, toneSuffix: args.toneSuffix,
-      });
-
   let outBase64 = imgBase64;
   if (args.textoEnImagen) {
     try {
-      outBase64 = await renderTextoEnHistoria(imgBase64, texto, args.total > 1 ? { numero: args.numero, total: args.total } : undefined, args.estiloTitular);
+      outBase64 = await renderTextoEnHistoria(imgBase64, args.frameGuion, args.layout, {
+        frameInfo: args.total > 1 ? { numero: args.numero, total: args.total } : undefined,
+        estiloTitularId: args.estiloTitular,
+      });
     } catch (e) {
       console.error("[Historia frame] render texto fallo:", e);
     }
@@ -1222,69 +1181,62 @@ async function generarFrameHistoria(args: {
   return {
     numero_frame: args.numero,
     total_frames: args.total,
-    rol: args.rol,
+    rol: args.frameGuion.paso,
+    layout: args.layout.id,
     imagen: imagenDataUrl,
-    texto,
+    texto: {
+      copy_principal: args.frameGuion.copy_principal,
+      sub_copy: args.frameGuion.sub_copy,
+      cta: args.frameGuion.cta,
+      hashtags: args.frameGuion.hashtags,
+    },
+    guion: args.frameGuion,
   };
 }
 
-// Render texto sobre historia 9:16 con LAYOUT POR ZONAS FIJAS (1080x1920):
-//   Z1 Título    : 0     - 420   (centro 210)
-//   Z2 Imagen    : 420   - 1280  (zorro vive aquí, sin overlay)
-//   Z3 Sub-copy  : 1280  - 1500  (centro 1390)
-//   Z4 Botón CTA : 1500  - 1720  (centro 1610)
-//   Z5 Hashtags  : 1720  - 1860  (centro 1790, padding 60 al borde inferior)
+// Render del texto sobre una historia 9:16 según el LAYOUT del frame.
+//
+// El layout (story-formats) define qué bloques se dibujan y dónde: hay frames
+// que solo llevan titular, otros que llevan una cifra gigante y solo el frame
+// de cierre lleva botón de invitación y hashtags. Antes se pintaban los cuatro
+// bloques siempre, en todos los frames — eso era lo que se sentía a plantilla.
 async function renderTextoEnHistoria(
   imagenBase64: string,
-  texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string },
-  frameInfo?: { numero: number; total: number },
-  estiloTitularId?: string,
+  frame: FrameGuion,
+  layout: LayoutHistoria,
+  opts?: { frameInfo?: { numero: number; total: number }; estiloTitularId?: string },
 ): Promise<string> {
-  // Forzar 9:16 (1080x1920) — Gemini suele devolver tamaños menores (ej. 768x1376)
-  // Sin este resize, las zonas hardcodeadas (Z3_TOP=1280, etc.) quedan fuera del canvas.
+  // Forzar 9:16 (1080x1920): el modelo suele devolver tamaños menores y las
+  // zonas del layout están en píxeles absolutos de ese lienzo.
   const imgBuffer = await sharp(Buffer.from(imagenBase64, "base64"))
-    .resize(1080, 1920, { fit: "cover", position: "center" })
+    .resize(HIST_WIDTH, HIST_HEIGHT, { fit: "cover", position: "center" })
     .png().toBuffer();
-  const meta = await sharp(imgBuffer).metadata();
-  const w = meta.width || 1080;
-  const h = meta.height || 1920;
+  const w = HIST_WIDTH;
+  const h = HIST_HEIGHT;
   const sidePadding = 80;
   const innerWidth = w - sidePadding * 2;
 
-  const principal = stripEmojis(texto.copy_principal);
-  const sub = stripEmojis(texto.sub_copy);
-  const cta = stripEmojis(texto.cta);
-  const hashtags = stripEmojis(texto.hashtags);
+  const titular = stripEmojis(frame.copy_principal);
+  const sub = layout.bloques.includes("subcopy") && layout.subCopyCenterY !== null
+    ? stripEmojis(frame.sub_copy)
+    : "";
+  const cta = layout.bloques.includes("cta") ? stripEmojis(frame.cta) : "";
+  const hashtags = layout.bloques.includes("hashtags") ? stripEmojis(frame.hashtags) : "";
+  const dato = layout.bloques.includes("dato_gigante") ? stripEmojis(frame.dato) : "";
+  const datoLabel = layout.bloques.includes("dato_gigante") ? stripEmojis(frame.dato_label) : "";
 
-  // LAYOUT DEFINITIVO 1080x1920 (zorro vive 550-1300, ~750 px de alto):
-  //   0-150     padding top
-  //   150-430   Z1 título (centro 290) — 280 px
-  //   430-550   transición con glow ambiental
-  //   550-1300  zorro
-  //   1300-1360 transición
-  //   1360-1540 Z3 sub-copy (centro 1450)
-  //   1540-1700 Z4 botón CTA (centro 1620)
-  //   1700-1840 Z5 hashtags (centro 1770)
-  //   1840-1920 padding bottom
-  const Z1_TOP = 150,     Z1_BOTTOM = 430;
-  const Z3_TOP = 1360,    Z3_BOTTOM = 1540;
-  const Z4_TOP = 1540,    Z4_BOTTOM = 1700;
-  const Z5_TOP = 1700,    Z5_BOTTOM = 1840;
+  const estiloId = opts?.estiloTitularId ?? resolverEstiloTitulo();
+  const estilo = obtenerEstiloTitular(estiloId) ?? obtenerEstiloTitular("impacto")!;
+  const acento = PALETA_COMMUNITY.colorAcento;
 
-  const z3Center = (Z3_TOP + Z3_BOTTOM) / 2;       // 1450
-  const z4Center = (Z4_TOP + Z4_BOTTOM) / 2;       // 1620
-  const z5Center = (Z5_TOP + Z5_BOTTOM) / 2;       // 1770
-
-  // Sub-copy: 44-52px Inter 600
   const subFit = sub ? fitTextBlock(sub, {
-    maxWidth: w - 200, // padding lateral 100
-    maxHeight: Z3_BOTTOM - Z3_TOP - 40,
+    maxWidth: w - 200,
+    maxHeight: 190,
     maxFontSize: 52,
-    minFontSize: 36,
+    minFontSize: 34,
     charWidthRatio: 0.5,
   }) : null;
 
-  // CTA: 44px Inter 700
   const ctaFit = cta ? fitTextBlock(cta, {
     maxWidth: innerWidth - 128,
     maxHeight: 80,
@@ -1293,8 +1245,6 @@ async function renderTextoEnHistoria(
     charWidthRatio: 0.55,
   }) : null;
 
-  // Hashtags: ancho con padding lateral generoso (no llegan al borde) +
-  // balanceo entre líneas (preferir "3+2" sobre "4+1"). Hasta 3 líneas si hace falta.
   const hashSidePadding = 140;
   const hashFit = hashtags ? fitHashtagsBlock(hashtags, {
     maxWidth: w - hashSidePadding * 2,
@@ -1305,13 +1255,13 @@ async function renderTextoEnHistoria(
     lineHeightRatio: 1.22,
   }) : null;
 
-  // CTA pill button con sombra
+  // Botón de invitación: solo existe si el frame trae CTA (o sea, el cierre).
   const ctaSvg = ctaFit ? (() => {
     const padX = 64, padY = 26;
     const btnWidth = Math.min(innerWidth, ctaFit.blockWidth + padX * 2);
     const btnHeight = Math.max(88, ctaFit.blockHeight + padY * 2);
     const btnX = (w - btnWidth) / 2;
-    const btnY = z4Center - btnHeight / 2;
+    const btnY = layout.ctaCenterY - btnHeight / 2;
     const baselineY = btnY + (btnHeight - ctaFit.blockHeight) / 2 + ctaFit.fontSize * 0.82;
     return `
       <rect x="${btnX.toFixed(1)}" y="${(btnY + 8).toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
@@ -1326,48 +1276,94 @@ async function renderTextoEnHistoria(
     `;
   })() : "";
 
-  // (Antes había un separador naranja entre el título y el sub-copy, pero
-  // se veía como una línea horizontal partiendo la imagen — eliminado.
-  // Las zonas se distinguen visualmente por los gradientes topfade/botfade
-  // y por la jerarquía tipográfica.)
-  const separatorSvg = "";
+  // Cifra protagonista: se dibuja con la display del titular, centrada por
+  // métricas reales (mismo motor que las portadas) y con su etiqueta debajo.
+  const datoSvg = dato && layout.zonaDato ? (() => {
+    const m = FONT_METRICS.anton;
+    const alto = layout.zonaDato.alto;
+    const fsNum = Math.min(alto * 0.78, (innerWidth * 0.9) / Math.max(0.4, medirTexto(dato, "anton")));
+    const anchoNum = medirTexto(dato, "anton") * fsNum;
+    const baseNum = layout.zonaDato.y + alto * 0.72;
+    const xNum = (w - anchoNum) / 2;
+    const attrs = `font-family="'${m.familia}'" font-weight="${m.peso}" font-size="${fsNum.toFixed(0)}"`;
+    const sombra = fsNum * 0.03;
+    const etiqueta = datoLabel ? (() => {
+      const fit = fitTextBlock(datoLabel, {
+        maxWidth: innerWidth - 60, maxHeight: 90, maxFontSize: 44, minFontSize: 28, charWidthRatio: 0.52,
+      });
+      return fit.lines.map((line, i) => `
+        <text x="${w / 2}" y="${(layout.zonaDato!.y + alto + 14 + i * fit.lineHeight + fit.fontSize * 0.8).toFixed(1)}"
+          text-anchor="middle" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="600"
+          font-size="${fit.fontSize}" fill="#f1f5f9" fill-opacity="0.92" filter="url(#textds)">${escapeXml(line)}</text>
+      `).join("");
+    })() : "";
+    return `
+      <text x="${(xNum + sombra).toFixed(1)}" y="${(baseNum + sombra).toFixed(1)}" ${attrs} fill="#0B1120" fill-opacity="0.8">${escapeXml(dato)}</text>
+      <text x="${xNum.toFixed(1)}" y="${baseNum.toFixed(1)}" ${attrs} fill="${acento}">${escapeXml(dato)}</text>
+      ${etiqueta}
+    `;
+  })() : "";
 
-  // Gradientes en las zonas reservadas para mejorar legibilidad sin parecer cajas
+  // Comillas decorativas para los layouts de cita.
+  const comillasSvg = layout.bloques.includes("comillas") ? (() => {
+    const q = FONT_METRICS.alfa_slab;
+    const fsQ = Math.round(w * 0.26);
+    return `<text x="${(layout.zonaTitular.x - fsQ * 0.05).toFixed(1)}" y="${(layout.zonaTitular.y + fsQ * 0.2).toFixed(1)}"
+      font-family="'${q.familia}'" font-weight="${q.peso}" font-size="${fsQ}" fill="${acento}" fill-opacity="0.32">&#8220;</text>`;
+  })() : "";
+
+  // Contador discreto de la serie (arriba a la derecha).
+  const info = opts?.frameInfo;
+  const contadorSvg = layout.bloques.includes("contador") && info && info.total > 1 ? `
+    <rect x="${(w - 160).toFixed(1)}" y="40" width="120" height="56" rx="28" fill="#0F172A" fill-opacity="0.55"/>
+    <text x="${(w - 100).toFixed(1)}" y="78" text-anchor="middle"
+      font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="700"
+      font-size="30" fill="#ffffff" fill-opacity="0.85">${info.numero}/${info.total}</text>
+  ` : "";
+
+  // Scrims: solo donde el layout pone texto, para no ensuciar la ilustración.
+  const despejadaSuperior = layout.zonasDespejadas.find(z => z.desde === 0);
+  const despejadaInferior = layout.zonasDespejadas.find(z => z.hasta >= HIST_HEIGHT);
+  const scrimTop = (layout.scrim === "superior" || layout.scrim === "ambos") && despejadaSuperior
+    ? `<rect x="0" y="0" width="${w}" height="${Math.round(despejadaSuperior.hasta + 60)}" fill="url(#topfade)"/>`
+    : "";
+  const scrimBottom = (layout.scrim === "inferior" || layout.scrim === "ambos") && despejadaInferior
+    ? `<rect x="0" y="${Math.round(despejadaInferior.desde - 100)}" width="${w}" height="${Math.round(h - despejadaInferior.desde + 100)}" fill="url(#botfade)"/>`
+    : "";
+
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
     ${SVG_DEFS}
     <filter id="ctashadow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur in="SourceGraphic" stdDeviation="14"/>
     </filter>
-    <rect x="0" y="0" width="${w}" height="${Z1_BOTTOM + 60}" fill="url(#topfade)"/>
-    <rect x="0" y="${Z3_TOP - 100}" width="${w}" height="${h - (Z3_TOP - 100)}" fill="url(#botfade)"/>
-    ${separatorSvg}
-    ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: z3Center, fontWeight: 600, color: "#f1f5f9",
+    ${scrimTop}
+    ${scrimBottom}
+    ${comillasSvg}
+    ${datoSvg}
+    ${subFit && layout.subCopyCenterY !== null ? renderTextBlockSvg(subFit, {
+      canvasWidth: w, centerY: layout.subCopyCenterY, fontWeight: 600, color: "#f1f5f9",
       bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
     } as any) : ""}
     ${ctaSvg}
     ${hashFit ? renderTextBlockSvg(hashFit, {
-      canvasWidth: w, centerY: z5Center, fontWeight: 500, color: "#fb923c",
+      canvasWidth: w, centerY: layout.hashtagsCenterY, fontWeight: 500, color: "#fb923c",
       bgOpacity: 0, filterId: "textds", letterSpacing: 0,
     } as any) : ""}
-    ${frameInfo && frameInfo.total > 1 ? `
-      <rect x="${(w - 160).toFixed(1)}" y="40" width="120" height="56" rx="28"
-        fill="#0F172A" fill-opacity="0.55"/>
-      <text x="${(w - 100).toFixed(1)}" y="78" text-anchor="middle"
-        font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="700"
-        font-size="30" fill="#ffffff" fill-opacity="0.85">${frameInfo.numero}/${frameInfo.total}</text>
-    ` : ""}
+    ${contadorSvg}
   </svg>`;
 
-  // TÍTULO con el motor de tipografía de impacto (Z1), como capa aparte.
+  // El TITULAR va en capa aparte, con el motor de tipografía de impacto.
   const capas: sharp.OverlayOptions[] = [{ input: Buffer.from(svg), top: 0, left: 0 }];
-  if (principal) {
-    const zonaTitulo: ZonaTexto = {
-      x: sidePadding, y: Z1_TOP, width: innerWidth, height: Z1_BOTTOM - Z1_TOP,
-      align: "center", vertical: "center", maxFontSize: 104, minFontSize: 50,
-    };
+  if (titular) {
     capas.push({
-      input: overlayTituloImpacto(principal, { width: w, height: h }, zonaTitulo, estiloTitularId ?? resolverEstiloTitulo()),
+      input: construirOverlayTitular({
+        canvas: { width: w, height: h },
+        zona: layout.zonaTitular,
+        scrim: "ninguno", // los gradientes de arriba ya hacen de scrim
+        titulo: titular,
+        estilo,
+        paleta: PALETA_COMMUNITY,
+      }),
       top: 0, left: 0,
     });
   }
@@ -1384,8 +1380,10 @@ const GenerarHistoriaBody = z.object({
   texto_en_imagen: z.boolean().optional().default(false),
   formato: z.enum(["unica", "serie"]).optional().default("unica"),
   cantidad_frames: z.number().int().min(2).max(5).optional(),
-  /** Estilo tipográfico del título (id de ESTILOS_TITULAR); vacío = rotación. */
+  /** Estilo tipográfico del titular (id de ESTILOS_TITULAR); vacío = rotación. */
   estilo_titular: z.string().max(40).optional(),
+  /** Formato narrativo (id de FORMATOS_HISTORIA); vacío = rotación automática. */
+  formato_narrativo: z.string().max(40).optional(),
 });
 
 router.post("/community/historias/generar", async (req, res) => {
@@ -1393,27 +1391,38 @@ router.post("/community/historias/generar", async (req, res) => {
     const body = GenerarHistoriaBody.parse(req.body);
     const referenceBase64 = await getFoxRefBase64();
     const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
-    // Un estilo tipográfico por historia: todos los frames de una serie comparten diseño.
+    // Un estilo tipográfico por historia: todos los frames comparten diseño.
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
 
-    // Determinar estructura de frames
-    const estructura: RolFrame[] = body.formato === "serie"
-      ? getEstructuraSerie(body.cantidad_frames || 3)
-      : ["unica"];
-    const total = estructura.length;
+    // Formato narrativo + arco: definen QUÉ cuenta cada frame.
+    const totalPedido = body.formato === "serie" ? (body.cantidad_frames || 3) : 1;
+    const formatoNarrativo = resolverFormatoHistoria(body.formato_narrativo, body.tipo_historia);
+    const arco = arcoParaFrames(formatoNarrativo, totalPedido);
+    const total = arco.length;
 
-    // Generar todos los frames en paralelo
+    // UNA sola llamada escribe el guion completo: de aquí sale la coherencia.
+    const guion = await generarGuionHistoria({
+      tipoHistoria: body.tipo_historia,
+      concepto: body.concepto,
+      formato: formatoNarrativo,
+      arco,
+      toneSuffix,
+      ajuste: body.pose_override || null,
+    });
+
+    // Las imágenes sí se generan en paralelo: ya comparten guion e hilo.
     const settled = await Promise.allSettled(
-      estructura.map((rol, i) => generarFrameHistoria({
+      guion.frames.map((frameGuion, i) => generarFrameHistoria({
         tipoHistoria: body.tipo_historia,
         concepto: body.concepto,
+        frameGuion,
+        layout: obtenerLayoutHistoria(frameGuion.layoutId) ?? layoutHistoriaPorDefecto(),
+        hilo: guion.hilo,
         poseOverride: body.pose_override,
         textoEnImagen: body.texto_en_imagen,
         referenceBase64,
-        rol,
         numero: i + 1,
         total,
-        toneSuffix,
         estiloTitular,
       })),
     );
@@ -1421,9 +1430,12 @@ router.post("/community/historias/generar", async (req, res) => {
     const frames = settled.map((r, i) => {
       if (r.status === "fulfilled") return r.value;
       console.error(`[Historias] frame ${i + 1} falló:`, (r.reason as Error)?.message);
+      const g = guion.frames[i]!;
       return {
-        numero_frame: i + 1, total_frames: total, rol: estructura[i] as RolFrame,
-        imagen: "", texto: { copy_principal: "", sub_copy: "", cta: "", hashtags: "" },
+        numero_frame: i + 1, total_frames: total, rol: g.paso, layout: g.layoutId,
+        imagen: "",
+        texto: { copy_principal: g.copy_principal, sub_copy: g.sub_copy, cta: g.cta, hashtags: g.hashtags },
+        guion: g,
         error: (r.reason as Error)?.message || "Falló este frame",
       };
     });
@@ -1449,6 +1461,9 @@ router.post("/community/historias/generar", async (req, res) => {
         formato: body.formato,
         cantidad_frames: total,
         estilo_titular: estiloTitular,
+        formato_narrativo: formatoNarrativo.id,
+        hilo: guion.hilo,
+        protagonista: guion.protagonista,
         frames,
         // Compat con vista de historial: el primer frame se expone también plano
         texto: frames[0]?.texto,
@@ -1465,6 +1480,9 @@ router.post("/community/historias/generar", async (req, res) => {
         concepto: body.concepto,
         texto_en_imagen: body.texto_en_imagen,
         estilo_titular: estiloTitular,
+        formato_narrativo: formatoNarrativo.id,
+        formato_narrativo_nombre: formatoNarrativo.nombre,
+        hilo: guion.hilo,
         fecha: row!.createdAt,
         frames,
         // Compat con UI antigua (modo única siempre llena estos campos)
@@ -1476,6 +1494,11 @@ router.post("/community/historias/generar", async (req, res) => {
     console.error("[Historias] Error:", err);
     res.status(500).json({ success: false, error: err.message || "Error interno" });
   }
+});
+
+// Catálogo de formatos narrativos para la UI.
+router.get("/community/historias/formatos", (_req, res) => {
+  res.json({ success: true, data: listarFormatosHistoria() });
 });
 
 // ============================================
@@ -2280,6 +2303,19 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
 // ============================================
 // HISTORIAS — REINTENTAR
 // ============================================
+const GuionFrameSchema = z.object({
+  numero: z.number().int().min(1).max(5),
+  paso: z.string().max(40),
+  layoutId: z.string().max(40),
+  copy_principal: z.string().max(120),
+  sub_copy: z.string().max(200),
+  dato: z.string().max(20).optional().default(""),
+  dato_label: z.string().max(60).optional().default(""),
+  cta: z.string().max(60).optional().default(""),
+  hashtags: z.string().max(300).optional().default(""),
+  prompt_visual: z.string().max(400).optional().default(""),
+});
+
 const ReintentarHistoriaBody = z.object({
   tipo_historia: z.enum(["tip_tech", "motivacional", "comunidad"]),
   concepto: z.string().min(1).max(200),
@@ -2296,38 +2332,134 @@ const ReintentarHistoriaBody = z.object({
   // Soporte de serie: regenerar UN frame específico
   numero_frame: z.number().int().min(1).max(5).optional(),
   total_frames: z.number().int().min(1).max(5).optional(),
-  rol: z.enum(["unica", "hook", "contexto", "problema", "desarrollo", "solucion", "cta"]).optional(),
+  rol: z.string().max(40).optional(),
   /** Estilo tipográfico de la historia original: el reintento mantiene el diseño. */
   estilo_titular: z.string().max(40).optional(),
+  /** Guion del frame (lo devuelve la generación): conserva layout y dirección visual. */
+  guion_frame: GuionFrameSchema.optional(),
+  /** Formato narrativo e hilo de la serie: el reintento no rompe la coherencia. */
+  formato_narrativo: z.string().max(40).optional(),
+  hilo: z.string().max(400).optional(),
+  /** Titulares de los otros frames, para no repetirlos al regenerar el texto. */
+  otros_titulares: z.array(z.string().max(120)).max(5).optional(),
 });
+
+/**
+ * Regenera el texto de UN frame sin romper la serie: recibe el hilo conductor,
+ * el rol del frame y los titulares de los demás para no repetirlos.
+ */
+async function regenerarTextoFrame(args: {
+  tipoHistoria: string;
+  concepto: string;
+  formato: FormatoHistoria;
+  paso: PasoNarrativo;
+  numero: number;
+  total: number;
+  hilo?: string;
+  otrosTitulares?: string[];
+  ajuste?: string;
+  toneSuffix?: string;
+}): Promise<FrameGuion | null> {
+  const guion = await generarGuionHistoria({
+    tipoHistoria: args.tipoHistoria,
+    concepto: args.hilo
+      ? `${args.concepto}\n\nHILO CONDUCTOR YA ESTABLECIDO DE LA SERIE (respétalo): ${args.hilo}`
+      : args.concepto,
+    formato: args.formato,
+    arco: [args.paso],
+    toneSuffix: args.toneSuffix,
+    ajuste: [
+      args.ajuste,
+      args.otrosTitulares?.length
+        ? `Los otros frames de la serie ya dicen: ${args.otrosTitulares.map(t => `"${t}"`).join(", ")}. NO repitas ninguno ni digas lo mismo con otras palabras.`
+        : null,
+      args.total > 1 ? `Este texto es para el frame ${args.numero} de ${args.total}.` : null,
+    ].filter(Boolean).join(" ") || null,
+  });
+  const f = guion.frames[0];
+  if (!f) return null;
+  // El arco de un solo paso hace que parseGuion lo trate como cierre: si el
+  // frame real NO es el último de la serie, se le quitan CTA y hashtags.
+  const esCierre = args.numero === args.total;
+  return {
+    ...f,
+    numero: args.numero,
+    cta: esCierre ? f.cta : "",
+    hashtags: esCierre ? f.hashtags : "",
+  };
+}
 
 router.post("/community/historias/reintentar", async (req, res) => {
   try {
     const body = ReintentarHistoriaBody.parse(req.body);
     const total = body.total_frames || 1;
     const numero = body.numero_frame || 1;
-    const rol: RolFrame = body.rol || "unica";
-
-    // 1) Regenerar texto si modo lo requiere
     const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
-    let texto = body.texto_actual || { copy_principal: "", sub_copy: "", cta: "", hashtags: "" };
+    const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
+
+    // Formato y paso del frame: si el cliente mandó el guion original los
+    // respetamos; si no, reconstruimos con el formato y el arco.
+    const formatoNarrativo = obtenerFormatoHistoria(body.formato_narrativo ?? "")
+      ?? resolverFormatoHistoria(null, body.tipo_historia);
+    const arco = arcoParaFrames(formatoNarrativo, total);
+    const pasoDelFrame = arco[Math.min(numero - 1, arco.length - 1)]!;
+
+    // Guion base del frame: el que vino del cliente, o uno derivado del texto actual.
+    let frameGuion: FrameGuion = body.guion_frame
+      ? { ...body.guion_frame, numero }
+      : {
+          numero,
+          paso: body.rol || pasoDelFrame.paso,
+          layoutId: pasoDelFrame.layoutId,
+          copy_principal: body.texto_actual?.copy_principal ?? "",
+          sub_copy: body.texto_actual?.sub_copy ?? "",
+          dato: "",
+          dato_label: "",
+          cta: body.texto_actual?.cta ?? "",
+          hashtags: body.texto_actual?.hashtags ?? "",
+          prompt_visual: "",
+        };
+
+    // 1) Regenerar texto si el modo lo requiere, manteniendo el hilo de la serie.
     if (body.modo === "texto" || body.modo === "ambos" ||
         (body.modo === "personalizado" && !body.texto_actual)) {
-      const conceptoExtendido = body.prompt_personalizado && (body.modo === "texto" || body.modo === "ambos")
-        ? `${body.concepto}. AJUSTE PEDIDO: ${body.prompt_personalizado}`
-        : body.concepto;
-      texto = await generarTextoHistoria(body.tipo_historia, conceptoExtendido, { rol, numero, total, toneSuffix });
+      const nuevo = await regenerarTextoFrame({
+        tipoHistoria: body.tipo_historia,
+        concepto: body.concepto,
+        formato: formatoNarrativo,
+        paso: { ...pasoDelFrame, layoutId: frameGuion.layoutId },
+        numero,
+        total,
+        hilo: body.hilo,
+        otrosTitulares: body.otros_titulares,
+        ajuste: (body.modo === "texto" || body.modo === "ambos") ? body.prompt_personalizado : undefined,
+        toneSuffix,
+      });
+      if (nuevo) frameGuion = nuevo;
     }
+
+    const layout = obtenerLayoutHistoria(frameGuion.layoutId) ?? layoutHistoriaPorDefecto();
 
     // 2) Modo "texto" puro: devuelve solo texto, sin imagen
     if (body.modo === "texto") {
-      res.json({ success: true, data: { texto, imagen: null } });
+      res.json({
+        success: true,
+        data: {
+          texto: {
+            copy_principal: frameGuion.copy_principal,
+            sub_copy: frameGuion.sub_copy,
+            cta: frameGuion.cta,
+            hashtags: frameGuion.hashtags,
+          },
+          guion: frameGuion,
+          imagen: null,
+        },
+      });
       return;
     }
 
-    // 3) Regenerar imagen (con contexto de frame si aplica)
-    // El ajuste personalizado debe afectar a la IMAGEN tanto en modo "personalizado"
-    // como en modo "ambos" (texto + imagen) cuando viene un prompt del usuario.
+    // 3) Regenerar imagen (el ajuste del usuario afecta a la imagen en
+    // "personalizado" y "ambos"; en auto-diagnose lo escribe Vision).
     const referenceBase64 = await getFoxRefBase64();
     let promptOverride: string | undefined = body.prompt_personalizado &&
       (body.modo === "personalizado" || body.modo === "ambos")
@@ -2338,46 +2470,33 @@ router.post("/community/historias/reintentar", async (req, res) => {
       promptOverride = diagnostico
         ?? "La imagen anterior fue aprobada por Vision pero el usuario pidió un nuevo intento — varía la pose y el encuadre manteniendo el mismo concepto.";
     }
-    // Si NO regeneramos texto en este modo y el cliente envió texto_actual,
-    // preservamos el texto y evitamos llamar al modelo de texto (más rápido y robusto).
-    const textoPreservado = (body.modo === "imagen" || body.modo === "personalizado" || body.modo === "auto-diagnose") && body.texto_actual
-      ? body.texto_actual
-      : undefined;
-    // El reintento conserva el estilo tipográfico de la historia original.
-    const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
+
     const frame = await generarFrameHistoria({
       tipoHistoria: body.tipo_historia,
       concepto: body.concepto,
+      frameGuion,
+      layout,
+      hilo: body.hilo,
       promptOverride,
       textoEnImagen: body.texto_en_imagen,
       referenceBase64,
-      rol,
       numero,
       total,
-      textoPreservado,
-      toneSuffix,
       estiloTitular,
     });
-    // El frame ya devuelve el texto correcto (preservado o nuevo)
-    const textoFinal = frame.texto;
 
-    // Si conservamos el texto pero hicimos texto_en_imagen, hay que re-renderizar el counter encima de la nueva imagen — generarFrameHistoria ya lo hizo con su propio texto.
-    // Para evitar inconsistencia visual (counter+texto que no coincide con el panel), cuando hay texto_actual y texto_en_imagen, re-renderizamos con el texto preservado.
-    let imagenFinal = frame.imagen;
-    if (body.texto_en_imagen && (body.modo === "imagen" || body.modo === "personalizado") && body.texto_actual) {
-      try {
-        // Extraer base64 puro del data URL para re-render
-        const m = frame.imagen.match(/^data:[^;]+;base64,(.+)$/);
-        if (m) {
-          const reRendered = await renderTextoEnHistoria(m[1]!, body.texto_actual, total > 1 ? { numero, total } : undefined, estiloTitular);
-          imagenFinal = `data:image/png;base64,${reRendered}`;
-        }
-      } catch (e) {
-        console.error("[Hist reintentar] re-render con texto preservado falló:", e);
-      }
-    }
-
-    res.json({ success: true, data: { texto: textoFinal, imagen: imagenFinal, numero_frame: numero, total_frames: total, rol } });
+    res.json({
+      success: true,
+      data: {
+        texto: frame.texto,
+        guion: frame.guion,
+        imagen: frame.imagen,
+        numero_frame: numero,
+        total_frames: total,
+        rol: frameGuion.paso,
+        layout: layout.id,
+      },
+    });
   } catch (err: any) {
     console.error("[Reintentar historia] Error:", err);
     if (err?.message === "RATE_LIMIT" || isRateLimitErr(err)) {
