@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  ajustarTextoMedido,
   ESTILOS_TITULAR,
   resolverEstiloTitular,
   obtenerEstiloTitular,
@@ -261,5 +262,59 @@ describe("construirOverlayTitular", () => {
     }).toString();
     expect(svg).not.toMatch(/<B>/);
     expect(svg).toContain("&amp;");
+  });
+});
+
+describe("ajustarTextoMedido (texto secundario)", () => {
+  // El bug real: el sub-copy se medía como "Inter" (que NO está empaquetada y
+  // cae en DejaVu Sans, más ancha) y se salía del lienzo por los costados.
+  const ANCHO = 880;
+  const base = { maxWidth: ANCHO, maxFontSize: 52, minFontSize: 26, fuenteId: "montserrat_bold" as const };
+
+  it("ninguna línea supera jamás el ancho disponible", () => {
+    const textos = [
+      "Su panadería en Ñuñoa llevaba seis años abierta.",
+      "Mismo horno, misma Ana, cero pedidos perdidos.",
+      "Una frase muchísimo más larga de lo razonable que debería partirse en varias líneas sin salirse nunca del lienzo disponible",
+      "corto",
+      "#WebMakerLatam #PymesLatam #NegociosOnline #Chatbot #Emprendedores",
+    ];
+    for (const t of textos) {
+      const fit = ajustarTextoMedido(t, base);
+      expect(fit.ancho, `"${t.slice(0, 30)}" se sale`).toBeLessThanOrEqual(ANCHO);
+      for (const linea of fit.lineas) {
+        expect(medirTexto(linea, "montserrat_bold") * fit.fontSize).toBeLessThanOrEqual(ANCHO + 0.5);
+      }
+    }
+  });
+
+  it("una palabra sola más ancha que la columna se parte por caracteres", () => {
+    const fit = ajustarTextoMedido("Supercalifragilisticoespialidosoextralargo", { ...base, maxWidth: 200 });
+    expect(fit.lineas.length).toBeGreaterThan(1);
+    expect(fit.ancho).toBeLessThanOrEqual(200);
+  });
+
+  it("conserva todo el texto (no trunca)", () => {
+    const texto = "Su panadería en Ñuñoa llevaba seis años abierta";
+    const fit = ajustarTextoMedido(texto, base);
+    expect(fit.lineas.join(" ")).toBe(texto);
+  });
+
+  it("respeta el tope de líneas achicando la fuente", () => {
+    const largo = "Una frase larga que sin control ocuparía muchas líneas seguidas en pantalla";
+    const fit = ajustarTextoMedido(largo, { ...base, maxLineas: 2 });
+    expect(fit.lineas.length).toBeLessThanOrEqual(2);
+  });
+
+  it("un texto corto usa el tamaño máximo", () => {
+    const fit = ajustarTextoMedido("Hola", base);
+    expect(fit.fontSize).toBe(base.maxFontSize);
+    expect(fit.lineas).toHaveLength(1);
+  });
+
+  it("texto vacío no rompe", () => {
+    const fit = ajustarTextoMedido("   ", base);
+    expect(fit.lineas).toHaveLength(0);
+    expect(fit.alto).toBe(0);
   });
 });

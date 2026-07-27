@@ -68,50 +68,148 @@ function limiteTitular(layoutId: string): number {
 /** Frases que delatan la plantilla robótica. El prompt las prohíbe y el
  *  post-proceso las limpia si el modelo insiste. */
 export const FRASES_PROHIBIDAS = [
-  "sigue viendo",
-  "sigue mirando",
-  "toca para seguir",
-  "toca para ver",
-  "desliza",
-  "swipe",
-  "continúa viendo",
-  "continua viendo",
-  "no te pierdas",
-  "mira esto",
-  "atento a lo que viene",
-  "sigue leyendo",
-  "en el siguiente",
-  "próxima historia",
-  "proxima historia",
-  "descubre cómo",
-  "descubre como",
-  "lleva tu negocio al siguiente nivel",
-  "potencia tu negocio",
-  "transforma tu negocio",
-  "no esperes más",
-  "no esperes mas",
-  "en el mundo digital de hoy",
-  "en la era digital",
-  "haz clic",
-  "link en bio",
+  // Relleno de atención: pedir que sigan mirando delata que el guion no retiene.
+  "sigue viendo", "sigue mirando", "mira esto", "toca para seguir", "toca para ver",
+  "continúa viendo", "continua viendo", "sigue leyendo", "no te lo pierdas",
+  "no te pierdas", "espera el siguiente", "en el siguiente", "próxima historia",
+  "proxima historia", "desliza", "swipe", "atento a lo que viene",
+  // Folleto de agencia.
+  "lleva tu negocio al siguiente nivel", "potencia tu negocio", "impulsa tu negocio",
+  "impulsa tu marca", "transforma tu negocio", "transforma tu presencia digital",
+  "soluciones digitales a tu medida", "solución integral", "solucion integral",
+  "en el mundo digital de hoy", "en la era digital", "no esperes más", "no esperes mas",
+  // Aperturas de manual.
+  "descubre cómo", "descubre como", "imagina que", "te cuento un caso",
+  "un cliente nos escribió", "un cliente nos escribio", "y si te dijera que",
+  // Vender con miedo.
+  "estás perdiendo clientes ahora mismo", "estas perdiendo clientes ahora mismo",
+  "tu competencia ya lo hace", "te vas a quedar atrás", "te vas a quedar atras",
+  "antes de que sea tarde", "no dejes pasar",
+  // Pedir interacción de plataforma.
+  "haz clic", "link en bio", "dale like", "comparte esto", "guarda esto", "sígueme", "sigueme",
 ];
 
-const BLOQUE_NATURALIDAD = `CÓMO ESCRIBIR (esto es lo que separa un guion bueno de una plantilla):
-- Escribe como una persona que cuenta algo que le importa, no como una agencia que publica. Frases cortas, concretas, sin adornos.
-- PROHIBIDO pedirle al espectador que siga mirando. Nada de "sigue viendo", "toca para seguir", "desliza", "no te pierdas", "mira esto", "en el siguiente". Si el frame necesita un botón para retener, el guion está mal escrito: la curiosidad la genera lo que CUENTAS.
-- PROHIBIDAS las muletillas de marketing: "lleva tu negocio al siguiente nivel", "potencia tu negocio", "transforma tu negocio", "en la era digital", "no esperes más", "descubre cómo".
-- Nada de emojis (rompen el render) ni de MAYÚSCULAS sostenidas.
-- Preferir lo específico sobre lo genérico: "perdía 40 pedidos al mes" en vez de "perdía muchas ventas"; "responde en 2 minutos" en vez de "mejora la atención".
-- Cada frame aporta información NUEVA. Si un frame se puede borrar sin que se note, está mal.
-- No repitas la misma palabra clave en todos los titulares: varía el vocabulario manteniendo el tema.`;
+const BLOQUE_NATURALIDAD = `CÓMO ESCRIBIR (esto separa un guion bueno de una plantilla):
 
-const BLOQUE_CIERRE = `EL CIERRE (solo el último frame):
+LO QUE NUNCA SE ESCRIBE
+- PROHIBIDO pedirle al espectador que siga mirando: "sigue viendo", "toca para seguir", "desliza", "no te lo pierdas", "en el siguiente". Si un frame necesita un botón para retener, el guion está mal escrito: la curiosidad la genera lo que CUENTAS.
+- PROHIBIDO el folleto de agencia: "lleva tu negocio al siguiente nivel", "potencia tu negocio", "transforma tu negocio", "soluciones a tu medida", "en la era digital".
+- PROHIBIDO abrir con fórmulas de manual: "¿Sabías que...?", "¿Te imaginas...?", "¿Alguna vez te ha pasado?", "Imagina que", "Te cuento un caso", "Un cliente nos escribió".
+- PROHIBIDO vender con miedo: "estás perdiendo clientes ahora mismo", "tu competencia ya lo hace", "antes de que sea tarde". El costo se cuenta con una cifra y el espectador saca su conclusión.
+- PROHIBIDO el autoelogio: "increíble", "impresionante", "potente", "revolucionario", "de última generación", y "profesional" o "experto" aplicados a nosotros.
+- PROHIBIDO preguntarle si se siente identificado ("¿te pasa?", "¿te suena?"): la identificación la produce el detalle, y preguntarla la destruye.
+- Cero emojis, cero signos de exclamación, máximo UN signo de interrogación en toda la serie, cero MAYÚSCULAS SOSTENIDAS (el énfasis lo pone la tipografía).
+
+LO QUE SÍ SE ESCRIBE
+- UN DATO CONCRETO POR FRAME: algo que se pueda contar, mirar o tocar (una hora, una cantidad, un objeto del negocio, un día). Un frame de puros adjetivos está vacío.
+- EL TITULAR NOMBRA ALGO VISIBLE: una persona, un objeto ("el horno", "la libreta de la caja") o una acción física. Prohibidos los sujetos abstractos: "la digitalización", "los procesos", "la presencia online".
+- CIFRAS CONTADAS A MANO: 47 pedidos, 22 minutos, 2 horas y media. Prohibidas las de folleto: "100%", "10x", "el doble", "miles de", y cualquier estadística de mercado sin fuente.
+- IDIOMA DEL CLIENTE, NO EL NUESTRO: usa los verbos de su oficio (hornear, atender, agendar, despachar, cerrar la caja) y evita los nuestros (implementar, integrar, escalar, digitalizar, optimizar). Evita también la jerga: CRM, ERP, POS, API, landing.
+- "tu negocio" como máximo una vez en toda la serie; en vez de "clientes", di quiénes son: los del sábado, los que preguntan precio, los que escriben de noche.
+
+RITMO (lo que hace que no parezca plantilla)
+- UNA IDEA POR FRAME: titular de 9 palabras o menos, máximo una coma. Si necesitas dos ideas, ahí había dos frames.
+- RITMO DESPAREJO A PROPÓSITO: al menos un frame lleva un titular de 3 a 5 palabras, mucho más corto que el resto. Titulares todos del mismo largo = plantilla.
+- EL SUB-COPY AGREGA INFORMACIÓN NUEVA y no repite ninguna palabra clave del titular de su propio frame. Si al borrar el titular el sub-copy dice lo mismo, está mal: esa repetición es la firma número uno del texto de máquina.
+- NINGÚN FRAME EMPIEZA CON LA MISMA PALABRA que otro de la serie, ni repite la estructura del anterior.
+- TODO FRAME QUE NO SEA EL ÚLTIMO CIERRA CON ALGO SIN RESOLVER: un dato que no cuadra, una hora que sigue corriendo. Y ningún frame intermedio resuelve la serie.
+- UN SOLO TIEMPO VERBAL POR SERIE. Prohibidos los condicionales de venta: "podrías", "te ayudaría", "imagina que pudieras".
+
+`;
+
+const BLOQUE_HONESTIDAD = `HONESTIDAD (regla bloqueante):
+- Si el usuario NO entregó un caso real verificado, el protagonista es un ESCENARIO ILUSTRATIVO. En ese caso está PROHIBIDO escribir "caso de éxito", "testimonio", "cliente real" o "resultados reales", y PROHIBIDO atribuirle cifras de resultado a WebMakerLatam ("le subimos las ventas un 300%").
+- PROHIBIDO nombrar negocios, marcas o personas reales que existan.
+- Las cifras del relato describen la situación del escenario (lo que se perdía, cuánto tardaba), nunca una promesa de resultado para quien mira.
+
+`;const BLOQUE_CIERRE = `EL CIERRE (solo el último frame):
 - El campo "cta" SOLO existe en el último frame. En todos los demás va vacío ("").
-- Debe nacer de lo que acabas de contar, no ser un anuncio pegado. Varía la forma: a veces una invitación a escribir, a veces a revisar algo propio, a veces una pregunta que deja pensando.
-- PROHIBIDO repetir siempre WhatsApp. Alterna entre: "Escríbenos y lo vemos", "Cuéntanos tu caso", "Agenda una llamada", "Revisa tu web hoy", "Hagamos la prueba", "¿Te suena conocido?", "Te ayudamos a verlo".
-- Los "hashtags" también van SOLO en el último frame (3 a 5, uno de marca). En el resto, cadena vacía ("").`;
+- Máximo 25 caracteres, un solo verbo, sin signos de exclamación, y sin repetir ninguna palabra que ya esté en el titular o el sub-copy de ese mismo frame.
+- El cierre NUNCA introduce información nueva: remata lo que ya se contó.
+- VETADOS como texto de cierre: "Hablemos por WhatsApp", "Escríbenos al WhatsApp", "Agenda hoy", "Contáctanos", "Más información", "Cotiza gratis", "Sígueme", "Dale like", "Comparte", "Guarda esto". WhatsApp solo se nombra si el tema de la historia es literalmente WhatsApp.
+- Los "hashtags" van SOLO en el último frame (3 a 5, uno de marca). En el resto, cadena vacía ("").
 
-/* ==================== Prompt del guion =================================== */
+`;
+
+/** Modos de cierre: rotan para que la serie no termine siempre igual. */
+export interface ModoCierre {
+  id: string;
+  peso: number;
+  instruccion: string;
+}
+
+export const MODOS_CIERRE: ModoCierre[] = [
+  {
+    id: "puerta_abierta",
+    peso: 3,
+    instruccion: 'MODO DE CIERRE "puerta abierta": invita sin exigir, como quien deja la puerta entornada. Ejemplos de forma (no los copies literal): "Te muestro cómo quedó", "Lo mismo para lo tuyo", "Cuando quieras lo vemos".',
+  },
+  {
+    id: "auto_revision",
+    peso: 2,
+    instruccion: 'MODO DE CIERRE "auto revisión": pídele algo a SU propio negocio, no a nosotros. Ejemplos de forma: "Revisa tu bandeja de hoy", "Cuenta los de esta semana", "Mira la hora del último".',
+  },
+  {
+    id: "pregunta_espejo",
+    peso: 2,
+    instruccion: 'MODO DE CIERRE "pregunta espejo": una pregunta concreta y contestable sobre su negocio (no "¿te suena?"). Ejemplos de forma: "¿A qué hora dejaste de contestar?", "¿Cuántos quedaron sin abrir?".',
+  },
+  {
+    id: "recurso",
+    peso: 2,
+    instruccion: 'MODO DE CIERRE "recurso": entrega algo antes de pedir nada. Ejemplos de forma: "Te reviso la web gratis", "Te calculo cuánto pierdes", "Pide el diagnóstico".',
+  },
+  {
+    id: "sin_invitacion",
+    peso: 3,
+    instruccion: 'MODO DE CIERRE "sin invitación": el último titular es el remate y NO se pide nada. Devuelve "cta" como cadena VACÍA. Una serie que no pide nada es lo que hace creíbles a las que sí piden.',
+  },
+  {
+    id: "directo",
+    peso: 1,
+    instruccion: 'MODO DE CIERRE "directo": el único que nombra el canal. Ejemplos de forma: "Escríbenos y lo vemos", "Cotiza tu caso", "Hablemos".',
+  },
+];
+
+const MEMORIA_CIERRES = 3;
+const ultimosCierres: string[] = [];
+
+/** Elige el modo de cierre con rotación anti-repetición y pesos. */
+export function resolverModoCierre(tipoHistoria?: string): ModoCierre {
+  // Motivacional y comunidad rematan sin pedir nada por defecto.
+  if ((tipoHistoria === "motivacional" || tipoHistoria === "comunidad") && Math.random() < 0.6) {
+    const silencio = MODOS_CIERRE.find(m => m.id === "sin_invitacion")!;
+    registrarCierre(silencio.id);
+    return silencio;
+  }
+  const disponibles = MODOS_CIERRE.filter(m => !ultimosCierres.includes(m.id));
+  const pool = disponibles.length > 0 ? disponibles : MODOS_CIERRE;
+  const total = pool.reduce((acc, m) => acc + m.peso, 0);
+  let r = Math.random() * total;
+  for (const m of pool) {
+    r -= m.peso;
+    if (r <= 0) {
+      registrarCierre(m.id);
+      return m;
+    }
+  }
+  const ultimo = pool[pool.length - 1]!;
+  registrarCierre(ultimo.id);
+  return ultimo;
+}
+
+function registrarCierre(id: string): void {
+  ultimosCierres.push(id);
+  if (ultimosCierres.length > MEMORIA_CIERRES) ultimosCierres.shift();
+}
+
+const PRUEBA_FINAL = `PRUEBA FINAL ANTES DE DEVOLVER EL JSON:
+1. Lee los titulares seguidos, sin los sub-copy. ¿Se entiende una historia con principio, conflicto y final?
+2. ¿Se pueden intercambiar dos frames de orden sin que se note?
+Si la respuesta a la primera es NO, o a la segunda es SÍ, reescribe el guion completo — no parches un frame.
+`;
+
+/* ==================== Prompt del guion/* ==================== Prompt del guion =================================== */
 
 export interface OpcionesGuion {
   tipoHistoria: string;
@@ -123,6 +221,8 @@ export interface OpcionesGuion {
   ajuste?: string | null;
   catalogoServicios: string;
   reglaIdioma: string;
+  /** Modo de cierre elegido por el servidor (rotación anti-repetición). */
+  modoCierre?: ModoCierre;
 }
 
 export function buildGuionSystemPrompt(opts: OpcionesGuion): string {
@@ -138,7 +238,9 @@ ${opts.formato.instruccionGuion}
 
 ${BLOQUE_NATURALIDAD}
 
-${BLOQUE_CIERRE}
+${BLOQUE_HONESTIDAD}
+
+${BLOQUE_CIERRE}${opts.modoCierre ? `${opts.modoCierre.instruccion}\n\n` : ""}
 
 COHERENCIA DE LA SERIE (lo más importante):
 - Escribes TODOS los frames de una vez: son UNA historia partida en capítulos, no ${opts.arco.length} publicaciones sueltas.
@@ -149,7 +251,9 @@ COHERENCIA DE LA SERIE (lo más importante):
 LA IMAGEN DE CADA FRAME:
 - "prompt_visual" dirige la ilustración de ESE frame: describe en UNA frase la pose y expresión de Webi (el zorro naranja de la marca) y como máximo 2 objetos de apoyo concretos del relato.
 - La imagen debe avanzar con la historia: la pose del frame de tensión no puede ser la misma que la del cierre.
-- JAMÁS pidas texto, letras ni números dentro de la ilustración.`;
+- JAMÁS pidas texto, letras ni números dentro de la ilustración.
+
+${PRUEBA_FINAL}`;
 }
 
 export function buildGuionUserPrompt(opts: OpcionesGuion): string {
@@ -211,7 +315,13 @@ function limpiar(v: unknown): string {
 export function limpiarFrasesProhibidas(texto: string): string {
   let out = texto;
   for (const frase of FRASES_PROHIBIDAS) {
-    const re = new RegExp(`\\s*[.,;:—-]?\\s*\\b${frase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b[.!¡]*`, "gi");
+    const esc = frase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Límites Unicode: \b falla con acentos ("escribió" termina en carácter
+    // que JS no considera de palabra), así que la frase quedaba sin limpiar.
+    const re = new RegExp(
+      `\\s*[.,;:—-]?\\s*(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])[.!¡]*`,
+      "giu",
+    );
     out = out.replace(re, " ");
   }
   return out.replace(/\s+/g, " ").replace(/\s+([.,;:!?])/g, "$1").trim();

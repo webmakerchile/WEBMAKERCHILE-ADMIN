@@ -5,7 +5,9 @@ import {
   parseGuion,
   revisarGuion,
   limpiarFrasesProhibidas,
+  resolverModoCierre,
   FRASES_PROHIBIDAS,
+  MODOS_CIERRE,
   LIMITES_GUION,
 } from "./story-script.js";
 import { obtenerFormatoHistoria, arcoParaFrames } from "./story-formats.js";
@@ -43,7 +45,7 @@ describe("prompts del guion", () => {
     expect(p).toContain(formato.instruccionGuion.slice(0, 40));
     expect(p).toContain("PROHIBIDO pedirle al espectador que siga mirando");
     expect(p).toContain("sigue viendo");
-    expect(p).toContain("PROHIBIDO repetir siempre WhatsApp");
+    expect(p).toContain("VETADOS como texto de cierre");
     expect(p).toContain("COHERENCIA DE LA SERIE");
     expect(p).toContain("CATÁLOGO DE PRUEBA");
   });
@@ -192,5 +194,69 @@ describe("revisarGuion", () => {
   it("detecta cierre sin invitación", () => {
     const g = parseGuion(guionJson([{}, {}, { cta: "" }]), arco3, formato.id)!;
     expect(revisarGuion(g, arco3).some(i => i.includes("cierre"))).toBe(true);
+  });
+});
+
+describe("reglas de naturalidad y honestidad en el prompt", () => {
+  it("prohíbe el folleto de agencia y las aperturas de manual", () => {
+    const p = buildGuionSystemPrompt(OPTS);
+    expect(p).toContain("lleva tu negocio al siguiente nivel");
+    expect(p).toContain("¿Sabías que...?");
+    expect(p).toContain("vender con miedo");
+  });
+
+  it("incluye la regla de honestidad: nada de falsos testimonios", () => {
+    const p = buildGuionSystemPrompt(OPTS);
+    expect(p).toContain("ESCENARIO ILUSTRATIVO");
+    expect(p).toContain("caso de éxito");
+    expect(p).toContain("PROHIBIDO nombrar negocios, marcas o personas reales");
+  });
+
+  it("veta WhatsApp como cierre por defecto", () => {
+    const p = buildGuionSystemPrompt(OPTS);
+    expect(p).toContain("VETADOS como texto de cierre");
+    expect(p).toContain("Hablemos por WhatsApp");
+  });
+
+  it("cierra con la prueba final de coherencia", () => {
+    const p = buildGuionSystemPrompt(OPTS);
+    expect(p).toContain("PRUEBA FINAL");
+    expect(p).toContain("intercambiar dos frames");
+  });
+
+  it("inyecta el modo de cierre elegido", () => {
+    const modo = MODOS_CIERRE.find(m => m.id === "auto_revision")!;
+    const p = buildGuionSystemPrompt({ ...OPTS, modoCierre: modo });
+    expect(p).toContain("auto revisión");
+  });
+});
+
+describe("resolverModoCierre", () => {
+  it("todos los modos tienen peso positivo e instrucción", () => {
+    for (const m of MODOS_CIERRE) {
+      expect(m.peso).toBeGreaterThan(0);
+      expect(m.instruccion.length).toBeGreaterThan(40);
+    }
+  });
+
+  it("rota sin repetir dentro de la ventana de memoria", () => {
+    const seq: string[] = [];
+    for (let i = 0; i < 20; i++) seq.push(resolverModoCierre("tip_tech").id);
+    for (let i = 1; i < seq.length; i++) {
+      const ventana = seq.slice(Math.max(0, i - 3), i);
+      expect(ventana).not.toContain(seq[i]);
+    }
+  });
+
+  it("existe el modo sin invitación (la cuota de silencio)", () => {
+    expect(MODOS_CIERRE.some(m => m.id === "sin_invitacion")).toBe(true);
+  });
+
+  it("motivacional y comunidad rematan sin pedir nada con frecuencia", () => {
+    let silencios = 0;
+    for (let i = 0; i < 40; i++) {
+      if (resolverModoCierre("motivacional").id === "sin_invitacion") silencios++;
+    }
+    expect(silencios).toBeGreaterThan(5);
   });
 });

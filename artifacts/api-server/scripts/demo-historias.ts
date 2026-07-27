@@ -11,6 +11,8 @@ import {
   construirOverlayTitular,
   obtenerEstiloTitular,
   medirTexto,
+  ajustarTextoMedido,
+  type TextoAjustado,
 } from "../src/lib/title-style";
 import { FONT_METRICS } from "../src/lib/font-metrics.generated";
 import {
@@ -43,6 +45,17 @@ function fondoHistoria(escena: { desde: number; hasta: number }): Buffer {
   <rect x="${HIST_WIDTH / 2 - 150}" y="${cy - 190}" width="300" height="380" rx="40" fill="#E86A30" fill-opacity="0.55"/>
   <text x="${HIST_WIDTH / 2}" y="${cy + 20}" text-anchor="middle" font-family="sans-serif" font-size="44" fill="#0F172A" fill-opacity="0.6">WEBI</text>
 </svg>`);
+}
+
+const FUENTE_SEC = FONT_METRICS.montserrat_bold;
+
+/** Mismo bloque secundario que usa el render real (métricas reales). */
+function bloqueSec(fit: TextoAjustado, centerY: number, color: string): string {
+  if (fit.lineas.length === 0) return "";
+  const primeraBase = centerY - fit.alto / 2 + fit.fontSize * 0.82;
+  return fit.lineas
+    .map((l, i) => `<text x="${HIST_WIDTH / 2}" y="${(primeraBase + i * fit.lineHeight).toFixed(1)}" text-anchor="middle" font-family="'${FUENTE_SEC.familia}'" font-weight="${FUENTE_SEC.peso}" font-size="${fit.fontSize}" fill="${color}">${escapeXml(l)}</text>`)
+    .join("\n  ");
 }
 
 function escapeXml(s: string): string {
@@ -78,22 +91,39 @@ function overlayTexto(frame: FrameGuion, layout: LayoutHistoria, numero: number,
     const xNum = (w - anchoNum) / 2;
     piezas.push(`<text x="${xNum.toFixed(1)}" y="${baseNum.toFixed(1)}" font-family="'${m.familia}'" font-weight="${m.peso}" font-size="${fsNum.toFixed(0)}" fill="${PALETA.colorAcento}">${escapeXml(frame.dato)}</text>`);
     if (frame.dato_label) {
-      piezas.push(`<text x="${w / 2}" y="${layout.zonaDato.y + alto + 14 + 40 * 0.8}" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="40" fill="#f1f5f9">${escapeXml(frame.dato_label)}</text>`);
+      const fit = ajustarTextoMedido(frame.dato_label, {
+        maxWidth: w - 160 - 60, maxHeight: 110, maxLineas: 2,
+        maxFontSize: 44, minFontSize: 26, fuenteId: "montserrat_bold", lineHeight: 1.2,
+      });
+      piezas.push(bloqueSec(fit, layout.zonaDato.y + alto + 14 + fit.alto / 2, "#f1f5f9"));
     }
   }
 
   if (frame.sub_copy && layout.subCopyCenterY !== null && layout.bloques.includes("subcopy")) {
-    piezas.push(`<text x="${w / 2}" y="${layout.subCopyCenterY}" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600" font-size="44" fill="#f1f5f9">${escapeXml(frame.sub_copy.slice(0, 46))}</text>`);
+    const fit = ajustarTextoMedido(frame.sub_copy, {
+      maxWidth: w - 200, maxHeight: 190, maxLineas: 3,
+      maxFontSize: 52, minFontSize: 30, fuenteId: "montserrat_bold", lineHeight: 1.2,
+    });
+    piezas.push(bloqueSec(fit, layout.subCopyCenterY, "#f1f5f9"));
   }
 
   if (frame.cta && layout.bloques.includes("cta")) {
-    const bw = 620, bh = 96;
-    piezas.push(`<rect x="${(w - bw) / 2}" y="${layout.ctaCenterY - bh / 2}" width="${bw}" height="${bh}" rx="${bh / 2}" fill="#E86A30"/>`);
-    piezas.push(`<text x="${w / 2}" y="${layout.ctaCenterY + 15}" text-anchor="middle" font-family="Inter,sans-serif" font-weight="700" font-size="42" fill="#fff">${escapeXml(frame.cta)}</text>`);
+    const fit = ajustarTextoMedido(frame.cta, {
+      maxWidth: w - 160 - 160, maxHeight: 120, maxLineas: 2,
+      maxFontSize: 44, minFontSize: 28, fuenteId: "montserrat_bold", lineHeight: 1.18,
+    });
+    const bw = Math.min(w - 160, fit.ancho + 128);
+    const bh = Math.max(88, fit.alto + 52);
+    piezas.push(`<rect x="${((w - bw) / 2).toFixed(1)}" y="${(layout.ctaCenterY - bh / 2).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${bh / 2}" fill="#E86A30"/>`);
+    piezas.push(bloqueSec(fit, layout.ctaCenterY, "#fff"));
   }
 
   if (frame.hashtags && layout.bloques.includes("hashtags")) {
-    piezas.push(`<text x="${w / 2}" y="${layout.hashtagsCenterY}" text-anchor="middle" font-family="Inter,sans-serif" font-weight="500" font-size="30" fill="#fb923c">${escapeXml(frame.hashtags)}</text>`);
+    const fit = ajustarTextoMedido(frame.hashtags, {
+      maxWidth: w - 280, maxHeight: 130, maxLineas: 3,
+      maxFontSize: 32, minFontSize: 20, fuenteId: "montserrat_bold", lineHeight: 1.22,
+    });
+    piezas.push(bloqueSec(fit, layout.hashtagsCenterY, "#fb923c"));
   }
 
   if (layout.bloques.includes("contador") && total > 1) {

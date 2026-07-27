@@ -13,6 +13,8 @@ import {
   resolverEstiloTitular,
   obtenerEstiloTitular,
   medirTexto,
+  ajustarTextoMedido,
+  type TextoAjustado,
   type ZonaTexto,
 } from "../../lib/title-style";
 import { FONT_METRICS } from "../../lib/font-metrics.generated";
@@ -34,6 +36,7 @@ import {
   buildGuionUserPrompt,
   parseGuion,
   revisarGuion,
+  resolverModoCierre,
   type FrameGuion,
   type GuionHistoria,
 } from "../../lib/story-script";
@@ -531,6 +534,25 @@ function overlayTituloImpacto(
   });
 }
 
+/** Fuente empaquetada del texto secundario. "Inter" NO está instalada en el
+ *  servidor (cae en DejaVu Sans, más ancha) — por eso el sub-copy se salía del
+ *  lienzo: se medía como Inter y se dibujaba como DejaVu. */
+const FUENTE_SECUNDARIA = FONT_METRICS.montserrat_bold;
+
+/** Bloque de texto secundario centrado, medido con métricas reales. */
+function bloqueSecundarioSvg(
+  fit: TextoAjustado,
+  opts: { canvasWidth: number; centerY: number; color: string; opacidad?: number; conSombra?: boolean },
+): string {
+  if (fit.lineas.length === 0) return "";
+  const primeraBase = opts.centerY - fit.alto / 2 + fit.fontSize * 0.82;
+  const filtro = opts.conSombra === false ? "" : ' filter="url(#textds)"';
+  const op = opts.opacidad !== undefined ? ` fill-opacity="${opts.opacidad}"` : "";
+  return fit.lineas
+    .map((linea, i) => `<text x="${opts.canvasWidth / 2}" y="${(primeraBase + i * fit.lineHeight).toFixed(1)}" text-anchor="middle" font-family="'${FUENTE_SECUNDARIA.familia}'" font-weight="${FUENTE_SECUNDARIA.peso}" font-size="${fit.fontSize}" fill="${opts.color}"${op}${filtro}>${escapeXml(linea)}</text>`)
+    .join("\n    ");
+}
+
 // Defs SVG: gradientes premium para zonas reservadas + drop-shadow fuerte
 const SVG_DEFS = `
   <defs>
@@ -978,6 +1000,9 @@ async function generarGuionHistoria(args: {
   toneSuffix?: string;
   ajuste?: string | null;
 }): Promise<GuionHistoria> {
+  // El modo de cierre lo elige el servidor con rotación: así la serie no
+  // termina siempre igual (y 1 de cada 3 no pide nada).
+  const modoCierre = resolverModoCierre(args.tipoHistoria);
   const opts = {
     tipoHistoria: args.tipoHistoria,
     concepto: args.concepto,
@@ -986,6 +1011,7 @@ async function generarGuionHistoria(args: {
     ajuste: args.ajuste ?? null,
     catalogoServicios: CATALOGO_SERVICIOS,
     reglaIdioma: REGLA_ESPANOL_NEUTRO,
+    modoCierre,
   };
   const system = buildGuionSystemPrompt(opts) + (args.toneSuffix || "");
   const user = buildGuionUserPrompt(opts);
@@ -1039,7 +1065,7 @@ async function generarGuionHistoria(args: {
       })),
     };
   }
-  console.log(`[Historias] Guion "${args.formato.id}" (${args.arco.length} frames) · hilo: ${guion.hilo.slice(0, 80)}`);
+  console.log(`[Historias] Guion "${args.formato.id}" (${args.arco.length} frames) · cierre: ${modoCierre.id} · hilo: ${guion.hilo.slice(0, 80)}`);
   return guion;
 }
 
@@ -1229,50 +1255,53 @@ async function renderTextoEnHistoria(
   const estilo = obtenerEstiloTitular(estiloId) ?? obtenerEstiloTitular("impacto")!;
   const acento = PALETA_COMMUNITY.colorAcento;
 
-  const subFit = sub ? fitTextBlock(sub, {
+  // Todo el texto secundario se mide con las métricas reales de Montserrat
+  // (empaquetada): así ninguna línea puede salirse del lienzo.
+  const subFit = sub ? ajustarTextoMedido(sub, {
     maxWidth: w - 200,
     maxHeight: 190,
+    maxLineas: 3,
     maxFontSize: 52,
-    minFontSize: 34,
-    charWidthRatio: 0.5,
+    minFontSize: 30,
+    fuenteId: "montserrat_bold",
+    lineHeight: 1.2,
   }) : null;
 
-  const ctaFit = cta ? fitTextBlock(cta, {
-    maxWidth: innerWidth - 128,
-    maxHeight: 80,
+  const ctaFit = cta ? ajustarTextoMedido(cta, {
+    maxWidth: innerWidth - 160,
+    maxHeight: 120,
+    maxLineas: 2,
     maxFontSize: 44,
-    minFontSize: 32,
-    charWidthRatio: 0.55,
+    minFontSize: 28,
+    fuenteId: "montserrat_bold",
+    lineHeight: 1.18,
   }) : null;
 
   const hashSidePadding = 140;
-  const hashFit = hashtags ? fitHashtagsBlock(hashtags, {
+  const hashFit = hashtags ? ajustarTextoMedido(hashtags, {
     maxWidth: w - hashSidePadding * 2,
+    maxHeight: 130,
+    maxLineas: 3,
     maxFontSize: 32,
-    minFontSize: 22,
-    maxLines: 3,
-    charWidthRatio: 0.58,
-    lineHeightRatio: 1.22,
+    minFontSize: 20,
+    fuenteId: "montserrat_bold",
+    lineHeight: 1.22,
   }) : null;
 
   // Botón de invitación: solo existe si el frame trae CTA (o sea, el cierre).
   const ctaSvg = ctaFit ? (() => {
     const padX = 64, padY = 26;
-    const btnWidth = Math.min(innerWidth, ctaFit.blockWidth + padX * 2);
-    const btnHeight = Math.max(88, ctaFit.blockHeight + padY * 2);
+    // El botón se dimensiona con el ancho MEDIDO y nunca excede el lienzo.
+    const btnWidth = Math.min(innerWidth, ctaFit.ancho + padX * 2);
+    const btnHeight = Math.max(88, ctaFit.alto + padY * 2);
     const btnX = (w - btnWidth) / 2;
     const btnY = layout.ctaCenterY - btnHeight / 2;
-    const baselineY = btnY + (btnHeight - ctaFit.blockHeight) / 2 + ctaFit.fontSize * 0.82;
     return `
       <rect x="${btnX.toFixed(1)}" y="${(btnY + 8).toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
         rx="${btnHeight / 2}" fill="#E86A30" fill-opacity="0.30" filter="url(#ctashadow)"/>
       <rect x="${btnX.toFixed(1)}" y="${btnY.toFixed(1)}" width="${btnWidth.toFixed(1)}" height="${btnHeight.toFixed(1)}"
         rx="${btnHeight / 2}" fill="#E86A30"/>
-      ${ctaFit.lines.map((line, i) => `
-        <text x="${w / 2}" y="${(baselineY + i * ctaFit.lineHeight).toFixed(1)}" text-anchor="middle"
-          font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="700"
-          font-size="${ctaFit.fontSize}" fill="#ffffff">${escapeXml(line)}</text>
-      `).join("")}
+      ${bloqueSecundarioSvg(ctaFit, { canvasWidth: w, centerY: layout.ctaCenterY, color: "#ffffff", conSombra: false })}
     `;
   })() : "";
 
@@ -1288,14 +1317,16 @@ async function renderTextoEnHistoria(
     const attrs = `font-family="'${m.familia}'" font-weight="${m.peso}" font-size="${fsNum.toFixed(0)}"`;
     const sombra = fsNum * 0.03;
     const etiqueta = datoLabel ? (() => {
-      const fit = fitTextBlock(datoLabel, {
-        maxWidth: innerWidth - 60, maxHeight: 90, maxFontSize: 44, minFontSize: 28, charWidthRatio: 0.52,
+      const fit = ajustarTextoMedido(datoLabel, {
+        maxWidth: innerWidth - 60, maxHeight: 110, maxLineas: 2,
+        maxFontSize: 44, minFontSize: 26, fuenteId: "montserrat_bold", lineHeight: 1.2,
       });
-      return fit.lines.map((line, i) => `
-        <text x="${w / 2}" y="${(layout.zonaDato!.y + alto + 14 + i * fit.lineHeight + fit.fontSize * 0.8).toFixed(1)}"
-          text-anchor="middle" font-family="'Inter','Helvetica Neue',Arial,sans-serif" font-weight="600"
-          font-size="${fit.fontSize}" fill="#f1f5f9" fill-opacity="0.92" filter="url(#textds)">${escapeXml(line)}</text>
-      `).join("");
+      return bloqueSecundarioSvg(fit, {
+        canvasWidth: w,
+        centerY: layout.zonaDato!.y + alto + 14 + fit.alto / 2,
+        color: "#f1f5f9",
+        opacidad: 0.92,
+      });
     })() : "";
     return `
       <text x="${(xNum + sombra).toFixed(1)}" y="${(baseNum + sombra).toFixed(1)}" ${attrs} fill="#0B1120" fill-opacity="0.8">${escapeXml(dato)}</text>
@@ -1340,15 +1371,13 @@ async function renderTextoEnHistoria(
     ${scrimBottom}
     ${comillasSvg}
     ${datoSvg}
-    ${subFit && layout.subCopyCenterY !== null ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: layout.subCopyCenterY, fontWeight: 600, color: "#f1f5f9",
-      bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
-    } as any) : ""}
+    ${subFit && layout.subCopyCenterY !== null ? bloqueSecundarioSvg(subFit, {
+      canvasWidth: w, centerY: layout.subCopyCenterY, color: "#f1f5f9",
+    }) : ""}
     ${ctaSvg}
-    ${hashFit ? renderTextBlockSvg(hashFit, {
-      canvasWidth: w, centerY: layout.hashtagsCenterY, fontWeight: 500, color: "#fb923c",
-      bgOpacity: 0, filterId: "textds", letterSpacing: 0,
-    } as any) : ""}
+    ${hashFit ? bloqueSecundarioSvg(hashFit, {
+      canvasWidth: w, centerY: layout.hashtagsCenterY, color: "#fb923c",
+    }) : ""}
     ${contadorSvg}
   </svg>`;
 
@@ -1968,12 +1997,14 @@ async function renderTextoEnSlide(
   const titulo = stripEmojis(slide.titulo);
   const subtitulo = stripEmojis(slide.subtitulo);
 
-  const subFit = subtitulo ? fitTextBlock(subtitulo, {
+  const subFit = subtitulo ? ajustarTextoMedido(subtitulo, {
     maxWidth: innerWidth - 48,
     maxHeight: bottomMaxHeight - 36,
+    maxLineas: 3,
     maxFontSize: 44,
-    minFontSize: 28,
-    charWidthRatio: 0.5,
+    minFontSize: 26,
+    fuenteId: "montserrat_bold",
+    lineHeight: 1.2,
   }) : null;
 
   // Indicador de slide (esquina superior derecha) si hay más de 1 slide
@@ -1985,10 +2016,9 @@ async function renderTextoEnSlide(
     ${SVG_DEFS}
     <rect x="0" y="0" width="${w}" height="${topZoneEnd}" fill="url(#topfade)"/>
     <rect x="0" y="${bottomZoneStart}" width="${w}" height="${h - bottomZoneStart}" fill="url(#botfade)"/>
-    ${subFit ? renderTextBlockSvg(subFit, {
-      canvasWidth: w, centerY: bottomCenterY, fontWeight: 600, color: "#f1f5f9",
-      bgOpacity: 0, filterId: "textds", letterSpacing: -0.5,
-    } as any) : ""}
+    ${subFit ? bloqueSecundarioSvg(subFit, {
+      canvasWidth: w, centerY: bottomCenterY, color: "#f1f5f9",
+    }) : ""}
     ${indicador}
   </svg>`;
 
