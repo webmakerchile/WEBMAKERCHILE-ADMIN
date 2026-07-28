@@ -365,7 +365,28 @@ async function fetchHubFromServer(): Promise<HubSnapshot | null> {
   } catch { return null; }
 }
 
-async function patchHubToServer(st: HubState, baseVersion: number): Promise<{ data: Partial<HubState>; version: number } | null> {
+type ResultadoPatch =
+  | { ok: true; data: Partial<HubState>; version: number }
+  | { ok: false; error: string; permanente: boolean };
+
+/**
+ * Guarda el tablero en el servidor.
+ *
+ * Antes devolvía `null` ante CUALQUIER fallo y el llamador hacía
+ * `if (!result) return`. Eso encadenaba tres desastres silenciosos:
+ *
+ *  · Nadie se enteraba. El toast de "Contrato creado" ya se había mostrado
+ *    1,5 s antes, así que el ejecutivo daba por hecho que estaba guardado.
+ *  · `dirtyRef` se quedaba en `true` PARA SIEMPRE, y el pull de 30 s se
+ *    salta si está sucio: la sesión dejaba de ver lo que hacía el resto del
+ *    equipo hasta recargar la página.
+ *  · El 409 "todavía no hay tablero de dirección" era invisible: se podían
+ *    crear contratos y proyectos que solo existían en el localStorage.
+ *
+ * Ahora el fallo se devuelve con su motivo y se distingue lo que se arregla
+ * reintentando de lo que no.
+ */
+async function patchHubToServer(st: HubState, baseVersion: number): Promise<ResultadoPatch> {
   try {
     const res = await fetch(`${HUB_API_BASE}/hub`, {
       method: "PATCH",
@@ -373,13 +394,28 @@ async function patchHubToServer(st: HubState, baseVersion: number): Promise<{ da
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: st, baseVersion }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const cuerpo = (await res.json().catch(() => null)) as { error?: string } | null;
+      // 400 y 403 no cambian por reintentar: el dato o el permiso están mal.
+      const permanente = res.status === 400 || res.status === 403;
+      return {
+        ok: false,
+        permanente,
+        error: cuerpo?.error || `El servidor rechazó el guardado (${res.status})`,
+      };
+    }
     const json = await res.json() as { data?: unknown; version?: unknown };
     const data = json.data && typeof json.data === "object" && !Array.isArray(json.data)
       ? json.data as Partial<HubState>
       : {};
-    return { data, version: Number(json.version) || 0 };
-  } catch { return null; /* localStorage ya guardó: se reintenta en el próximo cambio */ }
+    return { ok: true, data, version: Number(json.version) || 0 };
+  } catch (e) {
+    return {
+      ok: false,
+      permanente: false,
+      error: e instanceof Error && e.message ? `No se pudo contactar al servidor: ${e.message}` : "No se pudo contactar al servidor",
+    };
+  }
 }
 function migrate(st: HubState): HubState {
   const now = Date.now();
@@ -5313,6 +5349,10 @@ export default function EjecutivoPage() {
 
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  // Motivo del último fallo de guardado, o null. Se muestra fijo en pantalla:
+  // un toast se lo pierde quien está mirando otra cosa, y aquí lo que está en
+  // juego es un contrato que solo existe en este navegador.
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
   /** Última versión del tablero que conocemos: la base para fusionar en el servidor. */
   const versionRef = useRef(0);
   /** Contador de guardados: si sube mientras viaja un PATCH, no pisamos lo que el usuario acaba de escribir. */
@@ -5335,17 +5375,36 @@ export default function EjecutivoPage() {
     setStateRaw(next);
     saveState(storageKey, next);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => {
+
+    // Reintento con espera creciente. Un corte de red de unos segundos no
+    // puede dejar el tablero guardado solo en el navegador de una persona.
+    const enviar = (intento: number) => {
       void patchHubToServer(next, versionRef.current).then(result => {
-        if (!result) return;
-        versionRef.current = result.version;
-        // Si el usuario siguió editando mientras viajaba el PATCH, no aplicamos
-        // la respuesta: su versión local es más nueva y se enviará enseguida.
+        // Si el usuario siguió editando, ese cambio más nuevo manda: se
+        // descarta este envío y su reintento.
         if (saveSeqRef.current !== seq) return;
-        dirtyRef.current = false;
-        adoptServerData(result.data, result.version);
+
+        if (result.ok) {
+          versionRef.current = result.version;
+          dirtyRef.current = false;
+          setErrorGuardado(null);
+          adoptServerData(result.data, result.version);
+          return;
+        }
+
+        if (!result.permanente && intento < 4) {
+          const espera = 2000 * 2 ** intento;
+          serverSaveTimer.current = setTimeout(() => enviar(intento + 1), espera);
+          return;
+        }
+        // Agotados los reintentos (o fallo que no se arregla reintentando):
+        // se dice. `dirtyRef` sigue en true a propósito — hay trabajo local
+        // sin enviar y traer del servidor lo borraría.
+        setErrorGuardado(result.error);
       });
-    }, 1500);
+    };
+
+    serverSaveTimer.current = setTimeout(() => enviar(0), 1500);
   }, [storageKey, adoptServerData]);
 
   useEffect(() => {
@@ -5515,6 +5574,25 @@ export default function EjecutivoPage() {
 
       <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
       <ViewAsBar />
+
+      {/* El tablero no llegó al servidor. Va fijo arriba, no como toast: lo que
+          está en juego es un contrato que solo existe en este navegador, y un
+          aviso que se desvanece en 3 s no sirve para eso. */}
+      {errorGuardado && (
+        <div className="flex items-start gap-2 px-4 py-2 bg-red-500/15 border-b border-red-500/30 text-red-300 text-xs flex-shrink-0">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold">Tus cambios NO se guardaron en el servidor</p>
+            <p className="opacity-90">{errorGuardado} · Siguen en este navegador; no cierres la pestaña sin volver a intentarlo.</p>
+          </div>
+          <button
+            onClick={() => { setErrorGuardado(null); setState({ ...state }); }}
+            className="flex-shrink-0 px-2.5 py-1 rounded-lg border border-red-400/40 hover:bg-red-500/20 font-semibold"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ======= MAIN CONTENT AREA ======= */}
