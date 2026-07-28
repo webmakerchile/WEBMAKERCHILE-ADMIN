@@ -20,6 +20,7 @@ import { publishLinkedInPost, publishLinkedInVideo } from "./routes/linkedin";
 import { publishXPost, publishXTweetWithVideo } from "./routes/x";
 import { publishToFacebook } from "./routes/facebook";
 import { createNotification } from "./lib/notifications";
+import { resumirFallos, requiereIntervencion } from "./lib/errores-publicacion";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
 import { getCredential } from "./lib/credentials";
 import { checkSlaBreaches } from "./lib/sla";
@@ -1100,14 +1101,16 @@ export async function processScheduledVideos() {
         results.linkedin.success &&
         results.x.success &&
         results.facebook.success;
-      const errors = [
-        !results.youtube.success && results.youtube.error ? `YT: ${results.youtube.error}` : "",
-        !results.tiktok.success && results.tiktok.error ? `TT: ${results.tiktok.error}` : "",
-        !results.instagram.success && results.instagram.error ? `IG: ${results.instagram.error}` : "",
-        !results.linkedin.success && results.linkedin.error ? `LI: ${results.linkedin.error}` : "",
-        !results.x.success && results.x.error ? `X: ${results.x.error}` : "",
-        !results.facebook.success && results.facebook.error ? `FB: ${results.facebook.error}` : "",
-      ].filter(Boolean).join("; ");
+      // Los errores se traducen a algo accionable ANTES de llegar al aviso: el
+      // mensaje crudo de Meta sobre pages_manage_posts no le dice a nadie qué
+      // hacer, y era literalmente lo que veía el equipo en pantalla.
+      const fallos = ALL_PLATFORMS
+        .filter((p) => !results[p].success && results[p].error)
+        .map((p) => ({ red: p, error: results[p].error! }));
+      const errors = resumirFallos(fallos).join(" · ");
+      // Lo que no se arregla reintentando se dice aparte: si no, el equipo
+      // reintenta en vano una publicación que necesita un permiso de Meta.
+      const bloqueados = fallos.filter((f) => requiereIntervencion(f.red, f.error));
 
       // "Intentado de verdad" = se invocó la función de publicación este tick.
       // Antes se infería del contenido (título/descripciones), lo que producía
@@ -1243,7 +1246,9 @@ export async function processScheduledVideos() {
             userId: adminUser.id,
             type: "publish_partial",
             title: "Publicación parcial",
-            body: `"${video.title}" tuvo errores en algunas redes: ${errors}`,
+            body: bloqueados.length > 0
+              ? `"${video.title}" no se publicó en todas las redes. ${errors}. Reintentar no lo soluciona hasta arreglar lo anterior.`
+              : `"${video.title}" tuvo errores en algunas redes. ${errors}`,
             link: `/videos?select=${video.id}`,
           });
         } else if (nothingToPublish) {

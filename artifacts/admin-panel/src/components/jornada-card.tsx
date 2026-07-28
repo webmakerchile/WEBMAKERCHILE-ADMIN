@@ -462,48 +462,112 @@ export function JornadaCard() {
 
 /* ==================== Chip compacto (sidebar del panel) ================== */
 
+/**
+ * Control de jornada compacto y AUTÓNOMO.
+ *
+ * Antes solo mostraba el estado y enlazaba a "Mi día" para iniciar: en el panel
+ * ejecutivo, que no tiene esa página, el equipo simplemente no podía marcar
+ * entrada, pausa ni salida. Ahora las tres acciones se hacen aquí mismo.
+ */
 export function JornadaChip() {
   const { data } = useJornadaMe();
   const qc = useQueryClient();
+  const [err, setErr] = useState<string | null>(null);
   useNowTick(!!data?.open);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["jornada-me"] });
+  const onErr = (e: unknown) => setErr(e instanceof Error ? e.message : "Error inesperado");
+
+  const checkIn = useMutation({
+    mutationFn: () => jfetch("/jornada/check-in", { method: "POST", body: JSON.stringify({ onDiscord: false }) }),
+    onSuccess: () => { setErr(null); inv(); },
+    onError: onErr,
+  });
   const checkOut = useMutation({
     mutationFn: () => jfetch("/jornada/check-out", { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["jornada-me"] }),
+    onSuccess: () => { setErr(null); inv(); },
+    onError: onErr,
+  });
+  const pausar = useMutation({
+    mutationFn: () => jfetch("/jornada/pausa", { method: "POST", body: JSON.stringify({ motivo: "" }) }),
+    onSuccess: () => { setErr(null); inv(); },
+    onError: onErr,
+  });
+  const reanudar = useMutation({
+    mutationFn: () => jfetch("/jornada/reanudar", { method: "POST" }),
+    onSuccess: () => { setErr(null); inv(); },
+    onError: onErr,
   });
 
   if (!data) return null;
   const open = data.open;
+  const pausa = data.pausa;
+  const ocupado = checkIn.isPending || checkOut.isPending || pausar.isPending || reanudar.isPending;
+
+  const btn = "p-1.5 rounded-lg transition-colors flex-shrink-0 disabled:opacity-50";
 
   return (
-    <div className="rounded-xl border border-foreground/10 bg-foreground/[0.03] px-3 py-2 flex items-center gap-2.5">
-      {open ? (
-        <>
-          <span className="relative flex h-2 w-2 flex-shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-          </span>
-          <Link href="/mi-dia" className="flex-1 min-w-0 leading-tight">
-            <p className="text-xs font-semibold font-mono">{fmtMin(openElapsedMin(open))}</p>
-            <p className="text-[10px] text-muted-foreground truncate">En jornada{open.onDiscord ? " · 🎧" : ""}</p>
-          </Link>
+    <div className="space-y-1">
+      <div className="rounded-xl border border-foreground/10 bg-foreground/[0.03] px-3 py-2 flex items-center gap-2.5">
+        {open ? (
+          <>
+            {pausa ? (
+              <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-amber-500" />
+            ) : (
+              <span className="relative flex h-2 w-2 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+            )}
+            <div className="flex-1 min-w-0 leading-tight">
+              <p className="text-xs font-semibold font-mono">{fmtMin(openElapsedMin(open, pausa))}</p>
+              <p className="text-[10px] text-muted-foreground truncate">
+                {pausa ? "En pausa" : "En jornada"}{open.onDiscord ? " · 🎧" : ""}
+              </p>
+            </div>
+            {pausa ? (
+              <button
+                onClick={() => reanudar.mutate()}
+                disabled={ocupado}
+                title="Reanudar jornada"
+                className={cn(btn, "text-emerald-400 hover:bg-emerald-500/10")}
+              >
+                {reanudar.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              </button>
+            ) : (
+              <button
+                onClick={() => pausar.mutate()}
+                disabled={ocupado}
+                title="Pausar jornada"
+                className={cn(btn, "text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10")}
+              >
+                {pausar.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5" />}
+              </button>
+            )}
+            <button
+              onClick={() => checkOut.mutate()}
+              disabled={ocupado}
+              title="Terminar jornada"
+              className={cn(btn, "text-muted-foreground hover:text-red-400 hover:bg-red-500/10")}
+            >
+              {checkOut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
+            </button>
+          </>
+        ) : (
           <button
-            onClick={() => checkOut.mutate()}
-            disabled={checkOut.isPending}
-            title="Terminar jornada"
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors flex-shrink-0 disabled:opacity-50"
+            onClick={() => checkIn.mutate()}
+            disabled={ocupado}
+            className="flex-1 flex items-center gap-2 text-xs font-medium text-primary hover:opacity-80 transition-opacity disabled:opacity-50"
           >
-            {checkOut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
+            {checkIn.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogIn className="w-3.5 h-3.5 flex-shrink-0" />}
+            Iniciar jornada
+            <span className="ml-auto text-[10px] text-muted-foreground font-normal tabular-nums">
+              hoy {fmtMin(data.todayMinutes)}
+            </span>
           </button>
-        </>
-      ) : (
-        <Link href="/mi-dia" className="flex-1 flex items-center gap-2 text-xs font-medium text-primary hover:opacity-80 transition-opacity">
-          <LogIn className="w-3.5 h-3.5 flex-shrink-0" />
-          Iniciar jornada
-          <span className="ml-auto text-[10px] text-muted-foreground font-normal tabular-nums">
-            hoy {fmtMin(data.todayMinutes)}
-          </span>
-        </Link>
-      )}
+        )}
+      </div>
+      {err && <p className="text-[10px] text-red-400 px-1">{err}</p>}
     </div>
   );
 }

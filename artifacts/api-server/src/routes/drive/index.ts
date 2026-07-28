@@ -1,21 +1,33 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { google } from "googleapis";
+import {
+  clienteGoogleDe,
+  mensajeErrorGoogle,
+  MENSAJE_SIN_GOOGLE,
+  type UsuarioConGoogle,
+} from "../../lib/google-auth";
 import multer from "multer";
 import { Readable } from "stream";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+/**
+ * Cliente de Drive del usuario, o `null` si su cuenta no tiene Google conectado.
+ *
+ * Antes se construía siempre un cliente aunque los tokens fueran null:
+ * googleapis lo acepta y revienta al hacer la petición con "No access, refresh
+ * token, API key or refresh handler callback is set", que llegaba tal cual a la
+ * pantalla a mitad de crear un contrato.
+ */
+function driveDe(user: unknown) {
+  const auth = clienteGoogleDe(user as UsuarioConGoogle);
+  return auth ? google.drive({ version: "v3", auth }) : null;
+}
 
-function getGoogleAuth(user: any) {
-  const oauth2Client = new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
-  oauth2Client.setCredentials({
-    access_token: user.googleAccessToken,
-    refresh_token: user.googleRefreshToken,
-  });
-  return oauth2Client;
+/** Responde 409 con el motivo si no hay Google conectado. */
+function sinGoogle(res: Response): void {
+  res.status(409).json({ error: MENSAJE_SIN_GOOGLE, code: "google_no_conectado" });
 }
 
 router.get("/drive/files", async (req, res) => {
@@ -23,9 +35,8 @@ router.get("/drive/files", async (req, res) => {
   const pageToken = (req.query.pageToken as string) || undefined;
 
   try {
-    const user = req.user as any;
-    const auth = getGoogleAuth(user);
-    const drive = google.drive({ version: "v3", auth });
+    const drive = driveDe(req.user);
+    if (!drive) { sinGoogle(res); return; }
 
     let query = "trashed = false";
     if (folderId) {
@@ -46,7 +57,7 @@ router.get("/drive/files", async (req, res) => {
     });
   } catch (error: any) {
     console.error("[Drive] Error listing files:", error.message);
-    res.status(500).json({ error: error.message || "Failed to list files" });
+    res.status(500).json({ error: mensajeErrorGoogle(error) });
   }
 });
 
@@ -54,9 +65,8 @@ router.get("/drive/folders", async (req, res) => {
   const parentId = (req.query.parentId as string) || undefined;
 
   try {
-    const user = req.user as any;
-    const auth = getGoogleAuth(user);
-    const drive = google.drive({ version: "v3", auth });
+    const drive = driveDe(req.user);
+    if (!drive) { sinGoogle(res); return; }
 
     let query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
     if (parentId) {
@@ -73,7 +83,7 @@ router.get("/drive/folders", async (req, res) => {
     res.json(response.data.files || []);
   } catch (error: any) {
     console.error("[Drive] Error listing folders:", error.message);
-    res.status(500).json({ error: error.message || "Failed to list folders" });
+    res.status(500).json({ error: mensajeErrorGoogle(error) });
   }
 });
 
@@ -81,9 +91,8 @@ router.get("/drive/search", async (req, res) => {
   const searchQuery = (req.query.q as string) || "";
 
   try {
-    const user = req.user as any;
-    const auth = getGoogleAuth(user);
-    const drive = google.drive({ version: "v3", auth });
+    const drive = driveDe(req.user);
+    if (!drive) { sinGoogle(res); return; }
 
     const query = `name contains '${searchQuery.replace(/'/g, "\\'")}' and trashed = false`;
 
@@ -97,7 +106,7 @@ router.get("/drive/search", async (req, res) => {
     res.json(response.data.files || []);
   } catch (error: any) {
     console.error("[Drive] Error searching:", error.message);
-    res.status(500).json({ error: error.message || "Failed to search" });
+    res.status(500).json({ error: mensajeErrorGoogle(error) });
   }
 });
 
@@ -108,9 +117,8 @@ router.post("/drive/upload-pdf", upload.single("file"), async (req, res) => {
   const { parentId } = req.body as { parentId?: string };
 
   try {
-    const user = req.user as any;
-    const auth = getGoogleAuth(user);
-    const drive = google.drive({ version: "v3", auth });
+    const drive = driveDe(req.user);
+    if (!drive) { sinGoogle(res); return; }
 
     const bufferStream = new Readable();
     bufferStream.push(req.file.buffer);
@@ -136,7 +144,7 @@ router.post("/drive/upload-pdf", upload.single("file"), async (req, res) => {
     });
   } catch (error: any) {
     console.error("[Drive] Error uploading PDF:", error.message);
-    res.status(500).json({ error: error.message || "Failed to upload PDF" });
+    res.status(500).json({ error: mensajeErrorGoogle(error) });
   }
 });
 
@@ -148,9 +156,8 @@ router.post("/drive/mkdir", async (req, res) => {
   }
 
   try {
-    const user = req.user as any;
-    const auth = getGoogleAuth(user);
-    const drive = google.drive({ version: "v3", auth });
+    const drive = driveDe(req.user);
+    if (!drive) { sinGoogle(res); return; }
 
     const fileMetadata: { name: string; mimeType: string; parents?: string[] } = {
       name: name.trim(),
@@ -172,7 +179,7 @@ router.post("/drive/mkdir", async (req, res) => {
     });
   } catch (error: any) {
     console.error("[Drive] Error creating folder:", error.message);
-    res.status(500).json({ error: error.message || "Failed to create folder" });
+    res.status(500).json({ error: mensajeErrorGoogle(error) });
   }
 });
 
