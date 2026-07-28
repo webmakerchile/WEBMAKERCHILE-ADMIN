@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { videoIdeas } from "@workspace/db/schema";
 import { eq, desc, isNotNull, isNull } from "drizzle-orm";
 import multer from "multer";
+import { planNormalizacion, etiquetaResolucion, type FuenteVideo } from "../../lib/studio-video";
 import path from "path";
 import crypto from "crypto";
 import { ai } from "@workspace/integrations-gemini-ai";
@@ -592,20 +593,39 @@ router.post("/studio/upload-chunk", (req, res, next) => {
   });
 }, async (req, res) => {
   try {
-    const { appendFile, writeFile } = await import("fs/promises");
+    const { open, writeFile } = await import("fs/promises");
     const uploadId = req.body.uploadId;
     const chunkIndex = parseInt(req.body.chunkIndex);
     const totalChunks = parseInt(req.body.totalChunks);
+    const offset = parseInt(req.body.offset);
     if (!uploadId || isNaN(chunkIndex) || isNaN(totalChunks) || !req.file) {
       res.status(400).json({ error: "Missing chunk data" });
       return;
     }
     const safeId = uploadId.replace(/[^a-zA-Z0-9\-_]/g, "");
     const tempPath = path.join("/tmp", `studio-chunked-${safeId}`);
-    if (chunkIndex === 0) {
-      await writeFile(tempPath, req.file.buffer);
+
+    // Escritura POSICIONAL, no append.
+    //
+    // Antes cada trozo se añadía al final. Si el trozo llegaba bien pero la
+    // respuesta se perdía, el cliente reintentaba y esos bytes se escribían
+    // DOS veces: vídeo corrupto sin que nadie lo notara hasta abrirlo. Con 4K
+    // los trozos se multiplican y con ellos la probabilidad de que pase.
+    //
+    // Escribir en el offset exacto hace el reintento inofensivo (reescribe lo
+    // mismo encima) y permite subir varios trozos a la vez sin desordenarlos.
+    if (Number.isFinite(offset) && offset >= 0) {
+      const fh = await open(tempPath, chunkIndex === 0 ? "w+" : "r+").catch(() => open(tempPath, "w+"));
+      try {
+        await fh.write(req.file.buffer, 0, req.file.buffer.length, offset);
+      } finally {
+        await fh.close();
+      }
     } else {
-      await appendFile(tempPath, req.file.buffer);
+      // Cliente antiguo sin `offset`: se conserva el comportamiento de antes.
+      const { appendFile } = await import("fs/promises");
+      if (chunkIndex === 0) await writeFile(tempPath, req.file.buffer);
+      else await appendFile(tempPath, req.file.buffer);
     }
     console.log(`[Studio] Chunk ${chunkIndex + 1}/${totalChunks} received (${(req.file.size / 1024).toFixed(0)}KB) for ${safeId}`);
     res.json({ ok: true, chunkIndex, received: true });
@@ -671,11 +691,11 @@ router.post("/studio/finalize-upload", async (req, res) => {
     const ext = isMP4 ? "mp4" : "webm";
     let finalVideoPath = tempPath;
 
-    async function probeVideo(filePath: string): Promise<{ width: number; height: number; rotation: number }> {
+    async function probeVideo(filePath: string): Promise<FuenteVideo & { duracion: number }> {
       try {
         const { stdout } = await execAsync(
-          `ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height -show_entries stream_side_data=rotation -of json "${filePath}"`,
-          { timeout: 10000 }
+          `ffprobe -v quiet -select_streams v:0 -show_entries stream=width,height,avg_frame_rate -show_entries stream_side_data=rotation -show_entries format=duration -of json "${filePath}"`,
+          { timeout: 15000 }
         );
         const info = JSON.parse(stdout);
         const stream = info.streams?.[0] || {};
@@ -686,24 +706,18 @@ router.post("/studio/finalize-upload", async (req, res) => {
         for (const sd of sideData) {
           if (sd.rotation) rot = parseInt(sd.rotation) || 0;
         }
-        console.log(`[Studio] Probe: ${w}x${h} rotation=${rot}`);
-        return { width: w, height: h, rotation: rot };
+        // avg_frame_rate viene como fracción ("30000/1001"): sin esto se
+        // forzaban 30 fps siempre y una grabación a 60 perdía la mitad.
+        let fps = 0;
+        const [num, den] = String(stream.avg_frame_rate || "").split("/").map(Number);
+        if (Number.isFinite(num) && Number.isFinite(den) && den > 0) fps = num / den;
+        const duracion = parseFloat(info.format?.duration) || 0;
+        console.log(`[Studio] Probe: ${w}x${h} rotation=${rot} fps=${fps.toFixed(2)} dur=${duracion.toFixed(1)}s`);
+        return { width: w, height: h, rotation: rot, fps, duracion };
       } catch (e: any) {
         console.warn(`[Studio] ffprobe failed: ${e.message}`);
-        return { width: 0, height: 0, rotation: 0 };
+        return { width: 0, height: 0, rotation: 0, fps: 0, duracion: 0 };
       }
-    }
-
-    function buildVf(w: number, h: number, rotation: number): string {
-      const filters: string[] = [];
-      const isLandscape = w > h && Math.abs(rotation) !== 90 && Math.abs(rotation) !== 270;
-      const isRotated = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
-      if (isLandscape && !isRotated) {
-        filters.push("transpose=1");
-        console.log("[Studio] Video is landscape -> rotating 90° clockwise to portrait");
-      }
-      filters.push("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920");
-      return filters.join(",");
     }
 
     if (hasFFmpeg) {
@@ -714,9 +728,14 @@ router.post("/studio/finalize-upload", async (req, res) => {
       await copyFile(tempPath, rawInputPath);
 
       const probe = await probeVideo(rawInputPath);
-      const vfChain = buildVf(probe.width, probe.height, probe.rotation);
-      const cfrVideo = `-vf "${vfChain}" -r 30 -c:v libx264 -preset fast -crf 18 -g 30 -pix_fmt yuv420p -profile:v main -level 4.2`;
-      const cfrAudio = `-c:a aac -b:a 128k -ar 44100 -ac 2`;
+      // El plan CONSERVA la resolución de origen. Antes esta línea era un
+      // scale=1080:1920 fijo, así que un 4K llegaba a Drive en Full HD.
+      const plan = planNormalizacion(probe, probe.duracion || 60);
+      console.log(`[Studio] Normalización: ${plan.resumen} · ${plan.fps} fps · crf ${plan.crf}/${plan.preset} · ${etiquetaResolucion(plan.ancho, plan.alto)}`);
+      // level 5.1 (no 4.2): 4.2 no admite 4K y ffmpeg lo rebajaría o fallaría.
+      const cfrVideo = `-vf "${plan.vf}" -r ${plan.fps} -c:v libx264 -preset ${plan.preset} -crf ${plan.crf} -g ${plan.fps} -pix_fmt yuv420p -profile:v high -level 5.1`;
+      const cfrAudio = `-c:a aac -b:a 192k -ar 48000 -ac 2`;
+      const encodeTimeout = plan.timeoutMs;
 
       try {
         if (segmentsParam && Array.isArray(segmentsParam) && segmentsParam.length > 0) {
@@ -727,7 +746,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
             allTempFiles.push(outPath);
             await execAsync(
               `ffmpeg -y -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -movflags +faststart -avoid_negative_ts make_zero "${outPath}"`,
-              { timeout: 240000 }
+              { timeout: encodeTimeout }
             );
             finalVideoPath = outPath;
           } else {
@@ -738,7 +757,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
               allTempFiles.push(segPath);
               await execAsync(
                 `ffmpeg -y -ss ${seg.start} -i "${rawInputPath}" -to ${(seg.end - seg.start).toFixed(3)} ${cfrVideo} ${cfrAudio} -avoid_negative_ts make_zero -movflags +faststart "${segPath}"`,
-                { timeout: 180000 }
+                { timeout: encodeTimeout }
               );
               segPaths.push(segPath);
             }
@@ -750,7 +769,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
             allTempFiles.push(outPath);
             await execAsync(
               `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy -movflags +faststart "${outPath}"`,
-              { timeout: 120000 }
+              { timeout: Math.max(180_000, Math.round(encodeTimeout / 2)) }
             );
             finalVideoPath = outPath;
           }
@@ -759,7 +778,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
           allTempFiles.push(outPath);
           await execAsync(
             `ffmpeg -y -i "${rawInputPath}" ${cfrVideo} ${cfrAudio} -movflags +faststart "${outPath}"`,
-            { timeout: 180000 }
+            { timeout: encodeTimeout }
           );
           finalVideoPath = outPath;
         }
@@ -767,7 +786,7 @@ router.post("/studio/finalize-upload", async (req, res) => {
         const outStats = await fsStat(finalVideoPath);
         if (!outStats.size || outStats.size < 100) throw new Error("Processed video empty");
         const finalProbe = await probeVideo(finalVideoPath);
-        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB, final=${finalProbe.width}x${finalProbe.height}`);
+        console.log(`[Studio] Processed video: ${(outStats.size / 1024 / 1024).toFixed(1)}MB, final=${finalProbe.width}x${finalProbe.height} (${etiquetaResolucion(finalProbe.width, finalProbe.height)})`);
       } catch (ffErr: any) {
         console.error(`[Studio] ffmpeg FAILED - uploading raw VFR video. Error: ${ffErr.message}`);
         if (ffErr.stderr) console.error(`[Studio] ffmpeg stderr: ${ffErr.stderr}`);
