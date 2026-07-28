@@ -89,7 +89,9 @@ export async function prepararImagenInstagram(
       bottom: Math.ceil(relleno / 2),
       left: 0,
       right: 0,
-      background: { r: 15, g: 23, b: 42 },
+      // Negro neutro del set, no el azul marino de la paleta anterior: las
+      // barras se tienen que confundir con el fondo, no anunciarse.
+      background: { r: 14, g: 14, b: 16 },
     });
     nota += ` · rellenada a ${ancho}x${altoObjetivo} para entrar en el feed`;
   }

@@ -24,7 +24,29 @@ import { FONT_METRICS } from "./font-metrics.generated.js";
 import { HIST_HEIGHT, HIST_WIDTH, type LayoutHistoria } from "./story-formats.js";
 import type { FrameGuion } from "./story-script.js";
 
-export const PALETA_COMMUNITY = { colorAcento: "#FB923C", scrim: { r: 15, g: 23, b: 42 } };
+export interface PaletaComposicion {
+  colorAcento: string;
+  scrim: { r: number; g: number; b: number };
+}
+
+/**
+ * Paleta de respaldo: la del spotlight ámbar, la luz de la marca.
+ *
+ * Antes era `#0F172A` (azul marino), el fondo de la generación anterior. Como
+ * el scrim se pintaba SIEMPRE con ese azul, las franjas de arriba y abajo
+ * salían azules aunque la ilustración ya viniera con el set iluminado nuevo:
+ * la imagen combinaba dos estilos. Ahora cada composición recibe el scrim de
+ * su propia dirección de arte, y esto es solo el valor por defecto.
+ */
+export const PALETA_COMMUNITY: PaletaComposicion = {
+  colorAcento: "#FB923C",
+  scrim: { r: 14, g: 14, b: 16 },
+};
+
+function rgbHex({ r, g, b }: { r: number; g: number; b: number }): string {
+  const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
 
 /** Fuente empaquetada del texto secundario. "Inter" NO está instalada en el
  *  servidor (cae en DejaVu Sans, más ancha) — medir como Inter y dibujar como
@@ -53,19 +75,29 @@ export function stripEmojis(s: string): string {
     .trim();
 }
 
-// Defs SVG: gradientes de las zonas reservadas + sombra suave de texto.
-export const SVG_DEFS = `
+/**
+ * Defs SVG: gradientes de las zonas reservadas + sombra suave de texto.
+ *
+ * El color lo pone la dirección de arte activa. Y el degradado inferior ya no
+ * llega a opacidad 1: un bloque opaco tapaba el set por completo y se leía como
+ * una franja de otro color pegada abajo. A 0.94 el fondo iluminado se sigue
+ * intuyendo debajo del texto, que es lo que hace que la pieza se vea de una
+ * sola generación — el contraste para leer ya lo da el 0.88 de la zona central.
+ */
+export function svgDefs(scrim: { r: number; g: number; b: number }): string {
+  const c = rgbHex(scrim);
+  return `
   <defs>
     <linearGradient id="topfade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0F172A" stop-opacity="0.92"/>
-      <stop offset="60%" stop-color="#0F172A" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="0"/>
+      <stop offset="0%" stop-color="${c}" stop-opacity="0.90"/>
+      <stop offset="60%" stop-color="${c}" stop-opacity="0.52"/>
+      <stop offset="100%" stop-color="${c}" stop-opacity="0"/>
     </linearGradient>
     <linearGradient id="botfade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0F172A" stop-opacity="0"/>
-      <stop offset="20%" stop-color="#0F172A" stop-opacity="0.85"/>
-      <stop offset="40%" stop-color="#0F172A" stop-opacity="0.97"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="1"/>
+      <stop offset="0%" stop-color="${c}" stop-opacity="0"/>
+      <stop offset="20%" stop-color="${c}" stop-opacity="0.80"/>
+      <stop offset="40%" stop-color="${c}" stop-opacity="0.88"/>
+      <stop offset="100%" stop-color="${c}" stop-opacity="0.94"/>
     </linearGradient>
     <filter id="textds" x="-30%" y="-30%" width="160%" height="160%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
@@ -75,6 +107,7 @@ export const SVG_DEFS = `
     </filter>
   </defs>
 `;
+}
 
 /** Bloque de texto secundario centrado, medido con métricas reales. */
 export function bloqueSecundarioSvg(
@@ -154,6 +187,8 @@ export function apilarBloquesInferiores(
 export interface OpcionesRenderHistoria {
   frameInfo?: { numero: number; total: number };
   estiloTitularId?: string;
+  /** Paleta de la dirección de arte activa: acento y color del scrim. */
+  paleta?: PaletaComposicion;
 }
 
 /** Geometría resuelta de un frame: lo que el test verifica sin rasterizar. */
@@ -192,7 +227,8 @@ export function componerHistoria(
   const estilo =
     (opts?.estiloTitularId ? obtenerEstiloTitular(opts.estiloTitularId) : undefined) ??
     obtenerEstiloTitular("impacto")!;
-  const acento = PALETA_COMMUNITY.colorAcento;
+  const paleta = opts?.paleta ?? PALETA_COMMUNITY;
+  const acento = paleta.colorAcento;
 
   // Si el layout esperaba una cifra y el guion no trajo una válida, el titular
   // se queda con todo el espacio en vez de dejar un hueco enorme arriba.
@@ -311,7 +347,7 @@ export function componerHistoria(
               })()
             : "";
           return `
-      <text x="${(xNum + sombra).toFixed(1)}" y="${(baseNum + sombra).toFixed(1)}" ${attrs} fill="#0B1120" fill-opacity="0.8">${escapeXml(texto)}</text>
+      <text x="${(xNum + sombra).toFixed(1)}" y="${(baseNum + sombra).toFixed(1)}" ${attrs} fill="${rgbHex({ r: paleta.scrim.r * 0.6, g: paleta.scrim.g * 0.6, b: paleta.scrim.b * 0.6 })}" fill-opacity="0.8">${escapeXml(texto)}</text>
       <text x="${xNum.toFixed(1)}" y="${baseNum.toFixed(1)}" ${attrs} fill="${acento}">${escapeXml(texto)}</text>
       ${etiqueta}
     `;
@@ -333,7 +369,7 @@ export function componerHistoria(
   const contadorSvg =
     layout.bloques.includes("contador") && info && info.total > 1
       ? `
-    <rect x="${(w - 160).toFixed(1)}" y="40" width="120" height="56" rx="28" fill="#0F172A" fill-opacity="0.55"/>
+    <rect x="${(w - 160).toFixed(1)}" y="40" width="120" height="56" rx="28" fill="${rgbHex(paleta.scrim)}" fill-opacity="0.55"/>
     <text x="${(w - 100).toFixed(1)}" y="78" text-anchor="middle"
       font-family="'${FUENTE_SECUNDARIA.familia}'" font-weight="${FUENTE_SECUNDARIA.peso}"
       font-size="30" fill="#ffffff" fill-opacity="0.85">${info.numero}/${info.total}</text>
@@ -360,7 +396,7 @@ export function componerHistoria(
   const centroSub = centroDe("subcopy");
   const centroHash = centroDe("hashtags");
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    ${SVG_DEFS}
+    ${svgDefs(paleta.scrim)}
     <filter id="ctashadow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur in="SourceGraphic" stdDeviation="14"/>
     </filter>
@@ -381,7 +417,7 @@ export function componerHistoria(
         scrim: "ninguno", // los gradientes de arriba ya hacen de scrim
         titulo: titular,
         estilo,
-        paleta: PALETA_COMMUNITY,
+        paleta,
       })
     : null;
 
