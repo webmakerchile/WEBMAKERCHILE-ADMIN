@@ -16,6 +16,7 @@ import {
 import { saveDaySummary } from "../lib/activity";
 import { createNotification } from "../lib/notifications";
 import { minutosDePausas, minutosNetos, formatearDuracion } from "../lib/jornada-pausas";
+import { jornadaLink } from "../lib/jornada-link";
 
 /**
  * Jornada / asistencia del equipo.
@@ -359,7 +360,7 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
       return;
     }
     // Verificación automática de voz (si el usuario está emparejado y hay bot).
-    const [u] = await db.select({ discordUserId: users.discordUserId, name: users.name, email: users.email }).from(users)
+    const [u] = await db.select({ discordUserId: users.discordUserId, name: users.name, email: users.email, teamRole: users.teamRole }).from(users)
       .where(eq(users.id, objetivo.userId))
       .limit(1);
     let verified: boolean | null = null;
@@ -393,7 +394,7 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
         type: "system",
         title: "Jornada iniciada ✅",
         body: `${quien} marcó tu entrada a las ${hora}; tus horas ya están contando. Marca tu salida al terminar.`,
-        link: "/mi-dia",
+        link: jornadaLink(u?.teamRole),
       }).catch(() => {});
       reportToChannel(`✅ **${displayName}** — entrada marcada por **${quien}** a las ${hora}${dcIcon}`).catch(() => {});
     } else {

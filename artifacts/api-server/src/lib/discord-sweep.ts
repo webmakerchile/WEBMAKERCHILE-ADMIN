@@ -16,6 +16,7 @@ import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { discordConfigured, reportToChannel, voiceStatus } from "./discord";
 import { createNotification } from "./notifications";
 import { saveDaySummary } from "./activity";
+import { jornadaLink } from "./jornada-link";
 
 const SWEEP_INTERVAL_MS = 2 * 60_000; // cada 2 min — bajo consumo para equipos pequeños
 /** Sesiones pasadas del tope de 16 h ya no suman horas: tampoco se verifican. */
@@ -132,14 +133,14 @@ async function autoCloseExpired(sessionId: number, userId: number, checkIn: Date
     console.error("[DiscordSweep] resumen tras cierre automático falló:", err);
   }
 
-  const [u] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  const [u] = await db.select({ name: users.name, email: users.email, teamRole: users.teamRole }).from(users).where(eq(users.id, userId)).limit(1);
   const displayName = u?.name || u?.email || `usuario ${userId}`;
   createNotification({
     userId,
     type: "system",
     title: "Jornada cerrada automáticamente ⏱️",
     body: "Tu jornada quedó abierta más de 16 horas (salida olvidada), así que la cerramos en el tope de 16 h. Si te conectas a Discord, se abre una nueva sola.",
-    link: "/mi-dia",
+    link: jornadaLink(u?.teamRole),
   }).catch(() => {});
   reportToChannel(`⏱️ **${displayName}** olvidó marcar salida: jornada cerrada automáticamente en el tope de 16 h`).catch(() => {});
 }
@@ -157,7 +158,7 @@ function localDate(d: Date): string {
  */
 async function autoStartSessions(now: Date, openUserIds: Set<number>): Promise<void> {
   const linked = await db
-    .select({ id: users.id, name: users.name, email: users.email, discordUserId: users.discordUserId })
+    .select({ id: users.id, name: users.name, email: users.email, teamRole: users.teamRole, discordUserId: users.discordUserId })
     .from(users)
     .where(and(isNotNull(users.discordUserId), eq(users.approvalStatus, "approved")));
 
@@ -208,7 +209,7 @@ async function autoStartSessions(now: Date, openUserIds: Set<number>): Promise<v
       type: "system",
       title: "Jornada iniciada automáticamente 🎧",
       body: `Te detectamos en el canal de voz de Discord a las ${hora}; tus horas ya están contando. Marca tu salida al terminar.`,
-      link: "/mi-dia",
+      link: jornadaLink(u.teamRole),
     }).catch(() => {});
     reportToChannel(`🎧 **${displayName}** inició **jornada automática** a las ${hora} (detectado en voz)`).catch(() => {});
   }
