@@ -10,6 +10,11 @@ describe("gate de /hub", () => {
   it("el tablero y su vista de lectura los gatea el rol, no el área", () => {
     expect(hubNeedsAreaGate("/")).toBe(false);
     expect(hubNeedsAreaGate("/owner")).toBe(false);
+    // Redacta tareas y no escribe nada; marketing crea tareas y recibia 403.
+    expect(hubNeedsAreaGate("/projects/ai-extract-tasks")).toBe(false);
+    // Lo que sí toca contratos sigue gateado por área.
+    expect(hubNeedsAreaGate("/contracts/brief")).toBe(true);
+    expect(hubNeedsAreaGate("/contracts/ai-extract-project")).toBe(true);
   });
 
   it("las rutas de tareas se guardan por rol dentro del router, no por área", () => {
@@ -29,9 +34,26 @@ describe("gate de /hub", () => {
     }
   });
 
-  it("todo lo demás de /hub sigue gateado por área", () => {
-    for (const p of ["/contracts/brief", "/contracts/ai-chat", "/contracts/c1/cobro", "/projects/ai-extract-tasks"]) {
+  it("todo lo que toca contratos y dinero sigue gateado por área", () => {
+    for (const p of ["/contracts/brief", "/contracts/ai-chat", "/contracts/c1/cobro", "/contracts/extract-pdf"]) {
       expect(hubNeedsAreaGate(p), `${p} debería seguir gateado`).toBe(true);
+    }
+  });
+
+  // `/projects/ai-extract-tasks` salió de la lista a propósito: redacta tareas
+  // a partir de un proyecto y no escribe NADA (lo que se haga con la propuesta
+  // pasa después por /hub/tasks, que se guarda solo). Gatearlo por área dejaba
+  // a marketing —que sí crea tareas y sí lee proyectos— con un 403 al pedir
+  // ayuda para redactarlas.
+  it("quien puede escribir tareas puede pedir que se las redacten", () => {
+    for (const role of TEAM_ROLES) {
+      if (!hubWriteScopesFor(role).includes("tasks")) continue;
+      const area = areaOfRole(role);
+      const pasaPorArea = area !== null && AREAS_PERMITIDAS.has(area);
+      expect(
+        pasaPorArea || !hubNeedsAreaGate("/projects/ai-extract-tasks"),
+        `el rol "${role}" escribe tareas pero no podría pedir que se las redacten`,
+      ).toBe(true);
     }
   });
 

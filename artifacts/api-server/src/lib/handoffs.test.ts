@@ -74,7 +74,15 @@ describe("handoffContractClosed", () => {
 
     await handoffContractClosed(
       { id: "c1", title: "Sitio Acme", client: "Acme", status: "activo",
-        brief: { alcance: [{ modulo: "Home", detalle: "Hero + CTA" }, { modulo: "Checkout" }] } },
+        notes: "Landing + tienda, entrega en marzo",
+        expiresAt: "2026-03-31",
+        brief: {
+          objetivo: "Vender online sin depender de WhatsApp",
+          alcance: [
+            { modulo: "Home", descripcion: "Hero + CTA", entregables: ["Diseño", "Responsive"], requisitos: ["Logo del cliente"] },
+            { modulo: "Checkout" },
+          ],
+        } },
       1,
     );
 
@@ -86,8 +94,22 @@ describe("handoffContractClosed", () => {
 
     // Tareas desde el brief (2 módulos)
     const tasksInsert = vi.mocked(db.insert).mock.results[1]!.value as { values: ReturnType<typeof vi.fn> };
-    const values = tasksInsert.values.mock.calls[0]![0] as Array<{ title: string }>;
+    const values = tasksInsert.values.mock.calls[0]![0] as Array<{ title: string; notes: string | null }>;
     expect(values.map(v => v.title)).toEqual(["Home", "Checkout"]);
+
+    // El brief tiene que LLEGAR a la tarea. Antes se leía `item.detalle`, que
+    // no existe en el brief real, y notes salía null siempre: el dev recibía
+    // un título suelto sin un solo requisito.
+    expect(values[0]!.notes).toContain("Hero + CTA");
+    expect(values[0]!.notes).toContain("Diseño");
+    expect(values[0]!.notes).toContain("Logo del cliente");
+    // Un módulo sin descripción sigue pudiendo no tener notas.
+    expect(values[1]!.notes).toBeNull();
+
+    // Y el proyecto conserva lo acordado en vez de la frase fija de antes.
+    expect(sqlArg).toContain("Landing + tienda");
+    expect(sqlArg).toContain("Vender online sin depender de WhatsApp");
+    expect(sqlArg).toContain("2026-03-31");
 
     expect(recordActivity).toHaveBeenCalled();
     // Notificó al dev (id 2), no al vendedor (área ventas) ni al actor.

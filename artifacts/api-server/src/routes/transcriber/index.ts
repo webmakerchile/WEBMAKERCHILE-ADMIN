@@ -5,6 +5,12 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import {
+  decidirArchivo,
+  explicarFalloTranscripcion,
+  requiereIntervencion,
+  LIMITE_SUBIDA_BYTES,
+} from "../../lib/transcripcion";
 
 const router: IRouter = Router();
 
@@ -13,12 +19,31 @@ const MODEL = "whisper-large-v3-turbo";
 const SIZE_LIMIT = 24 * 1024 * 1024; // 24MB Groq limit
 const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000;
 
-const ALLOWED_EXT = new Set([".mp3", ".m4a", ".ogg", ".wav", ".opus", ".aac", ".flac", ".webm", ".mp4"]);
-
 const upload = multer({
   dest: os.tmpdir(),
-  limits: { fileSize: 150 * 1024 * 1024 },
+  limits: { fileSize: LIMITE_SUBIDA_BYTES },
 });
+
+/**
+ * Envoltorio de multer con manejo de errores.
+ *
+ * Sin esto, un archivo por encima del límite lanzaba un error que nadie
+ * atrapaba: Express respondía su HTML de error genérico, el cliente hacía
+ * `res.json()` sobre HTML, se quedaba sin `error` y mostraba un "Error 500"
+ * pelado. La persona no tenía forma de saber que su archivo pesaba de más.
+ */
+function recibirAudio(req: any, res: any, next: any) {
+  upload.single("audio")(req, res, (err: any) => {
+    if (!err) return next();
+    const motivo = err?.code === "LIMIT_FILE_SIZE"
+      ? `El archivo supera los ${LIMITE_SUBIDA_BYTES / 1048576} MB. Divídelo en partes o comprímelo antes de subirlo.`
+      : err?.code === "LIMIT_UNEXPECTED_FILE"
+        ? "Se envió un campo de archivo inesperado."
+        : `No se pudo recibir el archivo: ${err?.message || "error desconocido"}`;
+    console.error("[transcriber] multer:", err?.code || err?.message);
+    res.status(400).json({ error: motivo });
+  });
+}
 
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -43,19 +68,31 @@ function runFfmpeg(args: string[]): Promise<void> {
  * WAV is still too big (uncompressed PCM grows for long audio), fall back to
  * Opus 32kbps mono 16kHz which compresses ~40x vs PCM.
  */
-async function shrinkForApi(inputPath: string): Promise<{ path: string; ext: string; extra: string[] }> {
+async function shrinkForApi(
+  inputPath: string,
+  // Los temporales se anotan AQUÍ según se crean, no al devolver.
+  //
+  // Antes se devolvían junto con el resultado, así que si la segunda
+  // conversión fallaba el WAV intermedio no se borraba nunca. En un contenedor
+  // con disco acotado, unos cuantos fallos llenan /tmp — y a partir de ahí
+  // falla TODO, incluidos los archivos que antes funcionaban. Eso es
+  // exactamente lo que se siente como "a veces falla".
+  temporales: string[],
+): Promise<{ path: string; ext: string }> {
   const wavPath = path.join(os.tmpdir(), `${randomUUID()}.wav`);
+  temporales.push(wavPath);
   await runFfmpeg(["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wavPath]);
   const wavSize = (await fs.promises.stat(wavPath)).size;
-  if (wavSize <= SIZE_LIMIT) return { path: wavPath, ext: ".wav", extra: [] };
+  if (wavSize <= SIZE_LIMIT) return { path: wavPath, ext: ".wav" };
 
   const oggPath = path.join(os.tmpdir(), `${randomUUID()}.ogg`);
+  temporales.push(oggPath);
   await runFfmpeg(["-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-c:a", "libopus", "-b:a", "32k", oggPath]);
   const oggSize = (await fs.promises.stat(oggPath)).size;
   if (oggSize > SIZE_LIMIT) {
     throw new Error("El audio es demasiado largo incluso después de comprimirlo (más de 24MB en Opus 32kbps). Divídelo en partes más cortas.");
   }
-  return { path: oggPath, ext: ".ogg", extra: [wavPath] };
+  return { path: oggPath, ext: ".ogg" };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -114,12 +151,16 @@ router.get("/transcriber/health", (_req, res) => {
   res.json({ ok: true, groqConfigured: !!(process.env.GROQ_API_KEY || "").trim() });
 });
 
-router.post("/transcriber/transcribe", upload.single("audio"), async (req, res) => {
+router.post("/transcriber/transcribe", recibirAudio, async (req, res) => {
   const cleanup: string[] = [];
+  const inicio = Date.now();
   try {
     const apiKey = (process.env.GROQ_API_KEY || "").trim();
     if (!apiKey) {
-      res.status(500).json({ error: "GROQ_API_KEY no está configurada en el servidor" });
+      res.status(503).json({
+        error: "El servicio de transcripción no está configurado (falta GROQ_API_KEY). Avisa al equipo técnico: reintentar no lo arregla.",
+        requiereIntervencion: true,
+      });
       return;
     }
     if (!req.file) {
@@ -129,29 +170,51 @@ router.post("/transcriber/transcribe", upload.single("audio"), async (req, res) 
     cleanup.push(req.file.path);
 
     const originalName = Buffer.from(req.file.originalname, "latin1").toString("utf8");
-    const ext = path.extname(originalName).toLowerCase();
-    if (!ALLOWED_EXT.has(ext)) {
-      res.status(400).json({ error: `Formato no soportado: ${ext || "desconocido"}` });
+    // El MIME entra en la decisión: un audio sin extensión (nota de voz
+    // descargada de WhatsApp o Telegram) se rechazaba aunque fuera válido.
+    const decision = decidirArchivo({
+      nombre: originalName,
+      mime: req.file.mimetype,
+      bytes: req.file.size,
+    });
+    if (!decision.ok) {
+      res.status(400).json({ error: decision.motivo });
       return;
+    }
+    if (decision.renombrado) {
+      console.log(`[transcriber] "${originalName}" (${req.file.mimetype}) → "${decision.nombre}" por su tipo MIME`);
     }
 
     let sendPath = req.file.path;
-    let sendName = originalName;
+    let sendName = decision.nombre;
 
     if (req.file.size > SIZE_LIMIT) {
-      console.log(`[transcriber] ${originalName} pesa ${(req.file.size / 1048576).toFixed(1)}MB > 24MB, convirtiendo...`);
-      const shrunk = await shrinkForApi(req.file.path);
-      cleanup.push(shrunk.path, ...shrunk.extra);
+      console.log(`[transcriber] ${decision.nombre} pesa ${(req.file.size / 1048576).toFixed(1)}MB > 24MB, convirtiendo...`);
+      const shrunk = await shrinkForApi(req.file.path, cleanup);
       sendPath = shrunk.path;
-      sendName = originalName.replace(/\.[^.]+$/, "") + shrunk.ext;
+      sendName = decision.nombre.replace(/\.[^.]+$/, "") + shrunk.ext;
     }
 
     const text = await transcribeWithGroq(sendPath, sendName, apiKey);
-    res.json({ text });
+    const segundos = Math.round((Date.now() - inicio) / 1000);
+    console.log(`[transcriber] ${decision.nombre}: ${text.length} caracteres en ${segundos}s`);
+    // Un audio que se transcribe a vacío no es un éxito: casi siempre es
+    // silencio, un archivo cortado o el idioma equivocado. Decirlo evita que
+    // alguien copie una caja vacía creyendo que funcionó.
+    if (!text.trim()) {
+      res.status(422).json({
+        error: "No se detectó voz en el audio. Revisa que no esté en silencio ni cortado.",
+      });
+      return;
+    }
+    res.json({ text, segundos });
   } catch (err) {
     const e = err as Error;
     console.error("[transcriber] Error:", e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({
+      error: explicarFalloTranscripcion(e.message),
+      requiereIntervencion: requiereIntervencion(e.message),
+    });
   } finally {
     for (const p of cleanup) {
       fs.promises.unlink(p).catch(() => {});

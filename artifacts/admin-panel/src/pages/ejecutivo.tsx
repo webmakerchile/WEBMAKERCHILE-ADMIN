@@ -365,7 +365,28 @@ async function fetchHubFromServer(): Promise<HubSnapshot | null> {
   } catch { return null; }
 }
 
-async function patchHubToServer(st: HubState, baseVersion: number): Promise<{ data: Partial<HubState>; version: number } | null> {
+type ResultadoPatch =
+  | { ok: true; data: Partial<HubState>; version: number }
+  | { ok: false; error: string; permanente: boolean };
+
+/**
+ * Guarda el tablero en el servidor.
+ *
+ * Antes devolvía `null` ante CUALQUIER fallo y el llamador hacía
+ * `if (!result) return`. Eso encadenaba tres desastres silenciosos:
+ *
+ *  · Nadie se enteraba. El toast de "Contrato creado" ya se había mostrado
+ *    1,5 s antes, así que el ejecutivo daba por hecho que estaba guardado.
+ *  · `dirtyRef` se quedaba en `true` PARA SIEMPRE, y el pull de 30 s se
+ *    salta si está sucio: la sesión dejaba de ver lo que hacía el resto del
+ *    equipo hasta recargar la página.
+ *  · El 409 "todavía no hay tablero de dirección" era invisible: se podían
+ *    crear contratos y proyectos que solo existían en el localStorage.
+ *
+ * Ahora el fallo se devuelve con su motivo y se distingue lo que se arregla
+ * reintentando de lo que no.
+ */
+async function patchHubToServer(st: HubState, baseVersion: number): Promise<ResultadoPatch> {
   try {
     const res = await fetch(`${HUB_API_BASE}/hub`, {
       method: "PATCH",
@@ -373,13 +394,28 @@ async function patchHubToServer(st: HubState, baseVersion: number): Promise<{ da
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ data: st, baseVersion }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const cuerpo = (await res.json().catch(() => null)) as { error?: string } | null;
+      // 400 y 403 no cambian por reintentar: el dato o el permiso están mal.
+      const permanente = res.status === 400 || res.status === 403;
+      return {
+        ok: false,
+        permanente,
+        error: cuerpo?.error || `El servidor rechazó el guardado (${res.status})`,
+      };
+    }
     const json = await res.json() as { data?: unknown; version?: unknown };
     const data = json.data && typeof json.data === "object" && !Array.isArray(json.data)
       ? json.data as Partial<HubState>
       : {};
-    return { data, version: Number(json.version) || 0 };
-  } catch { return null; /* localStorage ya guardó: se reintenta en el próximo cambio */ }
+    return { ok: true, data, version: Number(json.version) || 0 };
+  } catch (e) {
+    return {
+      ok: false,
+      permanente: false,
+      error: e instanceof Error && e.message ? `No se pudo contactar al servidor: ${e.message}` : "No se pudo contactar al servidor",
+    };
+  }
 }
 function migrate(st: HubState): HubState {
   const now = Date.now();
@@ -731,17 +767,38 @@ function normalizeDoc(base: WizData, incoming?: Partial<WizData> | null): WizDat
    para el cliente) y este brief (sin ningún monto, para quien construye).
    Se genera y se sube sola cada vez que el contrato nace o cambia.
    ------------------------------------------------------------------ */
+/** Motivo del último brief que no se pudo generar; lo lee el flujo de creación. */
+let ultimoErrorBrief: string | null = null;
+
+/**
+ * Pide el brief técnico al servidor.
+ *
+ * Devolvía `null` ante cualquier fallo y nadie preguntaba por qué: el contrato
+ * se guardaba sin versión técnica y el único indicio era una variación del
+ * texto de un toast que nadie lee. Y un contrato activo sin brief hace que el
+ * handoff entregue a desarrollo tres tareas genéricas como si fueran el
+ * alcance real. Ahora el motivo queda registrado para poder decirlo.
+ */
 async function fetchContractBrief(doc: WizData, contract?: Partial<Contract>): Promise<ContractBrief | null> {
+  ultimoErrorBrief = null;
   try {
     const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/brief`, {
       method: "POST", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ doc, contract }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const cuerpo = (await res.json().catch(() => null)) as { error?: string } | null;
+      ultimoErrorBrief = cuerpo?.error || `El servidor respondió ${res.status}`;
+      return null;
+    }
     const data = await res.json() as { brief?: ContractBrief };
+    if (!data.brief) ultimoErrorBrief = "El servidor no devolvió un brief.";
     return data.brief ?? null;
-  } catch { return null; }
+  } catch (e) {
+    ultimoErrorBrief = e instanceof Error && e.message ? e.message : "No se pudo contactar al servidor";
+    return null;
+  }
 }
 
 async function buildBriefPdf(brief: ContractBrief, doc: WizData): Promise<Blob> {
@@ -1538,14 +1595,30 @@ function TaskHistory({ taskId }: { taskId: number }) {
  * Bloque de la versión técnica del contrato. Es lo único del contrato que ve
  * quien construye, así que aquí no se renderiza ningún dato comercial.
  */
-function BriefView({ brief, briefUrl, doc, onGenerate, generating }: {
+function BriefView({ brief, briefUrl, doc, onGenerate, generating, estadoContrato }: {
   brief?: ContractBrief; briefUrl?: string; doc?: WizData;
+  /** Estado del contrato: activo sin brief es un problema, borrador no. */
+  estadoContrato?: string;
   /** Solo se pasa cuando el rol puede escribir contratos: genera o rehace el brief. */
   onGenerate?: () => void; generating?: boolean;
 }) {
   const mods = brief?.alcance ?? [];
   return (
     <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+      {/* Un contrato ACTIVO sin brief no es un detalle pendiente: al cerrar la
+          venta, el handoff no encuentra módulos y le entrega a desarrollo tres
+          tareas genéricas ("Kickoff interno", "Levantamiento…") como si fueran
+          el alcance real del proyecto. */}
+      {!brief && estadoContrato === "activo" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.35)", borderRadius: 10, padding: "8px 10px", marginBottom: 12 }}>
+          <span style={{ flexShrink: 0 }}>⚠️</span>
+          <div style={{ fontSize: "0.76em", lineHeight: 1.45 }}>
+            <strong>Este contrato ya está activo y no tiene versión técnica.</strong>{" "}
+            Las tareas que recibió desarrollo son las genéricas de arranque, no el alcance
+            real. Genera el brief y reparte las tareas desde ahí.
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: "1em" }}>🛠️</span>
         <strong style={{ fontSize: "0.92em" }}>Versión técnica</strong>
@@ -2031,6 +2104,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const name = projNameDraft.trim(); if (!name) { onToast("Ponle un nombre al proyecto"); return; }
         const now = Date.now();
         const fromCid = newProjFromContractIdRef.current || undefined;
+        // Un contrato, un proyecto.
+        //
+        // Al pasar a "activo" el servidor ya crea el proyecto solo. Si además
+        // se creaba a mano, quedaban DOS para el mismo contrato — y la única
+        // defensa era un estado local que se pierde al cerrar el panel, porque
+        // este componente se desmonta. Aquí se mira el tablero, que sí sobrevive.
+        const yaExiste = fromCid ? state.projects.find(p => p.contractId === fromCid) : undefined;
+        if (yaExiste) {
+          onToast(`Ese contrato ya tiene el proyecto "${yaExiste.name}". Ábrelo en vez de crear otro.`);
+          newProjFromContractIdRef.current = null;
+          onClose(); onNavigate("proj");
+          return;
+        }
         const newProjId = uid();
         onSave({ ...state, projects: [...state.projects, { id: newProjId, name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, contractId: fromCid, createdAt: now, updatedAt: now }] });
         if (playbookId) {
@@ -2574,7 +2660,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div className="field"><label>Cliente</label><div className="ro-value">{c.client || "—"}</div></div>
         {c.signedAt && <div className="field"><label>Inicio</label><div className="ro-value">{c.signedAt}</div></div>}
         {c.notes && <div className="field"><label>Alcance acordado</label><div className="ro-value" style={{ whiteSpace: "pre-wrap" }}>{c.notes}</div></div>}
-        <BriefView brief={c.brief} briefUrl={c.briefUrl} doc={c.doc} />
+        <BriefView brief={c.brief} briefUrl={c.briefUrl} doc={c.doc} estadoContrato={c.status} />
         <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 14 }}>
           Esta es la versión técnica del contrato: describe qué construir. La información comercial
           (valores, precios por módulo y forma de pago) no forma parte de esta vista.
@@ -2847,6 +2933,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         brief={c.brief}
         briefUrl={c.briefUrl}
         doc={c.doc}
+        estadoContrato={c.status}
         onGenerate={readOnlyContract ? undefined : () => void generateBriefFor(c)}
         generating={generatingBrief}
       />
@@ -3245,7 +3332,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const tech = await buildTechnicalVersion(wiz, { title: contractTitle, client: wiz.client, notes: wiz.scope });
                 onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: contractTitle, client: wiz.client, value: totalConIva > 0 ? fmtCLP(totalConIva) : (tTotal > 0 ? fmtCLP(tTotal) : ""), status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, doc: wiz, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, brief: tech?.brief, briefUrl: tech?.briefUrl, briefTitle: tech?.briefTitle, briefUploadedAt: tech?.briefUploadedAt, createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
-                onToast(pdfUrl ? (tech?.briefUrl ? "Contrato creado: cotización y brief técnico en Drive ✓" : "Contrato creado y PDF subido a Drive ✓") : "Contrato creado");
+                // El brief que falta se dice con todas las letras: sin él,
+                // al cerrar la venta el equipo recibe tareas genéricas.
+                onToast(
+                  tech?.brief
+                    ? (tech.briefUrl ? "Contrato creado: cotización y brief técnico en Drive ✓" : "Contrato creado con brief técnico ✓")
+                    : `⚠️ Contrato creado SIN brief técnico${ultimoErrorBrief ? ` (${ultimoErrorBrief})` : ""}. Genéralo desde la ficha antes de cerrar la venta.`,
+                );
               } catch (e: unknown) {
                 onToast("Error generando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
               } finally { setGeneratingPdf(false); }
@@ -5347,6 +5440,10 @@ export default function EjecutivoPage() {
 
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyRef = useRef(false);
+  // Motivo del último fallo de guardado, o null. Se muestra fijo en pantalla:
+  // un toast se lo pierde quien está mirando otra cosa, y aquí lo que está en
+  // juego es un contrato que solo existe en este navegador.
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
   /** Última versión del tablero que conocemos: la base para fusionar en el servidor. */
   const versionRef = useRef(0);
   /** Contador de guardados: si sube mientras viaja un PATCH, no pisamos lo que el usuario acaba de escribir. */
@@ -5369,17 +5466,36 @@ export default function EjecutivoPage() {
     setStateRaw(next);
     saveState(storageKey, next);
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
-    serverSaveTimer.current = setTimeout(() => {
+
+    // Reintento con espera creciente. Un corte de red de unos segundos no
+    // puede dejar el tablero guardado solo en el navegador de una persona.
+    const enviar = (intento: number) => {
       void patchHubToServer(next, versionRef.current).then(result => {
-        if (!result) return;
-        versionRef.current = result.version;
-        // Si el usuario siguió editando mientras viajaba el PATCH, no aplicamos
-        // la respuesta: su versión local es más nueva y se enviará enseguida.
+        // Si el usuario siguió editando, ese cambio más nuevo manda: se
+        // descarta este envío y su reintento.
         if (saveSeqRef.current !== seq) return;
-        dirtyRef.current = false;
-        adoptServerData(result.data, result.version);
+
+        if (result.ok) {
+          versionRef.current = result.version;
+          dirtyRef.current = false;
+          setErrorGuardado(null);
+          adoptServerData(result.data, result.version);
+          return;
+        }
+
+        if (!result.permanente && intento < 4) {
+          const espera = 2000 * 2 ** intento;
+          serverSaveTimer.current = setTimeout(() => enviar(intento + 1), espera);
+          return;
+        }
+        // Agotados los reintentos (o fallo que no se arregla reintentando):
+        // se dice. `dirtyRef` sigue en true a propósito — hay trabajo local
+        // sin enviar y traer del servidor lo borraría.
+        setErrorGuardado(result.error);
       });
-    }, 1500);
+    };
+
+    serverSaveTimer.current = setTimeout(() => enviar(0), 1500);
   }, [storageKey, adoptServerData]);
 
   useEffect(() => {
@@ -5549,6 +5665,25 @@ export default function EjecutivoPage() {
 
       <div className="flex flex-col h-[100dvh] bg-background text-foreground overflow-hidden">
       <ViewAsBar />
+
+      {/* El tablero no llegó al servidor. Va fijo arriba, no como toast: lo que
+          está en juego es un contrato que solo existe en este navegador, y un
+          aviso que se desvanece en 3 s no sirve para eso. */}
+      {errorGuardado && (
+        <div className="flex items-start gap-2 px-4 py-2 bg-red-500/15 border-b border-red-500/30 text-red-300 text-xs flex-shrink-0">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold">Tus cambios NO se guardaron en el servidor</p>
+            <p className="opacity-90">{errorGuardado} · Siguen en este navegador; no cierres la pestaña sin volver a intentarlo.</p>
+          </div>
+          <button
+            onClick={() => { setErrorGuardado(null); setState({ ...state }); }}
+            className="flex-shrink-0 px-2.5 py-1 rounded-lg border border-red-400/40 hover:bg-red-500/20 font-semibold"
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ======= MAIN CONTENT AREA ======= */}

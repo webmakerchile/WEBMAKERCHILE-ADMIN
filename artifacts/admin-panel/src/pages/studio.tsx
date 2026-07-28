@@ -30,6 +30,20 @@ type AiVideoIdea = {
 };
 import { Layout } from "@/components/layout";
 import {
+  PERFILES_CALIDAD,
+  perfilPorId,
+  perfilInferior,
+  restriccionesVideo,
+  restriccionesMinimas,
+  diagnosticarCaptura,
+  etiquetaBitrate,
+  debeBajarPerfil,
+  BITRATE_AUDIO,
+  MIMES_PREFERIDOS,
+  type PerfilCalidad,
+  type DiagnosticoCaptura,
+} from "@/lib/studio-calidad";
+import {
   Video,
   VideoOff,
   Play,
@@ -47,6 +61,7 @@ import {
   Target,
   Sparkles,
   ChevronDown,
+  AlertCircle,
   ChevronUp,
   Loader2,
   Clapperboard,
@@ -694,14 +709,34 @@ function CameraRecordingView({
   const streamRef = useRef<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
+  // El cronómetro vive en un ref, no en estado.
+  //
+  // `setRecordingTime` cada segundo re-renderizaba TODO este componente (son
+  // miles de líneas) mientras la cámara estaba grabando: un tirón por segundo,
+  // justo el "lag" que se veía. Ahora el ref lo lleva la cuenta y solo se
+  // re-renderiza <CronometroGrabacion>, que son dos nodos.
   const recordingTimeRef = useRef(0);
-  recordingTimeRef.current = recordingTime;
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
   const facingModeRef = useRef<"user" | "environment">("user");
   const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  // Calidad de captura. El perfil se guarda para que el equipo no tenga que
+  // reelegirlo cada vez; el diagnóstico es lo que la cámara entregó de verdad.
+  const [perfilCalidad, setPerfilCalidad] = useState<PerfilCalidad>(() => {
+    try {
+      const g = localStorage.getItem("wm_studio_calidad");
+      if (g && PERFILES_CALIDAD.some(p => p.id === g)) return g as PerfilCalidad;
+    } catch {}
+    return "maxima";
+  });
+  const perfilCalidadRef = useRef<PerfilCalidad>(perfilCalidad);
+  perfilCalidadRef.current = perfilCalidad;
+  const [captura, setCaptura] = useState<DiagnosticoCaptura | null>(null);
+  const capturaRef = useRef<DiagnosticoCaptura | null>(null);
+  const [mostrarCalidad, setMostrarCalidad] = useState(false);
+  const [avisoRendimiento, setAvisoRendimiento] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const perfTimerRef = useRef<number | null>(null);
 
   type ClipMark = { startSec: number; endSec: number; teleprompterPos: number; duration: number };
   const [clipMarks, setClipMarks] = useState<ClipMark[]>([]);
@@ -829,17 +864,12 @@ function CameraRecordingView({
     setZoomLevel(1);
     hasNativeZoomRef.current = false;
     try {
-      const portraitVideo: MediaTrackConstraints = {
-        facingMode: facing,
-        frameRate: { ideal: 30, max: 30 },
-        width: { ideal: 1080, max: 1920 },
-        height: { ideal: 1920, max: 2560 },
-        aspectRatio: { ideal: 9 / 16 },
-      };
-      const fallbackVideo: MediaTrackConstraints = {
-        facingMode: facing,
-        frameRate: { ideal: 30, max: 30 },
-      };
+      // Sin techos: `max` es una restricción DURA y el 1920/2560 de antes hacía
+      // literalmente imposible capturar en 4K (2160x3840). Todo va como
+      // `ideal`, que degrada solo si el dispositivo no puede.
+      const perfil = perfilPorId(perfilCalidadRef.current);
+      const portraitVideo = restriccionesVideo(perfil, facing);
+      const fallbackVideo = restriccionesMinimas(facing);
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -874,9 +904,11 @@ function CameraRecordingView({
         console.log(`[Camera] Track dimensions: ${trackW}x${trackH}`);
         if (trackW > trackH) {
           try {
+            // Girar a vertical SIN techo: pedir `max: trackW` congelaba la
+            // resolución en lo que ya se tenía e impedía subir de modo.
             await videoTrack.applyConstraints({
-              width: { ideal: trackH, max: trackH },
-              height: { ideal: trackW, max: trackW },
+              width: { ideal: trackH },
+              height: { ideal: trackW },
               aspectRatio: { ideal: 9 / 16 },
             });
             const newSettings = videoTrack.getSettings();
@@ -885,6 +917,12 @@ function CameraRecordingView({
             console.log("[Camera] Could not re-constrain to portrait, will use CSS rotation");
           }
         }
+        // Lo que la cámara entregó DE VERDAD: de aquí sale el bitrate y lo que
+        // se muestra en pantalla. Antes nadie leía esto y el bitrate era fijo.
+        const real = diagnosticarCaptura(videoTrack.getSettings());
+        capturaRef.current = real;
+        setCaptura(real);
+        console.log(`[Camera] Capturando ${real.ancho}x${real.alto} @${real.fps} (${real.etiqueta}) → ${etiquetaBitrate(real.bitrate)}`);
       }
 
       if (videoRef.current) {
@@ -1063,17 +1101,7 @@ function CameraRecordingView({
   }, []);
 
   const getMimeType = useCallback(() => {
-    const mimeOptions = [
-      "video/mp4;codecs=avc1,mp4a.40.2",
-      "video/mp4;codecs=avc1",
-      "video/mp4",
-      "video/webm;codecs=h264,opus",
-      "video/webm;codecs=vp8,opus",
-      "video/webm;codecs=vp8",
-      "video/webm;codecs=vp9,opus",
-      "video/webm",
-    ];
-    return mimeOptions.find(m => MediaRecorder.isTypeSupported(m)) || "";
+    return MIMES_PREFERIDOS.find(m => MediaRecorder.isTypeSupported(m)) || "";
   }, []);
 
   const createRecorder = useCallback(() => {
@@ -1081,7 +1109,13 @@ function CameraRecordingView({
     const mimeType = getMimeType();
     const opts: MediaRecorderOptions = {};
     if (mimeType) opts.mimeType = mimeType;
-    opts.videoBitsPerSecond = 8_000_000;
+    // Bitrate calculado sobre la resolución REAL. Los 8 Mbps fijos de antes
+    // estaban bien a 1080p y destrozaban cualquier cosa por encima.
+    const real = capturaRef.current
+      ?? diagnosticarCaptura(streamRef.current.getVideoTracks()[0]?.getSettings() ?? {});
+    opts.videoBitsPerSecond = real.bitrate;
+    opts.audioBitsPerSecond = BITRATE_AUDIO;
+    console.log(`[Studio] Grabando ${real.etiqueta} a ${etiquetaBitrate(real.bitrate)}`);
     const recorder = new MediaRecorder(streamRef.current, opts);
     recorderMimeRef.current = recorder.mimeType || mimeType;
     currentChunksRef.current = [];
@@ -1092,10 +1126,36 @@ function CameraRecordingView({
       setIsRecording(false);
       setIsPaused(false);
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
       stopVoiceRecognition();
     };
     return recorder;
   }, [getMimeType, toast, stopVoiceRecognition]);
+
+  // Vigila los fotogramas que el navegador NO logra pintar.
+  //
+  // Es el mismo pipeline que alimenta al codificador: si no se pintan, no se
+  // codifican, y eso es exactamente lo que se ve como grabación a tirones. Si
+  // pasa del umbral se baja un escalón de calidad — pero SE AVISA. Bajar en
+  // silencio sería indistinguible de que todo va bien, que es justo lo que
+  // hace imposible entender por qué el vídeo salió mal.
+  const vigilarRendimiento = useCallback(() => {
+    const v = videoRef.current as (HTMLVideoElement & { getVideoPlaybackQuality?: () => VideoPlaybackQuality }) | null;
+    if (!v?.getVideoPlaybackQuality) return;
+    const q = v.getVideoPlaybackQuality();
+    const total = q.totalVideoFrames;
+    const perdidos = q.droppedVideoFrames;
+    if (!debeBajarPerfil(total, perdidos)) return;
+    const inferior = perfilInferior(perfilCalidadRef.current);
+    if (!inferior) return;
+    perfilCalidadRef.current = inferior.id;
+    setPerfilCalidad(inferior.id);
+    try { localStorage.setItem("wm_studio_calidad", inferior.id); } catch {}
+    setAvisoRendimiento(
+      `Tu equipo no daba abasto con esa resolución (se perdían fotogramas). Bajé a ${inferior.etiqueta} para que la grabación salga fluida.`,
+    );
+    setTimeout(() => setAvisoRendimiento(null), 9000);
+  }, []);
 
   const startRecording = useCallback(() => {
     if (!streamRef.current) return;
@@ -1109,8 +1169,9 @@ function CameraRecordingView({
       recorder.start(250);
       setIsRecording(true);
       setIsPaused(false);
-      setRecordingTime(0);
-      timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+      recordingTimeRef.current = 0;
+      timerRef.current = setInterval(() => { recordingTimeRef.current += 1; }, 1000);
+      perfTimerRef.current = window.setInterval(vigilarRendimiento, 3000);
       voiceModeRef.current = true;
       startVoiceRecognition();
     } catch {
@@ -1123,8 +1184,9 @@ function CameraRecordingView({
     const rec = mediaRecorderRef.current;
     if (!rec || rec.state !== "recording") return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
     stopVoiceRecognition();
-    const clipEnd = recordingTime;
+    const clipEnd = recordingTimeRef.current;
     const clipDur = clipEnd - clipStartTimeRef.current;
 
     const savePromise = new Promise<void>((resolve) => {
@@ -1150,7 +1212,7 @@ function CameraRecordingView({
       }]);
       setIsPaused(true);
     });
-  }, [isRecording, isPaused, recordingTime, stopVoiceRecognition]);
+  }, [isRecording, isPaused, stopVoiceRecognition]);
 
   const handleResume = useCallback(() => {
     if (!isPaused) return;
@@ -1158,12 +1220,12 @@ function CameraRecordingView({
     if (!recorder) return;
     mediaRecorderRef.current = recorder;
     recorder.start(250);
-    clipStartTimeRef.current = recordingTime;
+    clipStartTimeRef.current = recordingTimeRef.current;
     setIsPaused(false);
-    timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+    timerRef.current = setInterval(() => { recordingTimeRef.current += 1; }, 1000);
     voiceModeRef.current = true;
     startVoiceRecognition();
-  }, [isPaused, recordingTime, startVoiceRecognition, createRecorder]);
+  }, [isPaused, startVoiceRecognition, createRecorder]);
 
   const handleDeleteLastClip = useCallback(() => {
     if (!isPaused || clipMarks.length === 0) return;
@@ -1175,7 +1237,7 @@ function CameraRecordingView({
     console.log(`[studio] Deleted clip ${clipMarks.length}, remaining blobs: ${clipBlobsRef.current.length}`);
 
     const clipDur = lastClip.duration;
-    setRecordingTime(prev => Math.max(0, prev - clipDur));
+    recordingTimeRef.current = Math.max(0, recordingTimeRef.current - clipDur);
     clipStartTimeRef.current = newMarks.length > 0 ? newMarks[newMarks.length - 1].endSec : 0;
 
     if (newMarks.length === 0) {
@@ -1225,7 +1287,7 @@ function CameraRecordingView({
           clipBlobsRef.current = [];
           setClipMarks([]);
           clipStartTimeRef.current = 0;
-          setRecordingTime(0);
+          recordingTimeRef.current = 0;
           setIsRecording(true);
           setIsPaused(false);
           setHighlightUpTo(-1);
@@ -1233,7 +1295,7 @@ function CameraRecordingView({
         } else {
           setIsPaused(false);
         }
-        timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+        timerRef.current = setInterval(() => { recordingTimeRef.current += 1; }, 1000);
         voiceModeRef.current = true;
         startVoiceRecognition();
       }, 1000);
@@ -1246,6 +1308,7 @@ function CameraRecordingView({
     if (voiceCountdownRef.current) return;
     const rec = mediaRecorderRef.current;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
     stopVoiceRecognition();
     if (rec && rec.state === "recording") {
       rec.onstop = () => {
@@ -1272,13 +1335,14 @@ function CameraRecordingView({
     if (voiceCountdownRef.current) return;
     const rec = mediaRecorderRef.current;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
     stopVoiceRecognition();
 
     const deleteLastAndRestart = (marksSnapshot: ClipMark[]) => {
       if (marksSnapshot.length === 0) {
         clipBlobsRef.current = [];
         setClipMarks([]);
-        setRecordingTime(0);
+        recordingTimeRef.current = 0;
         setHighlightUpTo(-1);
         if (scrollRef.current) scrollRef.current.scrollTo({ top: 0 });
         runCountdownThenStart("reset");
@@ -1290,7 +1354,7 @@ function CameraRecordingView({
       setClipMarks(newMarks);
       clipMarksRef.current = newMarks;
       const clipDur = lastClip.duration;
-      setRecordingTime(prev => Math.max(0, prev - clipDur));
+      recordingTimeRef.current = Math.max(0, recordingTimeRef.current - clipDur);
       clipStartTimeRef.current = newMarks.length > 0 ? newMarks[newMarks.length - 1].endSec : 0;
       if (newMarks.length === 0) {
         setHighlightUpTo(-1);
@@ -1332,6 +1396,7 @@ function CameraRecordingView({
     const rec = mediaRecorderRef.current;
     if (!rec || rec.state !== "recording") return;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
     stopVoiceRecognition();
     const clipEnd = recordingTimeRef.current;
     const clipDur = clipEnd - clipStartTimeRef.current;
@@ -1374,6 +1439,7 @@ function CameraRecordingView({
     if (voiceCountdownRef.current) return;
     clearCountdownTimers();
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
     stopVoiceRecognition();
 
     const rec = mediaRecorderRef.current;
@@ -1432,6 +1498,7 @@ function CameraRecordingView({
   const stopRecording = useCallback(() => {
     return new Promise<Blob | null>((resolve) => {
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
       stopVoiceRecognition();
 
       const rec = mediaRecorderRef.current;
@@ -1474,7 +1541,7 @@ function CameraRecordingView({
   }, [isPaused, stopVoiceRecognition]);
 
   const handleStopToEdit = useCallback(async () => {
-    const knownDur = recordingTime;
+    const knownDur = recordingTimeRef.current;
 
     let thumb: string | null = null;
     try {
@@ -1511,7 +1578,7 @@ function CameraRecordingView({
     setPhase("review");
 
     console.log(`[studio] Recording done: ${(blob.size / 1024 / 1024).toFixed(1)}MB (only kept clips), type=${blob.type}, dur=${dur}s, clips=${clipBlobsRef.current.length}`);
-  }, [stopRecording, stopAllTracks, toast, recordingTime, idea]);
+  }, [stopRecording, stopAllTracks, toast, idea]);
 
   const handleUpload = useCallback(async () => {
     if (!recordedBlob) return;
@@ -1551,7 +1618,7 @@ function CameraRecordingView({
     setClipMarks([]);
     setIsRecording(false);
     setIsPaused(false);
-    setRecordingTime(0);
+    recordingTimeRef.current = 0;
     setHighlightUpTo(-1);
     setIsListening(false);
     clipBlobsRef.current = [];
@@ -1569,6 +1636,7 @@ function CameraRecordingView({
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") { try { mediaRecorderRef.current.stop(); } catch {} }
     mediaRecorderRef.current = null;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
     if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch {} recognitionRef.current = null; }
     countdownTimersRef.current.forEach(t => clearTimeout(t));
     countdownTimersRef.current = [];
@@ -1627,7 +1695,7 @@ function CameraRecordingView({
     mediaRecorderRef.current = null;
     setIsRecording(false);
     setIsPaused(false);
-    setRecordingTime(0);
+    recordingTimeRef.current = 0;
     setCameraReady(false);
     setCameraError(false);
     setHighlightUpTo(-1);
@@ -1672,6 +1740,7 @@ function CameraRecordingView({
       if (streamRef.current) { streamRef.current.getTracks().forEach(t => { try { t.stop(); } catch {} }); streamRef.current = null; }
       if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch {} recognitionRef.current = null; }
       if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (perfTimerRef.current) { window.clearInterval(perfTimerRef.current); perfTimerRef.current = null; }
       if (zoomIndicatorTimer.current) clearTimeout(zoomIndicatorTimer.current);
       if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
       clipBlobsRef.current = [];
@@ -1863,6 +1932,63 @@ function CameraRecordingView({
 
       <div ref={touchAreaRef} className="absolute inset-0 z-[5]" style={{ touchAction: "none" }} />
 
+      {/* Lo que se está capturando DE VERDAD. Antes no había forma de saberlo:
+          el panel prometía calidad y no enseñaba ninguna cifra, así que un
+          1080p y un 4K se veían igual de opacos desde fuera. */}
+      {cameraReady && !cameraError && (
+        <div className="absolute z-[30] left-1/2 -translate-x-1/2" style={{ top: "max(0.75rem, env(safe-area-inset-top, 10px))" }}>
+          <button
+            type="button"
+            onClick={() => setMostrarCalidad(v => !v)}
+            disabled={isRecording}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/15 text-white disabled:opacity-60"
+          >
+            <span className="text-[11px] font-bold tracking-wide">{captura?.etiqueta ?? "—"}</span>
+            <span className="text-[10px] text-white/60 font-mono">
+              {captura ? `${captura.fps}fps · ${etiquetaBitrate(captura.bitrate)}` : ""}
+            </span>
+            {!isRecording && <ChevronDown className={`w-3 h-3 text-white/50 transition-transform ${mostrarCalidad ? "rotate-180" : ""}`} />}
+          </button>
+
+          {mostrarCalidad && !isRecording && (
+            <div className="mt-2 w-64 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/15 p-2 space-y-1">
+              {PERFILES_CALIDAD.map(perfil => (
+                <button
+                  key={perfil.id}
+                  type="button"
+                  onClick={() => {
+                    setPerfilCalidad(perfil.id);
+                    perfilCalidadRef.current = perfil.id;
+                    try { localStorage.setItem("wm_studio_calidad", perfil.id); } catch {}
+                    setMostrarCalidad(false);
+                    startCamera(facingModeRef.current);
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded-xl transition ${perfilCalidad === perfil.id ? "bg-orange-500/25 border border-orange-400/40" : "hover:bg-white/10 border border-transparent"}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">{perfil.etiqueta}</span>
+                    {perfilCalidad === perfil.id && <Check className="w-3 h-3 text-orange-400" />}
+                  </span>
+                  <span className="block text-[10px] text-white/50 mt-0.5">{perfil.descripcion}</span>
+                </button>
+              ))}
+              <p className="text-[10px] text-white/40 px-3 pt-1 pb-0.5">
+                La cámara entrega lo máximo que puede; si tu equipo no da abasto se baja sola y te aviso.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {avisoRendimiento && (
+        <div className="absolute z-[45] left-3 right-3 flex justify-center" style={{ top: "max(3.5rem, env(safe-area-inset-top, 10px))" }}>
+          <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/90 text-slate-900 shadow-xl max-w-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span className="text-[11px] font-semibold leading-snug">{avisoRendimiento}</span>
+          </div>
+        </div>
+      )}
+
       {showZoomIndicator && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[30] px-4 py-2 rounded-full bg-black/70 backdrop-blur-sm border border-white/20">
           <span className="text-sm text-white font-mono font-medium">{zoomLevel.toFixed(1)}x</span>
@@ -1948,7 +2074,7 @@ function CameraRecordingView({
           {isRecording && (
             <div className={`flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-md border ${isPaused ? "bg-yellow-500/30 border-yellow-500/40" : "bg-red-500/30 border-red-500/40"}`}>
               <div className={`w-2.5 h-2.5 rounded-full ${isPaused ? "bg-yellow-500" : "bg-red-500 animate-pulse"}`} />
-              <span className="text-sm font-mono text-white font-bold">{formatTime(recordingTime)}</span>
+              <CronometroGrabacion segundosRef={recordingTimeRef} />
               {isPaused && <span className="text-[10px] text-yellow-300 font-medium ml-1">PAUSA</span>}
             </div>
           )}
@@ -2157,6 +2283,29 @@ function CameraRecordingView({
 
 type RecordingStats = { weeklyCount: number; monthlyCount: number; totalCount: number; streak: number };
 
+/** mm:ss a partir de segundos. */
+function formatoReloj(seg: number): string {
+  const m = Math.floor(Math.max(0, seg) / 60);
+  const s = Math.floor(Math.max(0, seg) % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * Cronometro aislado.
+ *
+ * Lee el ref por su cuenta para que el tic no obligue a re-renderizar la
+ * pantalla de grabacion entera. Es la diferencia entre un tiron por segundo y
+ * ninguno.
+ */
+function CronometroGrabacion({ segundosRef }: { segundosRef: React.MutableRefObject<number> }) {
+  const [seg, setSeg] = useState(segundosRef.current);
+  useEffect(() => {
+    const id = window.setInterval(() => setSeg(segundosRef.current), 500);
+    return () => window.clearInterval(id);
+  }, [segundosRef]);
+  return <span className="text-sm font-mono text-white font-bold">{formatoReloj(seg)}</span>;
+}
+
 export default function RecordingStudio() {
   const { t } = useLang();
   const { toast } = useToast();
@@ -2215,6 +2364,10 @@ export default function RecordingStudio() {
         chunkForm.append("uploadId", uploadId);
         chunkForm.append("chunkIndex", String(i));
         chunkForm.append("totalChunks", String(totalChunks));
+        // Offset exacto: el servidor escribe en esa posición en vez de añadir
+        // al final, así un reintento reescribe los mismos bytes en vez de
+        // duplicarlos. Con 4K hay muchos más trozos y muchos más reintentos.
+        chunkForm.append("offset", String(start));
 
         let retries = 0;
         while (retries < 3) {

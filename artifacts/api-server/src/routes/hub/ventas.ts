@@ -182,6 +182,17 @@ router.post("/hub/ventas/contracts/:id/renew", async (req: Request, res: Respons
     expiresAt: "",
     notes: `Renovación del contrato "${str(orig.title)}" que vence el ${str(orig.expiresAt) || "—"}.`,
     doc: orig.doc,
+    // El brief técnico se hereda.
+    //
+    // No se copiaba, así que la renovación nacía sin versión técnica y, al
+    // pasar a "activo", el handoff caía al arranque genérico: el equipo de
+    // desarrollo recibía "Kickoff interno / Levantamiento / Planificar hitos"
+    // como si ESE fuera el alcance de un proyecto que ya conocen entero.
+    // Una renovación es el mismo alcance: lo lógico es partir de él y editarlo.
+    brief: orig.brief,
+    briefUrl: orig.briefUrl,
+    briefTitle: orig.briefTitle,
+    briefUploadedAt: orig.briefUploadedAt,
     createdAt: now,
     updatedAt: now,
     pipelineStage: "contactado",

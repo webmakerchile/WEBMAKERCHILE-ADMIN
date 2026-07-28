@@ -1,6 +1,13 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
+import { TiraBorradores } from "@/components/tira-borradores";
+import {
+  useSetEstudio,
+  PersonalizacionSet,
+  IdeaConIA,
+  DIRECCION_PREDETERMINADA,
+} from "@/components/personalizacion-set";
 import {
   Sparkles, Download, AlertCircle, Loader2, Dices, Copy, Check, RefreshCw,
   Pencil, Repeat, Settings, X, Wand2, Bot, Film, BookOpen, Package,
@@ -127,6 +134,13 @@ type Resultado = {
   estilo_titular?: string;
   formato_narrativo?: string;
   formato_narrativo_nombre?: string;
+  /** Set con el que se generó: los reintentos lo reutilizan tal cual. */
+  set?: {
+    direccion_id: string;
+    pose_id: string | null;
+    utileria: string | null;
+    estilo_extra: string | null;
+  };
   hilo?: string;
   frames: Frame[];
   fecha: string;
@@ -150,6 +164,13 @@ export default function HistoriasPage() {
   // null = rotación automática entre los estilos más impactantes.
   const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
   // Formato narrativo: qué historia se cuenta y cómo progresa entre frames.
+  // Idea en bruto + "Escribir con IA" y personalización del set: EL MISMO hook
+  // y el MISMO panel que Portadas y Posts IA. Historias se había quedado sin
+  // ninguno de los dos, y por eso el mismo concepto salía distinto según la
+  // sección desde la que se generara.
+  const [idea, setIdea] = useState("");
+  const [redactando, setRedactando] = useState(false);
+  const set = useSetEstudio();
   const [formatoNarrativo, setFormatoNarrativo] = useState<string | null>(null);
   const [formatosNarrativos, setFormatosNarrativos] = useState<FormatoNarrativo[]>([]);
   const [formato, setFormato] = useState<Formato>("auto");
@@ -168,6 +189,47 @@ export default function HistoriasPage() {
   const [recomendacion, setRecomendacion] = useState<Recomendacion | null>(null);
   const [detectando, setDetectando] = useState(false);
   const [zippeando, setZippeando] = useState(false);
+  // Sube tras cada generación para que la tira de borradores se refresque.
+  const [versionBorradores, setVersionBorradores] = useState(0);
+
+  // "Escribir con IA": redacta la idea en bruto y propone el set. Cada campo
+  // se aplica solo si el usuario no lo tocó mientras la IA respondía.
+  const handleRedactarIdea = async () => {
+    if (redactando) return;
+    if (!concepto.trim() && !idea.trim()) {
+      setError("Escribe tu idea (aunque sea a lo bruto) para que la IA la redacte");
+      return;
+    }
+    const conceptoEnviado = concepto;
+    const ideaEnviada = idea;
+    setRedactando(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/community/redactar-idea`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tema: concepto.trim() || undefined,
+          idea: idea.trim() || undefined,
+          tipo_contenido: tipoHistoria,
+          destino: "historia",
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "No se pudo redactar la idea");
+      const d = data.data;
+      if (d.idea && idea === ideaEnviada) setIdea(d.idea);
+      if (d.tema && concepto === conceptoEnviado) setConcepto(d.tema.slice(0, 120));
+      if (d.estilo_titular) setEstiloTitular(d.estilo_titular);
+      const cambioSet = set.aplicarSugerencia(d);
+      showToast(cambioSet ? "✨ Idea redactada y set sugerido (revísalo abajo)" : "✨ Idea redactada");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setRedactando(false);
+    }
+  };
 
   const SORPRENDEME_HISTORY_KEY = "wm_sorprendeme_historia_history";
   const handleSorprendeme = async () => {
@@ -229,6 +291,8 @@ export default function HistoriasPage() {
           texto_en_imagen: textoEnImagen,
           estilo_titular: estiloTitular ?? undefined,
           formato_narrativo: formatoNarrativo ?? undefined,
+          idea: idea.trim() || undefined,
+          ...set.payload(),
           formato: formatoFinal,
           ...(formatoFinal === "serie" ? { cantidad_frames: cantidad || cantidadFrames } : {}),
         }),
@@ -236,6 +300,7 @@ export default function HistoriasPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Error al generar");
       setResultado(data.data);
+      setVersionBorradores((v) => v + 1);
       const frameError = (data.data.frames as Frame[]).find((f) => f.error);
       if (frameError) showToast(`⚠️ Frame ${frameError.numero_frame} falló — usa “Reintentar” para reintentar`);
     } catch (err: any) {
@@ -312,6 +377,12 @@ export default function HistoriasPage() {
           estilo_titular: resultado.estilo_titular ?? undefined,
           formato_narrativo: resultado.formato_narrativo ?? undefined,
           hilo: resultado.hilo ?? undefined,
+          // El set de la serie original: sin esto el frame regenerado salía con
+          // otra luz y desentonaba con el resto.
+          direccion_id: resultado.set?.direccion_id ?? DIRECCION_PREDETERMINADA,
+          pose_id: resultado.set?.pose_id ?? undefined,
+          utileria: resultado.set?.utileria ?? undefined,
+          estilo_extra: resultado.set?.estilo_extra ?? undefined,
           guion_frame: frame.guion ?? undefined,
           otros_titulares: resultado.frames
             .filter((f) => f.numero_frame !== frame.numero_frame)
@@ -372,7 +443,10 @@ export default function HistoriasPage() {
     const link = document.createElement("a");
     link.href = frame.imagen;
     const slug = (resultado?.concepto || "historia").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32);
-    link.download = `historia_${slug}_${frame.numero_frame}_${frame.rol}.png`;
+    // La extensión sale del data URL: un borrador restaurado vuelve en webp y
+    // llamarlo .png haría que algunos editores lo rechacen.
+    const ext = frame.imagen.startsWith("data:image/webp") ? "webp" : "png";
+    link.download = `historia_${slug}_${frame.numero_frame}_${frame.rol}.${ext}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -388,8 +462,9 @@ export default function HistoriasPage() {
         if (!frame.imagen) continue;
         const base64 = frame.imagen.split(",")[1];
         if (!base64) continue;
+        const ext = frame.imagen.startsWith("data:image/webp") ? "webp" : "png";
         zip.file(
-          `frame_${String(frame.numero_frame).padStart(2, "0")}_${frame.rol}.png`,
+          `frame_${String(frame.numero_frame).padStart(2, "0")}_${frame.rol}.${ext}`,
           base64,
           { base64: true },
         );
@@ -491,6 +566,14 @@ export default function HistoriasPage() {
               {concepto.length}/120 caracteres. {concepto.trim() && "Sorpréndeme respetará tu contexto."}
             </p>
           </div>
+
+          <IdeaConIA
+            valor={idea}
+            onChange={setIdea}
+            onRedactar={handleRedactarIdea}
+            redactando={redactando}
+            deshabilitado={!concepto.trim() && !idea.trim()}
+          />
 
           {/* Selector de formato */}
           <div>
@@ -605,6 +688,7 @@ export default function HistoriasPage() {
               nadie sabía que existía. */}
           <div className={`bg-foreground/5 rounded-xl p-4 border border-foreground/10 transition-opacity ${textoEnImagen ? "" : "opacity-50"}`}>
             <EstiloTitularPicker
+              estilos={set.opciones?.estilosTitular ?? null}
               value={estiloTitular}
               onChange={setEstiloTitular}
               descripcionAuto="El título usa el mismo motor de tipografía que las portadas — en automático rota entre los estilos impactantes."
@@ -615,6 +699,8 @@ export default function HistoriasPage() {
               </p>
             )}
           </div>
+
+          <PersonalizacionSet set={set} />
 
           {error && (
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
@@ -639,6 +725,39 @@ export default function HistoriasPage() {
             )}
           </button>
         </motion.form>
+
+        <TiraBorradores
+          tipo="historia"
+          recargar={versionBorradores}
+          onError={setError}
+          onCargar={(d) => {
+            // El borrador vuelve como resultado activo: se puede seguir
+            // reintentando frames y descargando desde donde se dejó.
+            setResultado({
+              id: d.id,
+              formato: d.formato ?? "unica",
+              tipo_historia: d.tipo_historia,
+              concepto: d.concepto,
+              texto_en_imagen: d.texto_en_imagen ?? true,
+              estilo_titular: d.estilo_titular,
+              formato_narrativo: d.formato_narrativo,
+              set: d.set,
+              hilo: d.hilo,
+              fecha: d.creado,
+              frames: (d.piezas ?? d.frames ?? []).map((f: any, i: number) => ({
+                numero_frame: f.numero ?? f.numero_frame ?? i + 1,
+                total_frames: (d.piezas ?? d.frames ?? []).length,
+                rol: f.rol,
+                layout: f.layout,
+                imagen: f.imagen ?? "",
+                texto: f.texto,
+                guion: f.guion,
+              })),
+            });
+            setFrameActivo(0);
+            showToast("📂 Borrador abierto");
+          }}
+        />
 
         {/* Modal de recomendación auto */}
         {recomendacion && (

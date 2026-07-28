@@ -72,24 +72,59 @@ async function notifyArea(area: string, actorId: number, title: string, body: st
 
 type ContractEntity = Record<string, unknown> & {
   id?: unknown; title?: unknown; client?: unknown; status?: unknown;
-  brief?: { objetivo?: string; alcance?: Array<{ modulo?: string; detalle?: string } | string>; hitos?: Array<{ nombre?: string } | string> } | null;
+  // La forma REAL del brief (ver `briefSchema` en routes/hub): los módulos de
+  // `alcance` traen `descripcion`, no `detalle`. El tipo declaraba `detalle` y
+  // por eso el error de campo pasaba el compilador sin protestar.
+  brief?: {
+    objetivo?: string;
+    alcance?: Array<{ modulo?: string; descripcion?: string; entregables?: string[]; requisitos?: string[] } | string>;
+    hitos?: Array<{ nombre?: string; detalle?: string } | string>;
+  } | null;
+  notes?: unknown;
+  expiresAt?: unknown;
 };
 
 function contractLabel(c: ContractEntity): string {
   return String(c.title ?? c.client ?? c.id ?? "").slice(0, 120) || "(contrato)";
 }
 
-/** Tareas estándar derivadas del brief técnico; si no hay brief, un arranque genérico. */
+/**
+ * Tareas estándar derivadas del brief técnico; si no hay brief, un arranque genérico.
+ *
+ * Leía `item.detalle`, y los módulos del brief NO tienen ese campo: tienen
+ * `descripcion`, `entregables` y `requisitos` (ver `briefSchema` en
+ * routes/hub). El nombre venía de `hitos[]`, que sí usa `detalle`.
+ *
+ * Como `briefSchema` descarta lo que no conoce, `detalle` nunca podía existir
+ * ni aunque el modelo lo devolviera: TODA tarea generada por el handoff salía
+ * con `notes: null`. El desarrollador recibía un título suelto ("Home",
+ * "Checkout") sin un solo requisito, y el brief entero se quedaba sin usar.
+ */
 function tasksFromBrief(c: ContractEntity): Array<{ title: string; notes: string | null }> {
   const out: Array<{ title: string; notes: string | null }> = [];
   const brief = c.brief && typeof c.brief === "object" ? c.brief : null;
   const alcance = Array.isArray(brief?.alcance) ? brief!.alcance : [];
+
+  const lista = (v: unknown, prefijo: string): string[] =>
+    Array.isArray(v)
+      ? v.map((x) => String(x ?? "").trim()).filter(Boolean).map((x) => `${prefijo} ${x}`)
+      : [];
+
   for (const item of alcance.slice(0, 20)) {
     if (typeof item === "string" && item.trim()) out.push({ title: item.trim().slice(0, 200), notes: null });
     else if (item && typeof item === "object") {
-      const mod = String((item as { modulo?: unknown }).modulo ?? "").trim();
-      const det = String((item as { detalle?: unknown }).detalle ?? "").trim();
-      if (mod) out.push({ title: mod.slice(0, 200), notes: det ? det.slice(0, 2000) : null });
+      const m = item as { modulo?: unknown; descripcion?: unknown; detalle?: unknown; entregables?: unknown; requisitos?: unknown };
+      const mod = String(m.modulo ?? "").trim();
+      if (!mod) continue;
+      // `detalle` se sigue aceptando por si queda algún brief viejo guardado.
+      const descripcion = String(m.descripcion ?? m.detalle ?? "").trim();
+      const partes = [
+        descripcion,
+        ...lista(m.entregables, "• Entregable:"),
+        ...lista(m.requisitos, "• Requisito:"),
+      ].filter(Boolean);
+      const notas = partes.join("\n");
+      out.push({ title: mod.slice(0, 200), notes: notas ? notas.slice(0, 2000) : null });
     }
   }
   if (out.length === 0) {
@@ -116,13 +151,29 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
     // 1) Proyecto en el tablero, salvo que ya exista uno ligado a este contrato.
     const board = await resolveBoard();
     let projectId: string | null = null;
+    let yaTeniaProyecto = false;
     if (board) {
       const projects = Array.isArray(board.data.projects) ? (board.data.projects as Record<string, unknown>[]) : [];
       const existing = projects.find((p) => String(p.contractId ?? "") === contractId);
       if (existing) {
         projectId = String(existing.id ?? "");
+        yaTeniaProyecto = true;
       } else {
         projectId = `hp${now.toString(36)}`;
+        // Lo que se acordó con el cliente viaja al proyecto.
+        //
+        // Antes `notes` era la frase fija "Creado automáticamente al cerrar la
+        // venta", que PISABA las notas del contrato — el alcance acordado se
+        // perdía en el salto. Y `due` quedaba vacío teniendo el `expiresAt`
+        // del contrato ahí mismo. Quien abría el proyecto no encontraba nada.
+        const objetivo = String((contract.brief as { objetivo?: unknown } | null)?.objetivo ?? "").trim();
+        const notasContrato = String(contract.notes ?? "").trim();
+        const notas = [
+          objetivo && `Objetivo: ${objetivo}`,
+          notasContrato,
+          "— Proyecto abierto automáticamente al cerrar la venta.",
+        ].filter(Boolean).join("\n\n");
+
         const project = {
           id: projectId,
           name: label,
@@ -132,9 +183,10 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
           status: "disc",
           owner: "",
           prog: 0,
-          notes: "Creado automáticamente al cerrar la venta.",
+          notes: notas.slice(0, 4000),
           link: "",
-          due: "",
+          // La fecha de término del contrato ES la fecha objetivo del proyecto.
+          due: String(contract.expiresAt ?? ""),
           contractId,
           createdAt: now,
           updatedAt: now,
@@ -146,6 +198,20 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
     }
 
     // 2) Tareas estándar desde el brief técnico (sistema hub_tasks).
+    //
+    // Si el proyecto YA existía es porque un intento anterior llegó a crearlo
+    // y falló después: `runClaimed` libera el claim y un rebote reintenta,
+    // así que sin esta comprobación se insertaba el MISMO lote otra vez y el
+    // equipo veía cada tarea duplicada.
+    if (projectId && yaTeniaProyecto) {
+      const [alguna] = await db.select({ id: hubTasks.id }).from(hubTasks)
+        .where(eq(hubTasks.projectRef, projectId)).limit(1);
+      if (alguna) {
+        console.log(`[handoff] ${contractId}: el proyecto ${projectId} ya tiene tareas, no se repiten`);
+        return;
+      }
+    }
+
     const stamp = new Date();
     const taskDefs = tasksFromBrief(contract);
     if (taskDefs.length > 0) {

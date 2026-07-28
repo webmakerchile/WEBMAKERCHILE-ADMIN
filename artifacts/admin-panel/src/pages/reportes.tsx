@@ -254,10 +254,6 @@ export default function ReportesPage() {
           </div>
         </header>
 
-        <MetasInline />
-
-        <TicketsInline title="Solicitudes a finanzas" />
-
         {isLoading && (
           <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
         )}
@@ -283,6 +279,46 @@ export default function ReportesPage() {
               <Kpi label="Cobrado" value={fmtCLP(stats.cobrado)} hint={`${stats.countCobrado} pagado${stats.countCobrado === 1 ? "" : "s"}`} tone="emerald" />
               <Kpi label="Sin gestionar" value={String(stats.sinGestion)} hint="Todavía no les registraste cobranza" />
             </div>
+
+            {/* Evolución mensual. `byMonth` y `maxMonth` ya se calculaban y no se
+                dibujaban en ninguna parte: el gráfico estaba a medio hacer, así
+                que la pantalla eran siete cifras sueltas sin forma de ver una
+                tendencia. */}
+            {byMonth.some(r => r.count > 0) && (
+              <Card className="bg-card/40 border-foreground/10">
+                <CardContent className="p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <p className="text-sm font-semibold">Contratos por mes</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {year === "todos" ? "Todos los años juntos" : `Año ${year}`} · por fecha de firma
+                    </p>
+                  </div>
+                  <div className="flex items-end gap-1.5 h-36">
+                    {byMonth.map(r => {
+                      const alto = r.total > 0 ? Math.max(4, Math.round((r.total / maxMonth) * 100)) : 0;
+                      return (
+                        <div key={r.label} className="flex-1 flex flex-col items-center gap-1 min-w-0 group">
+                          <span className="text-[9px] text-muted-foreground tabular-nums opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            {r.total > 0 ? fmtCLP(r.total) : ""}
+                          </span>
+                          <div className="w-full flex-1 flex items-end">
+                            <div
+                              className={`w-full rounded-t transition-all ${r.total > 0 ? "bg-gradient-to-t from-primary/50 to-primary group-hover:from-primary/70" : "bg-foreground/5"}`}
+                              style={{ height: `${alto}%` }}
+                              title={`${r.label}: ${r.count} contrato${r.count === 1 ? "" : "s"} · ${fmtCLP(r.total)}`}
+                            />
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">{r.label}</span>
+                          <span className="text-[10px] font-semibold tabular-nums text-foreground/70">
+                            {r.count || ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {vencimientos.length > 0 && (
               <Card className="bg-card/40 border-amber-500/20">
@@ -407,6 +443,10 @@ export default function ReportesPage() {
               Puedes registrar facturación y pagos desde la columna Cobranza; el contenido comercial del contrato
               (precios, módulos, alcance) se edita en el Hub Ejecutivo.
             </p>
+
+            <MetasInline />
+
+            <TicketsInline title="Solicitudes a finanzas" />
           </>
         )}
 
