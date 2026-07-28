@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
-import { useAsistencia, formatMinutes, type AsistenciaMiembro } from "@/lib/asistencia";
+import { useAsistencia } from "@/lib/asistencia";
+import { PaseDeLista } from "@/components/pase-de-lista";
 import { EvaluationsManager, LeaveManager, OnboardingManager, PersonDocuments } from "@/components/rrhh-ops";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -120,6 +121,28 @@ export default function RrhhPage() {
       }
       return r.json();
     },
+  });
+
+  // Pausar/reanudar la jornada de otra persona. El servidor solo lo permite a
+  // dirección, ventas y RRHH — esta pantalla es de RRHH, así que el control
+  // corresponde. Estaba solo en el panel ejecutivo, o sea que RRHH veía el
+  // pase de lista sin poder actuar sobre él.
+  const pausaMut = useMutation({
+    mutationFn: async (p: { userId: number; pausar: boolean; motivo?: string }) => {
+      const r = await fetch(`${API_BASE}/jornada/${p.pausar ? "pausa" : "reanudar"}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: p.userId, motivo: p.motivo ?? "" }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo cambiar la pausa");
+      }
+      return r.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["jornada-overview"] }),
+    onError: (e) => toast({ title: "No se pudo cambiar la pausa", description: (e as Error).message, variant: "destructive" }),
   });
 
   const saveProfile = useMutation({
@@ -292,52 +315,33 @@ export default function RrhhPage() {
             <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-                  <p className="text-sm font-semibold">Asistencia de hoy</p>
-                  {attendance && (
-                    <span className="text-[11px] text-muted-foreground">
-                      {attendance.summary.working} trabajando · {attendance.summary.finished} terminaron · {attendance.summary.absent} sin marcar
-                    </span>
-                  )}
+                  <p className="text-sm font-semibold">Pase de lista de hoy</p>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-3">
                   Las horas salen de la jornada: Discord verifica la presencia en el canal de voz.
                 </p>
-                {!attendance || attendance.members.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">Sin datos de asistencia todavía.</p>
-                ) : (
-                  <ul className="divide-y divide-foreground/5">
-                    {attendance.members
-                      .slice()
-                      .sort((a, b) => Number(!!b.today?.open) - Number(!!a.today?.open) || b.weekTotal - a.weekTotal)
-                      .map((a: AsistenciaMiembro) => (
-                        <li key={a.id} className="flex flex-wrap items-center gap-3 py-2">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                            a.today?.pausa ? "bg-amber-400" : a.today?.open ? "bg-emerald-400" : a.today ? "bg-zinc-500" : "bg-zinc-700"
-                          }`} />
-                          <span className="flex-1 min-w-[8rem] text-sm truncate">{a.name || a.email}</span>
-                          {a.today?.pausa && (
-                            <span className="text-[11px] text-amber-400" title={a.today.pausa.motivo || undefined}>
-                              en pausa
-                            </span>
-                          )}
-                          {!a.discord?.linked && <span className="text-[11px] text-amber-400">Discord sin vincular</span>}
-                          {a.discord?.inVoiceNow === true && <span className="text-[11px] text-emerald-400">en voz</span>}
-                          {a.discord?.pct !== null && a.discord?.pct !== undefined && (
-                            <span className="text-[11px] text-muted-foreground">{a.discord.pct}% verificado</span>
-                          )}
-                          <span
-                            className="text-xs tabular-nums w-16 text-right"
-                            title={a.today && a.today.pausedMinutes > 0 ? `${formatMinutes(a.today.pausedMinutes)} en pausas, ya descontados` : undefined}
-                          >
-                            {formatMinutes(a.today?.minutes ?? 0)}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground tabular-nums w-20 text-right">
-                            {formatMinutes(a.weekTotal)} sem
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
-                )}
+                <PaseDeLista
+                  miembros={attendance?.members ?? []}
+                  accion={(m) => {
+                    // Solo tiene sentido sobre una jornada abierta: pausar a
+                    // quien no ha marcado o ya terminó no significa nada.
+                    if (!m.today?.open && !m.today?.pausa) return null;
+                    const enPausa = Boolean(m.today?.pausa);
+                    return (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={pausaMut.isPending}
+                        onClick={() => pausaMut.mutate({ userId: m.id, pausar: !enPausa })}
+                        className={enPausa ? "border-emerald-500/40 text-emerald-400" : "border-amber-500/40 text-amber-400"}
+                      >
+                        {pausaMut.isPending && pausaMut.variables?.userId === m.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : enPausa ? "Reanudar" : "Pausar"}
+                      </Button>
+                    );
+                  }}
+                />
               </CardContent>
             </Card>
 
