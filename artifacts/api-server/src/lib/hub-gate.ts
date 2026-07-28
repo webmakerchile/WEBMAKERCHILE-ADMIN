@@ -11,7 +11,15 @@
  * El resto de `/hub` (generación con IA, briefs, cobranza) sigue gateado por
  * área, porque ahí no hay un recorte por colección que lo cubra.
  */
-export const HUB_ROLE_GATED_PATHS: ReadonlySet<string> = new Set(["/", "/owner"]);
+export const HUB_ROLE_GATED_PATHS: ReadonlySet<string> = new Set([
+  "/",
+  "/owner",
+  // Redacta tareas a partir de un proyecto y NO escribe nada: lo que se haga
+  // con la propuesta pasa después por /hub/tasks, que ya se guarda solo.
+  // Estaba gateado por área, así que marketing —que sí crea tareas y sí lee
+  // proyectos— recibía un 403 al pedir ayuda para redactarlas.
+  "/projects/ai-extract-tasks",
+]);
 
 /** ¿Este sub-path de `/hub` necesita además el gate por área? */
 export function hubNeedsAreaGate(path: string): boolean {

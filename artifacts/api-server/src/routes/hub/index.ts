@@ -569,6 +569,20 @@ function sanitizeBrief(brief: z.infer<typeof briefSchema>): z.infer<typeof brief
 }
 
 router.post("/hub/contracts/brief", async (req: Request, res: Response) => {
+  try {
+    await generarBriefTecnico(req, res);
+  } catch (err) {
+    // Sin este catch, un fallo del modelo (sin API key, rate limit, timeout)
+    // salía como un 500 sin cuerpo. El panel lo leía como "brief null" y
+    // guardaba el contrato sin brief sin decir nada.
+    console.error("[hub/contracts/brief]", (err as Error)?.message);
+    res.status(502).json({
+      error: "No se pudo generar el brief técnico ahora mismo. El contrato se puede guardar igual y generarlo después desde su ficha.",
+    });
+  }
+});
+
+async function generarBriefTecnico(req: Request, res: Response): Promise<void> {
   const { doc, contract } = req.body as { doc?: Record<string, unknown>; contract?: Record<string, unknown> };
   if (!doc && !contract) {
     res.status(400).json({ error: "Se requiere el documento o la ficha del contrato" });
@@ -628,8 +642,23 @@ Un elemento de "alcance" por cada módulo contratado. Sé concreto y accionable:
   const parsed = briefSchema.safeParse(parsedJson);
   const brief = sanitizeBrief(parsed.success ? parsed.data : briefSchema.parse({}));
 
+  // Un brief sin alcance NO es un brief.
+  //
+  // Antes se devolvía igual, con arrays vacíos y HTTP 200, y el panel lo
+  // guardaba como si fuera bueno. Al cerrar la venta, el handoff no encontraba
+  // módulos y caía al arranque genérico ("Kickoff interno", "Levantamiento de
+  // requerimientos"), que el equipo de desarrollo recibía como si fuera el
+  // alcance real del proyecto. Un vacío que se ve como un éxito es peor que
+  // un error.
+  if (brief.alcance.length === 0) {
+    res.status(502).json({
+      error: "La IA no logró armar el brief técnico a partir de este contrato. Revisa que el documento tenga módulos con descripción y vuelve a intentarlo.",
+    });
+    return;
+  }
+
   res.json({ brief: { ...brief, generatedAt: Date.now() } });
-});
+}
 
 router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response) => {
   const { project } = req.body as { project?: Record<string, string> };

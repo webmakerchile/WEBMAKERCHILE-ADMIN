@@ -4,8 +4,10 @@ import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { fmtDate, daysUntil, type HubProject, type HubTask, type HubContract } from "@/lib/hub-owner";
-import { useHubBoard, useHubPatch, replaceEntity, newHubId } from "@/lib/hub-write";
+import { fmtDate, daysUntil, type HubProject, type HubContract } from "@/lib/hub-owner";
+import { useHubBoard, useHubPatch, replaceEntity } from "@/lib/hub-write";
+import { useTareasHub, type TareaVista } from "@/lib/tareas-hub";
+import { useAuth } from "@/App";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
 import {
@@ -36,19 +38,19 @@ const WIP_LIMITE = 3;
 /** Horas a partir de las cuales una tarea lleva demasiado tiempo quieta. */
 const ESTANCADA_HORAS = 72;
 
-function horasEnEtapa(t: HubTask): number {
+function horasEnEtapa(t: TareaVista): number {
   return Math.floor((Date.now() - (t.stageSince || t.createdAt || Date.now())) / 3_600_000);
 }
 
 /** Tiempo en la etapa actual, en formato corto (2d 4h). */
-function stageAge(t: HubTask): string {
+function stageAge(t: TareaVista): string {
   const h = horasEnEtapa(t);
   if (h < 1) return "<1h";
   if (h < 24) return `${h}h`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-function projectProgress(projectId: string, tasks: HubTask[]) {
+function projectProgress(projectId: string, tasks: TareaVista[]) {
   const own = tasks.filter(t => t.projectId === projectId);
   if (own.length === 0) return { pct: 0, done: 0, total: 0 };
   const done = own.filter(t => t.stage === "done").length;
@@ -60,7 +62,14 @@ export default function MisTareasPage() {
   const patch = useHubPatch();
   const { toast } = useToast();
 
-  const tasks = useMemo(() => board?.data?.tasks ?? [], [board]);
+  // Las tareas salen de `hub_tasks`, la MISMA tabla que el tablero del Hub
+  // Ejecutivo. Antes esta página leía `hub_state.data.tasks`, una colección
+  // distinta que no miraba nadie más: lo que se creaba aquí era invisible para
+  // la jefatura, y lo que la jefatura asignaba era invisible aquí.
+  const usuario = useAuth();
+  const miId = typeof usuario?.id === "number" ? usuario.id : null;
+  const tareasHub = useTareasHub(miId);
+  const tasks = tareasHub.tareas;
   const projects = useMemo(() => board?.data?.projects ?? [], [board]);
   const contracts = useMemo(() => board?.data?.contracts ?? [], [board]);
   // El servidor decide qué puede tocar este rol; la UI solo obedece.
@@ -78,7 +87,7 @@ export default function MisTareasPage() {
   );
 
   const byStage = useMemo(() => {
-    const map = new Map<string, HubTask[]>(STAGES.map(s => [s.id, []]));
+    const map = new Map<string, TareaVista[]>(STAGES.map(s => [s.id, []]));
     for (const t of visible) {
       const list = map.get(t.stage) ?? map.get("backlog")!;
       list.push(t);
@@ -95,49 +104,38 @@ export default function MisTareasPage() {
   const activos = useMemo(() => projects.filter((p: HubProject) => p.status !== "done"), [projects]);
   const pendientes = visible.filter(t => t.stage !== "done").length;
 
-  /** Guarda la colección completa: el servidor la fusiona entidad por entidad. */
-  const guardarTareas = (siguiente: HubTask[], mensaje?: string) => {
-    if (!board) return;
-    patch.mutate(
-      { data: { tasks: siguiente }, baseVersion: board.version },
+  const alFallar = (e: unknown) =>
+    toast({ title: "No se pudo guardar", description: (e as Error).message, variant: "destructive" });
+
+  const moverEtapa = (t: TareaVista, dir: -1 | 1) => {
+    const i = STAGE_IDS.indexOf(t.stage);
+    const destino = STAGE_IDS[Math.min(STAGE_IDS.length - 1, Math.max(0, (i === -1 ? 0 : i) + dir))];
+    if (destino === t.stage) return;
+    // El servidor reinicia `stageSince` al cambiar de etapa: el contador mide
+    // la etapa nueva, no la vida de la tarea, que es lo que deja ver dónde se
+    // atasca el trabajo.
+    tareasHub.actualizar.mutate(
+      { id: t.id, campos: { stage: destino } },
       {
-        onSuccess: () => { if (mensaje) toast({ title: mensaje }); },
-        onError: (e: unknown) => toast({ title: "No se pudo guardar", description: (e as Error).message, variant: "destructive" }),
+        onSuccess: () => toast({ title: `“${t.title}” → ${STAGES.find(s => s.id === destino)?.label}` }),
+        onError: alFallar,
       },
     );
   };
 
-  const moverEtapa = (t: HubTask, dir: -1 | 1) => {
-    const i = STAGE_IDS.indexOf(t.stage);
-    const destino = STAGE_IDS[Math.min(STAGE_IDS.length - 1, Math.max(0, (i === -1 ? 0 : i) + dir))];
-    if (destino === t.stage) return;
-    // `stageSince` se reinicia: el contador de tiempo mide la etapa nueva, no la
-    // vida de la tarea. Es lo que hace visible dónde se atasca el trabajo.
-    guardarTareas(
-      replaceEntity(tasks, t.id, { stage: destino, stageSince: Date.now() }),
-      `“${t.title}” → ${STAGES.find(s => s.id === destino)?.label}`,
-    );
-  };
-
-  const actualizarTarea = (id: string, campos: Partial<HubTask>) => {
-    guardarTareas(replaceEntity(tasks, id, campos));
+  const actualizarTarea = (id: string, campos: Partial<TareaVista>) => {
+    tareasHub.actualizar.mutate({ id, campos }, { onError: alFallar });
   };
 
   const crearTarea = () => {
     if (!nueva || !nueva.title.trim()) return;
-    const ahora = Date.now();
-    const t: HubTask = {
-      id: newHubId("task"),
-      title: nueva.title.trim(),
-      projectId: nueva.projectId,
-      crit: nueva.crit,
-      stage: "backlog",
-      stageSince: ahora,
-      notes: "",
-      createdAt: ahora,
-      updatedAt: ahora,
-    };
-    guardarTareas([...tasks, t], "Tarea creada en el backlog");
+    tareasHub.crear.mutate(
+      { title: nueva.title.trim(), projectId: nueva.projectId, crit: nueva.crit },
+      {
+        onSuccess: () => toast({ title: "Tarea creada en el backlog" }),
+        onError: alFallar,
+      },
+    );
     setNueva(null);
   };
 
@@ -302,7 +300,7 @@ export default function MisTareasPage() {
                               proyecto={projectName(t.projectId)}
                               editable={puedeEditarTareas}
                               abierta={editando === t.id}
-                              guardando={patch.isPending}
+                              guardando={tareasHub.actualizar.isPending}
                               onAbrir={() => setEditando(editando === t.id ? null : t.id)}
                               onMover={dir => moverEtapa(t, dir)}
                               onActualizar={campos => actualizarTarea(t.id, campos)}
@@ -378,19 +376,16 @@ export default function MisTareasPage() {
                                           <button
                                             title="Crear tarea para este módulo"
                                             onClick={() => {
-                                              const ahora = Date.now();
                                               const proyecto = projects.find(p => p.contractId === c.id);
-                                              guardarTareas([...tasks, {
-                                                id: newHubId("task"),
+                                              tareasHub.crear.mutate({
                                                 title: m.modulo || c.title,
                                                 projectId: proyecto?.id ?? "",
                                                 crit: "media",
-                                                stage: "backlog",
-                                                stageSince: ahora,
                                                 notes: [m.descripcion, ...(m.requisitos ?? [])].filter(Boolean).join("\n"),
-                                                createdAt: ahora,
-                                                updatedAt: ahora,
-                                              }], "Tarea creada desde el brief");
+                                              }, {
+                                                onSuccess: () => toast({ title: "Tarea creada desde el brief" }),
+                                                onError: alFallar,
+                                              });
                                             }}
                                             className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 flex-shrink-0"
                                           >
@@ -518,14 +513,14 @@ export default function MisTareasPage() {
 function TarjetaTarea({
   tarea, proyecto, editable, abierta, guardando, onAbrir, onMover, onActualizar,
 }: {
-  tarea: HubTask;
+  tarea: TareaVista;
   proyecto: string;
   editable: boolean;
   abierta: boolean;
   guardando: boolean;
   onAbrir: () => void;
   onMover: (dir: -1 | 1) => void;
-  onActualizar: (campos: Partial<HubTask>) => void;
+  onActualizar: (campos: Partial<TareaVista>) => void;
 }) {
   const [notas, setNotas] = useState(tarea.notes || "");
   const i = STAGE_IDS.indexOf(tarea.stage);
@@ -539,8 +534,12 @@ function TarjetaTarea({
       <button onClick={onAbrir} className="w-full text-left">
         <p className="text-xs font-medium leading-snug">{tarea.title}</p>
       </button>
-      {tarea.ticketId && (
-        <p className="text-[10px] text-emerald-400 mt-1">Desde el ticket #{tarea.ticketId}</p>
+      {/* `ticketId` era un campo del sistema viejo que NADIE escribía: UI
+          muerta. En su lugar va algo que antes no existía aquí — saber que la
+          tarea te la asignó otra persona, porque ahora esta lista es la misma
+          que ve la jefatura. */}
+      {tarea.ajena && (
+        <p className="text-[10px] text-amber-400 mt-1">Te la asignaron</p>
       )}
       <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
         <span className="px-1.5 py-0.5 rounded" style={{ background: `${CRIT_COLOR[tarea.crit] || "#7a8699"}22`, color: CRIT_COLOR[tarea.crit] || "#7a8699" }}>{tarea.crit}</span>

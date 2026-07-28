@@ -7,6 +7,7 @@ import app from "./app";
 import { startScheduler } from "./scheduler";
 import { startDiscordSweep } from "./lib/discord-sweep";
 import { purgarBorradoresCaducados } from "./routes/community";
+import { migrarTareasDelBlob } from "./lib/migrar-tareas-blob";
 import { db } from "@workspace/db";
 import { users, hubState, hubTasks } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -193,5 +194,8 @@ app.listen(port, async () => {
   const barrerBorradores = () =>
     purgarBorradoresCaducados().catch((e) => console.error("[Borradores] barrido falló:", e));
   void barrerBorradores();
+  // Las tareas que el equipo creó en el sistema viejo pasan al real. Una sola
+  // vez: la marca vive en el propio tablero.
+  void migrarTareasDelBlob().catch((e) => console.error("[migrar-tareas] falló:", e));
   setInterval(barrerBorradores, 24 * 60 * 60 * 1000).unref();
 });

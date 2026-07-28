@@ -151,11 +151,13 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
     // 1) Proyecto en el tablero, salvo que ya exista uno ligado a este contrato.
     const board = await resolveBoard();
     let projectId: string | null = null;
+    let yaTeniaProyecto = false;
     if (board) {
       const projects = Array.isArray(board.data.projects) ? (board.data.projects as Record<string, unknown>[]) : [];
       const existing = projects.find((p) => String(p.contractId ?? "") === contractId);
       if (existing) {
         projectId = String(existing.id ?? "");
+        yaTeniaProyecto = true;
       } else {
         projectId = `hp${now.toString(36)}`;
         // Lo que se acordó con el cliente viaja al proyecto.
@@ -196,6 +198,20 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
     }
 
     // 2) Tareas estándar desde el brief técnico (sistema hub_tasks).
+    //
+    // Si el proyecto YA existía es porque un intento anterior llegó a crearlo
+    // y falló después: `runClaimed` libera el claim y un rebote reintenta,
+    // así que sin esta comprobación se insertaba el MISMO lote otra vez y el
+    // equipo veía cada tarea duplicada.
+    if (projectId && yaTeniaProyecto) {
+      const [alguna] = await db.select({ id: hubTasks.id }).from(hubTasks)
+        .where(eq(hubTasks.projectRef, projectId)).limit(1);
+      if (alguna) {
+        console.log(`[handoff] ${contractId}: el proyecto ${projectId} ya tiene tareas, no se repiten`);
+        return;
+      }
+    }
+
     const stamp = new Date();
     const taskDefs = tasksFromBrief(contract);
     if (taskDefs.length > 0) {
