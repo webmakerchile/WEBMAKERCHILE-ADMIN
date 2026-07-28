@@ -1,3 +1,4 @@
+import { FacebookPagePicker } from "@/components/facebook-page-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
 import { AlertCircle, Calendar, CheckCircle2, Eye, EyeOff, KeyRound, Loader2, Link2, Pencil, Trash2, Unlink, Info, Building2, User, ChevronDown, Search, Sparkles, Save, X } from "lucide-react";
@@ -669,6 +670,8 @@ export default function CuentasPage() {
   }));
 
   const [oauthError, setOauthError] = useState<{ network: string; msg: string } | null>(null);
+  /** Elegir en qué página de Facebook se publica (o avisar que no hay ninguna). */
+  const [fbPicker, setFbPicker] = useState(false);
 
   const [accounts, setAccounts] = useState<Record<Network, AccountInfo>>(() => {
     const init: Record<string, AccountInfo> = {};
@@ -761,8 +764,17 @@ export default function CuentasPage() {
     const params = new URLSearchParams(window.location.search);
     const connected = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "connected");
     const errNetwork = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "error");
+    // Resultados de Facebook que NO son ni éxito ni error técnico: el login
+    // funcionó pero falta elegir la página, o no hay ninguna disponible. Antes
+    // ambos casos se redirigían como "conectado" y el fallo solo aparecía al
+    // publicar, con el (#200) crudo de Meta.
+    const fbEstado = params.get("facebook");
     const calConnected = params.get("calendar") === "connected";
     const calError = params.get("calendar") === "error";
+    if (fbEstado === "sin_paginas" || fbEstado === "elegir_pagina") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setFbPicker(true);
+    }
     if (connected || errNetwork || calConnected || calError) {
       window.history.replaceState({}, "", window.location.pathname);
       if (errNetwork) {
@@ -884,6 +896,20 @@ export default function CuentasPage() {
         </header>
 
         <BrandToneSection />
+
+        {/* Cambiar de página tiene que ser posible SIEMPRE, no solo justo
+            después de conectar: una agencia rota entre la suya y las de sus
+            clientes. */}
+        {fbPicker ? (
+          <FacebookPagePicker onCerrar={() => setFbPicker(false)} />
+        ) : (
+          <button
+            onClick={() => setFbPicker(true)}
+            className="text-xs text-muted-foreground hover:text-primary underline underline-offset-2"
+          >
+            Elegir en qué página de Facebook se publica
+          </button>
+        )}
 
         {oauthError && (
           <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-start gap-3">
