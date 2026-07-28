@@ -17,7 +17,8 @@ import {
 } from "../../lib/title-style";
 import {
   PALETA_COMMUNITY,
-  SVG_DEFS,
+  svgDefs,
+  type PaletaComposicion,
   FUENTE_SECUNDARIA,
   bloqueSecundarioSvg,
   escapeXml,
@@ -150,11 +151,18 @@ const STYLE_GALLERY: GalleryEntry[] = [
 ];
 
 // Las imágenes canon son screenshots de slides FINALES con título/subtítulo
-// renderizados en bandas superior (22%) e inferior (25%). Si Gemini ve esas
-// referencias con texto, replica texto en su salida (rompe la regla "CERO TEXTO"
-// del prompt). Solución: enmascarar esas bandas con el color del fondo navy
-// (#0F172A) antes de enviarlas al modelo. Mantiene dimensiones para no confundir
-// la composición; el modelo solo ve la ilustración limpia del personaje.
+// renderizados en las bandas superior (22%) e inferior (25%). Si el modelo ve
+// esas referencias con texto, replica texto en su salida y rompe la regla
+// "CERO TEXTO" del prompt, así que hay que quitarles las bandas.
+//
+// Antes se pintaban de azul marino (#0F172A), el fondo de la generación
+// anterior. Eso metía un color de la paleta vieja en TODAS las referencias, y
+// el modelo lo copiaba: la ilustración salía con el set iluminado nuevo en el
+// centro y dos franjas azules pegadas arriba y abajo — dos estilos en la misma
+// imagen. Ahora las bandas se RECORTAN: la referencia pasa a ser solo la
+// ilustración central, que es lo único que tiene que enseñar (anatomía, líneas,
+// colores planos del personaje). Dónde van las zonas reservadas ya lo dice el
+// prompt en píxeles; no hace falta enseñárselo con una banda de color.
 const galleryCache = new Map<string, string>();
 async function loadGalleryFile(file: string): Promise<string | null> {
   if (galleryCache.has(file)) return galleryCache.get(file)!;
@@ -165,26 +173,12 @@ async function loadGalleryFile(file: string): Promise<string | null> {
     const w = meta.width ?? 0;
     const h = meta.height ?? 0;
     let buf: Buffer;
-    if (w > 0 && h > 0) {
-      const topBand = Math.max(1, Math.floor(h * 0.22));
-      const bottomBand = Math.max(1, Math.floor(h * 0.25));
+    const topBand = Math.floor(h * 0.22);
+    const bottomBand = Math.floor(h * 0.25);
+    const alto = h - topBand - bottomBand;
+    if (w > 0 && alto > 0) {
       buf = await sharp(raw)
-        .composite([
-          {
-            input: {
-              create: { width: w, height: topBand, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
-            },
-            top: 0,
-            left: 0,
-          },
-          {
-            input: {
-              create: { width: w, height: bottomBand, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
-            },
-            top: h - bottomBand,
-            left: 0,
-          },
-        ])
+        .extract({ left: 0, top: topBand, width: w, height: alto })
         .png()
         .toBuffer();
     } else {
@@ -316,6 +310,7 @@ function overlayTituloImpacto(
   canvas: { width: number; height: number },
   zona: ZonaTexto,
   estiloId: string,
+  paleta: PaletaComposicion = PALETA_COMMUNITY,
 ): Buffer {
   const estilo = obtenerEstiloTitular(estiloId) ?? resolverEstiloTitular();
   return construirOverlayTitular({
@@ -324,7 +319,7 @@ function overlayTituloImpacto(
     scrim: "ninguno", // los gradientes topfade/botfade existentes hacen de scrim
     titulo,
     estilo,
-    paleta: PALETA_COMMUNITY,
+    paleta,
   });
 }
 
@@ -706,14 +701,15 @@ OBJETOS DE LA ESCENA (REGLAS ESTRICTAS - "MENOS ES MÁS"):
 
 ZONAS RESERVADAS PARA TEXTO OVERLAY (CRÍTICO - NO NEGOCIABLE):
 ${zonasTexto}
-- Esas franjas deben quedar como fondo limpio, SIN elementos sólidos: ahí se monta el texto después.
+- Esas franjas deben quedar SIN elementos sólidos: ahí se monta el texto después.
+- "Reservada" significa VACÍA DE OBJETOS, NO de otro color. Esas franjas son el MISMO set siguiendo: la misma pared, la misma atmósfera, la misma caída de luz, solo que más oscuras y vacías. NUNCA una banda plana, NUNCA un bloque de otro color, NUNCA azul marino ni azul oscuro. El lienzo entero tiene que leerse como UNA sola foto de UN solo set, de borde a borde.
 - Toda la acción visual (zorro + 1-2 objetos) va ESTRICTAMENTE entre y=${escena.desde} y y=${escena.hasta}.
 - NADA puede invadir las zonas reservadas: ni el zorro, ni sus pies, ni objetos, ni sombras, ni el glow del fondo.
 
 VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
 1. ¿El zorro está 100% IDÉNTICO a la referencia (ojos pequeños, nariz negra, pelaje plano #E86A30, sin estilo Disney/Pixar)?
 2. ¿Hay un máximo de 2 objetos de apoyo y están a los lados, NUNCA detrás del zorro?
-3. ¿Las franjas reservadas quedaron LIMPIAS?
+3. ¿Las franjas reservadas quedaron LIMPIAS y con el MISMO fondo del set (sin bandas planas ni azul marino)?
 4. ¿El zorro tiene 100+ px de aire alrededor y vive entre y=${escena.desde} y y=${escena.hasta}?
 Si respondes NO a cualquiera, REGENERA mentalmente antes de devolver la imagen.
 
@@ -732,6 +728,8 @@ PROHIBIDO EN EL FONDO:
 ✗ Línea de horizonte que divida la imagen en cielo y suelo
 ✗ Bandas, stripes o resplandores en forma de barra cruzando la imagen
 ✗ Aclarar las franjas reservadas: ahí va el texto y tiene que leerse
+✗ Azul marino o azul oscuro en cualquier parte: es la paleta de la generación anterior
+✗ Un bloque de color plano arriba o abajo: el fondo es continuo de borde a borde
 
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte.`;
 }
@@ -953,6 +951,7 @@ async function generarFrameHistoria(args: {
       outBase64 = await renderTextoEnHistoria(imgBase64, args.frameGuion, args.layout, {
         frameInfo: args.total > 1 ? { numero: args.numero, total: args.total } : undefined,
         estiloTitularId: args.estiloTitular,
+        paleta: paletaDe(args.direccion),
       });
     } catch (e) {
       console.error("[Historia frame] render texto fallo:", e);
@@ -1275,6 +1274,18 @@ const GenerarDescripcionesBody = z.object({
   imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
 
+/**
+ * Paleta de composición de una dirección de arte.
+ *
+ * El texto se monta encima de la ilustración, así que su scrim y su acento
+ * tienen que salir de la MISMA luz con la que se generó el fondo. Si no, las
+ * franjas de arriba y abajo quedan de otro color y la pieza se ve pegada de
+ * dos generaciones distintas.
+ */
+function paletaDe(direccion: DireccionArte): PaletaComposicion {
+  return { colorAcento: direccion.titular.colorAcento, scrim: direccion.titular.scrim };
+}
+
 /** Set pedido por la UI → set resuelto que entiende el generador. */
 function resolverSetSlide(body: {
   direccion_id?: string;
@@ -1384,9 +1395,8 @@ Study these references carefully BEFORE generating. Only the pose and surroundin
 
 <reference_image_handling>
 CRITICAL — about the reference images you received above:
-- The dark navy bands at the top (~22%) and bottom (~25%) of each canonical reference are RESERVED EMPTY ZONES. They were intentionally cleared. They are NOT part of the illustration.
-- Your output MUST keep those same top and bottom bands completely empty: no character parts, no objects, no shadows, no text, no buttons, no badges, no logos.
-- Replicate ONLY the central illustration (the fox + the supporting objects in the middle). Ignore any artifact you might perceive in the bands.
+- They were CROPPED to show ONLY the central illustration. They are references for the CHARACTER: outline weight, flat colors, anatomy, proportions. They are NOT references for the background, the lighting or the palette — those come exclusively from the art-direction block below.
+- Do NOT copy any background colour from the references. In particular, do NOT paint dark navy / dark blue anywhere. If a reference looks flat or bluish, ignore it: the background of YOUR image is the lit studio set described in the art-direction block.
 - The references contain ZERO readable text. Your output must also contain ZERO readable text — no titles, no captions, no buttons with words like "Hablemos" or "Escríbenos", no UI labels, no numbers, no logos with text.
 </reference_image_handling>
 
@@ -1434,8 +1444,9 @@ Object mapping (pick ONE or TWO, never all):
 <composition>
 - Aspect ratio and canvas: ${dims}.
 - Character placement: centered, full body visible from ears to feet, occupying ~30-55% of the central area depending on the role above.
-- Reserved TOP zone — 22% (1:1 → 0-220px / 4:5 → 0-280px): clean background, no character parts, no objects, no shadows. Reserved for text overlay.
-- Reserved BOTTOM zone — 25% (1:1 → 880-1080px / 4:5 → 1050-1350px): clean background, no character parts, no objects, no shadows. Reserved for text overlay.
+- Reserved TOP zone — 22% (1:1 → 0-220px / 4:5 → 0-280px): no character parts, no objects, no shadows. Reserved for text overlay.
+- Reserved BOTTOM zone — 25% (1:1 → 880-1080px / 4:5 → 1050-1350px): no character parts, no objects, no shadows. Reserved for text overlay.
+- "Reserved" means EMPTY OF OBJECTS — it does NOT mean a different colour. Those zones are the SAME studio set continuing: the same wall, the same atmosphere, the same light falloff, just darker and empty. NEVER paint them as flat bands, NEVER as a block of a different colour, NEVER dark navy or dark blue. A viewer must read the whole canvas as ONE photograph of ONE set, edge to edge.
 - All visual action goes strictly in the central zone.
 </composition>
 
@@ -1463,6 +1474,7 @@ VERIFY these BEFORE finalizing the image. If ANY answer is "no", regenerate inte
 6. Full body visible (ears to feet), not cropped.
 7. Top 22% and bottom 25% zones are completely clean (no character, no objects, no shadows).
 8. Background follows the art-direction block above: a lit set with atmosphere, never a flat abstract backdrop, and the reserved text zones stay clean.
+9. The background is CONTINUOUS from the top edge to the bottom edge: one single set. NO horizontal bands, NO flat colour blocks at the top or bottom, and NO dark navy / dark blue anywhere. If the top or bottom of your image reads as a separate coloured strip instead of the same room getting darker, it is WRONG — redo it.
 
 If any element deviates from the reference style or violates these rules, regenerate internally before returning the final image. Any deviation breaks the registered branding.
 </critical_final_requirements>`;
@@ -1500,7 +1512,7 @@ async function generarImagenSlide(
       break;
     }
     parts.push({
-      text: `REFERENCE IMAGE ${charImagesUsed + 1} (canonical pose/style variant — same FLAT 2D cartoon style, same background palette, same character anatomy. The dark navy bands at the top and bottom of this reference are the RESERVED TEXT ZONES kept intentionally empty — they are NOT part of the illustration; do NOT draw any character parts, objects, shadows or text into those bands in your output):`,
+      text: `REFERENCE IMAGE ${charImagesUsed + 1} (canonical pose/anatomy variant, CROPPED to the central illustration — copy the FLAT 2D cartoon style and the character anatomy ONLY. Do NOT copy its background or its palette: the background of your image is the lit studio set from the art-direction block, never a flat or dark blue backdrop):`,
     });
     parts.push({ inlineData: { mimeType: "image/png", data: canonRefs[i]! } });
     charImagesUsed++;
@@ -1678,6 +1690,10 @@ async function renderTextoEnSlide(
   totalSlides: number = 1,
   formatoForzado?: "1:1" | "4:5",
   estiloTitularId?: string,
+  // Paleta de la dirección de arte con la que se generó la ilustración. Sin
+  // esto el scrim se pintaba siempre del azul viejo y la pieza mezclaba dos
+  // estilos: centro con el set iluminado, franjas azul marino.
+  paleta: PaletaComposicion = PALETA_COMMUNITY,
 ): Promise<string> {
   let imgBuffer = Buffer.from(imagenBase64, "base64");
   // Garantizar dimensiones exactas según formato (Gemini suele devolver 1:1 aunque pidamos 4:5)
@@ -1721,7 +1737,7 @@ async function renderTextoEnSlide(
     : "";
 
   const svg = `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-    ${SVG_DEFS}
+    ${svgDefs(paleta.scrim)}
     <rect x="0" y="0" width="${w}" height="${topZoneEnd}" fill="url(#topfade)"/>
     <rect x="0" y="${bottomZoneStart}" width="${w}" height="${h - bottomZoneStart}" fill="url(#botfade)"/>
     ${subFit ? bloqueSecundarioSvg(subFit, {
@@ -1738,7 +1754,7 @@ async function renderTextoEnSlide(
       align: "center", vertical: "center", maxFontSize: isCuadrado ? 82 : 90, minFontSize: 44,
     };
     capas.push({
-      input: overlayTituloImpacto(titulo, { width: w, height: h }, zonaTitulo, estiloTitularId ?? resolverEstiloTitulo()),
+      input: overlayTituloImpacto(titulo, { width: w, height: h }, zonaTitulo, estiloTitularId ?? resolverEstiloTitulo(), paleta),
       top: 0, left: 0,
     });
   }
@@ -1998,7 +2014,7 @@ Solo el JSON.`;
         let imgBase64 = r.value.imagen;
         if (body.texto_en_imagen) {
           try {
-            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato, estiloTitular);
+            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato, estiloTitular, paletaDe(setSlide.direccion));
           } catch (e) {
             console.error("[Descripciones] render texto fallo slide", slide.numero, e);
           }
@@ -2162,9 +2178,15 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
     }
     // El mismo set que el carrusel original: la slide regenerada tiene que
     // entrar en la serie, no verse como una pieza de otra sesión.
-    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, resolverSetSlide(body));
+    const setSlide = resolverSetSlide(body);
+    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, setSlide);
     if (body.texto_en_imagen) {
-      try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato, resolverEstiloTitulo(body.estilo_titular)); } catch {}
+      try {
+        imgBase64 = await renderTextoEnSlide(
+          imgBase64, slide, body.total_slides, body.formato,
+          resolverEstiloTitulo(body.estilo_titular), paletaDe(setSlide.direccion),
+        );
+      } catch {}
     }
     res.json({
       success: true,

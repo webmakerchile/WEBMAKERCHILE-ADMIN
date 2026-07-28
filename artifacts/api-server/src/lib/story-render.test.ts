@@ -12,6 +12,8 @@ import {
   componerHistoria,
   apilarBloquesInferiores,
   stripEmojis,
+  svgDefs,
+  PALETA_COMMUNITY,
 } from "./story-render.js";
 import { LAYOUTS_HISTORIA, HIST_WIDTH, HIST_HEIGHT } from "./story-formats.js";
 import {
@@ -297,7 +299,7 @@ describe("redes de seguridad del motor de titulares", () => {
       scrim: "ninguno",
       titulo: textoLargo,
       estilo: obtenerEstiloTitular("impacto")!,
-      paleta: { colorAcento: "#FB923C", scrim: { r: 15, g: 23, b: 42 } },
+      paleta: PALETA_COMMUNITY,
     });
     const caja = await cajaDeTinta(overlay);
     expect(caja).not.toBeNull();
@@ -334,5 +336,75 @@ describe("stripEmojis", () => {
   it("quita emojis y caracteres de control que romperían el SVG", () => {
     expect(stripEmojis("Ana 🚀 perdía pedidos")).toBe("Ana perdía pedidos");
     expect(stripEmojis("  doble   espacio  ")).toBe("doble espacio");
+  });
+});
+
+describe("scrim de las zonas reservadas", () => {
+  // El scrim se pintaba SIEMPRE con #0F172A (azul marino), el fondo de la
+  // generación anterior. Como la ilustración ya viene con el set iluminado
+  // nuevo, la pieza salía con el centro ámbar y las franjas de arriba y abajo
+  // azules: dos estilos pegados en la misma imagen.
+  const AZUL_VIEJO = "#0f172a";
+
+  it("usa el color que se le pasa, no uno fijo", () => {
+    const ambar = svgDefs({ r: 14, g: 14, b: 16 });
+    const esmeralda = svgDefs({ r: 5, g: 18, b: 13 });
+    expect(ambar).toContain("#0e0e10");
+    expect(esmeralda).toContain("#05120d");
+    expect(ambar).not.toBe(esmeralda);
+  });
+
+  it("no reintroduce el azul de la generación anterior", () => {
+    // Los scrims reales de las 8 direcciones del estudio (cover-style). No se
+    // importa el módulo porque arrastra el cliente de IA, que exige API key.
+    const SCRIMS_DIRECCIONES = [
+      { r: 14, g: 14, b: 16 }, { r: 10, g: 15, b: 30 }, { r: 5, g: 18, b: 13 },
+      { r: 16, g: 10, b: 28 }, { r: 14, g: 9, b: 10 }, { r: 18, g: 14, b: 8 },
+      { r: 16, g: 11, b: 7 }, { r: 12, g: 12, b: 16 },
+    ];
+    for (const scrim of [...SCRIMS_DIRECCIONES, PALETA_COMMUNITY.scrim]) {
+      expect(svgDefs(scrim).toLowerCase()).not.toContain(AZUL_VIEJO);
+    }
+  });
+
+  // Con opacidad 1 el degradado inferior tapaba el set por completo y se leía
+  // como una franja de otro color pegada abajo, que es justo lo que rompe la
+  // ilusión de una sola foto.
+  it("el degradado inferior nunca tapa del todo el set", () => {
+    const stops = [...svgDefs(PALETA_COMMUNITY.scrim).matchAll(/stop-opacity="([\d.]+)"/g)]
+      .map((m) => Number(m[1]));
+    expect(stops.length).toBeGreaterThan(0);
+    expect(Math.max(...stops)).toBeLessThan(1);
+  });
+
+  // La comprobación que de verdad importa: rasterizar el scrim encima de un
+  // set cálido y mirar los píxeles. Con el azul viejo la franja inferior salía
+  // fría (azul dominante) sobre una ilustración ámbar — el "está combinando
+  // dos estilos" que se ve a simple vista.
+  it("rasterizado sobre un set cálido, la franja inferior no se enfría", async () => {
+    const w = 300, h = 400;
+    const fondo = await sharp({
+      create: { width: w, height: h, channels: 3, background: { r: 120, g: 74, b: 32 } },
+    }).png().toBuffer();
+    const svg = Buffer.from(
+      `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">${svgDefs(PALETA_COMMUNITY.scrim)}` +
+        `<rect x="0" y="${h - 100}" width="${w}" height="100" fill="url(#botfade)"/></svg>`,
+    );
+    const { data, info } = await sharp(fondo)
+      .composite([{ input: svg, top: 0, left: 0 }])
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    // Píxel del centro de la última fila: lo más tapado por el degradado.
+    const i = ((h - 1) * info.width + Math.floor(w / 2)) * info.channels;
+    const [r, g, b] = [data[i]!, data[i + 1]!, data[i + 2]!];
+    expect(r, `la franja quedó fría (r=${r} b=${b}): volvió el azul`).toBeGreaterThanOrEqual(b);
+  }, 20_000);
+
+  it("la composición de un frame hereda la paleta que se le pasa", () => {
+    const comp = componerHistoria(frameDe("Ana perdía 40 pedidos"), LAYOUTS_HISTORIA[0]!, {
+      paleta: { colorAcento: "#34D399", scrim: { r: 5, g: 18, b: 13 } },
+    });
+    expect(comp.svg).toContain("#05120d");
+    expect(comp.svg.toLowerCase()).not.toContain(AZUL_VIEJO);
   });
 });
