@@ -267,6 +267,28 @@ export function resolverDireccion(direccionId?: string | null): DireccionArte {
   return seleccionarDireccion();
 }
 
+/** La luz de la marca: cuando nadie elige, sale esta. */
+export const ID_DIRECCION_MARCA = "estudio_spotlight";
+
+/** Valor que manda la UI cuando se elige "Automática" (rotación entre las 8). */
+export const DIRECCION_AUTOMATICA = "auto";
+
+/**
+ * Como `resolverDireccion`, pero el vacío significa "la luz de la marca".
+ *
+ * En Portadas el vacío es rotación y está bien: ahí se ven las 8 luces y se
+ * elige. En Historias y Posts IA no había selector, así que el vacío era el
+ * ÚNICO caso y la rotación decidía sola — salían carruseles morados o carmesí
+ * cuando el sello de WebMaker es el spotlight ámbar. Aquí el vacío es ámbar y
+ * la rotación hay que pedirla con `"auto"`.
+ */
+export function resolverDireccionDeMarca(direccionId?: string | null): DireccionArte {
+  const id = (direccionId ?? "").trim();
+  if (id === DIRECCION_AUTOMATICA) return seleccionarDireccion();
+  const fijada = id ? DIRECCIONES_PORTADA.find(d => d.id === id) : undefined;
+  return resolverDireccion(fijada ? fijada.id : ID_DIRECCION_MARCA);
+}
+
 /* ==================== Prompt de ilustración compartido =================== */
 
 export interface PortadaPreparada {
