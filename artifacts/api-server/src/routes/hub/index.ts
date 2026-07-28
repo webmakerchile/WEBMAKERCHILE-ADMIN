@@ -1,3 +1,4 @@
+import { clienteGoogleDe, MENSAJE_SIN_GOOGLE, type UsuarioConGoogle } from "../../lib/google-auth";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { hubState, users } from "@workspace/db/schema";
@@ -46,16 +47,13 @@ async function loadMe(req: Request) {
   return me ?? null;
 }
 
+/**
+ * Cliente OAuth del usuario, o null si su cuenta no tiene Google conectado.
+ * Construir uno con tokens nulos hacía que googleapis reventara mucho después,
+ * a mitad de flujo, con un mensaje que no le dice nada a nadie.
+ */
 function getGoogleAuth(user: AuthedUser) {
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID || "",
-    process.env.GOOGLE_CLIENT_SECRET || ""
-  );
-  oauth2Client.setCredentials({
-    access_token: user.googleAccessToken,
-    refresh_token: user.googleRefreshToken,
-  });
-  return oauth2Client;
+  return clienteGoogleDe(user as UsuarioConGoogle);
 }
 
 /* ------------------------------------------------------------------
@@ -350,6 +348,10 @@ router.post("/hub/contracts/extract-pdf", async (req: Request, res: Response) =>
   try {
     const user = getUser(req);
     const auth = getGoogleAuth(user);
+    if (!auth) {
+      res.status(409).json({ error: MENSAJE_SIN_GOOGLE, code: "google_no_conectado" });
+      return;
+    }
     const drive = google.drive({ version: "v3", auth });
 
     // Download PDF buffer from Drive

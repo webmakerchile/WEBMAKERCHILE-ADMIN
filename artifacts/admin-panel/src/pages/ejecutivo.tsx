@@ -1,3 +1,4 @@
+import { JornadaChip } from "@/components/jornada-card";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
@@ -76,7 +77,24 @@ interface Project {
    */
   marketing?: boolean;
 }
-interface Client { id: string; name: string; contact: string; segment: string; notes: string; createdAt: number; }
+interface Client {
+  id: string; name: string; contact: string; segment: string; notes: string; createdAt: number;
+  /**
+   * Datos de contacto explícitos. Antes solo existía `contact`, un texto libre
+   * donde el ejecutivo escribía el WhatsApp y se perdía entre lo demás: no se
+   * podía buscar, ni abrir el chat, ni verlo desde el contrato.
+   */
+  whatsapp?: string; email?: string;
+}
+
+/** Normaliza un WhatsApp a solo dígitos para poder armar el enlace wa.me. */
+function soloDigitos(v: string): string { return (v || "").replace(/[^\d]/g, ""); }
+
+/** Enlace directo al chat, o null si el número no es utilizable. */
+function linkWhatsapp(v: string | undefined): string | null {
+  const d = soloDigitos(v || "");
+  return d.length >= 8 ? `https://wa.me/${d}` : null;
+}
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
@@ -1205,6 +1223,12 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Pegar el enlace a mano es la salida cuando Drive no está conectado. Sin
+  // esto, seleccionar o crear la carpeta eran las DOS únicas formas de vincular
+  // una carpeta, así que una cuenta sin Google no podía guardar el link del
+  // proyecto — y el proyecto no arrancaba por algo que no tiene que ver con él.
+  const [pegando, setPegando] = useState(false);
+  const [linkDraft, setLinkDraft] = useState("");
   const folderId = extractDriveFolderId(value);
 
   const handleCreate = async () => {
@@ -1238,7 +1262,10 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
 
   return (
     <div>
-      {folderId ? (
+      {/* Cualquier enlace vinculado cuenta, no solo los que Drive sabe parsear:
+          si no, un enlace pegado a mano se guardaba pero se seguía viendo
+          "Sin carpeta vinculada" y parecía que no se había guardado. */}
+      {value ? (
         <div style={{ ...wrapBox, display: "flex", alignItems: "center", gap: 10 }}>
           <svg viewBox="0 0 24 24" fill="currentColor" width={16} height={16} style={{ color: "var(--orange2)", flexShrink: 0 }}><path d="M10 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V8a2 2 0 00-2-2h-8l-2-2z"/></svg>
           <span style={{ flex: 1, fontSize: 12.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectName || "Carpeta vinculada"}</span>
@@ -1250,14 +1277,40 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <button style={btnSec} onClick={() => setPickerOpen(v => !v)}>
-          {pickerOpen ? "Cerrar selector" : folderId ? "Cambiar carpeta" : "Seleccionar carpeta"}
+          {pickerOpen ? "Cerrar selector" : value ? "Cambiar carpeta" : "Seleccionar carpeta"}
         </button>
-        {!folderId && (
+        <button style={btnSec} onClick={() => { setPegando(v => !v); setLinkDraft(value || ""); }}>
+          {pegando ? "Cerrar" : "Pegar enlace"}
+        </button>
+        {!value && (
           <button style={btnPrimary} onClick={handleCreate} disabled={creating}>
             {creating ? "Creando…" : `+ Crear carpeta${shortName ? ` "${shortName}"` : ""}`}
           </button>
         )}
       </div>
+      {pegando && (
+        <div style={{ ...wrapBox, marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            type="url"
+            value={linkDraft}
+            onChange={e => setLinkDraft(e.target.value)}
+            placeholder="https://drive.google.com/drive/folders/..."
+            style={{ flex: 1, minWidth: 220, background: "var(--card)", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5 }}
+          />
+          <button
+            style={btnPrimary}
+            onClick={() => {
+              const l = linkDraft.trim();
+              if (!l) { onChange(""); setPegando(false); return; }
+              if (!/^https?:\/\//i.test(l)) { onToast("El enlace tiene que empezar con http:// o https://"); return; }
+              onChange(l);
+              setPegando(false);
+              onToast("Enlace vinculado");
+            }}
+          >Vincular</button>
+        </div>
+      )}
+
       {pickerOpen && (
         <FolderPickerPanel onSelect={(id, name, url) => {
           onChange(url); setPickerOpen(false); onToast(`Carpeta "${name}" vinculada`);
@@ -2187,11 +2240,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     return (<>
       <div className="sheet-head"><h2>Nuevo cliente</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="field"><label>Nombre / Empresa</label><input type="text" ref={R("n")} /></div>
-      <div className="two field"><div><label>Contacto</label><input type="text" ref={R("ct")} /></div><div><label>Segmento</label><input type="text" ref={R("sg")} /></div></div>
+      <div className="two field"><div><label>Contacto</label><input type="text" ref={R("ct")} placeholder="Nombre de quien decide" /></div><div><label>Segmento</label><input type="text" ref={R("sg")} /></div></div>
+      <div className="two field"><div><label>WhatsApp</label><input type="tel" ref={R("wa")} placeholder="+56 9 1234 5678" /></div><div><label>Correo</label><input type="email" ref={R("em")} /></div></div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} /></div>
       <button className="add-btn" onClick={() => {
         const name = V("n").trim(); if (!name) { onToast("Ponle un nombre al cliente"); return; }
-        onSave({ ...state, clients: [...state.clients, { id: uid(), name, contact: V("ct").trim(), segment: V("sg").trim(), notes: V("no"), createdAt: Date.now() }] });
+        onSave({ ...state, clients: [...state.clients, { id: uid(), name, contact: V("ct").trim(), segment: V("sg").trim(), whatsapp: V("wa").trim(), email: V("em").trim(), notes: V("no"), createdAt: Date.now() }] });
         onClose(); onNavigate("clients"); onToast("Cliente creado");
       }}>Crear cliente</button>
     </>);
@@ -2204,10 +2258,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     return (<>
       <div className="sheet-head"><h2>Cliente</h2><button className="close-btn" onClick={onClose}>✕</button></div>
       <div className="field"><label>Nombre / Empresa</label><input type="text" ref={R("n")} defaultValue={c.name} /></div>
-      <div className="two field"><div><label>Contacto</label><input type="text" ref={R("ct")} defaultValue={c.contact || ""} /></div><div><label>Segmento</label><input type="text" ref={R("sg")} defaultValue={c.segment || ""} /></div></div>
+      <div className="two field"><div><label>Contacto</label><input type="text" ref={R("ct")} defaultValue={c.contact || ""} placeholder="Nombre de quien decide" /></div><div><label>Segmento</label><input type="text" ref={R("sg")} defaultValue={c.segment || ""} /></div></div>
+      <div className="two field">
+        <div>
+          <label>WhatsApp</label>
+          <input type="tel" ref={R("wa")} defaultValue={c.whatsapp || ""} placeholder="+56 9 1234 5678" />
+          {linkWhatsapp(c.whatsapp) && (
+            <a href={linkWhatsapp(c.whatsapp)!} target="_blank" rel="noopener noreferrer"
+               style={{ fontSize: "0.75em", color: "var(--orange2)", textDecoration: "none" }}>
+              ↗ Abrir chat
+            </a>
+          )}
+        </div>
+        <div><label>Correo</label><input type="email" ref={R("em")} defaultValue={c.email || ""} /></div>
+      </div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={5} defaultValue={c.notes || ""} /></div>
       <button className="save" onClick={() => {
-        onSave({ ...state, clients: state.clients.map(x => x.id !== c.id ? x : { ...x, name: V("n").trim() || x.name, contact: V("ct").trim(), segment: V("sg").trim(), notes: V("no") }) });
+        onSave({ ...state, clients: state.clients.map(x => x.id !== c.id ? x : { ...x, name: V("n").trim() || x.name, contact: V("ct").trim(), segment: V("sg").trim(), whatsapp: V("wa").trim(), email: V("em").trim(), notes: V("no") }) });
         onClose(); onToast("Cliente actualizado");
       }}>Guardar cambios</button>
       <button className="del-link" onClick={() => {
@@ -2538,6 +2605,34 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <div><label>Fecha de vencimiento</label><input type="date" ref={R("ex")} defaultValue={c.expiresAt} /></div>
         </div>
       </div>
+      {/* Contacto del cliente, traído de la cartera. Estaba a dos pantallas de
+          distancia justo cuando más se necesita: al gestionar el contrato. */}
+      {(() => {
+        const cli = state.clients.find(x => x.name === c.client);
+        if (!cli) {
+          return c.client ? (
+            <div className="sheet-sec"><h4>Contacto</h4>
+              <p style={{ fontSize: "0.8em", color: "var(--muted)", margin: 0 }}>
+                "{c.client}" no está en la cartera todavía. Créalo como cliente para tener aquí su WhatsApp y su correo.
+              </p>
+            </div>
+          ) : null;
+        }
+        const wa = linkWhatsapp(cli.whatsapp);
+        return (
+          <div className="sheet-sec"><h4>Contacto</h4>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: "0.85em" }}>
+              {cli.contact && <span>{cli.contact}</span>}
+              {wa
+                ? <a href={wa} target="_blank" rel="noopener noreferrer" style={{ color: "var(--orange2)", textDecoration: "none" }}>WhatsApp {cli.whatsapp} ↗</a>
+                : <span style={{ color: "var(--muted)" }}>Sin WhatsApp cargado</span>}
+              {cli.email
+                ? <a href={`mailto:${cli.email}`} style={{ color: "var(--orange2)", textDecoration: "none" }}>{cli.email}</a>
+                : <span style={{ color: "var(--muted)" }}>Sin correo</span>}
+            </div>
+          </div>
+        );
+      })()}
       <div className="sheet-sec"><h4>Notas</h4>
         <div className="field"><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} aria-label="Notas del contrato" /></div>
       </div>
@@ -5495,6 +5590,9 @@ export default function EjecutivoPage() {
                         </div>
                       </div>
                     )}
+                    {/* Jornada: el equipo trabaja desde aquí y no tenía forma
+                        de marcar entrada, pausa ni salida sin salirse del panel. */}
+                    <JornadaChip />
                     <ThemeToggle variant="full" />
                     <button onClick={handleLogout} className="flex items-center w-full px-3 py-3 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors">
                       <LogOut className="w-4 h-4 mr-3" />Cerrar sesión
