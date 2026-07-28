@@ -47,6 +47,7 @@ import {
   type GuionHistoria,
 } from "../../lib/story-script";
 import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
+import { resolverDireccion, type DireccionArte } from "../../lib/cover-style";
 import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -645,6 +646,15 @@ function buildHistoriaPrompt(
     promptVisual?: string;
     /** Layout del frame: define qué franjas deben quedar despejadas. */
     layout: LayoutHistoria;
+    /**
+     * Variante de iluminación del set, la MISMA que usan las portadas.
+     *
+     * Historias tenía su propio fondo plano ("espacio abstracto" con halo
+     * radial) mientras las portadas usaban un set fotográfico con luz
+     * cinematográfica: por eso las historias se veían de otra generación
+     * aunque la tipografía ya fuera la nueva.
+     */
+    direccion: DireccionArte;
     frame?: FrameContext;
     /** Ajuste libre del usuario (reintentos). */
     poseOverride?: string;
@@ -652,6 +662,7 @@ function buildHistoriaPrompt(
     hilo?: string;
   },
 ): string {
+  const { direccion } = opts;
   const { categoria, pose: poseElegida } = elegirCategoriaPose(concepto, tipoHistoria);
   // La dirección del guion manda; la pose del banco es solo respaldo.
   const direccionEscena = opts.poseOverride || opts.promptVisual || poseElegida;
@@ -704,21 +715,21 @@ VALIDACIÓN FINAL ANTES DE ENTREGAR LA IMAGEN — verifica MENTALMENTE:
 4. ¿El zorro tiene 100+ px de aire alrededor y vive entre y=${escena.desde} y y=${escena.hasta}?
 Si respondes NO a cualquiera, REGENERA mentalmente antes de devolver la imagen.
 
-FONDO PREMIUM (consistencia de marca):
-- Gradiente RADIAL (circular) desde el centro hacia afuera: #1E293B (slate 800) en el centro hacia #0F172A (slate 900) en los bordes
-- Grid geométrico muy sutil con líneas VERTICALES y HORIZONTALES de igual peso al 3-5% opacidad (debe verse como malla uniforme, NO como horizonte)
-- Halo naranja CIRCULAR (#E86A30 al 20% opacidad) con blur amplio centrado EXACTAMENTE detrás de la cabeza/torso del zorro. Forma de DISCO/AURA radial, NUNCA banda ni stripe.
-- 3-5 partículas de luz blancas difusas distribuidas aleatoriamente
+CONTRASTE DE ESTILOS (la firma visual de la marca):
+- SOLO el ZORRO se dibuja en estilo FLAT CARTOON: contornos gruesos negros, colores planos y vibrantes, sin degradados.
+- El FONDO y la UTILERÍA pertenecen al mundo del set: iluminación cinematográfica, volumen y sombreado suave, SIN contornos gruesos de cartoon en los objetos.
+- La mascota cartoon parada dentro de un set fotográfico estilizado con props reales: ESE es el look.
 
-PROHIBIDO ABSOLUTAMENTE EN EL FONDO (causas comunes de defectos visuales):
-✗ Líneas horizontales naranjas, bandas, stripes o franjas que crucen la imagen
-✗ Línea de horizonte (estilo paisaje sol/atardecer/amanecer)
-✗ Gradiente lineal vertical que divida la imagen en dos zonas (cielo/suelo)
-✗ Cualquier elemento que sugiera "suelo" + "cielo"
-✗ Resplandores en forma de barra, rayo o banda
-El fondo es ESPACIO ABSTRACTO, no un escenario. El zorro flota sobre un fondo plano con halo radial.
+DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" (solo el fondo, NO el personaje; toda mención a "franja superior" aplícala a las zonas reservadas de arriba):
+${direccion.fondo}
 
-PALETA: fondo slate oscuro + halo naranja radial. Zorro naranja PLANO + verde sólido + líneas negras. Objetos con colores planos vibrantes (naranja, verde, azul eléctrico, blanco) y contornos negros gruesos.
+UTILERÍA — PALETA Y COMPORTAMIENTO BAJO LA LUZ:
+${direccion.paletaObjetos}
+
+PROHIBIDO EN EL FONDO:
+✗ Línea de horizonte que divida la imagen en cielo y suelo
+✗ Bandas, stripes o resplandores en forma de barra cruzando la imagen
+✗ Aclarar las franjas reservadas: ahí va el texto y tiene que leerse
 
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte.`;
 }
@@ -865,6 +876,8 @@ async function generarFrameHistoria(args: {
   /** Guion de ESTE frame (texto + dirección visual). */
   frameGuion: FrameGuion;
   layout: LayoutHistoria;
+  /** Iluminación del set: la MISMA para todos los frames de la serie. */
+  direccion: DireccionArte;
   hilo?: string;
   poseOverride?: string;
   promptOverride?: string;
@@ -888,6 +901,7 @@ async function generarFrameHistoria(args: {
   const basePrompt = buildHistoriaPrompt(args.tipoHistoria, args.concepto, {
     promptVisual: args.frameGuion.prompt_visual,
     layout: args.layout,
+    direccion: args.direccion,
     frame: frameCtx,
     poseOverride: args.poseOverride,
     hilo: args.hilo,
@@ -988,6 +1002,9 @@ router.post("/community/historias/generar", async (req, res) => {
     const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
     // Un estilo tipográfico por historia: todos los frames comparten diseño.
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
+    // Y UNA sola variante de iluminación para toda la serie: si cada frame
+    // resolviera la suya, la serie dejaría de verse como un set.
+    const direccionArte = resolverDireccion(null);
 
     // Formato narrativo + arco: definen QUÉ cuenta cada frame.
     const totalPedido = body.formato === "serie" ? (body.cantidad_frames || 3) : 1;
@@ -1012,6 +1029,7 @@ router.post("/community/historias/generar", async (req, res) => {
         concepto: body.concepto,
         frameGuion,
         layout: obtenerLayoutHistoria(frameGuion.layoutId) ?? layoutHistoriaPorDefecto(),
+        direccion: direccionArte,
         hilo: guion.hilo,
         poseOverride: body.pose_override,
         textoEnImagen: body.texto_en_imagen,
@@ -1258,6 +1276,12 @@ function buildSlidePrompt(
   slide: SlidePlan,
   formato: "1:1" | "4:5",
   totalSlides: number,
+  /**
+   * Iluminación del set, la MISMA que usan las portadas. El carrusel tenía su
+   * propio fondo plano (gradiente radial + halo) mientras las portadas usaban
+   * un set con luz cinematográfica: por eso se veía de otra generación.
+   */
+  direccion: DireccionArte,
 ): string {
   const dims = formato === "1:1" ? "1080x1080 píxeles formato cuadrado 1:1" : "1080x1350 píxeles formato vertical 4:5";
 
@@ -1342,12 +1366,19 @@ Object mapping (pick ONE or TWO, never all):
 - All visual action goes strictly in the central zone.
 </composition>
 
+<style_contrast>
+- ONLY the fox is drawn FLAT CARTOON: thick black outlines, flat vibrant colors, no gradients.
+- The BACKGROUND and the PROPS belong to a photographic set: cinematic lighting, volume and soft shading, NO thick cartoon outlines on objects.
+- A cartoon mascot standing inside a stylised photographic set with real props: that contrast IS the brand's visual signature.
+</style_contrast>
+
 <background>
-- Radial gradient from center: #1E293B (slate-800) toward #0F172A (slate-900) at edges.
-- Subtle geometric grid: white lines at 3-5% opacity.
-- Ambient orange glow (#E86A30 at ~20% opacity) behind the character as a halo.
-- 3-5 soft white light particles scattered.
+${direccion.fondo}
 </background>
+
+<props_under_light>
+${direccion.paletaObjetos}
+</props_under_light>
 
 <critical_final_requirements>
 VERIFY these BEFORE finalizing the image. If ANY answer is "no", regenerate internally:
@@ -1358,7 +1389,7 @@ VERIFY these BEFORE finalizing the image. If ANY answer is "no", regenerate inte
 5. Maximum 2-3 main objects in scene — character is the clear focus.
 6. Full body visible (ears to feet), not cropped.
 7. Top 22% and bottom 25% zones are completely clean (no character, no objects, no shadows).
-8. Background follows the radial gradient + subtle grid + orange glow halo + light particles spec exactly.
+8. Background follows the art-direction block above: a lit set with atmosphere, never a flat abstract backdrop, and the reserved text zones stay clean.
 
 If any element deviates from the reference style or violates these rules, regenerate internally before returning the final image. Any deviation breaks the registered branding.
 </critical_final_requirements>`;
@@ -1367,8 +1398,9 @@ If any element deviates from the reference style or violates these rules, regene
 async function generarImagenSlide(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
+  direccion: DireccionArte,
 ): Promise<string> {
-  const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides);
+  const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides, direccion);
 
   // Referencias canon (imágenes 10/10 aprobadas) según rol del slide
   const canonRefs = await pickCanonReferences(slide.rol, tema, slide.prompt_visual);
@@ -1425,12 +1457,13 @@ function isRateLimitErr(err: any): boolean {
 async function generarImagenSlideConRetry(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
+  direccion: DireccionArte,
 ): Promise<string> {
   const MAX_ATTEMPTS = 4;
   let lastErr: any;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+      return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, direccion);
     } catch (e) {
       lastErr = e;
       const rate = isRateLimitErr(e);
@@ -1543,13 +1576,14 @@ ${correcciones.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
 async function generarImagenSlideConValidacion(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
+  direccion: DireccionArte,
 ): Promise<{ imagen: string; consistente: boolean }> {
-  let imagen = await generarImagenSlideConRetry(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+  let imagen = await generarImagenSlideConRetry(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, direccion);
   let consistente = await validarConsistenciaZorro(imagen, referenceBase64);
   if (!consistente) {
     console.warn(`[Descripciones] slide ${slide.numero} falló validación Vision, reintentando una vez...`);
     try {
-      const segundo = await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides);
+      const segundo = await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, direccion);
       const segundoOk = await validarConsistenciaZorro(segundo, referenceBase64);
       if (segundoOk) { imagen = segundo; consistente = true; }
       else { imagen = segundo; } // Devuelve el segundo intento aunque siga inconsistente (mejor que nada)
@@ -1762,9 +1796,12 @@ Solo el JSON.`;
     const referenceBase64 = await getFoxRefBase64();
     // Un estilo tipográfico por carrusel: todas las slides comparten diseño.
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
+    // Y UNA sola iluminación de set: si cada slide resolviera la suya, el
+    // carrusel dejaría de verse como una pieza.
+    const direccionArte = resolverDireccion(null);
 
     const settled = await Promise.allSettled(
-      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad)),
+      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad, direccionArte)),
     );
 
     const imagenes = await Promise.all(
@@ -1932,7 +1969,9 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
         prompt_visual: `${slide.prompt_visual || ""}. AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${ajusteFinal}`.trim(),
       };
     }
-    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides);
+    // El reintento de UNA slide resuelve su propia variante: no tenemos la del
+    // carrusel original y fijar una haría que todos los reintentos se parezcan.
+    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, resolverDireccion(null));
     if (body.texto_en_imagen) {
       try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato, resolverEstiloTitulo(body.estilo_titular)); } catch {}
     }
@@ -2136,6 +2175,10 @@ router.post("/community/historias/reintentar", async (req, res) => {
       concepto: body.concepto,
       frameGuion,
       layout,
+      // El reintento resuelve su propia variante: al regenerar UN frame suelto
+      // no tenemos la de la serie original, y forzar una fija haría que todos
+      // los reintentos se vieran iguales entre sí.
+      direccion: resolverDireccion(null),
       hilo: body.hilo,
       promptOverride,
       textoEnImagen: body.texto_en_imagen,
