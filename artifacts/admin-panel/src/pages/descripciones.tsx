@@ -56,7 +56,10 @@ export default function DescripcionesPage() {
   const [cantidadSlides, setCantidadSlides] = useState(5);
   const [cantidadAuto, setCantidadAuto] = useState(true);
   const [autoInfo, setAutoInfo] = useState<{ cantidad: number; razon: string } | null>(null);
-  const [textoEnImagen, setTextoEnImagen] = useState(false);
+  // Encendido por defecto: el motor de tipografía de Portadas es el estándar
+  // de la marca. Apagado, el carrusel salía sin texto y el selector de estilos
+  // ni se mostraba, así que el estilo nuevo no llegaba a usarse.
+  const [textoEnImagen, setTextoEnImagen] = useState(true);
   // Estilo tipográfico del título de las slides (motor de impacto de portadas).
   const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
 
@@ -485,16 +488,6 @@ export default function DescripcionesPage() {
             </div>
           </div>
 
-          {textoEnImagen && (
-            <div className="bg-foreground/5 rounded-xl p-4 border border-foreground/10">
-              <EstiloTitularPicker
-                value={estiloTitular}
-                onChange={setEstiloTitular}
-                descripcionAuto="Los títulos de las slides usan el motor de tipografía de las portadas — en automático rota entre los estilos impactantes."
-              />
-            </div>
-          )}
-
           <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
             <div>
               <div className="text-sm font-semibold text-foreground">Texto en imagen</div>
@@ -509,6 +502,21 @@ export default function DescripcionesPage() {
             >
               <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${textoEnImagen ? "left-7" : "left-1"}`} />
             </button>
+          </div>
+
+          {/* Siempre visible, como en Portadas: escondido tras el interruptor,
+              el estilo tipográfico de la marca era invisible. */}
+          <div className={`bg-foreground/5 rounded-xl p-4 border border-foreground/10 transition-opacity ${textoEnImagen ? "" : "opacity-50"}`}>
+            <EstiloTitularPicker
+                value={estiloTitular}
+                onChange={setEstiloTitular}
+                descripcionAuto="Los títulos de las slides usan el motor de tipografía de las portadas — en automático rota entre los estilos impactantes."
+              />
+            {!textoEnImagen && (
+              <p className="text-xs text-amber-400 mt-3">
+                Enciende “Texto en imagen” para que los títulos se compongan con este estilo.
+              </p>
+            )}
           </div>
 
           {error && (

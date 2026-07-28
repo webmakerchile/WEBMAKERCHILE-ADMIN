@@ -969,7 +969,10 @@ const GenerarHistoriaBody = z.object({
   tipo_historia: z.enum(["tip_tech", "motivacional", "comunidad"]),
   concepto: z.string().min(1).max(200),
   pose_override: z.string().optional(),
-  texto_en_imagen: z.boolean().optional().default(false),
+  // Por defecto SÍ: componer el texto con el motor de tipografía es el
+  // estándar de la marca. El default en false hacía que cualquier llamada que
+  // omitiera el campo devolviera la imagen limpia, sin el estilo nuevo.
+  texto_en_imagen: z.boolean().optional().default(true),
   formato: z.enum(["unica", "serie"]).optional().default("unica"),
   cantidad_frames: z.number().int().min(2).max(5).optional(),
   /** Estilo tipográfico del titular (id de ESTILOS_TITULAR); vacío = rotación. */
@@ -1232,7 +1235,10 @@ const GenerarDescripcionesBody = z.object({
   redes: z.array(z.enum(["tiktok", "instagram", "youtube_shorts", "twitter"])).min(1),
   tipo_publicacion: z.enum(["unica", "carrusel"]).default("unica"),
   cantidad_slides: z.number().int().min(1).max(10).default(1),
-  texto_en_imagen: z.boolean().optional().default(false),
+  // Por defecto SÍ: componer el texto con el motor de tipografía es el
+  // estándar de la marca. El default en false hacía que cualquier llamada que
+  // omitiera el campo devolviera la imagen limpia, sin el estilo nuevo.
+  texto_en_imagen: z.boolean().optional().default(true),
   /** Estilo tipográfico del título (id de ESTILOS_TITULAR); vacío = rotación. */
   estilo_titular: z.string().max(40).optional(),
 });
@@ -1835,7 +1841,10 @@ const ReintentarSlideBody = z.object({
   subtitulo: z.string().max(200),
   prompt_visual: z.string().max(300).optional(),
   formato: z.enum(["1:1", "4:5"]).default("4:5"),
-  texto_en_imagen: z.boolean().optional().default(false),
+  // Por defecto SÍ: componer el texto con el motor de tipografía es el
+  // estándar de la marca. El default en false hacía que cualquier llamada que
+  // omitiera el campo devolviera la imagen limpia, sin el estilo nuevo.
+  texto_en_imagen: z.boolean().optional().default(true),
   total_slides: z.number().int().min(1).max(10).optional().default(1),
   modo: z.enum(["imagen", "texto", "ambos", "personalizado", "auto-diagnose"]).optional().default("imagen"),
   prompt_personalizado: z.string().max(2000).optional(),
@@ -1970,7 +1979,10 @@ const ReintentarHistoriaBody = z.object({
     cta: z.string().max(80),
     hashtags: z.string().max(300),
   }).optional(),
-  texto_en_imagen: z.boolean().optional().default(false),
+  // Por defecto SÍ: componer el texto con el motor de tipografía es el
+  // estándar de la marca. El default en false hacía que cualquier llamada que
+  // omitiera el campo devolviera la imagen limpia, sin el estilo nuevo.
+  texto_en_imagen: z.boolean().optional().default(true),
   modo: z.enum(["imagen", "texto", "ambos", "personalizado", "auto-diagnose"]).default("imagen"),
   prompt_personalizado: z.string().max(2000).optional(),
   imagen_actual_base64: z.string().optional(), // sin prefijo data:; usado por auto-diagnose
