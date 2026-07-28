@@ -1,7 +1,10 @@
 // Selector compartido de estilos tipográficos del titular (portadas,
 // historias y Posts IA). Las previews aproximan con CSS el render real que
 // hace el servidor con las mismas familias empaquetadas (title-style).
+import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
+
+const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 export interface EstiloTitularOption {
   id: string;
@@ -42,7 +45,25 @@ export function EstiloTitularPicker({
   onChange: (id: string | null) => void;
   descripcionAuto?: string;
 }) {
-  const lista = estilos && estilos.length > 0 ? estilos : ESTILOS_FALLBACK;
+  // Si quien usa el selector no entrega el catálogo, se pide al servidor. La
+  // lista local es solo un respaldo para el primer render: dejar que Historias
+  // y Posts IA vivieran de esa copia significaba que un estilo nuevo del motor
+  // no aparecía en ningún lado salvo en Portadas.
+  const [remotos, setRemotos] = useState<EstiloTitularOption[] | null>(null);
+  useEffect(() => {
+    if (estilos && estilos.length > 0) return;
+    let vivo = true;
+    fetch(`${API_BASE}/gemini/cover-options`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const lista = d?.estilosTitular ?? d?.data?.estilosTitular;
+        if (vivo && Array.isArray(lista) && lista.length > 0) setRemotos(lista);
+      })
+      .catch(() => { /* se queda con el respaldo local */ });
+    return () => { vivo = false; };
+  }, [estilos]);
+
+  const lista = (estilos && estilos.length > 0 ? estilos : remotos) ?? ESTILOS_FALLBACK;
   const seleccionado = lista.find((e) => e.id === value) ?? null;
   return (
     <div className="space-y-2">

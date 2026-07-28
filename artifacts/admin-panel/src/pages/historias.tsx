@@ -142,7 +142,10 @@ type Recomendacion = {
 export default function HistoriasPage() {
   const [tipoHistoria, setTipoHistoria] = useState("tip_tech");
   const [concepto, setConcepto] = useState("");
-  const [textoEnImagen, setTextoEnImagen] = useState(false);
+  // Encendido por defecto: el motor de tipografía de Portadas es el estándar
+  // de la marca. Con esto apagado, la historia salía sin texto y el selector de
+  // estilos ni siquiera se mostraba, así que el estilo nuevo no se usaba nunca.
+  const [textoEnImagen, setTextoEnImagen] = useState(true);
   // Estilo tipográfico del título (motor de impacto compartido con portadas);
   // null = rotación automática entre los estilos más impactantes.
   const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
@@ -580,30 +583,37 @@ export default function HistoriasPage() {
             </p>
           </div>
 
-          {textoEnImagen && (
-            <div className="bg-foreground/5 rounded-xl p-4 border border-foreground/10">
-              <EstiloTitularPicker
-                value={estiloTitular}
-                onChange={setEstiloTitular}
-                descripcionAuto="El título usa el motor de tipografía de las portadas — en automático rota entre los estilos impactantes."
-              />
-            </div>
-          )}
-
           <div className="flex items-center justify-between bg-foreground/5 rounded-xl p-4 border border-foreground/10">
             <div>
               <div className="text-sm font-semibold text-foreground">Texto en imagen</div>
               <div className="text-xs text-muted-foreground">
-                {textoEnImagen ? "La imagen se entregará con el texto ya quemado encima." : "La imagen vendrá limpia. Te entregamos el texto aparte para que lo agregues en Canva/IG."}
+                {textoEnImagen ? "La imagen se entregará con el texto ya compuesto encima." : "La imagen vendrá limpia. Te entregamos el texto aparte para que lo agregues en Canva/IG."}
               </div>
             </div>
             <button
               type="button"
               onClick={() => setTextoEnImagen(!textoEnImagen)}
+              aria-pressed={textoEnImagen}
               className={`relative w-14 h-8 rounded-full transition ${textoEnImagen ? "bg-primary" : "bg-foreground/20"}`}
             >
               <span className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow transition-all ${textoEnImagen ? "left-7" : "left-1"}`} />
             </button>
+          </div>
+
+          {/* El selector va SIEMPRE visible, como en Portadas. Escondido tras el
+              interruptor, el estilo tipográfico de la marca era invisible y
+              nadie sabía que existía. */}
+          <div className={`bg-foreground/5 rounded-xl p-4 border border-foreground/10 transition-opacity ${textoEnImagen ? "" : "opacity-50"}`}>
+            <EstiloTitularPicker
+              value={estiloTitular}
+              onChange={setEstiloTitular}
+              descripcionAuto="El título usa el mismo motor de tipografía que las portadas — en automático rota entre los estilos impactantes."
+            />
+            {!textoEnImagen && (
+              <p className="text-xs text-amber-400 mt-3">
+                Enciende “Texto en imagen” para que el título se componga con este estilo.
+              </p>
+            )}
           </div>
 
           {error && (
