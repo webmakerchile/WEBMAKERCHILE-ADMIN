@@ -47,7 +47,9 @@ import {
   type GuionHistoria,
 } from "../../lib/story-script";
 import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
-import { resolverDireccion, type DireccionArte } from "../../lib/cover-style";
+import { resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte } from "../../lib/cover-style";
+import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
+import { buildRedactarIdeaPostPrompt, parseIdeaPost } from "../../lib/redactar-idea-post";
 import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -1003,8 +1005,9 @@ router.post("/community/historias/generar", async (req, res) => {
     // Un estilo tipográfico por historia: todos los frames comparten diseño.
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
     // Y UNA sola variante de iluminación para toda la serie: si cada frame
-    // resolviera la suya, la serie dejaría de verse como un set.
-    const direccionArte = resolverDireccion(null);
+    // resolviera la suya, la serie dejaría de verse como un set. Por defecto,
+    // el spotlight ámbar de la marca — no una de las 8 al azar.
+    const direccionArte = resolverDireccionDeMarca(null);
 
     // Formato narrativo + arco: definen QUÉ cuenta cada frame.
     const totalPedido = body.formato === "serie" ? (body.cantidad_frames || 3) : 1;
@@ -1259,7 +1262,35 @@ const GenerarDescripcionesBody = z.object({
   texto_en_imagen: z.boolean().optional().default(true),
   /** Estilo tipográfico del título (id de ESTILOS_TITULAR); vacío = rotación. */
   estilo_titular: z.string().max(40).optional(),
+  /** Idea en bruto del usuario: contexto extra para el guion del carrusel. */
+  idea: z.string().max(2000).optional(),
+  // Personalización del set, igual que en Portadas.
+  /** Iluminación: id de DIRECCIONES_PORTADA, `"auto"` para rotar, vacío = ámbar. */
+  direccion_id: z.string().max(40).optional(),
+  /** Pose fijada del zorro (id de PORTADA_POSES); vacío = la decide el rol. */
+  pose_id: z.string().max(40).optional(),
+  utileria: z.string().max(300).optional(),
+  estilo_extra: z.string().max(300).optional(),
+  /** Referencia de personaje propia en base64 (sin prefijo data:); vacío = Webi. */
+  imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
+
+/** Set pedido por la UI → set resuelto que entiende el generador. */
+function resolverSetSlide(body: {
+  direccion_id?: string;
+  pose_id?: string;
+  utileria?: string;
+  estilo_extra?: string;
+}, referenciaPropia = false): SetSlide {
+  const pose = body.pose_id ? PORTADA_POSES.find((p) => p.id === body.pose_id) ?? null : null;
+  return {
+    direccion: resolverDireccionDeMarca(body.direccion_id),
+    pose,
+    utileria: body.utileria?.trim() || null,
+    estiloExtra: body.estilo_extra?.trim() || null,
+    referenciaPropia,
+  };
+}
 
 type SlideRol = "portada" | "desarrollo" | "cta" | "unica";
 interface SlidePlan {
@@ -1270,19 +1301,38 @@ interface SlidePlan {
   prompt_visual?: string;
 }
 
+/**
+ * Personalización del set, la misma que ofrece Portadas.
+ *
+ * Va como objeto y no como cinco parámetros sueltos porque atraviesa cuatro
+ * funciones encadenadas: sumarlos uno a uno era pedir un error de orden.
+ */
+interface SetSlide {
+  /**
+   * Iluminación del set, la MISMA que usan las portadas. El carrusel tenía su
+   * propio fondo plano (gradiente radial + halo) mientras las portadas usaban
+   * un set con luz cinematográfica: por eso se veía de otra generación.
+   */
+  direccion: DireccionArte;
+  /** Pose fijada por el usuario; vacío = la decide el rol de la slide. */
+  pose?: PoseEntry | null;
+  /** Utilería pedida: se dibuja como props físicos del set, nunca stickers. */
+  utileria?: string | null;
+  /** Toque de estilo extra en palabras del usuario. */
+  estiloExtra?: string | null;
+  /** true si la referencia del personaje la subió el usuario (no es Webi). */
+  referenciaPropia?: boolean;
+}
+
 function buildSlidePrompt(
   tema: string,
   tipoContenido: string,
   slide: SlidePlan,
   formato: "1:1" | "4:5",
   totalSlides: number,
-  /**
-   * Iluminación del set, la MISMA que usan las portadas. El carrusel tenía su
-   * propio fondo plano (gradiente radial + halo) mientras las portadas usaban
-   * un set con luz cinematográfica: por eso se veía de otra generación.
-   */
-  direccion: DireccionArte,
+  set: SetSlide,
 ): string {
+  const direccion = set.direccion;
   const dims = formato === "1:1" ? "1080x1080 píxeles formato cuadrado 1:1" : "1080x1350 píxeles formato vertical 4:5";
 
   const rolDescripcion = {
@@ -1295,6 +1345,29 @@ function buildSlidePrompt(
   const enfoqueVisual = slide.prompt_visual
     ? `FOCO VISUAL ESPECÍFICO de esta slide (del estratega de contenido): "${slide.prompt_visual}". Sigue esta dirección.`
     : `Ilustra: "${slide.titulo}" — extrae las palabras clave visuales de este título y úsalas como objetos.`;
+
+  // Pose fijada por el usuario: manda sobre la que sugiere el rol de la slide.
+  const bloquePose = set.pose
+    ? `\n\n<forced_pose>
+POSE OBLIGATORIA del personaje, elegida por el usuario — tiene prioridad sobre cualquier pose sugerida por el rol de la slide:
+${set.pose.descripcion}
+</forced_pose>`
+    : "";
+
+  // Utilería: props REALES del set, no calcomanías pegadas. Es la misma regla
+  // que hace que las portadas se vean fotográficas y el carrusel no lo estaba.
+  const bloqueUtileria = set.utileria?.trim()
+    ? `\n\n<requested_props>
+El usuario pidió esta utilería en el set: "${set.utileria.trim()}".
+Dibújala como OBJETOS FÍSICOS REALES apoyados en la superficie del set, con volumen y sombra propia, iluminados por la misma luz de la dirección de arte. NUNCA como stickers, iconos planos ni elementos flotantes. Cuentan dentro del máximo de 2-3 objetos de la escena.
+</requested_props>`
+    : "";
+
+  const bloqueEstiloExtra = set.estiloExtra?.trim()
+    ? `\n\n<extra_style_note>
+Matiz de estilo pedido por el usuario: "${set.estiloExtra.trim()}". Aplícalo al ambiente y al color del set SIN romper ninguna de las reglas del personaje.
+</extra_style_note>`
+    : "";
 
   // FIX 4 — prompt en estructura XML: Gemini 3 da más peso a las instrucciones FINALES.
   // Por eso <critical_final_requirements> va al cierre del prompt, no al inicio.
@@ -1378,7 +1451,7 @@ ${direccion.fondo}
 
 <props_under_light>
 ${direccion.paletaObjetos}
-</props_under_light>
+</props_under_light>${bloquePose}${bloqueUtileria}${bloqueEstiloExtra}
 
 <critical_final_requirements>
 VERIFY these BEFORE finalizing the image. If ANY answer is "no", regenerate internally:
@@ -1398,12 +1471,14 @@ If any element deviates from the reference style or violates these rules, regene
 async function generarImagenSlide(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
-  direccion: DireccionArte,
+  set: SetSlide,
 ): Promise<string> {
-  const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides, direccion);
+  const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides, set);
 
-  // Referencias canon (imágenes 10/10 aprobadas) según rol del slide
-  const canonRefs = await pickCanonReferences(slide.rol, tema, slide.prompt_visual);
+  // Referencias canon (imágenes 10/10 aprobadas) según rol del slide.
+  // Con una referencia propia se omiten: son fotogramas de Webi y meterlas
+  // junto a otro personaje le pide al modelo dos cánones a la vez.
+  const canonRefs = set.referenciaPropia ? [] : await pickCanonReferences(slide.rol, tema, slide.prompt_visual);
 
   // FIX 3 — Construcción del array `parts` con etiqueta de rol ANTES de cada imagen
   // y prompt al FINAL (Gemini 3 da más peso a las instrucciones finales).
@@ -1457,13 +1532,13 @@ function isRateLimitErr(err: any): boolean {
 async function generarImagenSlideConRetry(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
-  direccion: DireccionArte,
+  set: SetSlide,
 ): Promise<string> {
   const MAX_ATTEMPTS = 4;
   let lastErr: any;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, direccion);
+      return await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, set);
     } catch (e) {
       lastErr = e;
       const rate = isRateLimitErr(e);
@@ -1576,14 +1651,16 @@ ${correcciones.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
 async function generarImagenSlideConValidacion(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
-  direccion: DireccionArte,
+  set: SetSlide,
 ): Promise<{ imagen: string; consistente: boolean }> {
-  let imagen = await generarImagenSlideConRetry(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, direccion);
-  let consistente = await validarConsistenciaZorro(imagen, referenceBase64);
+  let imagen = await generarImagenSlideConRetry(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, set);
+  // Con una referencia propia el juez de consistencia no aplica: compara
+  // contra la master de Webi y marcaría inconsistente lo que el usuario pidió.
+  let consistente = set.referenciaPropia ? true : await validarConsistenciaZorro(imagen, referenceBase64);
   if (!consistente) {
     console.warn(`[Descripciones] slide ${slide.numero} falló validación Vision, reintentando una vez...`);
     try {
-      const segundo = await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, direccion);
+      const segundo = await generarImagenSlide(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, set);
       const segundoOk = await validarConsistenciaZorro(segundo, referenceBase64);
       if (segundoOk) { imagen = segundo; consistente = true; }
       else { imagen = segundo; } // Devuelve el segundo intento aunque siga inconsistente (mejor que nada)
@@ -1671,6 +1748,96 @@ async function renderTextoEnSlide(
   return composed.toString("base64");
 }
 
+// Catálogo del set para la UI: las MISMAS luces, poses y tipografías que
+// ofrece Portadas. Se sirve desde aquí para que la página no tenga que hablar
+// con dos routers distintos por una lista de opciones.
+router.get("/community/set-options", (_req, res) => {
+  const { direcciones, poses, estilosTitular } = listarOpcionesPortada();
+  res.json({
+    success: true,
+    data: { direcciones, poses, estilosTitular, direccionPredeterminada: ID_DIRECCION_MARCA },
+  });
+});
+
+// "Escribir con IA": el usuario cuenta la idea a lo bruto y recibe tema, idea
+// redactada y el set propuesto (luz, pose, utilería, estilo, tipografía).
+const RedactarIdeaBody = z.object({
+  tema: z.string().max(300).optional(),
+  idea: z.string().max(2000).optional(),
+  tipo_contenido: z.string().max(40).optional(),
+  tipo_publicacion: z.enum(["unica", "carrusel"]).optional(),
+});
+
+router.post("/community/descripciones/redactar-idea", async (req, res) => {
+  try {
+    const body = RedactarIdeaBody.parse(req.body);
+    const tema = (body.tema ?? "").trim();
+    const idea = (body.idea ?? "").trim();
+    if (!tema && !idea) {
+      res.status(400).json({
+        success: false,
+        error: "Cuenta primero tu idea (aunque sea a lo bruto) para que la IA la redacte.",
+      });
+      return;
+    }
+
+    const catalogo = listarOpcionesPortada();
+    const catalogos = {
+      direcciones: catalogo.direcciones.map((d) => ({ id: d.id, nombre: d.nombre, descripcion: d.descripcion })),
+      poses: catalogo.poses.map((p) => ({ id: p.id, nombre: p.etiqueta })),
+      estilosTitular: catalogo.estilosTitular.map((e) => ({ id: e.id, nombre: e.nombre, descripcion: e.descripcion })),
+    };
+
+    const resp = await openaiShim.messages.create({
+      model: OPENAI_TEXT_MODEL,
+      max_tokens: 900,
+      system: REGLA_ESPANOL_NEUTRO,
+      messages: [{
+        role: "user",
+        content: buildRedactarIdeaPostPrompt(tema, idea, catalogos, {
+          tipoContenido: body.tipo_contenido,
+          tipoPublicacion: body.tipo_publicacion,
+        }),
+      }],
+    });
+    const bloque = resp.content[0];
+    const parsed = parseIdeaPost(bloque && bloque.type === "text" ? bloque.text : "", {
+      direcciones: catalogos.direcciones.map((d) => d.id),
+      poses: catalogos.poses.map((p) => p.id),
+      estilosTitular: catalogos.estilosTitular.map((e) => e.id),
+    });
+    if (!parsed) {
+      res.status(502).json({ success: false, error: "La IA no devolvió una redacción válida. Intenta de nuevo." });
+      return;
+    }
+
+    // Misma capa determinista que el resto del módulo: el modelo cuela
+    // españolismos aunque el prompt los prohíba.
+    const neutro = neutralizarProfundo({
+      tema: parsed.tema,
+      idea: parsed.idea,
+      utileria: parsed.utileria,
+      estilo_extra: parsed.estiloExtra,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        tema: neutro.tema,
+        idea: neutro.idea,
+        utileria: neutro.utileria,
+        estilo_extra: neutro.estilo_extra,
+        direccion_id: parsed.direccionId || null,
+        pose_id: parsed.poseId || null,
+        estilo_titular: parsed.estiloTitularId || null,
+      },
+    });
+  } catch (err: any) {
+    console.error("[Descripciones] redactar-idea:", err);
+    res.status(500).json({ success: false, error: err.message || "No se pudo redactar la idea." });
+  }
+});
+
 // Detecta automáticamente cuántas slides necesita un tema (1 portada + N desarrollo + 1 CTA)
 const CalcularSlidesBody = z.object({ tema: z.string().min(1).max(300) });
 router.post("/community/descripciones/calcular-slides", async (req, res) => {
@@ -1726,8 +1893,12 @@ router.post("/community/descripciones/generar", async (req, res) => {
       : 1;
     const formato: "1:1" | "4:5" = body.tipo_publicacion === "carrusel" ? "4:5" : "1:1";
 
+    // La idea en bruto es contexto, no el tema: dice qué quiere mostrar y con
+    // qué emoción. Sin ella el guion solo tenía el titular para trabajar.
+    const ideaBruta = (body.idea ?? "").trim();
+
     const userMessage = `TEMA: ${body.tema}
-TIPO de contenido: ${body.tipo_contenido}
+${ideaBruta ? `IDEA del usuario (contexto, en sus palabras — respétala): ${ideaBruta}\n` : ""}TIPO de contenido: ${body.tipo_contenido}
 REDES solicitadas: ${body.redes.join(", ")}
 TIPO de publicación: ${body.tipo_publicacion}
 CANTIDAD de slides: ${cantidad}
@@ -1793,15 +1964,25 @@ Solo el JSON.`;
     }
 
 
-    const referenceBase64 = await getFoxRefBase64();
+    // Referencia del personaje: Webi salvo que el usuario suba la suya.
+    const referenciaPropia = (body.imagen_referencia_base64 ?? "").trim();
+    const referenceBase64 = referenciaPropia || (await getFoxRefBase64());
     // Un estilo tipográfico por carrusel: todas las slides comparten diseño.
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
-    // Y UNA sola iluminación de set: si cada slide resolviera la suya, el
-    // carrusel dejaría de verse como una pieza.
-    const direccionArte = resolverDireccion(null);
+    // Y UN solo set (luz, pose, utilería) para todo el carrusel: si cada slide
+    // resolviera el suyo, dejaría de verse como una pieza.
+    const setSlide = resolverSetSlide(body, referenciaPropia.length > 0);
+    // Lo que se guarda y se devuelve: el reintento de una slide tiene que poder
+    // reproducir EXACTAMENTE el mismo set, o desentona con el resto.
+    const setUsado = {
+      direccion_id: setSlide.direccion.id,
+      pose_id: setSlide.pose?.id ?? null,
+      utileria: setSlide.utileria,
+      estilo_extra: setSlide.estiloExtra,
+    };
 
     const settled = await Promise.allSettled(
-      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad, direccionArte)),
+      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad, setSlide)),
     );
 
     const imagenes = await Promise.all(
@@ -1849,6 +2030,8 @@ Solo el JSON.`;
         tema: body.tema, tipo_contenido: body.tipo_contenido, redes: body.redes,
         tipo_publicacion: body.tipo_publicacion, cantidad_slides: cantidad,
         texto_en_imagen: body.texto_en_imagen, estilo_titular: estiloTitular,
+        idea: ideaBruta || undefined,
+        set: setUsado,
         descripciones, slides_textos: slidesPlan,
       },
       imageUrl: imagenes.find((i) => i.imagen)?.imagen || null,
@@ -1860,6 +2043,7 @@ Solo el JSON.`;
         id: row!.id, fecha: row!.createdAt, tema: body.tema,
         tipo_contenido: body.tipo_contenido, tipo_publicacion: body.tipo_publicacion,
         texto_en_imagen: body.texto_en_imagen, estilo_titular: estiloTitular,
+        set: setUsado,
         imagenes, descripciones,
       },
     });
@@ -1888,6 +2072,13 @@ const ReintentarSlideBody = z.object({
   imagen_actual_base64: z.string().optional(), // sin prefijo data:; usado por auto-diagnose
   /** Estilo tipográfico del carrusel original: el reintento mantiene el diseño. */
   estilo_titular: z.string().max(40).optional(),
+  // Set del carrusel original. Antes el reintento resolvía una luz nueva "para
+  // que los reintentos no se parezcan": el resultado era una slide con otra
+  // iluminación en medio de un carrusel, que es exactamente lo que no puede pasar.
+  direccion_id: z.string().max(40).optional(),
+  pose_id: z.string().max(40).optional(),
+  utileria: z.string().max(300).optional(),
+  estilo_extra: z.string().max(300).optional(),
 });
 
 // Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
@@ -1969,9 +2160,9 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
         prompt_visual: `${slide.prompt_visual || ""}. AJUSTE EXPLÍCITO DEL USUARIO (alta prioridad): ${ajusteFinal}`.trim(),
       };
     }
-    // El reintento de UNA slide resuelve su propia variante: no tenemos la del
-    // carrusel original y fijar una haría que todos los reintentos se parezcan.
-    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, resolverDireccion(null));
+    // El mismo set que el carrusel original: la slide regenerada tiene que
+    // entrar en la serie, no verse como una pieza de otra sesión.
+    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, resolverSetSlide(body));
     if (body.texto_en_imagen) {
       try { imgBase64 = await renderTextoEnSlide(imgBase64, slide, body.total_slides, body.formato, resolverEstiloTitulo(body.estilo_titular)); } catch {}
     }
@@ -2178,7 +2369,7 @@ router.post("/community/historias/reintentar", async (req, res) => {
       // El reintento resuelve su propia variante: al regenerar UN frame suelto
       // no tenemos la de la serie original, y forzar una fija haría que todos
       // los reintentos se vieran iguales entre sí.
-      direccion: resolverDireccion(null),
+      direccion: resolverDireccionDeMarca(null),
       hilo: body.hilo,
       promptOverride,
       textoEnImagen: body.texto_en_imagen,

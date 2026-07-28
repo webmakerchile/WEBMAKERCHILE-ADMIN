@@ -740,6 +740,8 @@ export default function VideosPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("info");
   const [statsVideo, setStatsVideo] = useState<VideoData | null>(null);
+  // Publicación que se está reprogramando (diálogo de fecha + redes).
+  const [rescheduleVideo, setRescheduleVideo] = useState<VideoData | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -1824,6 +1826,24 @@ export default function VideosPage() {
                                   <BarChart2 className="w-4 h-4" />
                                 </Button>
                               )}
+                              {/* Reprogramar: visible en cuanto la publicación
+                                  salió del borrador. Antes no había ninguna
+                                  forma de mover la fecha ni de reintentar una
+                                  red que falló sin rehacer la publicación. */}
+                              {video.status !== "draft" && video.status !== "cover_generated" && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="w-7 h-7 text-muted-foreground/50 hover:text-primary hover:bg-primary/10"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRescheduleVideo(video);
+                                  }}
+                                  title={t.reschedOpen}
+                                >
+                                  <CalendarClock className="w-4 h-4" />
+                                </Button>
+                              )}
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -2041,6 +2061,14 @@ export default function VideosPage() {
         video={statsVideo}
         onClose={() => setStatsVideo(null)}
       />
+
+      {rescheduleVideo && (
+        <RescheduleDialog
+          key={rescheduleVideo.id}
+          video={rescheduleVideo}
+          onClose={() => setRescheduleVideo(null)}
+        />
+      )}
     </Layout>
   );
 }
@@ -2062,6 +2090,219 @@ type VideoStats = {
     tiktok?: TikTokUnavailable;
   };
 };
+
+/* ==================== Reprogramar una publicación ======================= */
+
+type EstadoRedResched = "publicada" | "error" | "omitida" | "reintentando" | "pendiente";
+type RedResched = {
+  plataforma: string;
+  nombre: string;
+  estado: EstadoRedResched;
+  reprogramable: boolean;
+  detalle: string | null;
+};
+
+/** Valor para <input type="datetime-local"> a partir de una fecha (hora local). */
+function aInputLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * Diálogo de reprogramar.
+ *
+ * La elección de redes es explícita a propósito: el servidor limpia el estado
+ * SOLO de las marcadas. Reintentar sola una red que alguien excluyó a propósito
+ * significaría publicar en una cuenta real que nadie eligió.
+ */
+function RescheduleDialog({
+  video,
+  onClose,
+}: {
+  video: VideoData;
+  onClose: () => void;
+}) {
+  const { t } = useLang();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [cargando, setCargando] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [redes, setRedes] = useState<RedResched[]>([]);
+  const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
+  const [cuando, setCuando] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const etiquetaEstado: Record<EstadoRedResched, string> = {
+    publicada: t.reschedStatePublicada,
+    error: t.reschedStateError,
+    omitida: t.reschedStateOmitida,
+    reintentando: t.reschedStateReintentando,
+    pendiente: t.reschedStatePendiente,
+  };
+  const claseEstado: Record<EstadoRedResched, string> = {
+    publicada: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+    error: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+    omitida: "bg-foreground/5 text-muted-foreground border-foreground/15",
+    reintentando: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+    pendiente: "bg-sky-500/10 text-sky-400 border-sky-500/20",
+  };
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/reschedule-options`);
+        if (!r.ok) throw new Error(await r.text());
+        const data = (await r.json()) as { scheduledAt: string | null; redes: RedResched[] };
+        if (!vivo) return;
+        setRedes(data.redes);
+        // Se premarcan las que quedaron sin publicar: es lo que casi siempre se
+        // quiere reintentar, y las publicadas ni siquiera son marcables.
+        setMarcadas(new Set(data.redes.filter((x) => x.reprogramable).map((x) => x.plataforma)));
+        // Fecha por defecto: la programada si sigue en el futuro, si no dentro de una hora.
+        const prev = data.scheduledAt ? new Date(data.scheduledAt) : null;
+        const base = prev && prev.getTime() > Date.now() ? prev : new Date(Date.now() + 60 * 60 * 1000);
+        setCuando(aInputLocal(base));
+      } catch (e: any) {
+        if (vivo) setError(e?.message || t.errorUnknown);
+      } finally {
+        if (vivo) setCargando(false);
+      }
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video.id]);
+
+  const alternar = (p: string) => {
+    setMarcadas((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p); else next.add(p);
+      return next;
+    });
+  };
+
+  const hayReprogramables = redes.some((r) => r.reprogramable);
+
+  const confirmar = async () => {
+    setError(null);
+    setGuardando(true);
+    try {
+      const r = await apiFetch(`${API_BASE}/content/videos/${video.id}/reschedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scheduledAt: new Date(cuando).toISOString(),
+          plataformas: Array.from(marcadas),
+        }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(data?.error || (await r.text().catch(() => "")) || t.errorUnknown);
+      queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });
+      toast({ title: t.reschedDone((data?.reintentadas ?? []).length) });
+      onClose();
+    } catch (e: any) {
+      setError(e?.message || t.errorUnknown);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-card text-card-foreground border border-foreground/10 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <CalendarClock className="w-5 h-5 text-primary" />
+              {t.reschedTitle}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">{t.reschedSubtitle}</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label={t.reschedCancel}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {cargando ? (
+          <div className="py-8 flex flex-col items-center gap-2 text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs">{t.reschedLoading}</span>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{t.reschedDate}</label>
+              <Input
+                type="datetime-local"
+                value={cuando}
+                onChange={(e) => setCuando(e.target.value)}
+                className="bg-background/50 border-foreground/10"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t.reschedNetworks}</label>
+              {!hayReprogramables && (
+                <p className="text-xs text-amber-400">{t.reschedNoneSelectable}</p>
+              )}
+              <div className="space-y-1.5">
+                {redes.map((r) => (
+                  <label
+                    key={r.plataforma}
+                    className={`flex items-start gap-3 rounded-xl border px-3 py-2.5 transition ${
+                      r.reprogramable
+                        ? "border-foreground/10 hover:border-primary/40 cursor-pointer"
+                        : "border-foreground/5 opacity-60 cursor-not-allowed"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={marcadas.has(r.plataforma)}
+                      disabled={!r.reprogramable}
+                      onCheckedChange={() => r.reprogramable && alternar(r.plataforma)}
+                      className="mt-0.5"
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold">{r.nombre}</span>
+                        <Badge className={`text-[10px] ${claseEstado[r.estado]}`}>{etiquetaEstado[r.estado]}</Badge>
+                      </span>
+                      {!r.reprogramable ? (
+                        <span className="block text-[11px] text-muted-foreground mt-0.5">{t.reschedPublishedHint}</span>
+                      ) : r.detalle ? (
+                        <span className="block text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{r.detalle}</span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground">{t.reschedExcludedHint}</p>
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3 py-2 rounded-xl text-xs">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={onClose} disabled={guardando} className="border-foreground/10">
+                {t.reschedCancel}
+              </Button>
+              <Button onClick={confirmar} disabled={guardando || !cuando || marcadas.size === 0}>
+                {guardando ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CalendarClock className="w-4 h-4 mr-2" />}
+                {guardando ? t.reschedSaving : t.reschedConfirm}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function isStatError(v: unknown): v is StatError {
   return typeof v === "object" && v !== null && "error" in v;
@@ -5000,6 +5241,7 @@ function StepReview({
   };
 
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [reprogramando, setReprogramando] = useState(false);
   const handleExportPdf = async () => {
     setExportingPdf(true);
     try {
@@ -5337,9 +5579,24 @@ function StepReview({
                       </span>
                     </div>
                   )}
+                  {/* Cambiar la fecha o reintentar una red que falló, sin
+                      tener que rehacer la publicación entera. */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReprogramando(true)}
+                    className="mt-3 border-foreground/15"
+                  >
+                    <CalendarClock className="w-4 h-4 mr-2" />
+                    {t.reschedOpen}
+                  </Button>
                 </div>
               </div>
             </div>
+          )}
+
+          {reprogramando && (
+            <RescheduleDialog video={video} onClose={() => setReprogramando(false)} />
           )}
 
           {video.youtubeVideoId ? (
