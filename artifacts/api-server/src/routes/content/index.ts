@@ -37,6 +37,12 @@ import { generateImage } from "@workspace/integrations-gemini-ai/image";
 import { prepararPortada, generateFoxIllustration, composeVerticalCover } from "../../lib/cover-style";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
 import { generateDescriptionsForVideo } from "../../lib/generate-descriptions";
+import {
+  PLATAFORMAS_PUBLICACION,
+  planReprogramacion,
+  motivoReprogramacionInvalida,
+  redesReprogramables,
+} from "../../lib/reprogramar";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import {
@@ -1271,6 +1277,84 @@ router.post("/content/videos/:id/schedule", async (req, res) => {
     return;
   }
   res.json(updated);
+});
+
+/**
+ * Estado de cada red para el diálogo de reprogramar: qué se publicó, qué falló
+ * y con qué motivo. Sin esto la UI tendría que adivinar qué se puede reintentar.
+ */
+router.get("/content/videos/:id/reschedule-options", async (req, res) => {
+  const id = Number(req.params.id);
+  const [video] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
+  if (!video) {
+    res.status(404).json({ error: "Video not found" });
+    return;
+  }
+  res.json({
+    scheduledAt: video.scheduledAt,
+    status: video.status,
+    redes: redesReprogramables(video as unknown as Record<string, unknown>),
+  });
+});
+
+const ReprogramarBody = z.object({
+  scheduledAt: z.string().min(1),
+  plataformas: z.array(z.enum(PLATAFORMAS_PUBLICACION)).min(1),
+});
+
+/**
+ * Reprogramar: mover la fecha y devolver a la cola las redes que se elijan.
+ *
+ * No es lo mismo que POST /:id/schedule, que solo cambia la fecha: una red que
+ * falló queda en status "error" y el scheduler la bloquea para siempre
+ * (isTerminalError), y una que se omitió por faltarle la descripción queda en
+ * "skipped", indistinguible de "el usuario no la eligió". Reprogramar limpia
+ * ese estado para las redes marcadas — y solo para esas.
+ */
+router.post("/content/videos/:id/reschedule", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = ReprogramarBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    return;
+  }
+
+  // Misma política que PATCH, /:id/schedule y bulk-schedule: ver assertCanSchedule.
+  const guardError = assertCanSchedule(req);
+  if (guardError) {
+    res.status(403).json({ error: guardError });
+    return;
+  }
+
+  const [video] = await db.select().from(videos).where(eq(videos.id, id)).limit(1);
+  if (!video) {
+    res.status(404).json({ error: "Video not found" });
+    return;
+  }
+
+  const fila = video as unknown as Record<string, unknown>;
+  const cuando = new Date(parsed.data.scheduledAt);
+  const invalida = motivoReprogramacionInvalida(fila, cuando, parsed.data.plataformas);
+  if (invalida) {
+    res.status(400).json({ error: invalida });
+    return;
+  }
+
+  const plan = planReprogramacion(fila, cuando, parsed.data.plataformas);
+  const [updated] = await db.update(videos).set(plan.cambios).where(eq(videos.id, id)).returning();
+
+  console.log(
+    `[Reprogramar] Video #${id} → ${cuando.toISOString()} · reintenta: ${plan.reintentadas.join(", ") || "ninguna"}` +
+      `${plan.yaPublicadas.length ? ` · ya publicadas (ignoradas): ${plan.yaPublicadas.join(", ")}` : ""}` +
+      `${plan.excluidas.length ? ` · fuera: ${plan.excluidas.join(", ")}` : ""}`,
+  );
+
+  res.json({
+    video: updated,
+    reintentadas: plan.reintentadas,
+    yaPublicadas: plan.yaPublicadas,
+    excluidas: plan.excluidas,
+  });
 });
 
 router.post("/content/videos/:id/retry/:platform", async (req, res) => {
