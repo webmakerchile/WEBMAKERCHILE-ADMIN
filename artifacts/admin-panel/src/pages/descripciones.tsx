@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat, Wand2, SlidersHorizontal, ChevronDown, Upload } from "lucide-react";
-import { EstiloTitularPicker, type EstiloTitularOption } from "@/components/estilo-titular-picker";
+import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
+import {
+  useSetEstudio,
+  PersonalizacionSet,
+  IdeaConIA,
+  DIRECCION_PREDETERMINADA,
+} from "@/components/personalizacion-set";
 import { motion } from "framer-motion";
 import JSZip from "jszip";
 import { RETRY_PRESETS } from "@/lib/retry-presets";
@@ -9,18 +15,6 @@ import { EmptyState } from "@/components/empty-state";
 import { HelpHint } from "@/components/help-hint";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
-const REFERENCIA_ZORRO_URL = `${import.meta.env.BASE_URL}images/fox-reference-default.png?v=2`;
-
-/** El spotlight ámbar es la luz de la marca: es lo que sale si nadie elige. */
-const DIRECCION_PREDETERMINADA = "estudio_spotlight";
-/** Valor que pide rotación entre las 8 luces (lo entiende el servidor). */
-const DIRECCION_AUTOMATICA = "auto";
-
-type OpcionesSet = {
-  direcciones: Array<{ id: string; nombre: string; descripcion: string; colorAcento: string }>;
-  poses: Array<{ id: string; etiqueta: string }>;
-  estilosTitular: EstiloTitularOption[];
-};
 
 const TIPOS_CONTENIDO = [
   { value: "tutorial", label: "Tutorial", emoji: "📚" },
@@ -87,18 +81,9 @@ export default function DescripcionesPage() {
   const [idea, setIdea] = useState("");
   const [redactando, setRedactando] = useState(false);
 
-  // Personalización del set. La luz arranca en el spotlight ámbar de la marca;
-  // la rotación entre las 8 hay que pedirla.
-  const [opcionesSet, setOpcionesSet] = useState<OpcionesSet | null>(null);
-  const [mostrarSet, setMostrarSet] = useState(false);
-  const [direccionId, setDireccionId] = useState<string>(DIRECCION_PREDETERMINADA);
-  const [poseId, setPoseId] = useState<string | null>(null);
-  const [utileria, setUtileria] = useState("");
-  const [estiloExtra, setEstiloExtra] = useState("");
-  const [refPreview, setRefPreview] = useState<string | null>(REFERENCIA_ZORRO_URL);
-  const [refEsZorro, setRefEsZorro] = useState(true);
-  const [refBase64, setRefBase64] = useState<string | null>(null);
-  const refInputRef = useRef<HTMLInputElement>(null);
+  // Personalización del set: hook COMPARTIDO con Historias y Portadas. Estaba
+  // duplicado por sección y por eso se separaban.
+  const set = useSetEstudio();
 
   const [loading, setLoading] = useState(false);
   const [sorpresa, setSorpresa] = useState(false);
@@ -133,47 +118,8 @@ export default function DescripcionesPage() {
     };
   }, [loading]);
 
-  // Catálogo del set: las mismas luces, poses y tipografías que Portadas.
-  useEffect(() => {
-    let vivo = true;
-    fetch(`${API_BASE}/community/set-options`, { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (vivo && d?.success) setOpcionesSet(d.data); })
-      .catch(() => { /* sin catálogo la generación igual funciona con el default */ });
-    return () => { vivo = false; };
-  }, []);
-
   const toggleRed = (red: RedKey) => {
     setRedes((prev) => (prev.includes(red) ? prev.filter((r) => r !== red) : [...prev, red]));
-  };
-
-  const direccionSeleccionada = opcionesSet?.direcciones.find((d) => d.id === direccionId) ?? null;
-  const ajustesSet = [
-    direccionId !== DIRECCION_PREDETERMINADA ? "luz" : null,
-    poseId,
-    utileria.trim() || null,
-    estiloExtra.trim() || null,
-    refEsZorro ? null : "ref",
-  ].filter(Boolean).length;
-
-  const cambiarReferencia = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setRefPreview(URL.createObjectURL(file));
-    setRefEsZorro(false);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const r = reader.result as string;
-      setRefBase64(r.split(",")[1] ?? null);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const restaurarReferenciaZorro = () => {
-    setRefPreview(REFERENCIA_ZORRO_URL);
-    setRefEsZorro(true);
-    setRefBase64(null);
-    if (refInputRef.current) refInputRef.current.value = "";
   };
 
   // "Escribir con IA": redacta la idea en bruto y propone el set. Cada campo se
@@ -186,8 +132,6 @@ export default function DescripcionesPage() {
     }
     const temaEnviado = tema;
     const ideaEnviada = idea;
-    const utileriaEnviada = utileria;
-    const estiloEnviado = estiloExtra;
     setRedactando(true);
     setError(null);
     try {
@@ -206,15 +150,10 @@ export default function DescripcionesPage() {
       if (!data.success) throw new Error(data.error || "No se pudo redactar la idea");
       const d = data.data;
 
-      let cambioSet = false;
       if (d.idea && idea === ideaEnviada) setIdea(d.idea);
       if (d.tema && tema === temaEnviado) setTema(d.tema);
-      if (d.utileria && utileria === utileriaEnviada) { setUtileria(d.utileria); cambioSet = true; }
-      if (d.estilo_extra && estiloExtra === estiloEnviado) { setEstiloExtra(d.estilo_extra); cambioSet = true; }
-      if (d.direccion_id) { setDireccionId(d.direccion_id); cambioSet = true; }
-      if (d.pose_id) { setPoseId(d.pose_id); cambioSet = true; }
       if (d.estilo_titular) setEstiloTitular(d.estilo_titular);
-      if (cambioSet) setMostrarSet(true);
+      const cambioSet = set.aplicarSugerencia(d);
       showToast(cambioSet ? "✨ Idea redactada y set sugerido (revísalo abajo)" : "✨ Idea redactada");
     } catch (err: any) {
       setError(err.message);
@@ -293,11 +232,7 @@ export default function DescripcionesPage() {
           texto_en_imagen: textoEnImagen,
           estilo_titular: estiloTitular ?? undefined,
           idea: idea.trim() || undefined,
-          direccion_id: direccionId,
-          pose_id: poseId ?? undefined,
-          utileria: utileria.trim() || undefined,
-          estilo_extra: estiloExtra.trim() || undefined,
-          imagen_referencia_base64: refEsZorro ? undefined : refBase64 ?? undefined,
+          ...set.payload(),
         }),
       });
       const data = await res.json();
@@ -508,30 +443,13 @@ export default function DescripcionesPage() {
             )}
           </div>
 
-          {/* Tu idea + Escribir con IA: el mismo par que en Portadas. Sin esto,
-              la única entrada era el tema en frío y el set había que armarlo a mano. */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-2">Tu idea</label>
-            <textarea
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              maxLength={2000}
-              placeholder="Cuéntala con tus palabras: qué quieres mostrar, qué emoción, qué elementos…"
-              className="w-full px-4 py-3 bg-foreground/5 border border-foreground/10 rounded-xl text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary min-h-[110px]"
-            />
-            <button
-              type="button"
-              onClick={handleRedactarIdea}
-              disabled={redactando || (!tema.trim() && !idea.trim())}
-              className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-sm font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {redactando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              {redactando ? "Redactando tu idea..." : "Escribir con IA"}
-            </button>
-            <p className="text-xs text-muted-foreground/70 mt-1">
-              Escríbela a lo bruto — la IA la redacta y te sugiere tema, luz del estudio, pose, utilería y estilo; después ajustas lo que quieras.
-            </p>
-          </div>
+          <IdeaConIA
+            valor={idea}
+            onChange={setIdea}
+            onRedactar={handleRedactarIdea}
+            redactando={redactando}
+            deshabilitado={!tema.trim() && !idea.trim()}
+          />
 
           <div>
             <label className="block text-sm font-semibold text-foreground mb-3">Tipo de contenido</label>
@@ -668,7 +586,7 @@ export default function DescripcionesPage() {
               el estilo tipográfico de la marca era invisible. */}
           <div className={`bg-foreground/5 rounded-xl p-4 border border-foreground/10 transition-opacity ${textoEnImagen ? "" : "opacity-50"}`}>
             <EstiloTitularPicker
-                estilos={opcionesSet?.estilosTitular ?? null}
+                estilos={set.opciones?.estilosTitular ?? null}
                 value={estiloTitular}
                 onChange={setEstiloTitular}
                 descripcionAuto="Los títulos de las slides usan el motor de tipografía de las portadas — en automático rota entre los estilos impactantes."
@@ -680,146 +598,7 @@ export default function DescripcionesPage() {
             )}
           </div>
 
-          {/* Personalización del set: el mismo panel de Portadas. La luz arranca
-              en el spotlight ámbar de la marca — la rotación hay que pedirla. */}
-          <div className="border border-foreground/10 rounded-xl overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setMostrarSet((v) => !v)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-background/40 hover:bg-background/60 transition-colors"
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <SlidersHorizontal className="w-4 h-4 text-primary" />
-                Personalización del set
-                {ajustesSet > 0 ? (
-                  <span className="text-[10px] font-bold bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
-                    {ajustesSet} activo{ajustesSet > 1 ? "s" : ""}
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
-                )}
-              </span>
-              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${mostrarSet ? "rotate-180" : ""}`} />
-            </button>
-
-            {mostrarSet && (
-              <div className="p-4 space-y-5 border-t border-foreground/10">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Iluminación del estudio</label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setDireccionId(DIRECCION_AUTOMATICA)}
-                      aria-pressed={direccionId === DIRECCION_AUTOMATICA}
-                      className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition ${direccionId === DIRECCION_AUTOMATICA ? "border-primary bg-primary/15 text-foreground" : "border-foreground/10 bg-background/40 text-muted-foreground hover:border-foreground/30"}`}
-                    >
-                      <Sparkles className="w-3 h-3 shrink-0" />
-                      Automática
-                    </button>
-                    {opcionesSet?.direcciones.map((d) => (
-                      <button
-                        key={d.id}
-                        type="button"
-                        onClick={() => setDireccionId(d.id)}
-                        aria-pressed={direccionId === d.id}
-                        title={d.descripcion}
-                        className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition ${direccionId === d.id ? "border-primary bg-primary/15 text-foreground" : "border-foreground/10 bg-background/40 text-muted-foreground hover:border-foreground/30"}`}
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: d.colorAcento }} />
-                        <span className="truncate">{d.nombre.replace(/^Estudio /, "")}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground/70">
-                    {direccionId === DIRECCION_AUTOMATICA
-                      ? "Rota sola entre las 8 luces del estudio para que ninguna pieza se repita."
-                      : direccionSeleccionada
-                        ? `${direccionSeleccionada.descripcion}${direccionId === DIRECCION_PREDETERMINADA ? " Es la luz predeterminada de la marca." : ""}`
-                        : "El spotlight ámbar es la luz predeterminada de la marca."}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Pose de Webi</label>
-                  <select
-                    value={poseId ?? ""}
-                    onChange={(e) => setPoseId(e.target.value || null)}
-                    className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground focus:border-primary outline-none transition-all"
-                  >
-                    <option value="">Automática (según el rol de cada slide)</option>
-                    {opcionesSet?.poses.map((p) => (
-                      <option key={p.id} value={p.id}>{p.etiqueta}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Utilería del set</label>
-                  <input
-                    value={utileria}
-                    onChange={(e) => setUtileria(e.target.value)}
-                    maxLength={300}
-                    className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground focus:border-primary outline-none transition-all"
-                    placeholder="Ej: un notebook abierto, una taza de café, cajas de cartón"
-                  />
-                  <p className="text-xs text-muted-foreground/70">
-                    Se dibujan como objetos reales apoyados en el set e iluminados por el foco — nunca stickers.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Toque de estilo extra</label>
-                  <input
-                    value={estiloExtra}
-                    onChange={(e) => setEstiloExtra(e.target.value)}
-                    maxLength={300}
-                    className="w-full bg-background/50 border border-foreground/10 rounded-xl px-4 py-3 text-sm text-foreground placeholder-muted-foreground focus:border-primary outline-none transition-all"
-                    placeholder="Ej: tono más dramático, ambiente festivo…"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Imagen de referencia <span className="text-xs text-muted-foreground font-normal">(el zorro va por defecto)</span>
-                  </label>
-                  {refPreview ? (
-                    <div className="relative rounded-xl overflow-hidden border border-foreground/10">
-                      <img src={refPreview} alt="Referencia del personaje" className="w-full h-24 object-cover" />
-                      {refEsZorro ? (
-                        <div className="absolute bottom-2 left-2 bg-black/60 text-xs text-white/80 px-2 py-0.5 rounded-full">
-                          Zorro predeterminado
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={restaurarReferenciaZorro}
-                          className="absolute top-2 right-2 z-10 w-7 h-7 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition-colors"
-                          aria-label="Volver al zorro predeterminado"
-                        >
-                          <X className="w-4 h-4 text-white" />
-                        </button>
-                      )}
-                      <label className="absolute inset-0 cursor-pointer opacity-0 hover:opacity-100 bg-black/40 flex items-center justify-center transition-opacity">
-                        <span className="text-sm text-white font-medium">Cambiar imagen</span>
-                        <input ref={refInputRef} type="file" className="hidden" accept="image/*" onChange={cambiarReferencia} />
-                      </label>
-                    </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-foreground/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition-all group">
-                      <Upload className="w-6 h-6 text-muted-foreground group-hover:text-primary mb-1.5 transition-colors" />
-                      <span className="text-sm text-muted-foreground font-medium">Subir foto o captura</span>
-                      <input ref={refInputRef} type="file" className="hidden" accept="image/*" onChange={cambiarReferencia} />
-                    </label>
-                  )}
-                  {!refEsZorro && (
-                    <p className="text-xs text-amber-400">
-                      Con tu propia referencia se desactiva el control de consistencia de Webi: el personaje será el de tu imagen.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <PersonalizacionSet set={set} />
 
           {error && (
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">

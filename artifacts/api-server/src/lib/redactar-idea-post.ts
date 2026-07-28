@@ -42,15 +42,18 @@ export function buildRedactarIdeaPostPrompt(
     poses: OpcionCatalogo[];
     estilosTitular: OpcionCatalogo[];
   },
-  opts?: { tipoContenido?: string; tipoPublicacion?: "unica" | "carrusel" },
+  opts?: { tipoContenido?: string; tipoPublicacion?: "unica" | "carrusel"; destino?: "post" | "historia" },
 ): string {
   const lista = (items: OpcionCatalogo[]) =>
     items.map((i) => `  - "${i.id}": ${i.nombre}${i.descripcion ? ` — ${i.descripcion}` : ""}`).join("\n");
 
-  const esCarrusel = opts?.tipoPublicacion === "carrusel";
-  const pieza = esCarrusel
-    ? "un CARRUSEL de Instagram (varias slides 4:5 que se recorren deslizando)"
-    : "una PUBLICACIÓN ÚNICA cuadrada para redes";
+  const esHistoria = opts?.destino === "historia";
+  const esCarrusel = !esHistoria && opts?.tipoPublicacion === "carrusel";
+  const pieza = esHistoria
+    ? "una HISTORIA vertical 9:16 para Instagram/TikTok (se ve a pantalla completa unos segundos)"
+    : esCarrusel
+      ? "un CARRUSEL de Instagram (varias slides 4:5 que se recorren deslizando)"
+      : "una PUBLICACIÓN ÚNICA cuadrada para redes";
 
   return `Eres el redactor creativo de WebMaker (agencia digital para pymes y emprendedores de LATAM). Un compañero escribió a lo bruto la idea para ${pieza}${opts?.tipoContenido ? ` del tipo "${opts.tipoContenido}"` : ""}.
 

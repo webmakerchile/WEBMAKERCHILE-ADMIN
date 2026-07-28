@@ -644,14 +644,15 @@ function buildHistoriaPrompt(
     /** Layout del frame: define qué franjas deben quedar despejadas. */
     layout: LayoutHistoria;
     /**
-     * Variante de iluminación del set, la MISMA que usan las portadas.
+     * Set del estudio: EL MISMO objeto que usan Portadas y Posts IA.
      *
      * Historias tenía su propio fondo plano ("espacio abstracto" con halo
      * radial) mientras las portadas usaban un set fotográfico con luz
-     * cinematográfica: por eso las historias se veían de otra generación
-     * aunque la tipografía ya fuera la nueva.
+     * cinematográfica: por eso se veían de otra generación. Y después, cuando
+     * la luz sí se unificó, seguía sin haber pose, utilería ni estilo extra
+     * — o sea que el mismo concepto salía distinto según la sección.
      */
-    direccion: DireccionArte;
+    set: SetEstudio;
     frame?: FrameContext;
     /** Ajuste libre del usuario (reintentos). */
     poseOverride?: string;
@@ -659,10 +660,23 @@ function buildHistoriaPrompt(
     hilo?: string;
   },
 ): string {
-  const { direccion } = opts;
+  const { set } = opts;
+  const direccion = set.direccion;
   const { categoria, pose: poseElegida } = elegirCategoriaPose(concepto, tipoHistoria);
   // La dirección del guion manda; la pose del banco es solo respaldo.
   const direccionEscena = opts.poseOverride || opts.promptVisual || poseElegida;
+  // Pose elegida a mano: manda sobre la del guion y sobre la del banco, igual
+  // que en Posts IA. Es la misma lista de poses en las tres secciones.
+  const bloquePose = set.pose
+    ? `\n- POSE OBLIGATORIA del zorro, elegida por el usuario (tiene prioridad sobre la escena descrita arriba): ${set.pose.descripcion}`
+    : "";
+  const bloqueUtileria = set.utileria?.trim()
+    ? `\n\nUTILERÍA PEDIDA POR EL USUARIO: "${set.utileria.trim()}".
+Dibújala como OBJETOS FÍSICOS REALES apoyados en el set, con volumen y sombra propia, iluminados por la misma luz de la dirección de arte. NUNCA stickers, iconos planos ni elementos flotantes. Cuenta dentro del máximo de 2 objetos.`
+    : "";
+  const bloqueEstiloExtra = set.estiloExtra?.trim()
+    ? `\n\nTOQUE DE ESTILO PEDIDO POR EL USUARIO: "${set.estiloExtra.trim()}". Aplícalo al ambiente y al color del set SIN romper ninguna regla del personaje.`
+    : "";
   const { layout } = opts;
   const escena = layout.zonaEscena;
 
@@ -684,7 +698,7 @@ ${FOX_BRAND_SPEC}
 REGLAS ADICIONALES PARA ESTA HISTORIA:
 - Cuerpo completo SIEMPRE visible (cabeza, torso, brazos, piernas, cola). Nunca cortado por los bordes ni recortado.
 - El zorro es el PROTAGONISTA ABSOLUTO. Ocupa el centro de la zona de imagen.
-- ESCENA DE ESTE FRAME (categoría narrativa "${categoria}"): ${direccionEscena}
+- ESCENA DE ESTE FRAME (categoría narrativa "${categoria}"): ${direccionEscena}${bloquePose}
 - POSICIÓN VERTICAL EXACTA Y NO NEGOCIABLE: la cabeza del zorro debe empezar DESPUÉS del píxel y=${escena.desde} y sus PIES deben terminar ANTES del píxel y=${escena.hasta}. Todo el zorro vive ESTRICTAMENTE entre y=${escena.desde} y y=${escena.hasta} (${escena.hasta - escena.desde} px de altura). Si tu zorro queda demasiado grande, RECÓRTALO: mejor un zorro mediano bien centrado que uno grande que invada las zonas reservadas.
 - RESPIRACIÓN: el zorro debe tener al menos 100 px de aire vacío por TODOS sus lados. Nada lo toca.
 
@@ -722,7 +736,7 @@ DIRECCIÓN DE ARTE DEL FONDO — "${direccion.nombre}" (solo el fondo, NO el per
 ${direccion.fondo}
 
 UTILERÍA — PALETA Y COMPORTAMIENTO BAJO LA LUZ:
-${direccion.paletaObjetos}
+${direccion.paletaObjetos}${bloqueUtileria}${bloqueEstiloExtra}
 
 PROHIBIDO EN EL FONDO:
 ✗ Línea de horizonte que divida la imagen en cielo y suelo
@@ -876,8 +890,8 @@ async function generarFrameHistoria(args: {
   /** Guion de ESTE frame (texto + dirección visual). */
   frameGuion: FrameGuion;
   layout: LayoutHistoria;
-  /** Iluminación del set: la MISMA para todos los frames de la serie. */
-  direccion: DireccionArte;
+  /** Set del estudio: el MISMO para todos los frames de la serie. */
+  set: SetEstudio;
   hilo?: string;
   poseOverride?: string;
   promptOverride?: string;
@@ -901,7 +915,7 @@ async function generarFrameHistoria(args: {
   const basePrompt = buildHistoriaPrompt(args.tipoHistoria, args.concepto, {
     promptVisual: args.frameGuion.prompt_visual,
     layout: args.layout,
-    direccion: args.direccion,
+    set: args.set,
     frame: frameCtx,
     poseOverride: args.poseOverride,
     hilo: args.hilo,
@@ -911,7 +925,9 @@ async function generarFrameHistoria(args: {
     : basePrompt;
   const contents = args.referenceBase64
     ? [{ role: "user" as const, parts: [
-        { text: "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
+        { text: args.set.referenciaPropia
+          ? "REFERENCE IMAGE 1 (character reference chosen by the user — replicate THIS character, not the brand fox):"
+          : "REFERENCE IMAGE 1 (PRIMARY CANON — replicate this character EXACTLY: outline weight, fur color saturation, glasses shape, eye size, body proportions, muzzle length):" },
         { inlineData: { data: args.referenceBase64, mimeType: "image/png" } },
         { text: finalPrompt },
       ] }]
@@ -951,7 +967,7 @@ async function generarFrameHistoria(args: {
       outBase64 = await renderTextoEnHistoria(imgBase64, args.frameGuion, args.layout, {
         frameInfo: args.total > 1 ? { numero: args.numero, total: args.total } : undefined,
         estiloTitularId: args.estiloTitular,
-        paleta: paletaDe(args.direccion),
+        paleta: paletaDe(args.set.direccion),
       });
     } catch (e) {
       console.error("[Historia frame] render texto fallo:", e);
@@ -994,19 +1010,39 @@ const GenerarHistoriaBody = z.object({
   estilo_titular: z.string().max(40).optional(),
   /** Formato narrativo (id de FORMATOS_HISTORIA); vacío = rotación automática. */
   formato_narrativo: z.string().max(40).optional(),
+  /** Idea en bruto del usuario: contexto extra para el guion. */
+  idea: z.string().max(2000).optional(),
+  // Personalización del set — los MISMOS campos que Portadas y Posts IA.
+  /** Iluminación: id de DIRECCIONES_PORTADA, `"auto"` para rotar, vacío = ámbar. */
+  direccion_id: z.string().max(40).optional(),
+  /** Pose fijada del zorro (id de PORTADA_POSES); vacío = la decide el guion. */
+  pose_id: z.string().max(40).optional(),
+  utileria: z.string().max(300).optional(),
+  estilo_extra: z.string().max(300).optional(),
+  /** Referencia de personaje propia en base64 (sin prefijo data:); vacío = Webi. */
+  imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
 
 router.post("/community/historias/generar", async (req, res) => {
   try {
     const body = GenerarHistoriaBody.parse(req.body);
-    const referenceBase64 = await getFoxRefBase64();
+    const referenciaPropia = (body.imagen_referencia_base64 ?? "").trim();
+    const referenceBase64 = referenciaPropia || (await getFoxRefBase64());
     const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
     // Un estilo tipográfico por historia: todos los frames comparten diseño.
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
-    // Y UNA sola variante de iluminación para toda la serie: si cada frame
-    // resolviera la suya, la serie dejaría de verse como un set. Por defecto,
-    // el spotlight ámbar de la marca — no una de las 8 al azar.
-    const direccionArte = resolverDireccionDeMarca(null);
+    // Y UN solo set (luz, pose, utilería, estilo) para toda la serie: si cada
+    // frame resolviera el suyo, dejaría de verse como un set. Por defecto, el
+    // spotlight ámbar de la marca — no una de las 8 al azar.
+    const setEstudio = resolverSetEstudio(body, referenciaPropia.length > 0);
+    // Lo que se guarda y se devuelve: el reintento de un frame tiene que poder
+    // reproducir EXACTAMENTE el mismo set o desentona con el resto de la serie.
+    const setUsado = {
+      direccion_id: setEstudio.direccion.id,
+      pose_id: setEstudio.pose?.id ?? null,
+      utileria: setEstudio.utileria,
+      estilo_extra: setEstudio.estiloExtra,
+    };
 
     // Formato narrativo + arco: definen QUÉ cuenta cada frame.
     const totalPedido = body.formato === "serie" ? (body.cantidad_frames || 3) : 1;
@@ -1021,7 +1057,9 @@ router.post("/community/historias/generar", async (req, res) => {
       formato: formatoNarrativo,
       arco,
       toneSuffix,
-      ajuste: body.pose_override || null,
+      // La idea en bruto es contexto: dice qué mostrar y con qué emoción. Sin
+      // ella el guion solo tenía el concepto de una línea para trabajar.
+      ajuste: [body.idea?.trim(), body.pose_override?.trim()].filter(Boolean).join(". ") || null,
     });
 
     // Las imágenes sí se generan en paralelo: ya comparten guion e hilo.
@@ -1031,7 +1069,7 @@ router.post("/community/historias/generar", async (req, res) => {
         concepto: body.concepto,
         frameGuion,
         layout: obtenerLayoutHistoria(frameGuion.layoutId) ?? layoutHistoriaPorDefecto(),
-        direccion: direccionArte,
+        set: setEstudio,
         hilo: guion.hilo,
         poseOverride: body.pose_override,
         textoEnImagen: body.texto_en_imagen,
@@ -1077,6 +1115,8 @@ router.post("/community/historias/generar", async (req, res) => {
         cantidad_frames: total,
         estilo_titular: estiloTitular,
         formato_narrativo: formatoNarrativo.id,
+        idea: body.idea?.trim() || undefined,
+        set: setUsado,
         hilo: guion.hilo,
         protagonista: guion.protagonista,
         frames,
@@ -1097,6 +1137,7 @@ router.post("/community/historias/generar", async (req, res) => {
         estilo_titular: estiloTitular,
         formato_narrativo: formatoNarrativo.id,
         formato_narrativo_nombre: formatoNarrativo.nombre,
+        set: setUsado,
         hilo: guion.hilo,
         fecha: row!.createdAt,
         frames,
@@ -1287,12 +1328,12 @@ function paletaDe(direccion: DireccionArte): PaletaComposicion {
 }
 
 /** Set pedido por la UI → set resuelto que entiende el generador. */
-function resolverSetSlide(body: {
+function resolverSetEstudio(body: {
   direccion_id?: string;
   pose_id?: string;
   utileria?: string;
   estilo_extra?: string;
-}, referenciaPropia = false): SetSlide {
+}, referenciaPropia = false): SetEstudio {
   const pose = body.pose_id ? PORTADA_POSES.find((p) => p.id === body.pose_id) ?? null : null;
   return {
     direccion: resolverDireccionDeMarca(body.direccion_id),
@@ -1313,12 +1354,13 @@ interface SlidePlan {
 }
 
 /**
- * Personalización del set, la misma que ofrece Portadas.
+ * Personalización del set: el MISMO objeto en Portadas, Posts IA e Historias.
  *
- * Va como objeto y no como cinco parámetros sueltos porque atraviesa cuatro
+ * Es lo que garantiza que las tres secciones generen con el mismo estándar. Va
+ * como objeto y no como cinco parámetros sueltos porque atraviesa cuatro
  * funciones encadenadas: sumarlos uno a uno era pedir un error de orden.
  */
-interface SetSlide {
+interface SetEstudio {
   /**
    * Iluminación del set, la MISMA que usan las portadas. El carrusel tenía su
    * propio fondo plano (gradiente radial + halo) mientras las portadas usaban
@@ -1341,7 +1383,7 @@ function buildSlidePrompt(
   slide: SlidePlan,
   formato: "1:1" | "4:5",
   totalSlides: number,
-  set: SetSlide,
+  set: SetEstudio,
 ): string {
   const direccion = set.direccion;
   const dims = formato === "1:1" ? "1080x1080 píxeles formato cuadrado 1:1" : "1080x1350 píxeles formato vertical 4:5";
@@ -1483,7 +1525,7 @@ If any element deviates from the reference style or violates these rules, regene
 async function generarImagenSlide(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
-  set: SetSlide,
+  set: SetEstudio,
 ): Promise<string> {
   const prompt = buildSlidePrompt(tema, tipoContenido, slide, formato, totalSlides, set);
 
@@ -1544,7 +1586,7 @@ function isRateLimitErr(err: any): boolean {
 async function generarImagenSlideConRetry(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
-  set: SetSlide,
+  set: SetEstudio,
 ): Promise<string> {
   const MAX_ATTEMPTS = 4;
   let lastErr: any;
@@ -1663,7 +1705,7 @@ ${correcciones.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
 async function generarImagenSlideConValidacion(
   tema: string, tipoContenido: string, slide: SlidePlan,
   formato: "1:1" | "4:5", referenceBase64: string | null, totalSlides: number,
-  set: SetSlide,
+  set: SetEstudio,
 ): Promise<{ imagen: string; consistente: boolean }> {
   let imagen = await generarImagenSlideConRetry(tema, tipoContenido, slide, formato, referenceBase64, totalSlides, set);
   // Con una referencia propia el juez de consistencia no aplica: compara
@@ -1782,9 +1824,13 @@ const RedactarIdeaBody = z.object({
   idea: z.string().max(2000).optional(),
   tipo_contenido: z.string().max(40).optional(),
   tipo_publicacion: z.enum(["unica", "carrusel"]).optional(),
+  /** "post" (carrusel/publicación) o "historia" (9:16). Cambia el encuadre. */
+  destino: z.enum(["post", "historia"]).optional(),
 });
 
-router.post("/community/descripciones/redactar-idea", async (req, res) => {
+// El mismo redactor para las tres secciones. La ruta con prefijo
+// /descripciones se mantiene porque ya está publicada.
+router.post(["/community/redactar-idea", "/community/descripciones/redactar-idea"], async (req, res) => {
   try {
     const body = RedactarIdeaBody.parse(req.body);
     const tema = (body.tema ?? "").trim();
@@ -1813,6 +1859,7 @@ router.post("/community/descripciones/redactar-idea", async (req, res) => {
         content: buildRedactarIdeaPostPrompt(tema, idea, catalogos, {
           tipoContenido: body.tipo_contenido,
           tipoPublicacion: body.tipo_publicacion,
+          destino: body.destino,
         }),
       }],
     });
@@ -1987,18 +2034,18 @@ Solo el JSON.`;
     const estiloTitular = resolverEstiloTitulo(body.estilo_titular);
     // Y UN solo set (luz, pose, utilería) para todo el carrusel: si cada slide
     // resolviera el suyo, dejaría de verse como una pieza.
-    const setSlide = resolverSetSlide(body, referenciaPropia.length > 0);
+    const setEstudio = resolverSetEstudio(body, referenciaPropia.length > 0);
     // Lo que se guarda y se devuelve: el reintento de una slide tiene que poder
     // reproducir EXACTAMENTE el mismo set, o desentona con el resto.
     const setUsado = {
-      direccion_id: setSlide.direccion.id,
-      pose_id: setSlide.pose?.id ?? null,
-      utileria: setSlide.utileria,
-      estilo_extra: setSlide.estiloExtra,
+      direccion_id: setEstudio.direccion.id,
+      pose_id: setEstudio.pose?.id ?? null,
+      utileria: setEstudio.utileria,
+      estilo_extra: setEstudio.estiloExtra,
     };
 
     const settled = await Promise.allSettled(
-      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad, setSlide)),
+      slidesPlan.map((s) => generarImagenSlideConValidacion(body.tema, body.tipo_contenido, s, formato, referenceBase64, cantidad, setEstudio)),
     );
 
     const imagenes = await Promise.all(
@@ -2014,7 +2061,7 @@ Solo el JSON.`;
         let imgBase64 = r.value.imagen;
         if (body.texto_en_imagen) {
           try {
-            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato, estiloTitular, paletaDe(setSlide.direccion));
+            imgBase64 = await renderTextoEnSlide(imgBase64, slide, cantidad, formato, estiloTitular, paletaDe(setEstudio.direccion));
           } catch (e) {
             console.error("[Descripciones] render texto fallo slide", slide.numero, e);
           }
@@ -2178,13 +2225,13 @@ router.post("/community/descripciones/reintentar-slide", async (req, res) => {
     }
     // El mismo set que el carrusel original: la slide regenerada tiene que
     // entrar en la serie, no verse como una pieza de otra sesión.
-    const setSlide = resolverSetSlide(body);
-    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, setSlide);
+    const setEstudio = resolverSetEstudio(body);
+    let imgBase64 = await generarImagenSlideConRetry(body.tema, body.tipo_contenido, slideParaImagen, body.formato, referenceBase64, body.total_slides, setEstudio);
     if (body.texto_en_imagen) {
       try {
         imgBase64 = await renderTextoEnSlide(
           imgBase64, slide, body.total_slides, body.formato,
-          resolverEstiloTitulo(body.estilo_titular), paletaDe(setSlide.direccion),
+          resolverEstiloTitulo(body.estilo_titular), paletaDe(setEstudio.direccion),
         );
       } catch {}
     }
@@ -2251,6 +2298,15 @@ const ReintentarHistoriaBody = z.object({
   hilo: z.string().max(400).optional(),
   /** Titulares de los otros frames, para no repetirlos al regenerar el texto. */
   otros_titulares: z.array(z.string().max(120)).max(5).optional(),
+  // Set de la serie original. Antes el reintento resolvía una luz nueva "para
+  // que los reintentos no se parezcan": el resultado era un frame con otra
+  // iluminación en medio de la serie, que es lo que no puede pasar.
+  direccion_id: z.string().max(40).optional(),
+  pose_id: z.string().max(40).optional(),
+  utileria: z.string().max(300).optional(),
+  estilo_extra: z.string().max(300).optional(),
+  /** Referencia propia de la serie: si la original no usó a Webi, el reintento tampoco. */
+  imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
 
 /**
@@ -2372,7 +2428,8 @@ router.post("/community/historias/reintentar", async (req, res) => {
 
     // 3) Regenerar imagen (el ajuste del usuario afecta a la imagen en
     // "personalizado" y "ambos"; en auto-diagnose lo escribe Vision).
-    const referenceBase64 = await getFoxRefBase64();
+    const referenciaPropia = (body.imagen_referencia_base64 ?? "").trim();
+    const referenceBase64 = referenciaPropia || (await getFoxRefBase64());
     let promptOverride: string | undefined = body.prompt_personalizado &&
       (body.modo === "personalizado" || body.modo === "ambos")
       ? body.prompt_personalizado
@@ -2388,10 +2445,9 @@ router.post("/community/historias/reintentar", async (req, res) => {
       concepto: body.concepto,
       frameGuion,
       layout,
-      // El reintento resuelve su propia variante: al regenerar UN frame suelto
-      // no tenemos la de la serie original, y forzar una fija haría que todos
-      // los reintentos se vieran iguales entre sí.
-      direccion: resolverDireccionDeMarca(null),
+      // El MISMO set que la serie original: el frame regenerado tiene que
+      // entrar en la serie, no verse como una pieza de otra sesión.
+      set: resolverSetEstudio(body, referenciaPropia.length > 0),
       hilo: body.hilo,
       promptOverride,
       textoEnImagen: body.texto_en_imagen,

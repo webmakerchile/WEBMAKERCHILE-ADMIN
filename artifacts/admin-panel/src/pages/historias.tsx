@@ -2,6 +2,12 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import {
+  useSetEstudio,
+  PersonalizacionSet,
+  IdeaConIA,
+  DIRECCION_PREDETERMINADA,
+} from "@/components/personalizacion-set";
+import {
   Sparkles, Download, AlertCircle, Loader2, Dices, Copy, Check, RefreshCw,
   Pencil, Repeat, Settings, X, Wand2, Bot, Film, BookOpen, Package,
 } from "lucide-react";
@@ -127,6 +133,13 @@ type Resultado = {
   estilo_titular?: string;
   formato_narrativo?: string;
   formato_narrativo_nombre?: string;
+  /** Set con el que se generó: los reintentos lo reutilizan tal cual. */
+  set?: {
+    direccion_id: string;
+    pose_id: string | null;
+    utileria: string | null;
+    estilo_extra: string | null;
+  };
   hilo?: string;
   frames: Frame[];
   fecha: string;
@@ -150,6 +163,13 @@ export default function HistoriasPage() {
   // null = rotación automática entre los estilos más impactantes.
   const [estiloTitular, setEstiloTitular] = useState<string | null>(null);
   // Formato narrativo: qué historia se cuenta y cómo progresa entre frames.
+  // Idea en bruto + "Escribir con IA" y personalización del set: EL MISMO hook
+  // y el MISMO panel que Portadas y Posts IA. Historias se había quedado sin
+  // ninguno de los dos, y por eso el mismo concepto salía distinto según la
+  // sección desde la que se generara.
+  const [idea, setIdea] = useState("");
+  const [redactando, setRedactando] = useState(false);
+  const set = useSetEstudio();
   const [formatoNarrativo, setFormatoNarrativo] = useState<string | null>(null);
   const [formatosNarrativos, setFormatosNarrativos] = useState<FormatoNarrativo[]>([]);
   const [formato, setFormato] = useState<Formato>("auto");
@@ -168,6 +188,45 @@ export default function HistoriasPage() {
   const [recomendacion, setRecomendacion] = useState<Recomendacion | null>(null);
   const [detectando, setDetectando] = useState(false);
   const [zippeando, setZippeando] = useState(false);
+
+  // "Escribir con IA": redacta la idea en bruto y propone el set. Cada campo
+  // se aplica solo si el usuario no lo tocó mientras la IA respondía.
+  const handleRedactarIdea = async () => {
+    if (redactando) return;
+    if (!concepto.trim() && !idea.trim()) {
+      setError("Escribe tu idea (aunque sea a lo bruto) para que la IA la redacte");
+      return;
+    }
+    const conceptoEnviado = concepto;
+    const ideaEnviada = idea;
+    setRedactando(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/community/redactar-idea`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tema: concepto.trim() || undefined,
+          idea: idea.trim() || undefined,
+          tipo_contenido: tipoHistoria,
+          destino: "historia",
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "No se pudo redactar la idea");
+      const d = data.data;
+      if (d.idea && idea === ideaEnviada) setIdea(d.idea);
+      if (d.tema && concepto === conceptoEnviado) setConcepto(d.tema.slice(0, 120));
+      if (d.estilo_titular) setEstiloTitular(d.estilo_titular);
+      const cambioSet = set.aplicarSugerencia(d);
+      showToast(cambioSet ? "✨ Idea redactada y set sugerido (revísalo abajo)" : "✨ Idea redactada");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setRedactando(false);
+    }
+  };
 
   const SORPRENDEME_HISTORY_KEY = "wm_sorprendeme_historia_history";
   const handleSorprendeme = async () => {
@@ -229,6 +288,8 @@ export default function HistoriasPage() {
           texto_en_imagen: textoEnImagen,
           estilo_titular: estiloTitular ?? undefined,
           formato_narrativo: formatoNarrativo ?? undefined,
+          idea: idea.trim() || undefined,
+          ...set.payload(),
           formato: formatoFinal,
           ...(formatoFinal === "serie" ? { cantidad_frames: cantidad || cantidadFrames } : {}),
         }),
@@ -312,6 +373,12 @@ export default function HistoriasPage() {
           estilo_titular: resultado.estilo_titular ?? undefined,
           formato_narrativo: resultado.formato_narrativo ?? undefined,
           hilo: resultado.hilo ?? undefined,
+          // El set de la serie original: sin esto el frame regenerado salía con
+          // otra luz y desentonaba con el resto.
+          direccion_id: resultado.set?.direccion_id ?? DIRECCION_PREDETERMINADA,
+          pose_id: resultado.set?.pose_id ?? undefined,
+          utileria: resultado.set?.utileria ?? undefined,
+          estilo_extra: resultado.set?.estilo_extra ?? undefined,
           guion_frame: frame.guion ?? undefined,
           otros_titulares: resultado.frames
             .filter((f) => f.numero_frame !== frame.numero_frame)
@@ -492,6 +559,14 @@ export default function HistoriasPage() {
             </p>
           </div>
 
+          <IdeaConIA
+            valor={idea}
+            onChange={setIdea}
+            onRedactar={handleRedactarIdea}
+            redactando={redactando}
+            deshabilitado={!concepto.trim() && !idea.trim()}
+          />
+
           {/* Selector de formato */}
           <div>
             <label className="block text-sm font-semibold text-foreground mb-3">Formato de historia</label>
@@ -605,6 +680,7 @@ export default function HistoriasPage() {
               nadie sabía que existía. */}
           <div className={`bg-foreground/5 rounded-xl p-4 border border-foreground/10 transition-opacity ${textoEnImagen ? "" : "opacity-50"}`}>
             <EstiloTitularPicker
+              estilos={set.opciones?.estilosTitular ?? null}
               value={estiloTitular}
               onChange={setEstiloTitular}
               descripcionAuto="El título usa el mismo motor de tipografía que las portadas — en automático rota entre los estilos impactantes."
@@ -615,6 +691,8 @@ export default function HistoriasPage() {
               </p>
             )}
           </div>
+
+          <PersonalizacionSet set={set} />
 
           {error && (
             <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
