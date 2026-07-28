@@ -15,6 +15,7 @@ import { hubWorkSessions, users } from "@workspace/db/schema";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { discordConfigured, reportToChannel, voiceStatus } from "./discord";
 import { createNotification } from "./notifications";
+import { saveDaySummary } from "./activity";
 
 const SWEEP_INTERVAL_MS = 2 * 60_000; // cada 2 min — bajo consumo para equipos pequeños
 /** Sesiones pasadas del tope de 16 h ya no suman horas: tampoco se verifican. */
@@ -66,9 +67,20 @@ async function runSweep(now: Date): Promise<void> {
     .innerJoin(users, eq(users.id, hubWorkSessions.userId))
     .where(isNull(hubWorkSessions.checkOut));
 
-  for (const s of open) {
+  // Sesiones "zombi": abiertas más allá del tope de 16 h (salida olvidada).
+  // Se cierran solas EN el tope; si quedaran abiertas para siempre, además de
+  // ensuciar el historial BLOQUEAN la entrada automática de los días
+  // siguientes (autoStart ve "sesión abierta" y no vuelve a abrir).
+  const expired = open.filter((s) => now.getTime() - new Date(s.checkIn).getTime() > SESSION_CAP_MS);
+  for (const s of expired) {
+    await autoCloseExpired(s.id, s.userId, new Date(s.checkIn)).catch((e) =>
+      console.error("[DiscordSweep] cierre automático falló:", e),
+    );
+  }
+  const active = open.filter((s) => now.getTime() - new Date(s.checkIn).getTime() <= SESSION_CAP_MS);
+
+  for (const s of active) {
     if (!s.discordUserId) continue;
-    if (now.getTime() - new Date(s.checkIn).getTime() > SESSION_CAP_MS) continue;
     const inVoice = await voiceStatus(s.discordUserId, { fresh: true });
     if (inVoice === null) continue; // no verificable: no cuenta como check
     await db
@@ -82,7 +94,54 @@ async function runSweep(now: Date): Promise<void> {
       .where(eq(hubWorkSessions.id, s.id));
   }
 
-  await autoStartSessions(now, new Set(open.map((s) => s.userId)));
+  // Solo las sesiones que siguen realmente abiertas bloquean la entrada
+  // automática: las zombis recién cerradas ya no cuentan.
+  await autoStartSessions(now, new Set(active.map((s) => s.userId)));
+}
+
+/** Minutos entre dos fechas con el mismo tope de 16 h que usa jornada. */
+function cappedMinutes(a: Date, b: Date): number {
+  return Math.min(Math.max(0, Math.round((b.getTime() - a.getTime()) / 60000)), SESSION_CAP_MS / 60000);
+}
+
+/**
+ * Cierra una sesión zombi con salida = entrada + 16 h (el mismo tope con el
+ * que jornada cuenta las horas, así el cierre no cambia ningún total) y deja
+ * el día resumido igual que un check-out manual.
+ */
+async function autoCloseExpired(sessionId: number, userId: number, checkIn: Date): Promise<void> {
+  const checkOut = new Date(checkIn.getTime() + SESSION_CAP_MS);
+  const [session] = await db
+    .update(hubWorkSessions)
+    .set({ checkOut })
+    .where(and(eq(hubWorkSessions.id, sessionId), isNull(hubWorkSessions.checkOut)))
+    .returning();
+  if (!session) return; // carrera con un check-out manual: nada que hacer
+
+  // Resumen del día (mismo criterio que el check-out manual: acumulado de la fecha).
+  try {
+    const daySessions = await db
+      .select()
+      .from(hubWorkSessions)
+      .where(and(eq(hubWorkSessions.userId, userId), eq(hubWorkSessions.workDate, session.workDate)));
+    const total = daySessions
+      .filter((x) => x.checkOut)
+      .reduce((acc, x) => acc + cappedMinutes(new Date(x.checkIn), new Date(x.checkOut!)), 0);
+    await saveDaySummary(userId, session.workDate, { minutes: total });
+  } catch (err) {
+    console.error("[DiscordSweep] resumen tras cierre automático falló:", err);
+  }
+
+  const [u] = await db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  const displayName = u?.name || u?.email || `usuario ${userId}`;
+  createNotification({
+    userId,
+    type: "system",
+    title: "Jornada cerrada automáticamente ⏱️",
+    body: "Tu jornada quedó abierta más de 16 horas (salida olvidada), así que la cerramos en el tope de 16 h. Si te conectas a Discord, se abre una nueva sola.",
+    link: "/mi-dia",
+  }).catch(() => {});
+  reportToChannel(`⏱️ **${displayName}** olvidó marcar salida: jornada cerrada automáticamente en el tope de 16 h`).catch(() => {});
 }
 
 /** Día local YYYY-MM-DD en America/Santiago (mismo criterio que jornada). */

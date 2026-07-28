@@ -14,6 +14,7 @@ import {
   voiceStatus,
 } from "../lib/discord";
 import { saveDaySummary } from "../lib/activity";
+import { createNotification } from "../lib/notifications";
 import { minutosDePausas, minutosNetos, formatearDuracion } from "../lib/jornada-pausas";
 
 /**
@@ -328,9 +329,13 @@ router.get("/jornada/me", async (req: Request, res: Response) => {
   }
 });
 
-const checkInSchema = z.object({ onDiscord: z.boolean().optional().default(false) });
+const checkInSchema = z.object({
+  onDiscord: z.boolean().optional().default(false),
+  /** Solo para quien supervisa: marcar la entrada de otra persona (respaldo si el bot falla). */
+  userId: z.number().int().positive().optional(),
+});
 
-/** POST /jornada/check-in — marca la llegada (pasa lista). 409 si ya hay una abierta. */
+/** POST /jornada/check-in — marca la llegada (propia, o de otra persona si supervisas). 409 si ya hay una abierta. */
 router.post("/jornada/check-in", async (req: Request, res: Response) => {
   const parsed = checkInSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -339,23 +344,30 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
   }
   try {
     const user = me(req);
+    // Mismo criterio que las pausas: cualquiera marca la suya; marcar la de
+    // otra persona queda reservado a dirección, ventas y RRHH.
+    const objetivo = objetivoPausa(req, parsed.data.userId);
+    if (!objetivo) {
+      res.status(403).json({ error: "Solo dirección, ventas y RRHH pueden marcar la entrada de otra persona" });
+      return;
+    }
     const open = await db.select({ id: hubWorkSessions.id }).from(hubWorkSessions)
-      .where(and(eq(hubWorkSessions.userId, user.id), isNull(hubWorkSessions.checkOut)))
+      .where(and(eq(hubWorkSessions.userId, objetivo.userId), isNull(hubWorkSessions.checkOut)))
       .limit(1);
     if (open.length > 0) {
-      res.status(409).json({ error: "Ya tienes una jornada abierta" });
+      res.status(409).json({ error: objetivo.ajena ? "Esa persona ya tiene una jornada abierta" : "Ya tienes una jornada abierta" });
       return;
     }
     // Verificación automática de voz (si el usuario está emparejado y hay bot).
-    const [u] = await db.select({ discordUserId: users.discordUserId, name: users.name }).from(users)
-      .where(eq(users.id, user.id))
+    const [u] = await db.select({ discordUserId: users.discordUserId, name: users.name, email: users.email }).from(users)
+      .where(eq(users.id, objetivo.userId))
       .limit(1);
     let verified: boolean | null = null;
     if (u?.discordUserId && discordConfigured()) {
       verified = await voiceStatus(u.discordUserId, { fresh: true });
     }
     const values: typeof hubWorkSessions.$inferInsert = {
-      userId: user.id,
+      userId: objetivo.userId,
       workDate: localDate(),
       // La autodeclaración se conserva; una verificación positiva también la marca.
       onDiscord: parsed.data.onDiscord || verified === true,
@@ -370,14 +382,26 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
     }
     const [session] = await db.insert(hubWorkSessions).values(values).returning();
     res.status(201).json({ session, discordVerified: verified });
-    // Reporte al canal de Discord (fire-and-forget).
-    const displayName = u?.name || user.email;
+    // Aviso a la persona y reporte al canal de Discord (fire-and-forget).
+    const displayName = u?.name || u?.email || `usuario ${objetivo.userId}`;
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago" });
     const dcIcon = verified === true ? " 🎧" : "";
-    reportToChannel(`✅ **${displayName}** marcó **entrada** a las ${hora}${dcIcon}`).catch(() => {});
+    if (objetivo.ajena) {
+      const quien = user.name || user.email || "supervisión";
+      createNotification({
+        userId: objetivo.userId,
+        type: "system",
+        title: "Jornada iniciada ✅",
+        body: `${quien} marcó tu entrada a las ${hora}; tus horas ya están contando. Marca tu salida al terminar.`,
+        link: "/mi-dia",
+      }).catch(() => {});
+      reportToChannel(`✅ **${displayName}** — entrada marcada por **${quien}** a las ${hora}${dcIcon}`).catch(() => {});
+    } else {
+      reportToChannel(`✅ **${displayName}** marcó **entrada** a las ${hora}${dcIcon}`).catch(() => {});
+    }
   } catch (err) {
     if (isUniqueViolation(err)) {
-      res.status(409).json({ error: "Ya tienes una jornada abierta" });
+      res.status(409).json({ error: "Ya hay una jornada abierta" });
       return;
     }
     console.error("[jornada/check-in POST]", err);

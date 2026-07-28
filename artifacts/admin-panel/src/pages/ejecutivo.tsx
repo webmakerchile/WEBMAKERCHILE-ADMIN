@@ -4914,6 +4914,27 @@ function AttendanceView() {
     onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al pausar"),
   });
 
+  // Marcar la entrada de OTRA persona: respaldo manual cuando el bot de
+  // Discord no la detectó (o la persona no está en voz). Mismo gate de rol
+  // en el servidor que las pausas.
+  const startMut = useMutation({
+    mutationFn: async (userId: number) => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/check-in`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo iniciar la jornada");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jornada-overview"] }),
+    onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al iniciar la jornada"),
+  });
+
   const mapMut = useMutation({
     mutationFn: async (p: { userId: number; discordUserId: string | null; discordTag: string | null }) => {
       const res = await fetch(`${HUB_API_BASE}/jornada/discord/map`, {
@@ -5102,6 +5123,19 @@ function AttendanceView() {
                       return <Headphones className="w-3.5 h-3.5 att-disc dim" aria-label="Autodeclarado en Discord" />;
                     return null;
                   })()}
+                  {isToday && !m.today?.open && (
+                    <button
+                      className="att-pause"
+                      title="Iniciar su jornada (respaldo manual)"
+                      disabled={startMut.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startMut.mutate(m.id);
+                      }}
+                    >
+                      ▶
+                    </button>
+                  )}
                   {isToday && m.today?.open && (
                     <button
                       className="att-pause"
