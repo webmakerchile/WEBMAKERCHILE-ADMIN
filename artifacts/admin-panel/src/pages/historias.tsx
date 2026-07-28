@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
+import { TiraBorradores } from "@/components/tira-borradores";
 import {
   useSetEstudio,
   PersonalizacionSet,
@@ -188,6 +189,8 @@ export default function HistoriasPage() {
   const [recomendacion, setRecomendacion] = useState<Recomendacion | null>(null);
   const [detectando, setDetectando] = useState(false);
   const [zippeando, setZippeando] = useState(false);
+  // Sube tras cada generación para que la tira de borradores se refresque.
+  const [versionBorradores, setVersionBorradores] = useState(0);
 
   // "Escribir con IA": redacta la idea en bruto y propone el set. Cada campo
   // se aplica solo si el usuario no lo tocó mientras la IA respondía.
@@ -297,6 +300,7 @@ export default function HistoriasPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Error al generar");
       setResultado(data.data);
+      setVersionBorradores((v) => v + 1);
       const frameError = (data.data.frames as Frame[]).find((f) => f.error);
       if (frameError) showToast(`⚠️ Frame ${frameError.numero_frame} falló — usa “Reintentar” para reintentar`);
     } catch (err: any) {
@@ -439,7 +443,10 @@ export default function HistoriasPage() {
     const link = document.createElement("a");
     link.href = frame.imagen;
     const slug = (resultado?.concepto || "historia").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32);
-    link.download = `historia_${slug}_${frame.numero_frame}_${frame.rol}.png`;
+    // La extensión sale del data URL: un borrador restaurado vuelve en webp y
+    // llamarlo .png haría que algunos editores lo rechacen.
+    const ext = frame.imagen.startsWith("data:image/webp") ? "webp" : "png";
+    link.download = `historia_${slug}_${frame.numero_frame}_${frame.rol}.${ext}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -455,8 +462,9 @@ export default function HistoriasPage() {
         if (!frame.imagen) continue;
         const base64 = frame.imagen.split(",")[1];
         if (!base64) continue;
+        const ext = frame.imagen.startsWith("data:image/webp") ? "webp" : "png";
         zip.file(
-          `frame_${String(frame.numero_frame).padStart(2, "0")}_${frame.rol}.png`,
+          `frame_${String(frame.numero_frame).padStart(2, "0")}_${frame.rol}.${ext}`,
           base64,
           { base64: true },
         );
@@ -717,6 +725,39 @@ export default function HistoriasPage() {
             )}
           </button>
         </motion.form>
+
+        <TiraBorradores
+          tipo="historia"
+          recargar={versionBorradores}
+          onError={setError}
+          onCargar={(d) => {
+            // El borrador vuelve como resultado activo: se puede seguir
+            // reintentando frames y descargando desde donde se dejó.
+            setResultado({
+              id: d.id,
+              formato: d.formato ?? "unica",
+              tipo_historia: d.tipo_historia,
+              concepto: d.concepto,
+              texto_en_imagen: d.texto_en_imagen ?? true,
+              estilo_titular: d.estilo_titular,
+              formato_narrativo: d.formato_narrativo,
+              set: d.set,
+              hilo: d.hilo,
+              fecha: d.creado,
+              frames: (d.piezas ?? d.frames ?? []).map((f: any, i: number) => ({
+                numero_frame: f.numero ?? f.numero_frame ?? i + 1,
+                total_frames: (d.piezas ?? d.frames ?? []).length,
+                rol: f.rol,
+                layout: f.layout,
+                imagen: f.imagen ?? "",
+                texto: f.texto,
+                guion: f.guion,
+              })),
+            });
+            setFrameActivo(0);
+            showToast("📂 Borrador abierto");
+          }}
+        />
 
         {/* Modal de recomendación auto */}
         {recomendacion && (

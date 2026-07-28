@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat, Wand2, SlidersHorizontal, ChevronDown, Upload } from "lucide-react";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
+import { TiraBorradores } from "@/components/tira-borradores";
 import {
   useSetEstudio,
   PersonalizacionSet,
@@ -101,6 +102,8 @@ export default function DescripcionesPage() {
   const [ajusteTexto, setAjusteTexto] = useState("");
   const [intentos, setIntentos] = useState<Record<number, number>>({});
   const [toast, setToast] = useState<string | null>(null);
+  // Sube tras cada generación para que la tira de borradores se refresque.
+  const [versionBorradores, setVersionBorradores] = useState(0);
 
   useEffect(() => {
     if (loading) {
@@ -238,6 +241,7 @@ export default function DescripcionesPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Error al generar");
       setResultado(data.data);
+      setVersionBorradores((v) => v + 1);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -347,7 +351,10 @@ export default function DescripcionesPage() {
     if (!slide.imagen) return;
     const link = document.createElement("a");
     link.href = slide.imagen;
-    link.download = `slide_${slide.numero_slide}_${Date.now()}.png`;
+    // La extensión sale del data URL: un borrador restaurado vuelve en webp y
+    // llamarlo .png haría que algunos editores lo rechacen.
+    const ext = slide.imagen.startsWith("data:image/webp") ? "webp" : "png";
+    link.download = `slide_${slide.numero_slide}_${Date.now()}.${ext}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -363,7 +370,8 @@ export default function DescripcionesPage() {
         if (!slide.imagen) continue;
         const base64 = slide.imagen.split(",")[1];
         if (!base64) continue;
-        zip.file(`slide_${String(slide.numero_slide).padStart(2, "0")}_${slide.rol}.png`, base64, { base64: true });
+        const ext = slide.imagen.startsWith("data:image/webp") ? "webp" : "png";
+        zip.file(`slide_${String(slide.numero_slide).padStart(2, "0")}_${slide.rol}.${ext}`, base64, { base64: true });
       }
       const txt = REDES
         .filter((r) => resultado.descripciones[r.value])
@@ -619,6 +627,36 @@ export default function DescripcionesPage() {
             )}
           </button>
         </motion.form>
+
+        <TiraBorradores
+          tipo="post"
+          recargar={versionBorradores}
+          onError={setError}
+          onCargar={(d) => {
+            // El borrador vuelve como resultado activo: se puede seguir
+            // reintentando slides y descargando desde donde se dejó.
+            setResultado({
+              id: d.id,
+              fecha: d.creado,
+              tema: d.tema,
+              tipo_contenido: d.tipo_contenido,
+              tipo_publicacion: d.tipo_publicacion,
+              texto_en_imagen: d.texto_en_imagen,
+              estilo_titular: d.estilo_titular,
+              set: d.set,
+              imagenes: (d.piezas ?? d.slides_textos ?? []).map((sl: any, i: number) => ({
+                numero_slide: sl.numero ?? i + 1,
+                rol: sl.rol,
+                titulo: sl.titulo,
+                subtitulo: sl.subtitulo,
+                imagen: sl.imagen ?? null,
+              })),
+              descripciones: d.descripciones ?? {},
+            });
+            setSlideActual(0);
+            showToast("📂 Borrador abierto");
+          }}
+        />
 
         {!loading && !resultado && !error && (
           <EmptyState

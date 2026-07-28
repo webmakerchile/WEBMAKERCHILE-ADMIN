@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 import sharp from "sharp";
 import { db } from "@workspace/db";
 import { communityContent } from "@workspace/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { firstText } from "../../lib/gemini-parts";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
@@ -51,6 +51,7 @@ import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-ne
 import { resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte } from "../../lib/cover-style";
 import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
 import { buildRedactarIdeaPostPrompt, parseIdeaPost } from "../../lib/redactar-idea-post";
+import { planPurga, avisoCaducidad, diasRestantes, DIAS_RETENCION, MAX_BORRADORES } from "../../lib/borradores";
 import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -1101,6 +1102,9 @@ router.post("/community/historias/generar", async (req, res) => {
     }
 
     const primerImg = frames.find((f) => f.imagen)?.imagen || "";
+    // Miniatura para la tira de borradores: la lista NO puede viajar con las
+    // imágenes completas (son decenas de megas por petición).
+    const thumb = await miniatura(primerImg);
 
     const [row] = await db.insert(communityContent).values({
       kind: "historia",
@@ -1117,6 +1121,19 @@ router.post("/community/historias/generar", async (req, res) => {
         formato_narrativo: formatoNarrativo.id,
         idea: body.idea?.trim() || undefined,
         set: setUsado,
+        thumb,
+        // Las piezas COMPLETAS, no solo la primera: sin esto una serie de 5
+        // frames se guardaba con 1 y las otras 4 se perdían al generar.
+        piezas: await Promise.all(
+          frames.map(async (f) => ({
+            numero: f.numero_frame,
+            rol: f.rol,
+            layout: f.layout,
+            texto: f.texto,
+            guion: f.guion,
+            imagen: await comprimirParaBorrador(f.imagen),
+          })),
+        ),
         hilo: guion.hilo,
         protagonista: guion.protagonista,
         frames,
@@ -1125,6 +1142,9 @@ router.post("/community/historias/generar", async (req, res) => {
       },
       imageUrl: primerImg,
     }).returning();
+
+    // Barrido oportunista: limpiar al guardar evita depender de un cron.
+    void purgarBorradores("historia");
 
     res.json({
       success: true,
@@ -2085,6 +2105,8 @@ Solo el JSON.`;
       descripciones.twitter.post_completo = recortarLimpio(descripciones.twitter.post_completo, PLATFORM_LIMITS.x);
     }
 
+    const thumb = await miniatura(imagenes.find((i) => i.imagen)?.imagen ?? null);
+
     const [row] = await db.insert(communityContent).values({
       kind: "descripcion",
       subtype: body.tipo_contenido,
@@ -2095,10 +2117,22 @@ Solo el JSON.`;
         texto_en_imagen: body.texto_en_imagen, estilo_titular: estiloTitular,
         idea: ideaBruta || undefined,
         set: setUsado,
+        thumb,
+        piezas: await Promise.all(
+          imagenes.map(async (im) => ({
+            numero: im.numero_slide,
+            rol: im.rol,
+            titulo: im.titulo,
+            subtitulo: im.subtitulo,
+            imagen: await comprimirParaBorrador(im.imagen),
+          })),
+        ),
         descripciones, slides_textos: slidesPlan,
       },
       imageUrl: imagenes.find((i) => i.imagen)?.imagen || null,
     }).returning();
+
+    void purgarBorradores("post");
 
     res.json({
       success: true,
@@ -2489,6 +2523,165 @@ router.get("/community/descripciones", async (_req, res) => {
 router.delete("/community/descripciones/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) { res.status(400).json({ success: false, error: "id inválido" }); return; }
+  await db.delete(communityContent).where(eq(communityContent.id, id));
+  res.json({ success: true });
+});
+
+/* ==================== Borradores (Historias y Posts IA) ================== */
+//
+// Cada generación YA se guardaba en `community_content`. Lo que faltaba era
+// poder recuperarla — nada en la interfaz volvía a mostrarla, así que salir
+// de la página se sentía como perderlo todo — y que algo la borrara alguna
+// vez: las filas llevan las imágenes en base64 dentro del JSON y la tabla
+// crecía sin techo.
+//
+// La lista viaja SOLO con miniaturas. Devolver las filas enteras (que es lo
+// que hacían /community/historias y /community/descripciones) son decenas de
+// megas por petición, y por eso no había UI montada encima.
+
+const KIND_POR_TIPO = { historia: "historia", post: "descripcion" } as const;
+type TipoBorrador = keyof typeof KIND_POR_TIPO;
+
+/**
+ * Imagen comprimida para guardar en el borrador.
+ *
+ * El borrador guardaba SOLO la primera imagen: de un carrusel de 8 slides se
+ * perdían 7 en el momento de generar. Guardarlas todas en PNG base64 tampoco
+ * vale — son megas por slide dentro de una fila JSON. En webp de calidad alta
+ * la ilustración es indistinguible y pesa alrededor de ocho veces menos, que
+ * es lo que hace viable guardar la pieza ENTERA.
+ */
+async function comprimirParaBorrador(imagen: string | null | undefined): Promise<string | null> {
+  if (!imagen) return null;
+  const crudo = imagen.startsWith("data:") ? imagen.replace(/^data:[^;]+;base64,/, "") : imagen;
+  if (!crudo) return null;
+  try {
+    const buf = await sharp(Buffer.from(crudo, "base64")).webp({ quality: 86 }).toBuffer();
+    return `data:image/webp;base64,${buf.toString("base64")}`;
+  } catch (e) {
+    console.warn("[Borradores] no pude comprimir la pieza:", (e as Error).message);
+    return null;
+  }
+}
+
+/** Miniatura webp de una imagen base64 o data URL. */
+async function miniatura(imagen: string | null | undefined): Promise<string> {
+  if (!imagen) return "";
+  const crudo = imagen.startsWith("data:") ? imagen.replace(/^data:[^;]+;base64,/, "") : imagen;
+  if (!crudo) return "";
+  try {
+    const buf = await sharp(Buffer.from(crudo, "base64"))
+      .resize(320, undefined, { withoutEnlargement: true })
+      .webp({ quality: 70 })
+      .toBuffer();
+    return `data:image/webp;base64,${buf.toString("base64")}`;
+  } catch (e) {
+    console.warn("[Borradores] no pude generar miniatura:", (e as Error).message);
+    return "";
+  }
+}
+
+/**
+ * Borra los borradores caducados de un tipo.
+ *
+ * Se llama después de guardar (barrido oportunista) y al arrancar. Nunca deja
+ * la lista vacía: ver `planPurga`.
+ */
+async function purgarBorradores(tipo: TipoBorrador): Promise<number> {
+  try {
+    const filas = await db
+      .select({ id: communityContent.id, createdAt: communityContent.createdAt })
+      .from(communityContent)
+      .where(eq(communityContent.kind, KIND_POR_TIPO[tipo]));
+    const plan = planPurga(filas);
+    if (plan.ids.length === 0) return 0;
+    await db.delete(communityContent).where(inArray(communityContent.id, plan.ids));
+    const caducados = plan.ids.filter((id) => plan.motivos[id] === "caducado").length;
+    console.log(
+      `[Borradores] ${tipo}: purgados ${plan.ids.length} (${caducados} por antigüedad, ${plan.ids.length - caducados} por tope)`,
+    );
+    return plan.ids.length;
+  } catch (e) {
+    // Nunca romper una generación por no poder limpiar.
+    console.warn(`[Borradores] purga de ${tipo} falló: ${(e as Error).message}`);
+    return 0;
+  }
+}
+
+/** Barrido de arranque: se llama desde el boot del servidor. */
+export async function purgarBorradoresCaducados(): Promise<void> {
+  await purgarBorradores("historia");
+  await purgarBorradores("post");
+}
+
+router.get("/community/borradores", async (req, res) => {
+  const tipo = (req.query.tipo === "historia" ? "historia" : "post") as TipoBorrador;
+  try {
+    const rows = await db
+      .select({
+        id: communityContent.id,
+        topic: communityContent.topic,
+        subtype: communityContent.subtype,
+        data: communityContent.data,
+        imageUrl: communityContent.imageUrl,
+        createdAt: communityContent.createdAt,
+      })
+      .from(communityContent)
+      .where(eq(communityContent.kind, KIND_POR_TIPO[tipo]))
+      .orderBy(desc(communityContent.createdAt))
+      .limit(MAX_BORRADORES);
+
+    const borradores = await Promise.all(
+      rows.map(async (r) => {
+        const d = (r.data ?? {}) as Record<string, any>;
+        // La miniatura se calcula al vuelo solo si la fila es antigua y no la
+        // trae guardada; las nuevas la guardan al generar.
+        const thumb = typeof d.thumb === "string" && d.thumb ? d.thumb : await miniatura(r.imageUrl);
+        return {
+          id: r.id,
+          titulo: r.topic,
+          subtipo: r.subtype,
+          thumb,
+          piezas: Array.isArray(d.frames) ? d.frames.length : Array.isArray(d.imagenes) ? d.imagenes.length : 1,
+          creado: r.createdAt.toISOString(),
+          caducidad: avisoCaducidad(r.createdAt),
+          dias_restantes: diasRestantes(r.createdAt),
+        };
+      }),
+    );
+    res.json({ success: true, data: { borradores, dias_retencion: DIAS_RETENCION } });
+  } catch (err: any) {
+    console.error("[Borradores] listar:", err);
+    res.status(500).json({ success: false, error: err.message || "Error interno" });
+  }
+});
+
+router.get("/community/borradores/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ success: false, error: "id inválido" });
+    return;
+  }
+  const [row] = await db.select().from(communityContent).where(eq(communityContent.id, id)).limit(1);
+  if (!row || (row.kind !== "historia" && row.kind !== "descripcion")) {
+    res.status(404).json({ success: false, error: "Borrador no encontrado" });
+    return;
+  }
+  const d = (row.data ?? {}) as Record<string, any>;
+  // `thumb` fuera: pesa y quien abre el borrador ya tiene las imágenes reales.
+  const { thumb: _omitido, ...datos } = d;
+  res.json({
+    success: true,
+    data: { id: row.id, tipo: row.kind === "historia" ? "historia" : "post", creado: row.createdAt.toISOString(), ...datos },
+  });
+});
+
+router.delete("/community/borradores/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ success: false, error: "id inválido" });
+    return;
+  }
   await db.delete(communityContent).where(eq(communityContent.id, id));
   res.json({ success: true });
 });
