@@ -155,31 +155,60 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
       return;
     }
 
-    // Try to get page info if pages_show_list was granted
-    let pageId: string | null = null;
-    let pageName: string | null = null;
-    let pageAccessToken: string | null = null;
-    let pagePicture: string | null = null;
+    // El token de usuario se guarda SIEMPRE: es lo que permite volver a listar
+    // las páginas después sin repetir todo el login.
+    const guardarUsuario = async (extra: Record<string, unknown> = {}) => {
+      await db.update(users).set({
+        facebookUserAccessToken: longLivedUserToken,
+        facebookTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+        ...extra,
+      }).where(eq(users.id, currentUser.id));
+    };
 
-    if (pagesData.data && pagesData.data.length > 0) {
-      const page = pagesData.data[0];
-      pageId = page.id;
-      pageName = page.name;
-      pageAccessToken = page.access_token;
-      pagePicture = page.picture?.data?.url || null;
-      console.log(`[Facebook] Connected page "${pageName}" (${pageId}) for user ${currentUser.id}`);
-    } else {
-      console.log(`[Facebook] No pages found — saving user token only for user ${currentUser.id}`);
+    // Si Graph devolvió un error, NO es "no hay páginas": es que algo falló y
+    // hay que decirlo. Tratarlo como lista vacía escondía el motivo real.
+    if (pagesData.error) {
+      console.error("[Facebook] /me/accounts error:", pagesData.error);
+      await guardarUsuario();
+      res.redirect("/cuentas?facebook=error&msg=" + encodeURIComponent(pagesData.error.message || "No se pudieron listar las páginas"));
+      return;
     }
 
-    await db.update(users).set({
-      facebookPageId: pageId,
-      facebookPageName: pageName,
-      facebookPagePicture: pagePicture,
-      facebookPageAccessToken: pageAccessToken,
-      facebookUserAccessToken: longLivedUserToken,
-      facebookTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
-    }).where(eq(users.id, currentUser.id));
+    const paginas: any[] = Array.isArray(pagesData.data) ? pagesData.data : [];
+
+    // CERO páginas: antes se redirigía a "connected" con los campos de página
+    // en null. El equipo creía que Facebook estaba conectado y solo se enteraba
+    // al publicar, con el (#200) de Meta. Ahora se dice de inmediato.
+    if (paginas.length === 0) {
+      console.log(`[Facebook] Sin páginas para el usuario ${currentUser.id}`);
+      await guardarUsuario({
+        facebookPageId: null,
+        facebookPageName: null,
+        facebookPagePicture: null,
+        facebookPageAccessToken: null,
+      });
+      res.redirect("/cuentas?facebook=sin_paginas");
+      return;
+    }
+
+    // VARIAS páginas: elegir la primera a ciegas es inaceptable en una agencia
+    // que administra páginas de clientes — publicaría en la cuenta equivocada.
+    // Se guarda el token de usuario y se manda a elegir.
+    if (paginas.length > 1) {
+      console.log(`[Facebook] ${paginas.length} páginas disponibles para el usuario ${currentUser.id}: hay que elegir`);
+      await guardarUsuario();
+      res.redirect("/cuentas?facebook=elegir_pagina");
+      return;
+    }
+
+    const page = paginas[0];
+    await guardarUsuario({
+      facebookPageId: page.id,
+      facebookPageName: page.name,
+      facebookPagePicture: page.picture?.data?.url || null,
+      facebookPageAccessToken: page.access_token,
+    });
+    console.log(`[Facebook] Página conectada "${page.name}" (${page.id}) para el usuario ${currentUser.id}`);
     // Fresh token → drop any stale "revoked" flag so the UI stops nagging.
     try { await clearNetworkRevoked(currentUser.id, "facebook"); } catch {}
 
@@ -187,6 +216,94 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error("[Facebook] Callback error:", err.message);
     res.redirect("/?facebook=error&msg=" + encodeURIComponent(err.message));
+  }
+});
+
+/**
+ * GET /facebook/pages — páginas que administra el usuario conectado.
+ *
+ * Existe porque el callback ya no elige una a ciegas: una agencia administra
+ * varias páginas (la propia y las de sus clientes) y publicar en la equivocada
+ * es peor que no publicar.
+ */
+router.get("/facebook/pages", async (req: Request, res: Response) => {
+  const user = req.user as { id: number; facebookUserAccessToken?: string | null } | undefined;
+  if (!user) { res.status(401).json({ error: "No autenticado" }); return; }
+
+  const [fila] = await db.select({ token: users.facebookUserAccessToken, pageId: users.facebookPageId })
+    .from(users).where(eq(users.id, user.id)).limit(1);
+  if (!fila?.token) {
+    res.status(409).json({
+      error: "Conecta primero tu cuenta de Facebook para poder listar tus páginas.",
+      code: "sin_token",
+    });
+    return;
+  }
+
+  try {
+    const r = await fetch(
+      `${FB_GRAPH_BASE}/me/accounts?fields=id,name,access_token,picture{url}&access_token=${encodeURIComponent(fila.token)}`,
+    );
+    const data: any = await r.json();
+    if (data.error) {
+      res.status(502).json({ error: data.error.message || "Facebook no devolvió tus páginas" });
+      return;
+    }
+    const paginas = (Array.isArray(data.data) ? data.data : []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      picture: p.picture?.data?.url || null,
+      selected: p.id === fila.pageId,
+    }));
+    res.json({
+      pages: paginas,
+      // Sin páginas el problema NO está en el panel: la app de Meta no tiene
+      // ninguna página autorizada, y eso se arregla en Meta, no aquí.
+      hint: paginas.length === 0
+        ? "Tu usuario no administra ninguna página que la app pueda usar. En el login de Facebook hay que marcar la página y conceder los permisos de publicación; si la página es de un cliente, tienes que ser administrador de ella."
+        : null,
+    });
+  } catch (err: any) {
+    console.error("[Facebook] listar páginas falló:", err.message);
+    res.status(502).json({ error: "No se pudieron listar tus páginas de Facebook" });
+  }
+});
+
+/** POST /facebook/select-page — fija en cuál de las páginas se publica. */
+router.post("/facebook/select-page", async (req: Request, res: Response) => {
+  const user = req.user as { id: number } | undefined;
+  if (!user) { res.status(401).json({ error: "No autenticado" }); return; }
+  const pageId = typeof req.body?.pageId === "string" ? req.body.pageId.trim() : "";
+  if (!pageId) { res.status(400).json({ error: "Falta la página" }); return; }
+
+  const [fila] = await db.select({ token: users.facebookUserAccessToken })
+    .from(users).where(eq(users.id, user.id)).limit(1);
+  if (!fila?.token) { res.status(409).json({ error: "Conecta primero tu cuenta de Facebook." }); return; }
+
+  try {
+    const r = await fetch(
+      `${FB_GRAPH_BASE}/me/accounts?fields=id,name,access_token,picture{url}&access_token=${encodeURIComponent(fila.token)}`,
+    );
+    const data: any = await r.json();
+    // El token de página se toma SIEMPRE de la respuesta de Meta, nunca del
+    // cliente: si viniera del navegador, cualquiera podría publicar con un
+    // token ajeno mandando el id de otra página.
+    const page = (Array.isArray(data.data) ? data.data : []).find((p: any) => p.id === pageId);
+    if (!page) {
+      res.status(404).json({ error: "Esa página ya no aparece entre las que administras." });
+      return;
+    }
+    await db.update(users).set({
+      facebookPageId: page.id,
+      facebookPageName: page.name,
+      facebookPagePicture: page.picture?.data?.url || null,
+      facebookPageAccessToken: page.access_token,
+    }).where(eq(users.id, user.id));
+    try { await clearNetworkRevoked(user.id, "facebook"); } catch {}
+    res.json({ ok: true, pageName: page.name });
+  } catch (err: any) {
+    console.error("[Facebook] seleccionar página falló:", err.message);
+    res.status(502).json({ error: "No se pudo fijar la página" });
   }
 });
 
