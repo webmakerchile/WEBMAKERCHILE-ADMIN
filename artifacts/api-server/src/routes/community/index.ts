@@ -51,6 +51,7 @@ import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-ne
 import { resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte } from "../../lib/cover-style";
 import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
 import { posesCompatibles, textoEncuadre, textoGesto } from "../../lib/set-presets";
+import { prepararFotos, type FotosPorRanura } from "../../lib/foto-ranura";
 import { buildRedactarIdeaPostPrompt, parseIdeaPost } from "../../lib/redactar-idea-post";
 import { planPurga, avisoCaducidad, diasRestantes, DIAS_RETENCION, MAX_BORRADORES } from "../../lib/borradores";
 import {
@@ -2762,6 +2763,13 @@ const GenerarInteractivoBody = z.object({
   direccion_id: z.string().max(40).optional(),
   ...CAMPOS_PERSONAJE,
   imagen_referencia_base64: z.string().max(12_000_000).optional(),
+  /**
+   * Fotos propias por ranura del formato ("antes", "despues", "marco"…).
+   *
+   * No se le pasan al modelo de imagen: se componen encima, en el hueco que
+   * el formato reserva, para que salgan tal cual las subieron.
+   */
+  fotos: z.record(z.string().max(40), z.string().max(12_000_000)).optional(),
 });
 
 router.post("/community/interactivo/generar", async (req, res) => {
@@ -2851,7 +2859,14 @@ router.post("/community/interactivo/generar", async (req, res) => {
     // 3) El elemento interactivo encima.
     const dims = FORMATO_DIMS[body.relacion];
     const base = frame.imagen.replace(/^data:[^;]+;base64,/, "");
-    const conBloque = await componerInteractivo(base, neutro, formato, body.relacion, paletaDe(setEstudio.direccion));
+    // Las ranuras vacías no son un error —las fotos son opcionales— pero una
+    // foto rota sí, y se dice cuál antes de gastar la composición.
+    const preparadas = await prepararFotos(body.fotos, formato.ranurasFoto ?? [], 1);
+    if (!preparadas.ok) {
+      res.status(400).json({ success: false, error: preparadas.error });
+      return;
+    }
+    const conBloque = await componerInteractivo(base, neutro, formato, body.relacion, paletaDe(setEstudio.direccion), preparadas.fotos);
 
     const thumb = await miniatura(`data:image/png;base64,${conBloque}`);
     const [row] = await db.insert(communityContent).values({
@@ -2918,6 +2933,7 @@ async function componerInteractivo(
   formato: FormatoInteractivo,
   relacion: "9:16" | "1:1" | "4:5",
   paleta: PaletaComposicion,
+  fotos: FotosPorRanura = new Map(),
 ): Promise<string> {
   const { width, height } = FORMATO_DIMS[relacion];
   const buf = await sharp(Buffer.from(imagenBase64, "base64"))
@@ -2927,7 +2943,7 @@ async function componerInteractivo(
 
   // La zona baja: 34% del alto, con aire contra el borde.
   const zona = { y: Math.round(height * 0.60), alto: Math.round(height * 0.34) };
-  const cuerpo = bloqueInteractivoSvg(formato.bloque, contenido, formato, { width, height }, zona, paleta);
+  const cuerpo = bloqueInteractivoSvg(formato.bloque, contenido, formato, { width, height }, zona, paleta, fotos);
   if (!cuerpo) return buf.toString("base64");
 
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${svgDefs(paleta.scrim)}${cuerpo}</svg>`;
