@@ -6,11 +6,18 @@
 // con una FORMA distinta — y se ve antes de elegirla, en su portada.
 
 import { useEffect, useState } from "react";
-import { Loader2, Sparkles, Download, AlertCircle, Instagram, Check } from "lucide-react";
+import { Loader2, Sparkles, Download, AlertCircle, Instagram, Check, Upload, X } from "lucide-react";
 import { PortadaFormato, type FormatoPortada } from "@/components/portada-formato";
 import { useSetEstudio, PersonalizacionSet, IdeaConIA } from "@/components/personalizacion-set";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
+
+/** Un hueco del formato donde cabe una foto propia. */
+interface RanuraFoto {
+  id: string;
+  etiqueta: string;
+  ayuda: string;
+}
 
 interface Formato extends FormatoPortada {
   id: string;
@@ -18,6 +25,83 @@ interface Formato extends FormatoPortada {
   gancho: string;
   descripcion: string;
   stickerIg: string | null;
+  /** Vacío en los formatos donde una foto no aporta nada. */
+  ranurasFoto: RanuraFoto[];
+}
+
+/**
+ * Casillas de foto del formato elegido.
+ *
+ * Solo aparecen donde tienen sentido: un "antes y después" sin fotos son dos
+ * rectángulos con texto, pero llenar de casillas de subida los formatos que no
+ * las usan sería ruido en la mayoría de la pantalla.
+ */
+function RanurasFoto({
+  ranuras, fotos, onCambiar,
+}: {
+  ranuras: RanuraFoto[];
+  fotos: Record<string, { base64: string; preview: string }>;
+  onCambiar: (id: string, valor: { base64: string; preview: string } | null) => void;
+}) {
+  if (ranuras.length === 0) return null;
+
+  const leer = (id: string, file: File) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const r = String(reader.result);
+      onCambiar(id, { base64: r.split(",")[1] ?? "", preview: r });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-semibold text-foreground">
+        Fotos de la pieza <span className="text-xs text-muted-foreground font-normal">(opcional)</span>
+      </label>
+      <div className={`grid gap-2 ${ranuras.length > 2 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2"}`}>
+        {ranuras.map((r) => {
+          const foto = fotos[r.id];
+          return (
+            <div key={r.id} className="space-y-1">
+              {foto ? (
+                <div className="relative rounded-xl overflow-hidden border border-foreground/10 aspect-square">
+                  <img src={foto.preview} alt={r.etiqueta} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => onCambiar(r.id, null)}
+                    aria-label={`Quitar ${r.etiqueta}`}
+                    className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/70 hover:bg-red-600 rounded-full flex items-center justify-center transition"
+                  >
+                    <X className="w-3.5 h-3.5 text-white" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center aspect-square border-2 border-dashed border-foreground/20 hover:border-primary/50 hover:bg-primary/5 rounded-xl cursor-pointer transition group">
+                  <Upload className="w-5 h-5 text-muted-foreground group-hover:text-primary mb-1 transition-colors" />
+                  <span className="text-[10px] text-muted-foreground px-2 text-center leading-tight">Subir</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) leer(r.id, f); }}
+                  />
+                </label>
+              )}
+              <p className="text-[10px] font-medium text-foreground leading-tight">{r.etiqueta}</p>
+              <p className="text-[10px] text-muted-foreground/70 leading-tight">{r.ayuda}</p>
+            </div>
+          );
+        })}
+      </div>
+      {/* La foto NO la reinterpreta el modelo: se pega tal cual en su hueco.
+          Decirlo evita subir una esperando que la "mejore". */}
+      <p className="text-xs text-muted-foreground/70">
+        Se colocan tal cual dentro de la pieza, en el hueco de cada una. Si dejas alguna vacía,
+        ese lado se dibuja con el color de la marca.
+      </p>
+    </div>
+  );
 }
 
 interface Resultado {
@@ -50,6 +134,7 @@ export function FormatosInteractivosPanel() {
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [fotos, setFotos] = useState<Record<string, { base64: string; preview: string }>>({});
   const set = useSetEstudio();
 
   // Sin catálogo no hay panel. Antes eso se veía como un cargador girando para
@@ -129,6 +214,7 @@ export function FormatosInteractivosPanel() {
           tema: tema.trim(),
           idea: idea.trim() || undefined,
           relacion,
+          fotos: Object.fromEntries(Object.entries(fotos).map(([k, v]) => [k, v.base64])),
           ...set.payload(),
         }),
       });
@@ -191,7 +277,7 @@ export function FormatosInteractivosPanel() {
             <button
               key={f.id}
               type="button"
-              onClick={() => setElegido(activo ? null : f.id)}
+              onClick={() => { setElegido(activo ? null : f.id); setFotos({}); }}
               aria-pressed={activo}
               className={`text-left rounded-2xl border-2 p-2 transition ${
                 activo
@@ -275,6 +361,16 @@ export function FormatosInteractivosPanel() {
               ))}
             </div>
           </div>
+
+          <RanurasFoto
+            ranuras={formatoActual.ranurasFoto ?? []}
+            fotos={fotos}
+            onCambiar={(id, v) => setFotos((prev) => {
+              const next = { ...prev };
+              if (v) next[id] = v; else delete next[id];
+              return next;
+            })}
+          />
 
           <PersonalizacionSet set={set} />
 

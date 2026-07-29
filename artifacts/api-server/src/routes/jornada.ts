@@ -17,6 +17,7 @@ import { saveDaySummary } from "../lib/activity";
 import { createNotification } from "../lib/notifications";
 import { minutosDePausas, minutosNetos, formatearDuracion } from "../lib/jornada-pausas";
 import { jornadaLink } from "../lib/jornada-link";
+import { desglosarJornada } from "../lib/jornada-desglose";
 
 /**
  * Jornada / asistencia del equipo.
@@ -412,19 +413,40 @@ router.post("/jornada/check-in", async (req: Request, res: Response) => {
 
 /** POST /jornada/check-out — cierra la jornada abierta. 409 si no hay ninguna. */
 router.post("/jornada/check-out", async (req: Request, res: Response) => {
+  const parsed = pausaSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: "Cuerpo inválido" });
+    return;
+  }
+  // Cerrar la jornada de otra persona sigue la MISMA regla que pausarla: si
+  // supervisas puedes pausar a alguien, no tiene sentido que no puedas
+  // apagarle el reloj. Sin esto, una jornada que quedó encendida solo se podía
+  // dejar en pausa, y una pausa no es una salida: la persona figura trabajando.
+  const objetivo = objetivoPausa(req, parsed.data.userId);
+  if (!objetivo) {
+    res.status(403).json({ error: "Solo dirección, ventas y RRHH pueden cerrar la jornada de otra persona" });
+    return;
+  }
   try {
     const user = me(req);
     const [open] = await db.select().from(hubWorkSessions)
-      .where(and(eq(hubWorkSessions.userId, user.id), isNull(hubWorkSessions.checkOut)))
+      .where(and(eq(hubWorkSessions.userId, objetivo.userId), isNull(hubWorkSessions.checkOut)))
       .orderBy(desc(hubWorkSessions.checkIn))
       .limit(1);
     if (!open) {
-      res.status(409).json({ error: "No tienes una jornada abierta" });
+      res.status(409).json({ error: objetivo.ajena ? "Esa persona no tiene una jornada abierta" : "No tienes una jornada abierta" });
       return;
     }
     const now = new Date();
+    // Una pausa abierta se cierra con la jornada. El cálculo ya la recorta al
+    // fin de sesión, así que las horas salen bien igual, pero dejar la fila
+    // abierta para siempre convierte el historial en algo que no se puede leer.
+    await db.update(hubWorkBreaks)
+      .set({ endedAt: now })
+      .where(and(eq(hubWorkBreaks.sessionId, open.id), isNull(hubWorkBreaks.endedAt)));
+
     const [session] = await db.update(hubWorkSessions)
-      .set({ checkOut: now })
+      .set({ checkOut: now, closedBy: objetivo.ajena ? user.id : null })
       .where(eq(hubWorkSessions.id, open.id))
       .returning();
     const mins = session ? sessionMinutes(session) : 0;
@@ -438,22 +460,26 @@ router.post("/jornada/check-out", async (req: Request, res: Response) => {
       // no solo la sesión recién cerrada: con varios check-outs el resumen
       // se recalcula y siempre refleja el acumulado.
       const daySessions = await db.select().from(hubWorkSessions)
-        .where(and(eq(hubWorkSessions.userId, user.id), eq(hubWorkSessions.workDate, workDate)));
+        .where(and(eq(hubWorkSessions.userId, objetivo.userId), eq(hubWorkSessions.workDate, workDate)));
       const totalMins = daySessions
         .filter((s) => s.checkOut)
         .reduce((acc, s) => acc + sessionMinutes(s, now), 0);
-      daySummary = await saveDaySummary(user.id, workDate, { minutes: totalMins });
+      daySummary = await saveDaySummary(objetivo.userId, workDate, { minutes: totalMins });
     } catch (err) {
       console.error("[jornada/check-out] resumen falló", err);
     }
     res.json({ session, minutes: mins, summary: daySummary });
-    // Reporte al canal de Discord (fire-and-forget).
-    const [uRow] = await db.select({ name: users.name }).from(users).where(eq(users.id, user.id)).limit(1);
-    const displayName = uRow?.name || user.email;
+    // Reporte al canal de Discord (fire-and-forget). Si la cerró otra persona
+    // se dice: "marcó salida" sería mentira y el canal es parte del registro.
+    const [uRow] = await db.select({ name: users.name }).from(users).where(eq(users.id, objetivo.userId)).limit(1);
+    const displayName = uRow?.name || (objetivo.ajena ? `usuario ${objetivo.userId}` : user.email);
     const hora = now.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago" });
     const h = Math.floor(mins / 60), m = Math.round(mins % 60);
     const duracion = h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
-    reportToChannel(`⏹️ **${displayName}** marcó **salida** a las ${hora} — jornada de ${duracion}`).catch(() => {});
+    const aviso = objetivo.ajena
+      ? `⏹️ **${user.name || user.email}** cerró la jornada de **${displayName}** a las ${hora} — jornada de ${duracion}`
+      : `⏹️ **${displayName}** marcó **salida** a las ${hora} — jornada de ${duracion}`;
+    reportToChannel(aviso).catch(() => {});
   } catch (err) {
     console.error("[jornada/check-out POST]", err);
     res.status(500).json({ error: "Error al marcar la salida" });
@@ -632,6 +658,11 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
       const first = daySessions[0] ?? null;
       const allClosed = daySessions.length > 0 && daySessions.every((s) => s.checkOut);
       const lastOut = allClosed ? daySessions[daySessions.length - 1]!.checkOut : null;
+      // Desglose del día: en qué se fue el tiempo entre la entrada y la salida.
+      // La franja "08:12 → 22:34" al lado de "6h 37m" no se puede entender sin
+      // esto, porque las horas que faltan están en pausas y en huecos entre
+      // sesiones que antes no se mostraban en ninguna parte.
+      const desglose = desglosarJornada(daySessions, pausasPorSesion, now);
       return {
         ...m,
         today: first
@@ -645,6 +676,9 @@ router.get("/jornada/overview", async (req: Request, res: Response) => {
                 ? { id: pausaActiva.id, startedAt: pausaActiva.startedAt, motivo: pausaActiva.reason }
                 : null,
               open: date === today && daySessions.some((s) => !s.checkOut),
+              /** Quién cerró la jornada si no fue la propia persona. */
+              cerradaPor: daySessions.map((s) => s.closedBy).find((v) => v != null) ?? null,
+              desglose,
             }
           : null,
         discord: m.discordUserId

@@ -9,6 +9,35 @@ const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
  * la pestaña Asistencia del Hub. Una sola fuente de verdad para las horas: si
  * RRHH y el Hub mostraran números distintos, ninguno serviría.
  */
+/** Un tramo del día: trabajo, pausa o tiempo sin marcar entre sesiones. */
+export interface TramoJornada {
+  tipo: "trabajo" | "pausa" | "fuera";
+  desde: string;
+  /** null = sigue en curso ahora mismo. */
+  hasta: string | null;
+  minutos: number;
+  motivo?: string;
+}
+
+/**
+ * En qué se fue el tiempo entre la entrada y la salida.
+ *
+ * `trabajado + pausado + fuera` siempre suma `abarcado`, que es justo la franja
+ * que se muestra al lado. Sin esto, ver "08:12 → 22:34" junto a "6h 37m" no
+ * tenía otra lectura posible que "el contador está mal".
+ */
+export interface DesgloseJornada {
+  tramos: TramoJornada[];
+  trabajado: number;
+  pausado: number;
+  /** Minutos entre una salida y la siguiente entrada: ni trabajo ni pausa. */
+  fuera: number;
+  abarcado: number;
+  entrada: string | null;
+  salida: string | null;
+  abierta: boolean;
+}
+
 export interface AsistenciaMiembro {
   id: number;
   name: string | null;
@@ -22,6 +51,9 @@ export interface AsistenciaMiembro {
     pausedMinutes: number;
     /** Pausa en curso, o null si el reloj está corriendo. */
     pausa: { id: number; startedAt: string; motivo: string } | null;
+    /** Id de quien cerró la jornada si no fue la propia persona. */
+    cerradaPor?: number | null;
+    desglose?: DesgloseJornada;
   } | null;
   discord: {
     linked: boolean;

@@ -18,6 +18,8 @@
 //     el selector muestre una portada identificable de cada formato en vez de
 //     un emoji.
 
+import type { RanuraFoto } from "./foto-ranura.js";
+
 export type CampoFormato =
   | "pregunta"
   | "opciones"
@@ -80,6 +82,15 @@ export interface FormatoInteractivo {
    * marca en cualquier orden, así que van con casilla.
    */
   ordenado?: boolean;
+  /**
+   * Huecos donde se puede poner una foto propia.
+   *
+   * Son OPCIONALES: el bloque se dibuja igual sin ellas. Existen porque hay
+   * formatos donde la foto es media pieza — un "antes y después" sin fotos son
+   * dos rectángulos con texto — y otros donde no aporta nada, y llenar todos
+   * de casillas de subida sería ruido en los que no la necesitan.
+   */
+  ranurasFoto?: readonly RanuraFoto[];
   /** Instrucción específica para el redactor. */
   guia: string;
   /** Llamada a la acción por defecto del formato. */
@@ -134,6 +145,10 @@ export const FORMATOS_INTERACTIVOS: FormatoInteractivo[] = [
     descripcion: "Dos alternativas enfrentadas cara a cara. Genera debate en comentarios.",
     bloque: "duelo",
     campos: ["pregunta", "izquierda", "derecha"],
+    ranurasFoto: [
+      { id: "izquierda", etiqueta: "Foto de la izquierda", ayuda: "La primera alternativa." },
+      { id: "derecha", etiqueta: "Foto de la derecha", ayuda: "La segunda alternativa." },
+    ],
     guia: "Las dos alternativas tienen que ser DEFENDIBLES: si una es claramente mejor no hay debate. Máximo 4 palabras cada lado. Que sea una decisión real de un negocio, no una trivialidad.",
     cta: "¿Cuál eliges tú?",
     stickerIg: "Encuesta",
@@ -182,6 +197,10 @@ export const FORMATOS_INTERACTIVOS: FormatoInteractivo[] = [
     bloque: "duelo",
     campos: ["pregunta", "izquierda", "derecha", "explicacion"],
     etiquetas: ["MITO", "REALIDAD"],
+    ranurasFoto: [
+      { id: "izquierda", etiqueta: "Foto del mito", ayuda: "Lo que la gente se imagina." },
+      { id: "derecha", etiqueta: "Foto de la realidad", ayuda: "Lo que pasa de verdad." },
+    ],
     guia: "A la izquierda el mito tal como se dice en la calle; a la derecha la realidad, concreta y con una cifra o un caso si se puede. Nada de 'depende'.",
     cta: "¿Cuál habías escuchado?",
     stickerIg: null,
@@ -228,6 +247,10 @@ export const FORMATOS_INTERACTIVOS: FormatoInteractivo[] = [
     bloque: "antes_despues",
     campos: ["pregunta", "izquierda", "derecha", "explicacion"],
     etiquetas: ["ANTES", "DESPUÉS"],
+    ranurasFoto: [
+      { id: "antes", etiqueta: "Foto del antes", ayuda: "La situación de partida, tal como se ve hoy." },
+      { id: "despues", etiqueta: "Foto del después", ayuda: "El resultado tras el cambio." },
+    ],
     guia: "El 'antes' tiene que ser algo que la persona RECONOZCA en su día a día, no una caricatura. El 'después' es concreto y creíble, sin promesas de millonario. Máximo 5 palabras cada lado.",
     cta: "¿En cuál de los dos estás?",
     stickerIg: "Encuesta",
@@ -240,6 +263,12 @@ export const FORMATOS_INTERACTIVOS: FormatoInteractivo[] = [
     bloque: "galeria_tipos",
     campos: ["pregunta", "opciones", "explicacion"],
     opciones: 4,
+    ranurasFoto: [
+      { id: "tipo1", etiqueta: "Foto del perfil 1", ayuda: "Opcional, una por perfil." },
+      { id: "tipo2", etiqueta: "Foto del perfil 2", ayuda: "Opcional." },
+      { id: "tipo3", etiqueta: "Foto del perfil 3", ayuda: "Opcional." },
+      { id: "tipo4", etiqueta: "Foto del perfil 4", ayuda: "Opcional." },
+    ],
     guia: "Cada perfil se reconoce al instante y NINGUNO puede sonar a insulto: la gracia es que quien se vea retratado lo comparta, no que se sienta atacado. Máximo 3 palabras cada uno.",
     cta: "¿Cuál eres? Dímelo",
     stickerIg: "Encuesta",
@@ -309,6 +338,9 @@ export const FORMATOS_INTERACTIVOS: FormatoInteractivo[] = [
     descripcion: "Deja el espacio en blanco para que cada quien escriba el suyo.",
     bloque: "marco_vacio",
     campos: ["invitacion", "explicacion"],
+    ranurasFoto: [
+      { id: "marco", etiqueta: "Foto del marco", ayuda: "La imagen a la que hay que ponerle título." },
+    ],
     guia: "La invitación acota QUÉ hay que titular ('ponle nombre a la excusa que más te dices para no tener web'). Sin acotar no llega nada. Máximo 12 palabras.",
     cta: "Escribe el tuyo",
     stickerIg: "Preguntas",
@@ -346,6 +378,7 @@ export function listarFormatosInteractivos() {
     etiquetas: f.etiquetas ? [...f.etiquetas] : null,
     ordenado: f.ordenado === true,
     marcaCorrecta: f.campos.includes("correcta"),
+    ranurasFoto: f.ranurasFoto ? f.ranurasFoto.map((r) => ({ ...r })) : [],
     stickerIg: f.stickerIg,
   }));
 }

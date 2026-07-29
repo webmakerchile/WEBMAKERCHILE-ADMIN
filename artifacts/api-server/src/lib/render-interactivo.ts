@@ -15,6 +15,7 @@ import {
 } from "./title-style.js";
 import { escapeXml, FUENTE_SECUNDARIA, type PaletaComposicion } from "./story-render.js";
 import type { BloqueInteractivo, ContenidoInteractivo, FormatoInteractivo } from "./formatos-interactivos.js";
+import { imagenRecortada, veloTexto, type FotosPorRanura } from "./foto-ranura.js";
 
 /** Lienzo donde se compone el bloque. */
 export interface Lienzo {
@@ -145,6 +146,7 @@ function duelo(
   lienzo: Lienzo,
   zona: ZonaBloque,
   paleta: PaletaComposicion,
+  fotos: FotosPorRanura = new Map(),
 ): string {
   const margen = lienzo.width * MARGEN_LATERAL;
   const ancho = lienzo.width - margen * 2;
@@ -155,11 +157,18 @@ function duelo(
   const alto = Math.min(zona.alto - altoEtiqueta, Math.round(lienzo.width * 0.34));
   const y0 = zona.y + altoEtiqueta + Math.max(0, (zona.alto - altoEtiqueta - alto) / 2);
 
-  const lado = (x: number, texto: string, fondo: string, color: string, etiqueta: string | null) => {
+  const lado = (x: number, texto: string, fondo: string, color: string, etiqueta: string | null, ranura: string) => {
     const f = fit(texto, anchoLado - 36, Math.round(lienzo.width * 0.05), 20, 3);
-    const caja =
-      `<rect x="${x.toFixed(1)}" y="${y0.toFixed(1)}" width="${anchoLado.toFixed(1)}" height="${alto}" rx="${RADIO}" fill="${fondo}"/>` +
-      lineasCentradas(f, x + anchoLado / 2, y0 + alto / 2, color);
+    const foto = fotos.get(ranura);
+    // Con foto, el texto va sobre ella en blanco y con velo. Sin velo no hay
+    // color de letra que funcione: se pierde en las fotos claras o en las
+    // oscuras, y cuál de las dos toca depende de la foto que suban.
+    const caja = foto
+      ? imagenRecortada(foto, `duelo-${ranura}`, x, y0, anchoLado, alto, RADIO) +
+        veloTexto(`velo-duelo-${ranura}`, x, y0, anchoLado, alto, RADIO) +
+        lineasCentradas(f, x + anchoLado / 2, y0 + alto * 0.72, "#FFFFFF", { sombra: true })
+      : `<rect x="${x.toFixed(1)}" y="${y0.toFixed(1)}" width="${anchoLado.toFixed(1)}" height="${alto}" rx="${RADIO}" fill="${fondo}"/>` +
+        lineasCentradas(f, x + anchoLado / 2, y0 + alto / 2, color);
     if (!etiqueta) return caja;
 
     const tamano = Math.round(altoEtiqueta * 0.62);
@@ -178,8 +187,8 @@ function duelo(
   const cy = y0 + alto / 2;
 
   return [
-    lado(margen, c.izquierda, "#FFFFFF", "#141318", etiquetas?.[0] ?? null),
-    lado(margen + anchoLado + gap, c.derecha, paleta.colorAcento, "#141318", etiquetas?.[1] ?? null),
+    lado(margen, c.izquierda, "#FFFFFF", "#141318", etiquetas?.[0] ?? null, "izquierda"),
+    lado(margen + anchoLado + gap, c.derecha, paleta.colorAcento, "#141318", etiquetas?.[1] ?? null, "derecha"),
     `<circle cx="${cx}" cy="${cy.toFixed(1)}" r="${radioVs}" fill="#141318"/>`,
     `<text x="${cx}" y="${(cy + radioVs * 0.34).toFixed(1)}" text-anchor="middle" font-family="'${FUENTE_SECUNDARIA.familia}'" ` +
       `font-weight="${FUENTE_SECUNDARIA.peso}" font-size="${Math.round(radioVs * 0.9)}" fill="#FFFFFF">VS</text>`,
@@ -361,6 +370,7 @@ function antesDespues(
   lienzo: Lienzo,
   zona: ZonaBloque,
   paleta: PaletaComposicion,
+  fotos: FotosPorRanura = new Map(),
 ): string {
   const margen = lienzo.width * MARGEN_LATERAL;
   const ancho = lienzo.width - margen * 2;
@@ -372,16 +382,23 @@ function antesDespues(
   const y0 = zona.y + altoEtiqueta + Math.max(0, (zona.alto - altoEtiqueta - alto) / 2);
   const cy = y0 + alto / 2;
 
-  const lado = (x: number, texto: string, fondo: string, color: string, etiqueta: string) => {
+  const lado = (x: number, texto: string, fondo: string, color: string, etiqueta: string, ranura: string) => {
     const f = fit(texto, anchoLado - 36, Math.round(lienzo.width * 0.045), 18, 3);
     const rotulo = fit(etiqueta, anchoLado - 20, Math.round(altoEtiqueta * 0.6), 14, 1);
+    const foto = fotos.get(ranura);
+    // Con foto, el texto baja al pie sobre el velo: centrado taparía justo la
+    // parte de la imagen que se quiere enseñar.
+    const cuerpo = foto
+      ? imagenRecortada(foto, `ad-${ranura}`, x, y0, anchoLado, alto, RADIO) +
+        veloTexto(`velo-ad-${ranura}`, x, y0, anchoLado, alto, RADIO) +
+        lineasCentradas(f, x + anchoLado / 2, y0 + alto * 0.76, "#FFFFFF", { sombra: true })
+      : carta(x, y0, anchoLado, alto, fondo, 0.97) + lineasCentradas(f, x + anchoLado / 2, cy, color);
     return (
       `<text x="${(x + anchoLado / 2).toFixed(1)}" y="${(y0 - altoEtiqueta * 0.34).toFixed(1)}" text-anchor="middle" ` +
       `font-family="'${FUENTE_SECUNDARIA.familia}'" font-weight="${FUENTE_SECUNDARIA.peso}" ` +
       `font-size="${rotulo.fontSize}" letter-spacing="${(rotulo.fontSize * 0.14).toFixed(1)}" ` +
       `fill="${fondo}" filter="url(#textds)">${escapeXml(rotulo.lineas[0] ?? etiqueta)}</text>` +
-      carta(x, y0, anchoLado, alto, fondo, 0.97) +
-      lineasCentradas(f, x + anchoLado / 2, cy, color)
+      cuerpo
     );
   };
 
@@ -391,14 +408,14 @@ function antesDespues(
   const baseX = lienzo.width / 2 - gap * 0.3;
   const semiAlto = Math.round(lienzo.width * 0.028);
   return [
-    lado(margen, c.izquierda, "#C9CDD4", "#20242B", etiquetas[0]),
-    lado(margen + anchoLado + gap, c.derecha, paleta.colorAcento, "#141318", etiquetas[1]),
+    lado(margen, c.izquierda, "#C9CDD4", "#20242B", etiquetas[0], "antes"),
+    lado(margen + anchoLado + gap, c.derecha, paleta.colorAcento, "#141318", etiquetas[1], "despues"),
     `<path d="M${baseX.toFixed(1)} ${(cy - semiAlto).toFixed(1)} L${puntaX.toFixed(1)} ${cy.toFixed(1)} L${baseX.toFixed(1)} ${(cy + semiAlto).toFixed(1)} Z" fill="#FFFFFF"/>`,
   ].join("\n    ");
 }
 
 /** Rejilla 2x2 de perfiles: la gente se etiqueta sola. */
-function galeriaTipos(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta: PaletaComposicion): string {
+function galeriaTipos(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta: PaletaComposicion, fotos: FotosPorRanura = new Map()): string {
   const margen = lienzo.width * MARGEN_LATERAL;
   const ancho = lienzo.width - margen * 2;
   const gap = Math.round(lienzo.width * 0.022);
@@ -414,12 +431,18 @@ function galeriaTipos(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque,
     const y = y0 + Math.floor(i / 2) * (altoCelda + gap);
     const f = fit(c.opciones[i]!, anchoCelda - 70, Math.round(anchoCelda * 0.11), 16, 2);
     const r = Math.round(altoCelda * 0.15);
+    // Con foto del perfil, la miniatura sustituye al número: el número solo
+    // estaba ahí para que cada tarjeta fuera distinguible de un vistazo.
+    const foto = fotos.get(`tipo${i + 1}`);
+    const marca = foto
+      ? imagenRecortada(foto, `tipo-${i}`, x + 26 - r, y + altoCelda / 2 - r, r * 2, r * 2, r)
+      : `<circle cx="${(x + 26 + r).toFixed(1)}" cy="${(y + altoCelda / 2).toFixed(1)}" r="${r}" fill="${paleta.colorAcento}"/>` +
+        `<text x="${(x + 26 + r).toFixed(1)}" y="${(y + altoCelda / 2 + r * 0.36).toFixed(1)}" text-anchor="middle" ` +
+        `font-family="'${FUENTE_SECUNDARIA.familia}'" font-weight="${FUENTE_SECUNDARIA.peso}" ` +
+        `font-size="${Math.round(r * 1.05)}" fill="#141318">${i + 1}</text>`;
     piezas.push(
       carta(x, y, anchoCelda, altoCelda),
-      `<circle cx="${(x + 26 + r).toFixed(1)}" cy="${(y + altoCelda / 2).toFixed(1)}" r="${r}" fill="${paleta.colorAcento}"/>`,
-      `<text x="${(x + 26 + r).toFixed(1)}" y="${(y + altoCelda / 2 + r * 0.36).toFixed(1)}" text-anchor="middle" ` +
-        `font-family="'${FUENTE_SECUNDARIA.familia}'" font-weight="${FUENTE_SECUNDARIA.peso}" ` +
-        `font-size="${Math.round(r * 1.05)}" fill="#141318">${i + 1}</text>`,
+      marca,
       lineasIzquierda(f, x + 26 + r * 2 + 18, y + altoCelda / 2, "#20242B"),
     );
   }
@@ -569,7 +592,7 @@ function tarjetaDefinicion(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBl
 }
 
 /** Un marco por rellenar, con las esquinas marcadas. */
-function marcoVacio(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta: PaletaComposicion): string {
+function marcoVacio(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta: PaletaComposicion, fotos: FotosPorRanura = new Map()): string {
   const margen = lienzo.width * MARGEN_LATERAL;
   const ancho = lienzo.width - margen * 2;
   const fInv = fit(c.invitacion, ancho - 56, Math.round(lienzo.width * 0.042), 18, 3);
@@ -589,7 +612,11 @@ function marcoVacio(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, p
   const y1 = yMarco, y2 = yMarco + altoMarco;
   return [
     lineasCentradas(fInv, lienzo.width / 2, y0 + fInv.alto / 2, "#FFFFFF", { sombra: true }),
-    `<rect x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" width="${(x2 - x1).toFixed(1)}" height="${altoMarco}" rx="18" fill="#FFFFFF" fill-opacity="0.13"/>`,
+    // Con foto, el marco deja de estar vacío y pasa a enmarcarla: es
+    // exactamente el gesto del formato, ponerle título a ESTA imagen.
+    fotos.get("marco")
+      ? imagenRecortada(fotos.get("marco")!, "marco-foto", x1, y1, x2 - x1, altoMarco, 18)
+      : `<rect x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" width="${(x2 - x1).toFixed(1)}" height="${altoMarco}" rx="18" fill="#FFFFFF" fill-opacity="0.13"/>`,
     esquina(x1, y1, 1, 1), esquina(x2, y1, -1, 1),
     esquina(x1, y2, 1, -1), esquina(x2, y2, -1, -1),
   ].join("\n    ");
@@ -628,26 +655,27 @@ export function bloqueInteractivoSvg(
   lienzo: Lienzo,
   zona: ZonaBloque,
   paleta: PaletaComposicion,
+  fotos: FotosPorRanura = new Map(),
 ): string {
   if (zona.alto < 90) return "";
   try {
     switch (tipo) {
       case "tarjeta_opciones": return c.opciones.length >= 2 ? tarjetaOpciones(c, formato, lienzo, zona, paleta) : "";
-      case "duelo": return c.izquierda && c.derecha ? duelo(c, formato, lienzo, zona, paleta) : "";
+      case "duelo": return c.izquierda && c.derecha ? duelo(c, formato, lienzo, zona, paleta, fotos) : "";
       case "veredicto": return c.veredicto ? veredicto(c, lienzo, zona) : "";
       case "checklist": return c.items.length >= 2 ? checklist(c, formato, lienzo, zona, paleta) : "";
       case "caja_pregunta": return c.invitacion ? cajaPregunta(c, lienzo, zona, paleta) : "";
       case "hueco": return c.frase ? hueco(c, lienzo, zona, paleta) : "";
       case "escala": return c.dato ? escala(c, lienzo, zona, paleta) : "";
       case "podio": return c.opciones.length >= 3 ? podio(c, lienzo, zona, paleta) : "";
-      case "antes_despues": return c.izquierda && c.derecha ? antesDespues(c, formato, lienzo, zona, paleta) : "";
-      case "galeria_tipos": return c.opciones.length >= 4 ? galeriaTipos(c, lienzo, zona, paleta) : "";
+      case "antes_despues": return c.izquierda && c.derecha ? antesDespues(c, formato, lienzo, zona, paleta, fotos) : "";
+      case "galeria_tipos": return c.opciones.length >= 4 ? galeriaTipos(c, lienzo, zona, paleta, fotos) : "";
       case "escala_caras": return c.izquierda && c.derecha ? escalaCaras(c, lienzo, zona, paleta) : "";
       case "bingo": return c.items.length >= 9 ? bingo(c, lienzo, zona, paleta) : "";
       case "semaforo": return c.opciones.length >= 3 ? semaforo(c, lienzo, zona) : "";
       case "tres_cartas": return c.opciones.length >= 3 ? tresCartas(c, lienzo, zona, paleta) : "";
       case "tarjeta_definicion": return c.termino ? tarjetaDefinicion(c, lienzo, zona, paleta) : "";
-      case "marco_vacio": return c.invitacion ? marcoVacio(c, lienzo, zona, paleta) : "";
+      case "marco_vacio": return c.invitacion ? marcoVacio(c, lienzo, zona, paleta, fotos) : "";
       case "cita": return c.frase ? cita(c, lienzo, zona, paleta) : "";
       default: return "";
     }

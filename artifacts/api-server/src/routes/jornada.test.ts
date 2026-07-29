@@ -227,8 +227,30 @@ describe("POST /jornada/check-out", () => {
     const app = await buildApp(editorUser);
     const res = await request(app).post("/jornada/check-out");
     expect(res.status).toBe(200);
-    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(res.body.session.checkOut).toBeTruthy();
     expect(res.body.minutes).toBeGreaterThanOrEqual(59);
+    // Cerrar la jornada cierra también la pausa que hubiera quedado abierta:
+    // son dos updates, y contar llamadas aquí solo mediría la implementación.
+    expect(db.update).toHaveBeenCalled();
+  });
+
+  it("cierra la jornada de otra persona si tienes permiso de supervisión", async () => {
+    const open = { id: 9, userId: 5, workDate: localDate(), checkIn: new Date(Date.now() - 60 * 60_000), checkOut: null, onDiscord: false };
+    mockSelectSeq([open]);
+    mockUpdateChain([{ ...open, checkOut: new Date() }]);
+    const app = await buildApp(ceoUser);
+    const res = await request(app).post("/jornada/check-out").send({ userId: 5 });
+    expect(res.status).toBe(200);
+    expect(res.body.session.checkOut).toBeTruthy();
+  });
+
+  // Sin esto, cualquiera podría apagarle el reloj a cualquiera: es la misma
+  // regla que ya protege pausar la jornada ajena.
+  it("rechaza cerrar la jornada ajena sin permiso de supervisión", async () => {
+    const app = await buildApp(editorUser);
+    const res = await request(app).post("/jornada/check-out").send({ userId: 5 });
+    expect(res.status).toBe(403);
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("devuelve 409 si no hay jornada abierta", async () => {
