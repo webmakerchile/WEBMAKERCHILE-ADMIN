@@ -30,7 +30,8 @@ export type CampoFormato =
   | "derecha"
   | "invitacion"
   | "dato"
-  | "frase";
+  | "frase"
+  | "termino";
 
 /** Forma del elemento interactivo que se compone sobre la ilustración. */
 export type BloqueInteractivo =
@@ -40,7 +41,17 @@ export type BloqueInteractivo =
   | "checklist"          // lista con casillas (test rápido / reto)
   | "caja_pregunta"      // campo de texto tipo sticker de preguntas
   | "hueco"              // frase con un espacio en blanco
-  | "escala";            // barra de 1 a 5 con marcador
+  | "escala"             // barra con el dato y su marcador
+  | "podio"              // tres escalones para ordenar
+  | "antes_despues"      // dos estados con una flecha entre medio
+  | "galeria_tipos"      // rejilla 2x2 de perfiles
+  | "escala_caras"       // cinco caras del 1 al 5
+  | "bingo"              // cuadrícula 3x3 para marcar
+  | "semaforo"           // tres niveles rojo / ámbar / verde
+  | "tres_cartas"        // tres afirmaciones, una es mentira
+  | "tarjeta_definicion" // una palabra grande para definir
+  | "marco_vacio"        // marco por rellenar
+  | "cita";              // frase entrecomillada para opinar
 
 export interface FormatoInteractivo {
   id: string;
@@ -197,6 +208,122 @@ export const FORMATOS_INTERACTIVOS: FormatoInteractivo[] = [
     cta: "¿Te acercaste?",
     stickerIg: "Deslizador",
   },
+  {
+    id: "ranking",
+    nombre: "Ordena el podio",
+    gancho: "Tres cosas y un orden que nadie tiene claro",
+    descripcion: "Tres opciones para ordenar de más a menos. Discusión asegurada.",
+    bloque: "podio",
+    campos: ["pregunta", "opciones", "explicacion"],
+    opciones: 3,
+    guia: "Las tres tienen que ser DEFENDIBLES como primera: si una es obviamente la número uno, no hay debate. Máximo 4 palabras cada una. La explicación dice cuál pondrías tú y por qué.",
+    cta: "¿Cuál va primero para ti?",
+    stickerIg: null,
+  },
+  {
+    id: "antes_despues",
+    nombre: "Antes y después",
+    gancho: "El mismo negocio, dos momentos",
+    descripcion: "Un estado inicial y el que viene después del cambio.",
+    bloque: "antes_despues",
+    campos: ["pregunta", "izquierda", "derecha", "explicacion"],
+    etiquetas: ["ANTES", "DESPUÉS"],
+    guia: "El 'antes' tiene que ser algo que la persona RECONOZCA en su día a día, no una caricatura. El 'después' es concreto y creíble, sin promesas de millonario. Máximo 5 palabras cada lado.",
+    cta: "¿En cuál de los dos estás?",
+    stickerIg: "Encuesta",
+  },
+  {
+    id: "cual_eres",
+    nombre: "¿Cuál eres tú?",
+    gancho: "Cuatro perfiles y todo el mundo se reconoce en uno",
+    descripcion: "Cuatro tipos de dueño de negocio. La gente se etiqueta sola.",
+    bloque: "galeria_tipos",
+    campos: ["pregunta", "opciones", "explicacion"],
+    opciones: 4,
+    guia: "Cada perfil se reconoce al instante y NINGUNO puede sonar a insulto: la gracia es que quien se vea retratado lo comparta, no que se sienta atacado. Máximo 3 palabras cada uno.",
+    cta: "¿Cuál eres? Dímelo",
+    stickerIg: "Encuesta",
+  },
+  {
+    id: "animo",
+    nombre: "Del 1 al 5",
+    gancho: "Una pregunta que se responde con la cara",
+    descripcion: "Cinco caras para medir cómo se siente la gente con algo.",
+    bloque: "escala_caras",
+    campos: ["pregunta", "izquierda", "derecha", "explicacion"],
+    guia: "La pregunta pide una SENSACIÓN, no un dato ('qué tan tranquilo te deja tu web hoy'). Los dos extremos son de 2 palabras máximo y describen el 1 y el 5.",
+    cta: "¿En qué número estás?",
+    stickerIg: "Deslizador",
+  },
+  {
+    id: "bingo",
+    nombre: "Bingo",
+    gancho: "Nueve casillas y a ver cuántas te tocan",
+    descripcion: "Cuadrícula de nueve situaciones para marcar las que te pasan.",
+    bloque: "bingo",
+    campos: ["pregunta", "items", "explicacion"],
+    opciones: 9,
+    guia: "Nueve situaciones MUY cortas (máximo 3 palabras) que le pasan a cualquier dueño de negocio. Concretas y reconocibles, nada de opiniones. La explicación dice qué significa llenar la fila.",
+    cta: "¿Cuántas marcaste?",
+    stickerIg: null,
+  },
+  {
+    id: "semaforo",
+    nombre: "Semáforo",
+    gancho: "Rojo, amarillo o verde: en cuál estás",
+    descripcion: "Tres niveles de una situación, del peor al mejor.",
+    bloque: "semaforo",
+    campos: ["pregunta", "opciones", "explicacion"],
+    opciones: 3,
+    guia: "Los tres niveles van del PEOR al MEJOR en ese orden, y describen situaciones concretas, no notas ('sin web' / 'web que no vende' / 'web que trae clientes'). Máximo 5 palabras cada uno.",
+    cta: "¿En qué color estás?",
+    stickerIg: "Encuesta",
+  },
+  {
+    id: "dos_verdades",
+    nombre: "Dos verdades y una mentira",
+    gancho: "Tres afirmaciones y una que no es cierta",
+    descripcion: "Tres frases sobre el tema: dos ciertas y una falsa. Adivínala.",
+    bloque: "tres_cartas",
+    campos: ["pregunta", "opciones", "correcta", "explicacion"],
+    opciones: 3,
+    guia: "Las dos verdaderas tienen que sonar SORPRENDENTES y la falsa tiene que sonar razonable: si la mentira canta, no hay juego. El campo 'correcta' es el índice de LA MENTIRA. La explicación revela cuál era y por qué.",
+    cta: "¿Cuál es la mentira?",
+    stickerIg: null,
+  },
+  {
+    id: "definicion",
+    nombre: "¿Sabes qué es?",
+    gancho: "Una palabra que todos oyen y pocos saben explicar",
+    descripcion: "Un término del rubro, grande, para que lo definan con sus palabras.",
+    bloque: "tarjeta_definicion",
+    campos: ["termino", "pregunta", "explicacion"],
+    guia: "El término es una palabra o dos que la persona ESCUCHA seguido (dominio, hosting, SEO, embudo) pero que nadie le explicó. La explicación lo define en una frase, sin tecnicismos y con una comparación del mundo real.",
+    cta: "Defínelo con tus palabras",
+    stickerIg: "Preguntas",
+  },
+  {
+    id: "ponle_titulo",
+    nombre: "Ponle título",
+    gancho: "Un marco vacío que la gente llena",
+    descripcion: "Deja el espacio en blanco para que cada quien escriba el suyo.",
+    bloque: "marco_vacio",
+    campos: ["invitacion", "explicacion"],
+    guia: "La invitación acota QUÉ hay que titular ('ponle nombre a la excusa que más te dices para no tener web'). Sin acotar no llega nada. Máximo 12 palabras.",
+    cta: "Escribe el tuyo",
+    stickerIg: "Preguntas",
+  },
+  {
+    id: "cita_opinas",
+    nombre: "¿De acuerdo?",
+    gancho: "Una frase para la que hay que tomar partido",
+    descripcion: "Una afirmación fuerte, entrecomillada, que divide opiniones.",
+    bloque: "cita",
+    campos: ["frase", "pregunta", "explicacion"],
+    guia: "La frase es una OPINIÓN tajante sobre el rubro, en primera persona y de menos de 15 palabras. Tiene que poder defenderse y rebatirse: si nadie va a estar en contra, no sirve.",
+    cta: "¿De acuerdo o no?",
+    stickerIg: "Encuesta",
+  },
 ];
 
 export function obtenerFormatoInteractivo(id: string | null | undefined): FormatoInteractivo | null {
@@ -242,13 +369,15 @@ export interface ContenidoInteractivo {
   invitacion: string;
   dato: string;
   frase: string;
+  /** Palabra o expresión del rubro que se pone a definir. */
+  termino: string;
   cta: string;
 }
 
 const vacio = (): ContenidoInteractivo => ({
   titular: "", pregunta: "", opciones: [], correcta: -1, afirmacion: "",
   veredicto: "", explicacion: "", items: [], izquierda: "", derecha: "",
-  invitacion: "", dato: "", frase: "", cta: "",
+  invitacion: "", dato: "", frase: "", termino: "", cta: "",
 });
 
 const txt = (v: unknown, max: number): string =>
@@ -294,6 +423,7 @@ export function parseContenidoInteractivo(
   c.invitacion = txt(r.invitacion, 120);
   c.dato = txt(r.dato, 24);
   c.frase = txt(r.frase, 120);
+  c.termino = txt(r.termino, 40);
   c.cta = txt(r.cta, 60) || formato.cta;
 
   const veredicto = txt(r.veredicto, 12).toUpperCase();
@@ -324,6 +454,7 @@ export function contenidoCompleto(c: ContenidoInteractivo, formato: FormatoInter
       case "invitacion": if (!c.invitacion) return false; break;
       case "dato": if (!c.dato) return false; break;
       case "frase": if (!c.frase) return false; break;
+      case "termino": if (!c.termino) return false; break;
     }
   }
   return true;
@@ -338,7 +469,11 @@ export function titularDe(c: ContenidoInteractivo, formato: FormatoInteractivo):
   if (formato.bloque === "veredicto") return c.afirmacion || c.titular;
   if (c.titular) return c.titular;
   if (formato.bloque === "caja_pregunta") return c.invitacion;
+  if (formato.bloque === "marco_vacio") return c.invitacion;
   if (formato.bloque === "hueco") return "Completa la frase";
+  // La cita ya se dibuja entera dentro del bloque: repetirla arriba dejaría
+  // la pieza diciendo dos veces lo mismo y sin espacio para la pregunta.
+  if (formato.bloque === "cita") return c.pregunta || "¿Estás de acuerdo?";
   return c.pregunta;
 }
 
@@ -357,6 +492,7 @@ const EJEMPLO_CAMPO: Record<CampoFormato, string> = {
   invitacion: '"invitacion": "sobre qué pueden preguntar"',
   dato: '"dato": "la cifra real, corta (ej: 73%)"',
   frase: '"frase": "la frase con un ___ al final"',
+  termino: '"termino": "la palabra del rubro, una o dos palabras"',
 };
 
 /**
