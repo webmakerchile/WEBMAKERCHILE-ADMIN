@@ -117,11 +117,21 @@ export function seleccionarPosePortada(tema: string, permitidas?: readonly PoseI
 
 // Bloque de instrucciones que se inyecta al final del prompt de Gemini para
 // FORZAR la pose seleccionada y bloquear la pose por defecto "señalando 3/4 derecha".
-export function bloquePoseRequerida(pose: PoseSeleccionada): string {
+//
+// El gesto y el encuadre van AQUÍ y no sueltos en el prompt: son órdenes sobre
+// el mismo personaje, y separadas se contradecían entre sí — la pose pedía un
+// cuerpo entero y el encuadre un primer plano sin que nada resolviera cuál
+// mandaba. Juntas y en orden, la última palabra la tiene el encuadre.
+export function bloquePoseRequerida(
+  pose: PoseSeleccionada,
+  extras?: { gesto?: string | null; encuadre?: string | null },
+): string {
+  const gesto = extras?.gesto?.trim();
+  const encuadre = extras?.encuadre?.trim();
   return `
 POSE OBLIGATORIA DEL ZORRO EN ESTA PORTADA (NO NEGOCIABLE):
 ${pose.descripcion}
-
+${gesto ? `\nEXPRESIÓN OBLIGATORIA DE LA CARA (manda sobre la que sugiera la pose):\n${gesto}\n` : ""}${encuadre ? `\nENCUADRE OBLIGATORIO DE CÁMARA (manda sobre el encuadre que sugiera la pose):\n${encuadre}\n` : ""}
 REGLAS DE POSE (CRÍTICAS):
 - El zorro DEBE adoptar EXACTAMENTE la pose descrita arriba.
 - PROHIBIDAS las poses por defecto a menos que estén explícitamente pedidas:
