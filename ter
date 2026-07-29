@@ -1,0 +1,48 @@
+[33mcommit 3aaa7ff95c7fd8e39662738d431719e349c8725a[m[33m ([m[1;31morigin/claude/youtube-thumbnail-design-44w2ok[m[33m)[m
+Author: Claude <noreply@anthropic.com>
+Date:   Tue Jul 28 13:25:21 2026 +0000
+
+    Un solo sistema de tareas, y los cuatro fallos que quedaban del informe
+    
+    1. DOS SISTEMAS DE TAREAS SIN CONEXION. `hub_tasks` (tabla real: tablero
+       Scrum del Hub, playbooks, handoffs, notificaciones) y
+       `hub_state.data.tasks` (una coleccion del blob usada EN EXCLUSIVA por "Mis
+       tareas"). Una tarea que un dev se creaba desde el brief era invisible para
+       su jefe, y una que el jefe le asignaba era invisible para el: cada uno
+       miraba una lista distinta creyendo que era la misma.
+    
+       "Mis tareas" pasa a leer y escribir `hub_tasks` a traves de un adaptador
+       que conserva la forma que ya renderiza la pagina — mismo aspecto, lista
+       real. Las etapas y prioridades coincidian exactamente entre los dos
+       sistemas, asi que no hay traduccion que se pueda perder.
+    
+       Y lo ya creado en el sistema viejo se migra al arrancar, una sola vez,
+       cotejando por titulo + proyecto para no duplicar el backlog del equipo. La
+       coleccion vieja NO se borra: si algo sale mal, el dato original sigue ahi.
+    
+       De paso: `ticketId` era un campo del sistema viejo que NADIE escribia (UI
+       muerta). En su lugar la tarjeta avisa cuando la tarea te la asignaron, que
+       antes no se podia saber.
+    
+    2. LA RENOVACION PERDIA EL BRIEF. Se copiaba `doc` pero no `brief`, asi que
+       nacia sin version tecnica y al activarse el handoff entregaba el arranque
+       generico como si fuera el alcance de un proyecto que el equipo ya conoce
+       entero. Una renovacion es el mismo alcance: ahora se hereda.
+    
+    3. UN BRIEF VACIO SE DEVOLVIA COMO EXITO. Sin modulos, con HTTP 200, y el
+       panel lo guardaba como bueno; al cerrar la venta el handoff caia al
+       arranque generico. Ahora es un 502 con motivo. El endpoint tampoco tenia
+       try/catch: sin API key o con rate limit salia un 500 sin cuerpo. Y un
+       contrato ACTIVO sin brief ahora lo dice en rojo en su ficha, porque a esas
+       alturas las tareas que recibio desarrollo ya son las genericas.
+    
+    4. PROYECTOS DUPLICADOS. Al crear a mano un proyecto para un contrato que ya
+       tenia el suyo, quedaban dos: la unica defensa era un estado local que se
+       pierde al cerrar el panel. Ahora se mira el tablero. Y el reintento del
+       handoff reinsertaba el mismo lote de tareas si habia fallado despues de
+       crear el proyecto.
+    
+    5. MARKETING NO PODIA PEDIR QUE LE REDACTARAN TAREAS.
+       /hub/projects/ai-extract-tasks estaba gateado por area pese a no escribir
+       nada, asi que marketing —que si crea tareas y si lee proyectos— recibia un
+       403. Lo que toca contratos y dinero sigue gateado.
