@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import { TiraBorradores } from "@/components/tira-borradores";
+import { FormatosInteractivosPanel } from "@/components/formatos-interactivos-panel";
 import {
   useSetEstudio,
   PersonalizacionSet,
@@ -189,6 +190,8 @@ export default function HistoriasPage() {
   const [recomendacion, setRecomendacion] = useState<Recomendacion | null>(null);
   const [detectando, setDetectando] = useState(false);
   const [zippeando, setZippeando] = useState(false);
+  // Dos modos: la historia narrativa de siempre y el contenido interactivo.
+  const [modo, setModo] = useState<"narrativa" | "interactivo">("interactivo");
   // Sube tras cada generación para que la tira de borradores se refresque.
   const [versionBorradores, setVersionBorradores] = useState(0);
 
@@ -512,10 +515,35 @@ export default function HistoriasPage() {
           </p>
         </header>
 
+        {/* Lo interactivo va primero: una historia que se puede responder
+            retiene mucho más que una que solo se lee. */}
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { id: "interactivo" as const, t: "Interactiva", d: "Encuestas, quiz, retos" },
+            { id: "narrativa" as const, t: "Narrativa", d: "Historia o serie con hilo" },
+          ]).map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setModo(m.id)}
+              aria-pressed={modo === m.id}
+              className={`px-4 py-3 rounded-xl border-2 text-left transition ${
+                modo === m.id ? "border-primary bg-primary/10" : "border-foreground/10 bg-foreground/5 hover:border-foreground/25"
+              }`}
+            >
+              <span className="block font-semibold text-sm text-foreground">{m.t}</span>
+              <span className="block text-xs text-muted-foreground">{m.d}</span>
+            </button>
+          ))}
+        </div>
+
+        {modo === "interactivo" && <FormatosInteractivosPanel />}
+
         <motion.form
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleGenerar}
+          hidden={modo !== "narrativa"}
           className="glass-card rounded-2xl p-6 space-y-6 border border-foreground/10"
         >
           <div>

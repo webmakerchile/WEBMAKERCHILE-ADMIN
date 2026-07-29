@@ -3,6 +3,7 @@ import { Layout } from "@/components/layout";
 import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLeft, ChevronRight, RefreshCw, Image as ImageIcon, FileArchive, Settings, X, Pencil, Repeat, Wand2, SlidersHorizontal, ChevronDown, Upload } from "lucide-react";
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import { TiraBorradores } from "@/components/tira-borradores";
+import { FormatosInteractivosPanel } from "@/components/formatos-interactivos-panel";
 import {
   useSetEstudio,
   PersonalizacionSet,
@@ -102,6 +103,8 @@ export default function DescripcionesPage() {
   const [ajusteTexto, setAjusteTexto] = useState("");
   const [intentos, setIntentos] = useState<Record<number, number>>({});
   const [toast, setToast] = useState<string | null>(null);
+  // Dos modos: la pieza de siempre y el contenido interactivo.
+  const [modo, setModo] = useState<"clasico" | "interactivo">("interactivo");
   // Sube tras cada generación para que la tira de borradores se refresque.
   const [versionBorradores, setVersionBorradores] = useState(0);
 
@@ -419,10 +422,36 @@ export default function DescripcionesPage() {
           </p>
         </header>
 
+        {/* El contenido interactivo va PRIMERO y viene marcado por defecto: es
+            lo que la gente responde. La pieza clásica sigue estando para lo
+            que de verdad solo se lee. */}
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            { id: "interactivo" as const, t: "Interactivo", d: "Encuestas, quiz, retos" },
+            { id: "clasico" as const, t: "Publicación clásica", d: "Imagen + copy por red" },
+          ]).map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setModo(m.id)}
+              aria-pressed={modo === m.id}
+              className={`px-4 py-3 rounded-xl border-2 text-left transition ${
+                modo === m.id ? "border-primary bg-primary/10" : "border-foreground/10 bg-foreground/5 hover:border-foreground/25"
+              }`}
+            >
+              <span className="block font-semibold text-sm text-foreground">{m.t}</span>
+              <span className="block text-xs text-muted-foreground">{m.d}</span>
+            </button>
+          ))}
+        </div>
+
+        {modo === "interactivo" && <FormatosInteractivosPanel />}
+
         <motion.form
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           onSubmit={handleGenerar}
+          hidden={modo !== "clasico"}
           className="glass-card rounded-2xl p-6 space-y-6 border border-foreground/10"
         >
           <div>

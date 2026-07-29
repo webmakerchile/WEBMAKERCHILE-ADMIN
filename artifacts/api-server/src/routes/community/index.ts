@@ -52,6 +52,16 @@ import { resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, ty
 import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
 import { buildRedactarIdeaPostPrompt, parseIdeaPost } from "../../lib/redactar-idea-post";
 import { planPurga, avisoCaducidad, diasRestantes, DIAS_RETENCION, MAX_BORRADORES } from "../../lib/borradores";
+import {
+  listarFormatosInteractivos,
+  obtenerFormatoInteractivo,
+  buildPromptInteractivo,
+  parseContenidoInteractivo,
+  titularDe,
+  type ContenidoInteractivo,
+  type FormatoInteractivo,
+} from "../../lib/formatos-interactivos";
+import { bloqueInteractivoSvg } from "../../lib/render-interactivo";
 import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -2685,5 +2695,201 @@ router.delete("/community/borradores/:id", async (req, res) => {
   await db.delete(communityContent).where(eq(communityContent.id, id));
   res.json({ success: true });
 });
+
+/* ==================== Contenido interactivo ============================= */
+//
+// Encuestas, quiz, retos: piezas con las que la gente PUEDE hacer algo, no
+// solo leerlas. La ilustración la pone el modelo (sin una sola letra, como
+// siempre) y el elemento interactivo lo dibujamos nosotros con SVG, porque el
+// modelo de imagen no sabe escribir texto legible.
+
+router.get("/community/formatos-interactivos", (_req, res) => {
+  res.json({ success: true, data: listarFormatosInteractivos() });
+});
+
+const GenerarInteractivoBody = z.object({
+  formato: z.string().min(1).max(40),
+  tema: z.string().min(1).max(300),
+  idea: z.string().max(2000).optional(),
+  /** "9:16" historia, "1:1" post, "4:5" carrusel. */
+  relacion: z.enum(["9:16", "1:1", "4:5"]).optional().default("9:16"),
+  estilo_titular: z.string().max(40).optional(),
+  direccion_id: z.string().max(40).optional(),
+  pose_id: z.string().max(40).optional(),
+  utileria: z.string().max(300).optional(),
+  estilo_extra: z.string().max(300).optional(),
+  imagen_referencia_base64: z.string().max(12_000_000).optional(),
+});
+
+router.post("/community/interactivo/generar", async (req, res) => {
+  try {
+    const body = GenerarInteractivoBody.parse(req.body);
+    const formato = obtenerFormatoInteractivo(body.formato);
+    if (!formato) {
+      res.status(400).json({ success: false, error: `No existe el formato "${body.formato}".` });
+      return;
+    }
+
+    // 1) El texto. Cada formato pide SUS campos: por eso elegir uno u otro
+    //    cambia de verdad el resultado, cosa que los "tipos de contenido"
+    //    anteriores no hacían.
+    const toneSuffix = await buildBrandToneSuffix(getReqUserId(req));
+    const resp = await openaiShim.messages.create({
+      model: OPENAI_TEXT_MODEL,
+      max_tokens: 1200,
+      system: REGLA_ESPANOL_NEUTRO + toneSuffix,
+      messages: [{ role: "user", content: buildPromptInteractivo(formato, body.tema, body.idea) }],
+    });
+    const bloqueTxt = resp.content[0];
+    let contenido = parseContenidoInteractivo(bloqueTxt?.type === "text" ? bloqueTxt.text : "", formato);
+
+    // Una sola segunda pasada: el modelo falla la ESTRUCTURA más que el fondo,
+    // y devolver una encuesta sin opciones sería una imagen que no se puede
+    // responder — justo lo contrario de lo que promete el formato.
+    if (!contenido) {
+      console.warn(`[Interactivo] ${formato.id}: primera pasada inválida, reintentando`);
+      const r2 = await openaiShim.messages.create({
+        model: OPENAI_TEXT_MODEL,
+        max_tokens: 1200,
+        system: REGLA_ESPANOL_NEUTRO + toneSuffix,
+        messages: [{
+          role: "user",
+          content: `${buildPromptInteractivo(formato, body.tema, body.idea)}\n\nTu intento anterior no traía todos los campos obligatorios. Devuélvelos TODOS, con el JSON exacto que se pide.`,
+        }],
+      });
+      const b2 = r2.content[0];
+      contenido = parseContenidoInteractivo(b2?.type === "text" ? b2.text : "", formato);
+    }
+    if (!contenido) {
+      res.status(502).json({
+        success: false,
+        error: `La IA no logró escribir un "${formato.nombre}" completo para este tema. Prueba con un tema más concreto u otro formato.`,
+      });
+      return;
+    }
+
+    // Español neutro garantizado, no solo pedido en el prompt.
+    const neutro = neutralizarProfundo(contenido as unknown as Record<string, unknown>) as unknown as typeof contenido;
+
+    // 2) La ilustración: el set de la marca, sin texto.
+    const referenciaPropia = (body.imagen_referencia_base64 ?? "").trim();
+    const referenceBase64 = referenciaPropia || (await getFoxRefBase64());
+    const setEstudio = resolverSetEstudio(body, referenciaPropia.length > 0);
+    const layout = obtenerLayoutHistoria("clasico_superior") ?? layoutHistoriaPorDefecto();
+
+    const frameGuion: FrameGuion = {
+      numero: 1,
+      paso: formato.id,
+      layoutId: layout.id,
+      copy_principal: titularDe(neutro, formato),
+      sub_copy: "",
+      dato: "",
+      dato_label: "",
+      cta: "",
+      hashtags: "",
+      prompt_visual: neutro.explicacion || body.tema,
+    };
+
+    const frame = await generarFrameHistoria({
+      tipoHistoria: formato.nombre,
+      concepto: body.tema,
+      frameGuion,
+      layout,
+      set: setEstudio,
+      // El texto secundario NO se compone aquí: el sitio de abajo lo ocupa el
+      // bloque interactivo, y pintar los dos encima sería ilegible.
+      textoEnImagen: true,
+      referenceBase64,
+      numero: 1,
+      total: 1,
+      estiloTitular: resolverEstiloTitulo(body.estilo_titular),
+    });
+
+    // 3) El elemento interactivo encima.
+    const dims = FORMATO_DIMS[body.relacion];
+    const base = frame.imagen.replace(/^data:[^;]+;base64,/, "");
+    const conBloque = await componerInteractivo(base, neutro, formato, body.relacion, paletaDe(setEstudio.direccion));
+
+    const thumb = await miniatura(`data:image/png;base64,${conBloque}`);
+    const [row] = await db.insert(communityContent).values({
+      kind: "descripcion",
+      subtype: `interactivo_${formato.id}`,
+      topic: body.tema,
+      data: {
+        tema: body.tema,
+        tipo_contenido: `interactivo_${formato.id}`,
+        tipo_publicacion: "unica",
+        texto_en_imagen: true,
+        formato_interactivo: formato.id,
+        contenido: neutro,
+        set: {
+          direccion_id: setEstudio.direccion.id,
+          pose_id: setEstudio.pose?.id ?? null,
+          utileria: setEstudio.utileria,
+          estilo_extra: setEstudio.estiloExtra,
+        },
+        thumb,
+        piezas: [{ numero: 1, rol: "unica", titulo: titularDe(neutro, formato), subtitulo: neutro.explicacion, imagen: await comprimirParaBorrador(`data:image/png;base64,${conBloque}`) }],
+        descripciones: {},
+      },
+      imageUrl: `data:image/png;base64,${conBloque}`,
+    }).returning();
+
+    void purgarBorradores("post");
+
+    res.json({
+      success: true,
+      data: {
+        id: row!.id,
+        fecha: row!.createdAt,
+        formato: formato.id,
+        formato_nombre: formato.nombre,
+        sticker_ig: formato.stickerIg,
+        tema: body.tema,
+        relacion: body.relacion,
+        ancho: dims.width,
+        alto: dims.height,
+        imagen: `data:image/png;base64,${conBloque}`,
+        contenido: neutro,
+      },
+    });
+  } catch (err: any) {
+    console.error("[Interactivo] Error:", err);
+    if (err?.message === "RATE_LIMIT" || isRateLimitErr(err)) {
+      res.status(429).json({ success: false, error: "El servicio de imágenes está saturado. Espera un par de minutos." });
+      return;
+    }
+    res.status(500).json({ success: false, error: err.message || "Error interno" });
+  }
+});
+
+/**
+ * Compone el bloque interactivo sobre la ilustración ya generada.
+ *
+ * La zona de abajo es la MISMA que las historias reservan para el texto, así
+ * que el zorro nunca queda tapado: el modelo ya la dejó despejada.
+ */
+async function componerInteractivo(
+  imagenBase64: string,
+  contenido: ContenidoInteractivo,
+  formato: FormatoInteractivo,
+  relacion: "9:16" | "1:1" | "4:5",
+  paleta: PaletaComposicion,
+): Promise<string> {
+  const { width, height } = FORMATO_DIMS[relacion];
+  const buf = await sharp(Buffer.from(imagenBase64, "base64"))
+    .resize(width, height, { fit: "cover", position: "center" })
+    .png()
+    .toBuffer();
+
+  // La zona baja: 34% del alto, con aire contra el borde.
+  const zona = { y: Math.round(height * 0.60), alto: Math.round(height * 0.34) };
+  const cuerpo = bloqueInteractivoSvg(formato.bloque, contenido, formato, { width, height }, zona, paleta);
+  if (!cuerpo) return buf.toString("base64");
+
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">${svgDefs(paleta.scrim)}${cuerpo}</svg>`;
+  const compuesta = await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer();
+  return compuesta.toString("base64");
+}
 
 export default router;
