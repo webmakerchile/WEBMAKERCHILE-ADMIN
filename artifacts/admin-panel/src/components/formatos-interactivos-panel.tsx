@@ -39,6 +39,9 @@ const RELACIONES = [
 
 export function FormatosInteractivosPanel() {
   const [formatos, setFormatos] = useState<Formato[]>([]);
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(true);
+  const [errorCatalogo, setErrorCatalogo] = useState<string | null>(null);
+  const [intento, setIntento] = useState(0);
   const [elegido, setElegido] = useState<string | null>(null);
   const [tema, setTema] = useState("");
   const [idea, setIdea] = useState("");
@@ -49,14 +52,36 @@ export function FormatosInteractivosPanel() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const set = useSetEstudio();
 
+  // Sin catálogo no hay panel. Antes eso se veía como un cargador girando para
+  // siempre, que es indistinguible de "va lento" — y ocultaba el caso real:
+  // el servidor desplegado todavía no tiene la ruta. Si falla, se dice.
   useEffect(() => {
     let vivo = true;
+    setCargandoCatalogo(true);
+    setErrorCatalogo(null);
     fetch(`${API_BASE}/community/formatos-interactivos`, { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (vivo && d?.success) setFormatos(d.data); })
-      .catch(() => { /* sin catálogo el panel no sirve, pero no rompe la página */ });
+      .then(async (r) => {
+        if (r.status === 404) {
+          throw new Error(
+            "El servidor no conoce esta sección todavía. Suele pasar cuando se publicó el panel " +
+            "pero no la última versión del servidor: vuelve a publicar y recarga.",
+          );
+        }
+        if (r.status === 401 || r.status === 403) throw new Error("Tu sesión caducó. Vuelve a entrar.");
+        if (!r.ok) throw new Error(`El servidor respondió ${r.status}.`);
+        const d = await r.json();
+        if (!d?.success || !Array.isArray(d.data) || d.data.length === 0) {
+          throw new Error("El catálogo llegó vacío.");
+        }
+        return d.data as Formato[];
+      })
+      .then((data) => { if (vivo) setFormatos(data); })
+      .catch((e) => {
+        if (vivo) setErrorCatalogo(e instanceof Error ? e.message : "No se pudo cargar el catálogo.");
+      })
+      .finally(() => { if (vivo) setCargandoCatalogo(false); });
     return () => { vivo = false; };
-  }, []);
+  }, [intento]);
 
   const formatoActual = formatos.find((f) => f.id === elegido) ?? null;
 
@@ -137,8 +162,25 @@ export function FormatosInteractivosPanel() {
 
       {/* Las portadas: se dibujan con la MISMA geometría que compone el
           servidor, así que nunca se desfasan del resultado real. */}
+      {errorCatalogo && (
+        <div className="flex items-start gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="text-red-400 font-semibold">No se pudieron cargar los formatos</p>
+            <p className="text-muted-foreground mt-0.5">{errorCatalogo}</p>
+            <button
+              type="button"
+              onClick={() => setIntento((n) => n + 1)}
+              className="mt-2 text-xs font-semibold text-primary hover:underline"
+            >
+              Reintentar
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {formatos.length === 0 && (
+        {cargandoCatalogo && (
           <div className="col-span-full py-10 flex justify-center">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
           </div>
