@@ -50,6 +50,7 @@ import {
 import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
 import { resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte } from "../../lib/cover-style";
 import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
+import { posesCompatibles, textoEncuadre, textoGesto } from "../../lib/set-presets";
 import { buildRedactarIdeaPostPrompt, parseIdeaPost } from "../../lib/redactar-idea-post";
 import { planPurga, avisoCaducidad, diasRestantes, DIAS_RETENCION, MAX_BORRADORES } from "../../lib/borradores";
 import {
@@ -646,7 +647,7 @@ function getEstructuraSerie(n: number): RolFrame[] {
   }
 }
 
-function buildHistoriaPrompt(
+export function buildHistoriaPrompt(
   tipoHistoria: string,
   concepto: string,
   opts: {
@@ -678,9 +679,16 @@ function buildHistoriaPrompt(
   const direccionEscena = opts.poseOverride || opts.promptVisual || poseElegida;
   // Pose elegida a mano: manda sobre la del guion y sobre la del banco, igual
   // que en Posts IA. Es la misma lista de poses en las tres secciones.
-  const bloquePose = set.pose
-    ? `\n- POSE OBLIGATORIA del zorro, elegida por el usuario (tiene prioridad sobre la escena descrita arriba): ${set.pose.descripcion}`
-    : "";
+  // El gesto va después de la pose y manda sobre ella: la pose describe el
+  // cuerpo y suele arrastrar una expresión, así que si el usuario pidió otra
+  // cara hay que decir cuál gana o el modelo se queda con la de la pose.
+  const bloquePose = [
+    set.pose
+      ? `\n- POSE OBLIGATORIA del zorro, elegida por el usuario (tiene prioridad sobre la escena descrita arriba): ${set.pose.descripcion}`
+      : "",
+    set.gesto ? `\n- EXPRESIÓN OBLIGATORIA de la cara (manda sobre la que sugiera la pose): ${set.gesto}` : "",
+    set.encuadre ? `\n- ENCUADRE OBLIGATORIO de cámara (manda sobre el que sugiera la pose): ${set.encuadre}` : "",
+  ].join("");
   const bloqueUtileria = set.utileria?.trim()
     ? `\n\nUTILERÍA PEDIDA POR EL USUARIO: "${set.utileria.trim()}".
 Dibújala como OBJETOS FÍSICOS REALES apoyados en el set, con volumen y sombra propia, iluminados por la misma luz de la dirección de arte. NUNCA stickers, iconos planos ni elementos flotantes. Cuenta dentro del máximo de 2 objetos.`
@@ -1001,6 +1009,25 @@ async function generarFrameHistoria(args: {
   };
 }
 
+/**
+ * Personalización del personaje, idéntica en las cinco rutas que la aceptan.
+ *
+ * Estaba copiada campo a campo en cada esquema, y así fue como Historias se
+ * quedó sin pose y sin utilería mientras Posts IA ya las tenía: añadir una
+ * opción obligaba a acordarse de cinco sitios. Declarada una vez, aparece en
+ * todas a la vez o en ninguna.
+ */
+const CAMPOS_PERSONAJE = {
+  /** Pose fijada del zorro (id de PORTADA_POSES); vacío = la decide el rol. */
+  pose_id: z.string().max(40).optional(),
+  /** Expresión de la cara (id de GESTOS_WEBI); manda sobre la que sugiere la pose. */
+  gesto_id: z.string().max(40).optional(),
+  /** Encuadre de cámara (id de ENCUADRES). */
+  encuadre_id: z.string().max(40).optional(),
+  utileria: z.string().max(300).optional(),
+  estilo_extra: z.string().max(300).optional(),
+} as const;
+
 // Render del texto sobre una historia 9:16 según el LAYOUT del frame.
 //
 // El layout (story-formats) define qué bloques se dibujan y dónde: hay frames
@@ -1027,9 +1054,7 @@ const GenerarHistoriaBody = z.object({
   /** Iluminación: id de DIRECCIONES_PORTADA, `"auto"` para rotar, vacío = ámbar. */
   direccion_id: z.string().max(40).optional(),
   /** Pose fijada del zorro (id de PORTADA_POSES); vacío = la decide el guion. */
-  pose_id: z.string().max(40).optional(),
-  utileria: z.string().max(300).optional(),
-  estilo_extra: z.string().max(300).optional(),
+  ...CAMPOS_PERSONAJE,
   /** Referencia de personaje propia en base64 (sin prefijo data:); vacío = Webi. */
   imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
@@ -1338,9 +1363,7 @@ const GenerarDescripcionesBody = z.object({
   /** Iluminación: id de DIRECCIONES_PORTADA, `"auto"` para rotar, vacío = ámbar. */
   direccion_id: z.string().max(40).optional(),
   /** Pose fijada del zorro (id de PORTADA_POSES); vacío = la decide el rol. */
-  pose_id: z.string().max(40).optional(),
-  utileria: z.string().max(300).optional(),
-  estilo_extra: z.string().max(300).optional(),
+  ...CAMPOS_PERSONAJE,
   /** Referencia de personaje propia en base64 (sin prefijo data:); vacío = Webi. */
   imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
@@ -1358,16 +1381,25 @@ function paletaDe(direccion: DireccionArte): PaletaComposicion {
 }
 
 /** Set pedido por la UI → set resuelto que entiende el generador. */
-function resolverSetEstudio(body: {
+export function resolverSetEstudio(body: {
   direccion_id?: string;
   pose_id?: string;
+  gesto_id?: string;
+  encuadre_id?: string;
   utileria?: string;
   estilo_extra?: string;
 }, referenciaPropia = false): SetEstudio {
-  const pose = body.pose_id ? PORTADA_POSES.find((p) => p.id === body.pose_id) ?? null : null;
+  // Con un encuadre cerrado no cabe cualquier pose. Si no se fijó ninguna, se
+  // elige dentro de las que sí caben; si se fijó, manda la elección explícita.
+  const compatibles = posesCompatibles(body.encuadre_id);
+  const poseFijada = body.pose_id ? PORTADA_POSES.find((p) => p.id === body.pose_id) ?? null : null;
+  const pose = poseFijada
+    ?? (compatibles ? PORTADA_POSES.find((p) => compatibles.includes(p.id)) ?? null : null);
   return {
     direccion: resolverDireccionDeMarca(body.direccion_id),
     pose,
+    gesto: textoGesto(body.gesto_id),
+    encuadre: textoEncuadre(body.encuadre_id),
     utileria: body.utileria?.trim() || null,
     estiloExtra: body.estilo_extra?.trim() || null,
     referenciaPropia,
@@ -1399,6 +1431,10 @@ interface SetEstudio {
   direccion: DireccionArte;
   /** Pose fijada por el usuario; vacío = la decide el rol de la slide. */
   pose?: PoseEntry | null;
+  /** Expresión de la cara, ya resuelta a texto de prompt. */
+  gesto?: string | null;
+  /** Encuadre de cámara, ya resuelto a texto de prompt. */
+  encuadre?: string | null;
   /** Utilería pedida: se dibuja como props físicos del set, nunca stickers. */
   utileria?: string | null;
   /** Toque de estilo extra en palabras del usuario. */
@@ -1407,7 +1443,7 @@ interface SetEstudio {
   referenciaPropia?: boolean;
 }
 
-function buildSlidePrompt(
+export function buildSlidePrompt(
   tema: string,
   tipoContenido: string,
   slide: SlidePlan,
@@ -1430,11 +1466,18 @@ function buildSlidePrompt(
     : `Ilustra: "${slide.titulo}" — extrae las palabras clave visuales de este título y úsalas como objetos.`;
 
   // Pose fijada por el usuario: manda sobre la que sugiere el rol de la slide.
-  const bloquePose = set.pose
-    ? `\n\n<forced_pose>
-POSE OBLIGATORIA del personaje, elegida por el usuario — tiene prioridad sobre cualquier pose sugerida por el rol de la slide:
-${set.pose.descripcion}
-</forced_pose>`
+  // El gesto y el encuadre van en el mismo bloque y por debajo de la pose,
+  // porque una pose arrastra su propia expresión y su propio plano: si el
+  // usuario pidió otros, hay que decir explícitamente cuál gana.
+  const lineasPersonaje = [
+    set.pose
+      ? `POSE OBLIGATORIA del personaje, elegida por el usuario — tiene prioridad sobre cualquier pose sugerida por el rol de la slide:\n${set.pose.descripcion}`
+      : "",
+    set.gesto ? `EXPRESIÓN OBLIGATORIA de la cara — manda sobre la que sugiera la pose:\n${set.gesto}` : "",
+    set.encuadre ? `ENCUADRE OBLIGATORIO de cámara — manda sobre el que sugiera la pose:\n${set.encuadre}` : "",
+  ].filter(Boolean);
+  const bloquePose = lineasPersonaje.length
+    ? `\n\n<forced_pose>\n${lineasPersonaje.join("\n\n")}\n</forced_pose>`
     : "";
 
   // Utilería: props REALES del set, no calcomanías pegadas. Es la misma regla
@@ -1840,10 +1883,16 @@ async function renderTextoEnSlide(
 // ofrece Portadas. Se sirve desde aquí para que la página no tenga que hablar
 // con dos routers distintos por una lista de opciones.
 router.get("/community/set-options", (_req, res) => {
-  const { direcciones, poses, estilosTitular } = listarOpcionesPortada();
+  // Se devuelve el catálogo entero: si un grupo de opciones no viaja, sus
+  // botones simplemente no se pintan y no hay forma de saber que faltan.
+  const { direcciones, poses, estilosTitular, gestos, encuadres, utileria, estilos, posesPrimerPlano } =
+    listarOpcionesPortada();
   res.json({
     success: true,
-    data: { direcciones, poses, estilosTitular, direccionPredeterminada: ID_DIRECCION_MARCA },
+    data: {
+      direcciones, poses, estilosTitular, gestos, encuadres, utileria, estilos, posesPrimerPlano,
+      direccionPredeterminada: ID_DIRECCION_MARCA,
+    },
   });
 });
 
@@ -2183,9 +2232,7 @@ const ReintentarSlideBody = z.object({
   // que los reintentos no se parezcan": el resultado era una slide con otra
   // iluminación en medio de un carrusel, que es exactamente lo que no puede pasar.
   direccion_id: z.string().max(40).optional(),
-  pose_id: z.string().max(40).optional(),
-  utileria: z.string().max(300).optional(),
-  estilo_extra: z.string().max(300).optional(),
+  ...CAMPOS_PERSONAJE,
 });
 
 // Regenera SOLO el texto (titulo + subtitulo) de una slide, manteniendo el rol
@@ -2346,9 +2393,7 @@ const ReintentarHistoriaBody = z.object({
   // que los reintentos no se parezcan": el resultado era un frame con otra
   // iluminación en medio de la serie, que es lo que no puede pasar.
   direccion_id: z.string().max(40).optional(),
-  pose_id: z.string().max(40).optional(),
-  utileria: z.string().max(300).optional(),
-  estilo_extra: z.string().max(300).optional(),
+  ...CAMPOS_PERSONAJE,
   /** Referencia propia de la serie: si la original no usó a Webi, el reintento tampoco. */
   imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
@@ -2715,9 +2760,7 @@ const GenerarInteractivoBody = z.object({
   relacion: z.enum(["9:16", "1:1", "4:5"]).optional().default("9:16"),
   estilo_titular: z.string().max(40).optional(),
   direccion_id: z.string().max(40).optional(),
-  pose_id: z.string().max(40).optional(),
-  utileria: z.string().max(300).optional(),
-  estilo_extra: z.string().max(300).optional(),
+  ...CAMPOS_PERSONAJE,
   imagen_referencia_base64: z.string().max(12_000_000).optional(),
 });
 

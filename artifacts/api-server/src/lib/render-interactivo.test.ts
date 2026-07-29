@@ -50,6 +50,7 @@ function contenidoDe(f: FormatoInteractivo, texto: string): ContenidoInteractivo
     invitacion: texto,
     dato: "73%",
     frase: `${texto} ___`,
+    termino: texto,
     cta: "Responde",
   };
   const c = parseContenidoInteractivo(JSON.stringify(crudo), f);
@@ -163,12 +164,16 @@ describe("cada formato se dibuja distinto de todos los demás", () => {
     afirmacion: "Con Instagram me basta",
     veredicto: "FALSO",
     explicacion: "Explicación de prueba para el formato.",
-    items: ["Señal uno", "Señal dos", "Señal tres", "Señal cuatro"],
+    items: [
+      "Señal uno", "Señal dos", "Señal tres", "Señal cuatro", "Señal cinco",
+      "Señal seis", "Señal siete", "Señal ocho", "Señal nueve",
+    ],
     izquierda: "Página propia",
     derecha: "Solo Instagram",
     invitacion: "Pregúntame lo que quieras de webs",
     dato: "73%",
     frase: "Lo que más me cuesta de mi negocio es ___",
+    termino: "Hosting",
     cta: "Responde",
   };
 

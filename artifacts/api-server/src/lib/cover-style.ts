@@ -23,6 +23,12 @@ import {
   type PoseSeleccionada,
 } from "./pose-bank";
 import {
+  listarPresetsSet,
+  posesCompatibles,
+  textoEncuadre,
+  textoGesto,
+} from "./set-presets";
+import {
   construirOverlayTitular,
   resolverEstiloTitular,
   listarEstilosTitular,
@@ -308,6 +314,7 @@ export function buildCoverIllustrationPrompt(
   extraEstilo?: string | null,
   utileria?: string | null,
   plantilla?: PlantillaPortada,
+  extras?: { gesto?: string | null; encuadre?: string | null },
 ): string {
   const plantillaActiva = plantilla ?? obtenerPlantilla("v_titular_superior")!;
   const bloqueZona = plantillaActiva.bloqueComposicion(false);
@@ -358,7 +365,7 @@ ${direccion.paletaObjetos}
 
 RECUERDA: CERO TEXTO. Ni una sola letra o número en NINGUNA parte de la imagen. El zorro debe verse EXACTAMENTE como en la referencia (flat cartoon), protagonista sobre un fondo "${direccion.nombre}" trabajado y con atmósfera.
 
-${bloquePoseRequerida(pose)}`;
+${bloquePoseRequerida(pose, extras)}`;
 }
 
 /** Opciones de personalización manual: cada campo fija UN punto del prompt. */
@@ -373,6 +380,10 @@ export interface OpcionesPortada {
   estiloTitularId?: string | null;
   /** Utilería pedida por el usuario: se dibuja como props físicos del set. */
   utileria?: string | null;
+  /** Fija la expresión de la cara (id de GESTOS_WEBI). */
+  gestoId?: string | null;
+  /** Fija el encuadre de cámara (id de ENCUADRES). */
+  encuadreId?: string | null;
 }
 
 /** Direcciones, poses, plantillas y estilos tipográficos disponibles, en
@@ -388,6 +399,7 @@ export function listarOpcionesPortada() {
     poses: PORTADA_POSES.map(p => ({ id: p.id, etiqueta: p.etiqueta })),
     plantillas: listarPlantillas(),
     estilosTitular: listarEstilosTitular(),
+    ...listarPresetsSet(),
   };
 }
 
@@ -404,17 +416,23 @@ export function prepararPortada(tema: string, extraEstilo?: string | null, opcio
   const plantilla = resolverPlantilla(opciones?.plantillaId, "vertical", { titulo: tema });
   const estiloTitular = resolverEstiloTitular(opciones?.estiloTitularId, plantilla.estiloTitularDefault);
 
+  // Un encuadre cerrado no admite cualquier pose: "brazos cruzados" en primer
+  // plano pide un torso que no cabe. Si no se fijó pose, se elige dentro de las
+  // compatibles; si se fijó, manda la elección explícita y el encuadre cede.
+  const compatibles = posesCompatibles(opciones?.encuadreId);
   const poseFija = opciones?.poseId
     ? PORTADA_POSES.find(p => p.id === opciones.poseId)
     : undefined;
   const pose: PoseSeleccionada = poseFija
     ? { id: poseFija.id, descripcion: poseFija.descripcion, emocion: detectarEmocion(tema) }
-    : seleccionarPosePortada(tema);
+    : seleccionarPosePortada(tema, compatibles ?? undefined);
 
   // Normalizar entradas de texto libre (clientes no-UI pueden mandar solo espacios).
   const utileria = opciones?.utileria?.trim() || null;
   const estilo = extraEstilo?.trim() || null;
-  const prompt = buildCoverIllustrationPrompt(tema, direccion, detalle, pose, estilo, utileria, plantilla);
+  const gesto = textoGesto(opciones?.gestoId);
+  const encuadre = textoEncuadre(opciones?.encuadreId);
+  const prompt = buildCoverIllustrationPrompt(tema, direccion, detalle, pose, estilo, utileria, plantilla, { gesto, encuadre });
   console.log(`[PORTADA] Dirección: ${direccion.id}${fijada ? " (fijada)" : ""} · Plantilla: ${plantilla.id}${opciones?.plantillaId ? " (fijada)" : ""} · Titular: ${estiloTitular.id} · Pose: ${pose.id}${poseFija ? " (fijada)" : ""} (emoción: ${pose.emocion || "ninguna"})${utileria ? " · Utilería personalizada" : ""}`);
   return { direccion, plantilla, estiloTitular, detalle, pose, prompt };
 }

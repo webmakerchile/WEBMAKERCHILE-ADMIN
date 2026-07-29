@@ -228,6 +228,196 @@ function Escala() {
   );
 }
 
+/** Tres huecos numerados: los círculos van vacíos porque el orden lo pone quien mira. */
+function Podio() {
+  const w = 40, gap = 6, x0 = 14;
+  return (
+    <g>
+      {[0, 1, 2].map((i) => {
+        const x = x0 + i * (w + gap);
+        return (
+          <g key={i}>
+            <rect x={x} y={ZONA.y} width={w} height={ZONA.alto} rx="8" fill={CARTA} fillOpacity="0.96" />
+            <circle cx={x + w / 2} cy={ZONA.y + 20} r="9" fill="none" stroke={AMBAR} strokeWidth="2.2" strokeDasharray="4 3" />
+            <rect x={x + 8} y={ZONA.y + 44} width={w - 16} height="5" rx="2.5" fill="#5B6069" />
+            <rect x={x + 12} y={ZONA.y + 54} width={w - 24} height="5" rx="2.5" fill="#9AA1AC" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Dos estados y una flecha: el gris es el antes, el ámbar el después. */
+function AntesDespues({ etiquetas }: { etiquetas: string[] | null }) {
+  const e = etiquetas ?? ["ANTES", "DESPUÉS"];
+  const alto = ZONA.alto - 14;
+  const y0 = ZONA.y + 14;
+  const cy = y0 + alto / 2;
+  return (
+    <g>
+      <text x="42" y={y0 - 4} textAnchor="middle" fontSize="7" fontWeight="800" letterSpacing="0.6" fill="#C9CDD4">{e[0]}</text>
+      <text x="118" y={y0 - 4} textAnchor="middle" fontSize="7" fontWeight="800" letterSpacing="0.6" fill={AMBAR}>{e[1]}</text>
+      <rect x="14" y={y0} width="56" height={alto} rx="9" fill="#C9CDD4" />
+      <rect x="26" y={cy - 3} width="32" height="6" rx="3" fill="#6B7079" />
+      <rect x="90" y={y0} width="56" height={alto} rx="9" fill={AMBAR} />
+      <rect x="102" y={cy - 3} width="32" height="6" rx="3" fill="#2A1B0E" />
+      <path d={`M75 ${cy - 7} L86 ${cy} L75 ${cy + 7} Z`} fill="#FFFFFF" />
+    </g>
+  );
+}
+
+/** Rejilla 2x2 de perfiles. */
+function GaleriaTipos() {
+  const w = 64, h = 34, gx = 4, gy = 5;
+  return (
+    <g>
+      {[0, 1, 2, 3].map((i) => {
+        const x = 14 + (i % 2) * (w + gx);
+        const y = ZONA.y + Math.floor(i / 2) * (h + gy);
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={w} height={h} rx="8" fill={CARTA} fillOpacity="0.96" />
+            <circle cx={x + 13} cy={y + h / 2} r="6.5" fill={AMBAR} />
+            <text x={x + 13} y={y + h / 2 + 2.6} textAnchor="middle" fontSize="8" fontWeight="800" fill="#141318">{i + 1}</text>
+            <rect x={x + 24} y={y + h / 2 - 2.5} width={32 - i * 3} height="5" rx="2.5" fill="#5B6069" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Cinco caras del 1 al 5: la boca pasa de arco triste a arco alegre. */
+function EscalaCaras() {
+  const r = 12, paso = 132 / 5;
+  const cy = ZONA.y + ZONA.alto / 2 - 6;
+  return (
+    <g>
+      {[0, 1, 2, 3, 4].map((i) => {
+        const cx = 14 + paso * i + paso / 2;
+        const curva = (i - 2) * r * 0.26;
+        const bw = r * 0.52;
+        return (
+          <g key={i}>
+            <circle cx={cx} cy={cy} r={r} fill={CARTA} fillOpacity="0.96" />
+            <circle cx={cx - r * 0.32} cy={cy - r * 0.22} r={r * 0.12} fill="#20242B" />
+            <circle cx={cx + r * 0.32} cy={cy - r * 0.22} r={r * 0.12} fill="#20242B" />
+            <path
+              d={`M${cx - bw} ${cy + r * 0.28 - curva * 0.5} Q${cx} ${cy + r * 0.28 + curva} ${cx + bw} ${cy + r * 0.28 - curva * 0.5}`}
+              fill="none" stroke="#20242B" strokeWidth={r * 0.13} strokeLinecap="round"
+            />
+          </g>
+        );
+      })}
+      <rect x="20" y={cy + r + 8} width="26" height="4" rx="2" fill={AMBAR} />
+      <rect x="114" y={cy + r + 8} width="26" height="4" rx="2" fill={AMBAR} />
+    </g>
+  );
+}
+
+/** Cuadrícula 3x3 para marcar. */
+function Bingo() {
+  const lado = 42, gap = 3;
+  return (
+    <g>
+      {Array.from({ length: 9 }, (_, i) => {
+        const x = 14 + (i % 3) * (lado + gap);
+        const y = ZONA.y + Math.floor(i / 3) * (24 + gap);
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={lado} height="24" rx="5" fill={CARTA} fillOpacity="0.95" stroke={AMBAR} strokeWidth="1.4" />
+            <rect x={x + 8} y={y + 11} width={lado - 16} height="4" rx="2" fill="#7B828C" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Tres niveles con su color. */
+function Semaforo() {
+  const COLORES = ["#EF4444", "#F59E0B", "#22C55E"];
+  const h = 22, gap = 5;
+  return (
+    <g>
+      {COLORES.map((color, i) => {
+        const y = ZONA.y + i * (h + gap);
+        return (
+          <g key={color}>
+            <rect x="14" y={y} width="132" height={h} rx="7" fill={CARTA} fillOpacity="0.96" />
+            <circle cx="28" cy={y + h / 2} r="6.5" fill={color} />
+            <rect x="42" y={y + h / 2 - 2.5} width={76 - i * 10} height="5" rx="2.5" fill="#5B6069" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Tres afirmaciones con interrogante: ninguna marcada, la mentira no se revela. */
+function TresCartas() {
+  const h = 22, gap = 5;
+  return (
+    <g>
+      {[0, 1, 2].map((i) => {
+        const y = ZONA.y + i * (h + gap);
+        return (
+          <g key={i}>
+            <rect x="14" y={y} width="132" height={h} rx="7" fill={CARTA} fillOpacity="0.96" />
+            <rect x="24" y={y + h / 2 - 2.5} width={78 - i * 12} height="5" rx="2.5" fill="#5B6069" />
+            <circle cx="132" cy={y + h / 2} r="7" fill="none" stroke={AMBAR} strokeWidth="1.8" />
+            <text x="132" y={y + h / 2 + 3.2} textAnchor="middle" fontSize="9" fontWeight="800" fill={AMBAR}>?</text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Una palabra grande para definir. */
+function TarjetaDefinicion() {
+  return (
+    <g>
+      <rect x="14" y={ZONA.y + 6} width="132" height={ZONA.alto - 12} rx="10" fill={CARTA} fillOpacity="0.96" />
+      <text x="80" y={ZONA.y + 24} textAnchor="middle" fontSize="7" fontWeight="800" letterSpacing="0.9" fill="#8A9099">
+        ¿SABES QUÉ ES?
+      </text>
+      <text x="80" y={ZONA.y + 48} textAnchor="middle" fontSize="21" fontWeight="800" fill={AMBAR}>Hosting</text>
+      <rect x="46" y={ZONA.y + 56} width="68" height="4" rx="2" fill="#D6DAE0" />
+    </g>
+  );
+}
+
+/** Marco por rellenar, con las esquinas en L. */
+function MarcoVacio() {
+  const x1 = 18, x2 = 142, y1 = ZONA.y + 18, y2 = ZONA.y + ZONA.alto;
+  const b = 11;
+  const L = (x: number, y: number, dx: number, dy: number) => (
+    <path d={`M${x + dx * b} ${y} L${x} ${y} L${x} ${y + dy * b}`} fill="none" stroke={AMBAR} strokeWidth="3" strokeLinecap="round" />
+  );
+  return (
+    <g>
+      <rect x="26" y={ZONA.y} width="108" height="6" rx="3" fill="#FFFFFF" fillOpacity="0.75" />
+      <rect x={x1} y={y1} width={x2 - x1} height={y2 - y1} rx="8" fill="#FFFFFF" fillOpacity="0.13" />
+      {L(x1, y1, 1, 1)}{L(x2, y1, -1, 1)}{L(x1, y2, 1, -1)}{L(x2, y2, -1, -1)}
+    </g>
+  );
+}
+
+/** Frase entrecomillada para opinar. */
+function Cita() {
+  return (
+    <g>
+      <rect x="14" y={ZONA.y + 4} width="132" height={ZONA.alto - 8} rx="10" fill={CARTA} fillOpacity="0.96" />
+      <text x="24" y={ZONA.y + 30} fontSize="30" fontWeight="800" fill={AMBAR} fillOpacity="0.5">&#8220;</text>
+      <rect x="34" y={ZONA.y + 28} width="90" height="6" rx="3" fill="#3A3F47" />
+      <rect x="42" y={ZONA.y + 40} width="74" height="6" rx="3" fill="#3A3F47" />
+      <rect x="56" y={ZONA.y + 58} width="48" height="4" rx="2" fill={AMBAR} />
+    </g>
+  );
+}
+
 function Bloque({ formato }: { formato: FormatoPortada }) {
   switch (formato.bloque) {
     case "tarjeta_opciones":
@@ -244,6 +434,26 @@ function Bloque({ formato }: { formato: FormatoPortada }) {
       return <Hueco />;
     case "escala":
       return <Escala />;
+    case "podio":
+      return <Podio />;
+    case "antes_despues":
+      return <AntesDespues etiquetas={formato.etiquetas} />;
+    case "galeria_tipos":
+      return <GaleriaTipos />;
+    case "escala_caras":
+      return <EscalaCaras />;
+    case "bingo":
+      return <Bingo />;
+    case "semaforo":
+      return <Semaforo />;
+    case "tres_cartas":
+      return <TresCartas />;
+    case "tarjeta_definicion":
+      return <TarjetaDefinicion />;
+    case "marco_vacio":
+      return <MarcoVacio />;
+    case "cita":
+      return <Cita />;
     default:
       return null;
   }
