@@ -8,7 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ROLES, normalizeRole, type TeamRole } from "@workspace/roles";
 import {
   Loader2, Users2, AlertTriangle, UserPlus, Check, X, Pencil,
-  CalendarDays, Phone, FileText, ExternalLink,
+  CalendarDays, Phone, FileText, ExternalLink, Power,
 } from "lucide-react";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
@@ -143,6 +143,30 @@ export default function RrhhPage() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["jornada-overview"] }),
     onError: (e) => toast({ title: "No se pudo cambiar la pausa", description: (e as Error).message, variant: "destructive" }),
+  });
+
+  // Cerrar la jornada de otra persona. Pausar no era suficiente: una jornada
+  // que quedó encendida y solo se pausa deja a la persona figurando como que
+  // sigue en su turno, y las horas del día nunca se cierran.
+  const cerrarMut = useMutation({
+    mutationFn: async (p: { userId: number }) => {
+      const r = await fetch(`${API_BASE}/jornada/check-out`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: p.userId }),
+      });
+      if (!r.ok) {
+        const b = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo cerrar la jornada");
+      }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jornada-overview"] });
+      toast({ title: "Jornada cerrada", description: "El reloj dejó de contar." });
+    },
+    onError: (e) => toast({ title: "No se pudo cerrar la jornada", description: (e as Error).message, variant: "destructive" }),
   });
 
   const saveProfile = useMutation({
@@ -327,18 +351,37 @@ export default function RrhhPage() {
                     // quien no ha marcado o ya terminó no significa nada.
                     if (!m.today?.open && !m.today?.pausa) return null;
                     const enPausa = Boolean(m.today?.pausa);
+                    const cerrando = cerrarMut.isPending && cerrarMut.variables?.userId === m.id;
                     return (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={pausaMut.isPending}
-                        onClick={() => pausaMut.mutate({ userId: m.id, pausar: !enPausa })}
-                        className={enPausa ? "border-emerald-500/40 text-emerald-400" : "border-amber-500/40 text-amber-400"}
-                      >
-                        {pausaMut.isPending && pausaMut.variables?.userId === m.id
-                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          : enPausa ? "Reanudar" : "Pausar"}
-                      </Button>
+                      <span className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={pausaMut.isPending || cerrando}
+                          onClick={() => pausaMut.mutate({ userId: m.id, pausar: !enPausa })}
+                          className={enPausa ? "border-emerald-500/40 text-emerald-400" : "border-amber-500/40 text-amber-400"}
+                        >
+                          {pausaMut.isPending && pausaMut.variables?.userId === m.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : enPausa ? "Reanudar" : "Pausar"}
+                        </Button>
+                        {/* Apagar el reloj de verdad. Una pausa no es una
+                            salida: la persona sigue figurando en su turno. */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={pausaMut.isPending || cerrando}
+                          onClick={() => {
+                            const quien = m.name || m.email;
+                            if (!window.confirm(`¿Cerrar la jornada de ${quien}? Dejará de contar horas desde ahora.`)) return;
+                            cerrarMut.mutate({ userId: m.id });
+                          }}
+                          className="border-red-500/40 text-red-400"
+                          title="Terminar la jornada"
+                        >
+                          {cerrando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                        </Button>
+                      </span>
                     );
                   }}
                 />

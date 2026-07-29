@@ -43,6 +43,14 @@ export const hubWorkSessions = pgTable(
     discordLastSeenAt: timestamp("discord_last_seen_at", { withTimezone: true }),
     /** true = la abrió el bot al detectar al usuario en el canal de voz. */
     autoStarted: boolean("auto_started").notNull().default(false),
+    /**
+     * Quién cerró la jornada, cuando NO fue la propia persona.
+     *
+     * Null es "la cerró quien la trabajó". Una jornada que cerró RRHH porque
+     * quedó encendida no es lo mismo que una que cerró su dueño, y en un
+     * registro de horas esa diferencia se tiene que poder auditar.
+     */
+    closedBy: integer("closed_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

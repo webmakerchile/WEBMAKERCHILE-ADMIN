@@ -4871,6 +4871,79 @@ function attHHMM(iso: string | null): string { return iso ? new Date(iso).toLoca
 function attFmtLong(dateStr: string): string { const s = new Date(dateStr + "T12:00:00Z").toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }); return s.charAt(0).toUpperCase() + s.slice(1); }
 const ATT_DAY_LETTERS = ["L", "M", "X", "J", "V", "S", "D"];
 
+/** Un tramo del día: trabajo, pausa, o tiempo sin marcar entre sesiones. */
+interface AttTramo {
+  tipo: "trabajo" | "pausa" | "fuera";
+  desde: string;
+  hasta: string | null;
+  minutos: number;
+  motivo?: string;
+}
+interface AttDesgloseData {
+  tramos: AttTramo[];
+  trabajado: number;
+  pausado: number;
+  fuera: number;
+  abarcado: number;
+  entrada: string | null;
+  salida: string | null;
+  abierta: boolean;
+}
+
+const ATT_TRAMO: Record<AttTramo["tipo"], string> = {
+  trabajo: "Trabajando",
+  pausa: "En pausa",
+  fuera: "Sin marcar",
+};
+
+/**
+ * En qué se fue el día entre la entrada y la salida.
+ *
+ * La franja mostraba "08:12 → 22:34" con "6h 37m" al lado y no había forma de
+ * saber dónde estaban las otras ocho horas: parte eran pausas y parte huecos
+ * entre sesiones, que no aparecían en ninguna cifra. Aquí los tramos suman
+ * exactamente lo que abarca la franja, así que la resta siempre cuadra.
+ */
+function AttDesglose({ d }: { d: AttDesgloseData }) {
+  if (d.tramos.length === 0) return null;
+  const total = Math.max(1, d.abarcado);
+  return (
+    <div className="att-desg">
+      <div className="att-desg-bar">
+        {d.tramos.map((t, i) => (
+          <span
+            key={i}
+            className={cn("att-desg-seg", t.tipo)}
+            style={{ width: `${(t.minutos / total) * 100}%` }}
+            title={`${ATT_TRAMO[t.tipo]} · ${attFmtMin(t.minutos)}`}
+          />
+        ))}
+      </div>
+      <div className="att-desg-tot">
+        <span className="trabajo">{attFmtMin(d.trabajado)} trabajados</span>
+        {d.pausado > 0 && <span className="pausa">{attFmtMin(d.pausado)} en pausa</span>}
+        {d.fuera > 0 && (
+          <span className="fuera" title="Entre una salida y la siguiente entrada">
+            {attFmtMin(d.fuera)} sin marcar
+          </span>
+        )}
+        <span className="span">{attFmtMin(d.abarcado)} de punta a punta</span>
+      </div>
+      <div className="att-desg-list">
+        {d.tramos.map((t, i) => (
+          <div key={i} className="att-desg-row">
+            <span className={cn("att-desg-dot", t.tipo)} />
+            <span className="hora">{attHHMM(t.desde)} → {t.hasta ? attHHMM(t.hasta) : "ahora"}</span>
+            <span className={cn("tipo", t.tipo)}>{ATT_TRAMO[t.tipo]}</span>
+            <span className="dur">{attFmtMin(t.minutos)}</span>
+            {t.motivo && <span className="motivo">· {t.motivo}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface AttMember {
   id: number; name: string | null; email: string; picture: string | null; teamRole: string | null;
   discordUserId: string | null; discordTag: string | null;
@@ -4880,6 +4953,9 @@ interface AttMember {
     pausedMinutes: number;
     /** Pausa en curso, o null si el reloj está corriendo. */
     pausa: { id: number; startedAt: string; motivo: string } | null;
+    /** Id de quien cerró la jornada, si no fue la propia persona. */
+    cerradaPor?: number | null;
+    desglose?: AttDesgloseData;
   } | null;
   discord: {
     linked: boolean; tag: string | null; checkin: boolean | null;
@@ -4913,6 +4989,7 @@ interface AttHistDay {
 function AttendanceView() {
   const [selDate, setSelDate] = useState<string>(attToday());
   const [histUser, setHistUser] = useState<{ id: number; name: string | null; email: string } | null>(null);
+  const [desgloseAbierto, setDesgloseAbierto] = useState<number | null>(null);
   const [histDays, setHistDays] = useState<7 | 30 | 92>(7);
   const [showDc, setShowDc] = useState(false);
   const [mapErr, setMapErr] = useState<string | null>(null);
@@ -5005,6 +5082,26 @@ function AttendanceView() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["jornada-overview"] }),
     onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al pausar"),
+  });
+
+  // Cerrar la jornada de otra persona: una pausa no es una salida, y sin esto
+  // una jornada que quedó encendida no había forma de apagarla desde aquí.
+  const cerrarMut = useMutation({
+    mutationFn: async (p: { userId: number }) => {
+      const res = await fetch(`${HUB_API_BASE}/jornada/check-out`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: p.userId }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(b?.error || "No se pudo cerrar la jornada");
+      }
+      return res.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jornada-overview"] }),
+    onError: (e) => setMapErr(e instanceof Error ? e.message : "Error al cerrar la jornada"),
   });
 
   const mapMut = useMutation({
@@ -5172,11 +5269,22 @@ function AttendanceView() {
                     </strong>
                     <small>{m.teamRole || "—"}</small>
                   </div>
-                  <div className="att-times" title="Llegada → salida">
+                  {/* La franja sola no explica nada: entre la entrada y la
+                      salida hay pausas y huecos sin marcar, y por eso el total
+                      de al lado siempre parecía estar mal. Se abre y se ve. */}
+                  <button
+                    className={cn("att-times", m.today?.desglose && "clickable", desgloseAbierto === m.id && "on")}
+                    title={m.today?.desglose ? "Ver en qué se fue el día" : "Llegada → salida"}
+                    aria-expanded={desgloseAbierto === m.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (m.today?.desglose) setDesgloseAbierto(desgloseAbierto === m.id ? null : m.id);
+                    }}
+                  >
                     <span>{m.today ? attHHMM(m.today.checkIn) : "—"}</span>
                     <span className="att-arw">→</span>
                     <span>{m.today ? (m.today.open ? "…" : attHHMM(m.today.checkOut)) : "—"}</span>
-                  </div>
+                  </button>
                   <span className="att-min">{m.today ? attFmtMin(m.today.minutes) : "0m"}</span>
                   {(() => {
                     const d = m.discord;
@@ -5208,6 +5316,23 @@ function AttendanceView() {
                       {enPausa ? "▶" : "⏸"}
                     </button>
                   )}
+                  {/* Apagar el reloj. Pausar deja a la persona figurando en su
+                      turno: una jornada olvidada seguía sin poder cerrarse. */}
+                  {isToday && m.today?.open && (
+                    <button
+                      className="att-pause off"
+                      title="Terminar su jornada"
+                      disabled={pausaMut.isPending || cerrarMut.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const quien = m.name || m.email;
+                        if (!window.confirm(`¿Cerrar la jornada de ${quien}? Dejará de contar horas desde ahora.`)) return;
+                        cerrarMut.mutate({ userId: m.id });
+                      }}
+                    >
+                      ⏹
+                    </button>
+                  )}
                   <span
                     className={cn("att-st", st)}
                     title={m.today && m.today.pausedMinutes > 0 ? `${attFmtMin(m.today.pausedMinutes)} en pausas (ya descontados)` : undefined}
@@ -5215,6 +5340,9 @@ function AttendanceView() {
                     {st === "work" ? "Trabajando" : st === "pause" ? "En pausa" : st === "done" ? "Terminó" : "Sin marcar"}
                   </span>
                 </div>
+                {desgloseAbierto === m.id && m.today?.desglose && (
+                  <AttDesglose d={m.today.desglose} />
+                )}
                 {m.logs.length > 0 && (
                   <div className="att-logs">
                     {m.logs.slice(0, 3).map((l) => (

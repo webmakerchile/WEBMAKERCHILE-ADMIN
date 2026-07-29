@@ -527,6 +527,39 @@
 .hub-root .att-pause{flex:none;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--dim);font-size:11px;line-height:1;cursor:pointer;transition:all .15s;}
 .hub-root .att-pause:hover:not(:disabled){color:#fbbf24;border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.08);}
 .hub-root .att-pause:disabled{opacity:.4;cursor:default;}
+/* Botón de apagar: rojo, para que no se confunda con el de pausa. Cerrar una
+   jornada no se deshace desde aquí, así que tiene que verse distinto. */
+.hub-root .att-pause.off:hover:not(:disabled){color:#f87171;border-color:rgba(248,113,113,.45);background:rgba(248,113,113,.09);}
+
+/* La franja horaria pasa a ser un botón que abre el desglose del día. */
+.hub-root .att-times{border:0;padding:0;background:transparent;font-family:'IBM Plex Mono',monospace;}
+.hub-root .att-times.clickable{cursor:pointer;border-bottom:1px dashed rgba(255,255,255,.16);}
+.hub-root .att-times.clickable:hover{color:#fbbf24;border-bottom-color:rgba(251,191,36,.5);}
+.hub-root .att-times.on{color:#fbbf24;border-bottom-color:rgba(251,191,36,.6);}
+
+/* Desglose del día: barra proporcional + totales + tramo a tramo. */
+.hub-root .att-desg{margin:10px 0 2px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.025);border:1px solid var(--line);}
+.hub-root .att-desg-bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.06);}
+.hub-root .att-desg-seg.trabajo{background:#34d399;}
+.hub-root .att-desg-seg.pausa{background:#fbbf24;}
+.hub-root .att-desg-seg.fuera{background:#52525b;}
+.hub-root .att-desg-tot{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:10.5px;}
+.hub-root .att-desg-tot .trabajo{color:#34d399;}
+.hub-root .att-desg-tot .pausa{color:#fbbf24;}
+.hub-root .att-desg-tot .fuera{color:var(--dim);}
+.hub-root .att-desg-tot .span{color:var(--faint);}
+.hub-root .att-desg-list{margin-top:8px;display:flex;flex-direction:column;gap:3px;}
+.hub-root .att-desg-row{display:flex;align-items:center;gap:8px;font-size:10.5px;font-family:'IBM Plex Mono',monospace;}
+.hub-root .att-desg-dot{width:6px;height:6px;border-radius:99px;flex:none;}
+.hub-root .att-desg-dot.trabajo{background:#34d399;}
+.hub-root .att-desg-dot.pausa{background:#fbbf24;}
+.hub-root .att-desg-dot.fuera{background:#52525b;}
+.hub-root .att-desg-row .hora{color:var(--dim);width:96px;flex:none;}
+.hub-root .att-desg-row .tipo.trabajo{color:#34d399;}
+.hub-root .att-desg-row .tipo.pausa{color:#fbbf24;}
+.hub-root .att-desg-row .tipo.fuera{color:var(--dim);}
+.hub-root .att-desg-row .dur{color:var(--faint);}
+.hub-root .att-desg-row .motivo{color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .hub-root .att-logs{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:3px;}
 .hub-root .att-log{font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .hub-root .att-log.ok{color:#34d399;}

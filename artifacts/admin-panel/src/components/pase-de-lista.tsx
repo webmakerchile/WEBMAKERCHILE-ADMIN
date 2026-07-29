@@ -9,8 +9,72 @@
 // totales del día están arriba en vez de en una línea perdida.
 
 import { useMemo, useState } from "react";
-import { Users2, Search, Circle } from "lucide-react";
-import { formatMinutes, type AsistenciaMiembro } from "@/lib/asistencia";
+import { Users2, Search, Circle, ChevronDown } from "lucide-react";
+import { formatMinutes, type AsistenciaMiembro, type DesgloseJornada, type TramoJornada } from "@/lib/asistencia";
+
+/** Hora local corta de un ISO: "08:12". */
+const hhmm = (iso: string) =>
+  new Date(iso).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+const TRAMOS: Record<TramoJornada["tipo"], { etiqueta: string; barra: string; texto: string }> = {
+  trabajo: { etiqueta: "Trabajando", barra: "bg-emerald-400", texto: "text-emerald-400" },
+  pausa: { etiqueta: "En pausa", barra: "bg-amber-400", texto: "text-amber-400" },
+  fuera: { etiqueta: "Sin marcar", barra: "bg-zinc-600", texto: "text-muted-foreground" },
+};
+
+/**
+ * En qué se fue el día, tramo por tramo.
+ *
+ * La franja "08:12 → 22:34" junto a "6h 37m" no se podía entender: faltaban
+ * las pausas y, sobre todo, los huecos entre sesiones — si alguien marca
+ * salida a mediodía y vuelve a entrar a las cinco, esas horas no estaban en
+ * ninguna parte. Aquí los tramos suman exactamente lo que abarca la franja.
+ */
+function Desglose({ d }: { d: DesgloseJornada }) {
+  if (d.tramos.length === 0) return null;
+  const total = Math.max(1, d.abarcado);
+  return (
+    <div className="mt-2 space-y-2">
+      {/* La barra da la forma del día de un vistazo: cuánto fue trabajo real
+          y cuánto no, en proporción. */}
+      <div className="flex h-1.5 rounded-full overflow-hidden bg-foreground/5">
+        {d.tramos.map((t, i) => (
+          <span
+            key={i}
+            className={TRAMOS[t.tipo].barra}
+            style={{ width: `${(t.minutos / total) * 100}%` }}
+            title={`${TRAMOS[t.tipo].etiqueta} · ${formatMinutes(t.minutos)}`}
+          />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
+        <span className="text-emerald-400">{formatMinutes(d.trabajado)} trabajados</span>
+        {d.pausado > 0 && <span className="text-amber-400">{formatMinutes(d.pausado)} en pausa</span>}
+        {d.fuera > 0 && (
+          <span className="text-muted-foreground" title="Entre una salida y la siguiente entrada">
+            {formatMinutes(d.fuera)} sin marcar
+          </span>
+        )}
+        <span className="text-muted-foreground/70">{formatMinutes(d.abarcado)} de punta a punta</span>
+      </div>
+
+      <ul className="space-y-0.5">
+        {d.tramos.map((t, i) => (
+          <li key={i} className="flex items-center gap-2 text-[10px] tabular-nums">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TRAMOS[t.tipo].barra}`} />
+            <span className="text-muted-foreground w-[5.5rem] shrink-0">
+              {hhmm(t.desde)} → {t.hasta ? hhmm(t.hasta) : "ahora"}
+            </span>
+            <span className={`${TRAMOS[t.tipo].texto} shrink-0`}>{TRAMOS[t.tipo].etiqueta}</span>
+            <span className="text-muted-foreground/70">{formatMinutes(t.minutos)}</span>
+            {t.motivo && <span className="text-muted-foreground/60 truncate">· {t.motivo}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 type Estado = "trabajando" | "pausa" | "termino" | "sin_marcar";
 
@@ -45,6 +109,7 @@ export function PaseDeLista({
 }) {
   const [filtro, setFiltro] = useState<Estado | "todos">("todos");
   const [busqueda, setBusqueda] = useState("");
+  const [abierto, setAbierto] = useState<number | null>(null);
 
   const conEstado = useMemo(
     () => miembros.map((m) => ({ m, estado: estadoDe(m) })),
@@ -131,11 +196,14 @@ export function PaseDeLista({
         {visibles.map(({ m, estado }) => {
           const nombre = m.name || m.email || "Sin nombre";
           const pausadas = m.today?.pausedMinutes ?? 0;
+          const desglose = m.today?.desglose;
+          const expandido = abierto === m.id;
           return (
             <li
               key={m.id}
-              className="flex items-center gap-3 rounded-xl border border-foreground/10 bg-card/40 px-3 py-2.5"
+              className="rounded-xl border border-foreground/10 bg-card/40 px-3 py-2.5"
             >
+            <div className="flex items-center gap-3">
               <span className="relative shrink-0">
                 <span className="w-9 h-9 rounded-full bg-foreground/10 flex items-center justify-center text-xs font-bold text-muted-foreground">
                   {iniciales(nombre)}
@@ -176,6 +244,21 @@ export function PaseDeLista({
                 </span>
               </span>
 
+              {/* La franja entrada → salida, que es lo que hay que poder
+                  desarmar: sola no explica por qué el total es menor. */}
+              {desglose && desglose.entrada && (
+                <button
+                  type="button"
+                  onClick={() => setAbierto(expandido ? null : m.id)}
+                  aria-expanded={expandido}
+                  className="hidden sm:flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground tabular-nums shrink-0 transition"
+                  title="Ver en qué se fue el día"
+                >
+                  {hhmm(desglose.entrada)} → {desglose.salida ? hhmm(desglose.salida) : "…"}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${expandido ? "rotate-180" : ""}`} />
+                </button>
+              )}
+
               <span className="text-right shrink-0">
                 <span className="block text-sm font-semibold tabular-nums">{formatMinutes(m.today?.minutes ?? 0)}</span>
                 <span className="block text-[10px] text-muted-foreground tabular-nums">
@@ -189,6 +272,9 @@ export function PaseDeLista({
               </span>
 
               {accion && <span className="shrink-0">{accion(m)}</span>}
+            </div>
+
+            {expandido && desglose && <Desglose d={desglose} />}
             </li>
           );
         })}
