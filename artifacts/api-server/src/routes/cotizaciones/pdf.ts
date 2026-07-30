@@ -1,20 +1,24 @@
-import { execFileSync } from "child_process";
 import puppeteer, { type Browser } from "puppeteer-core";
+import { buscarChromium, SIN_CHROMIUM } from "./chromium.js";
 
 /**
  * Render HTML → PDF A4 con Puppeteer + Chromium del sistema (Nix).
  * Espera document.fonts.ready para que Oswald / IBM Plex estén cargadas.
  */
 
+/** Se lanza cuando falta el navegador, para poder distinguirlo de un fallo de Drive. */
+export class SinChromiumError extends Error {
+  readonly code = "sin_chromium";
+  constructor() { super(SIN_CHROMIUM); }
+}
+
 function chromiumPath(): string {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
-  try {
-    return execFileSync("which", ["chromium"]).toString().trim();
-  } catch {
-    throw new Error(
-      "No se encontró Chromium para generar el PDF. Instala chromium o define PUPPETEER_EXECUTABLE_PATH."
-    );
-  }
+  const ruta = buscarChromium();
+  // Buscar solo `which chromium` era demasiado estrecho: en Nix y en
+  // contenedores el binario se llama de otra forma o vive fuera del PATH, y
+  // con eso bastaba para que no se generara NI UN contrato.
+  if (!ruta) throw new SinChromiumError();
+  return ruta;
 }
 
 let browserPromise: Promise<Browser> | null = null;

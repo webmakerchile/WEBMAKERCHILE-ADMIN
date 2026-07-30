@@ -955,6 +955,16 @@ async function buildTechnicalVersion(doc: WizData, contract?: Partial<Contract>)
     const blob = await buildBriefPdf(brief, doc);
     const name = `Brief-Tecnico-${(doc.client || "cliente").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
     const uploaded = await uploadPdfToDrive(blob, name);
+    // Si Drive falla, el PDF ya está hecho: descargarlo es infinitamente mejor
+    // que tirarlo. La cotización ya lo hacía; el brief se perdía en silencio y
+    // había que volver a generarlo entero (con otra llamada a la IA).
+    if (!uploaded) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    }
     return { brief, briefUrl: uploaded?.url, briefTitle: uploaded?.title, briefUploadedAt: uploaded?.uploadedAt };
   } catch {
     return { brief, briefUrl: undefined, briefTitle: undefined, briefUploadedAt: undefined };

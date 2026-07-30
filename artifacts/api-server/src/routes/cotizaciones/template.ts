@@ -13,7 +13,7 @@ const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 let logoCache: string | null = null;
-function logoDataUri(): string {
+export function logoDataUri(): string {
   if (logoCache) return logoCache;
   const candidates = [
     path.resolve("artifacts/api-server/assets/logo-fox.png"),
@@ -31,6 +31,9 @@ function logoDataUri(): string {
       /* try next */
     }
   }
+  // Devolver "" en silencio dejaba el contrato SIN logo y sin que nadie se
+  // enterara hasta ver el PDF ya enviado al cliente.
+  console.warn("[cotizaciones] no se encontró assets/logo-fox.png: el PDF saldrá sin logo");
   logoCache = "";
   return logoCache;
 }

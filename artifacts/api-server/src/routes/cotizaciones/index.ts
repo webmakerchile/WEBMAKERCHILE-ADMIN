@@ -1,8 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 import { CotizacionSchema } from "./schema";
-import { renderCotizacionHTML } from "./template";
-import { htmlToPdf } from "./pdf";
+import { renderCotizacionHTML, logoDataUri } from "./template";
+import { buscarChromium, SIN_CHROMIUM } from "./chromium";
+import { htmlToPdf, SinChromiumError } from "./pdf";
 import { generarContenidoCotizacion } from "./llm";
 import { MMODA_EXAMPLE } from "./example-mmoda";
 
@@ -103,8 +104,34 @@ router.post("/pdf", async (req: Request, res: Response) => {
     res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
     res.send(pdf);
   } catch (e) {
-    res.status(400).json({ error: e instanceof Error ? e.message : "No se pudo generar el PDF" });
+    // 400 decía "la cotización está mal", y casi nunca era eso: faltaba el
+    // navegador en el servidor. Con el mismo código para las dos causas, quien
+    // lo leía se ponía a corregir una cotización que estaba perfecta.
+    if (e instanceof SinChromiumError) {
+      res.status(503).json({ error: e.message, code: e.code });
+      return;
+    }
+    console.error("[cotizaciones/pdf]", e);
+    res.status(500).json({
+      error: e instanceof Error ? e.message : "No se pudo generar el PDF",
+      code: "pdf_fallo",
+    });
   }
+});
+
+/**
+ * GET /cotizaciones/diagnostico
+ *
+ * Dice si el servidor PUEDE generar PDFs, antes de intentarlo. "No genera los
+ * contratos" tenía dos causas indistinguibles desde la pantalla —falta el
+ * navegador, o falla la subida a Drive— y no había forma de saber cuál.
+ */
+router.get("/diagnostico", (_req: Request, res: Response) => {
+  const chromium = buscarChromium();
+  res.json({
+    pdf: { listo: Boolean(chromium), ejecutable: chromium, mensaje: chromium ? null : SIN_CHROMIUM },
+    logo: { encontrado: Boolean(logoDataUri()) },
+  });
 });
 
 /**
