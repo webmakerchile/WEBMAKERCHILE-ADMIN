@@ -16,7 +16,14 @@ import {
   setRenewalAlertDays,
   toOpportunity,
   weightedProjection,
+  contractNet,
 } from "../../lib/ventas";
+import {
+  completarMeses,
+  proyectarVentas,
+  variacionUltimoMes,
+  bondadDelAjuste,
+} from "../../lib/proyeccion-ventas";
 
 /**
  * Torre de control de Ventas (pipeline, renovaciones y comisiones).
@@ -55,6 +62,34 @@ function currentMonth(): string {
  * Pipeline normalizado + renovaciones próximas + proyección ponderada del mes.
  * La proyección y los netos solo se incluyen para roles con canSeeMoney.
  */
+/**
+ * Serie mensual de lo cerrado + tendencia por mínimos cuadrados.
+ *
+ * Cuenta solo contratos activos: los borradores son el embudo, no ventas
+ * hechas, y mezclarlos infla la historia con cosas que aún pueden caerse.
+ * Los meses sin ventas se rellenan con cero — si no, la recta se ajusta como
+ * si esos meses no hubieran existido y la tendencia sale mejor de lo que fue.
+ */
+function tendenciaDeVentas(contracts: Rec[]) {
+  const porMes = new Map<string, number>();
+  for (const c of contracts) {
+    if (str(c.status) !== "activo") continue;
+    const fecha = str(c.issuedAt) || str(c.createdAt);
+    const mes = fecha.slice(0, 7);
+    if (!MONTH_RE.test(mes)) continue;
+    porMes.set(mes, (porMes.get(mes) ?? 0) + contractNet(c));
+  }
+  const serie = completarMeses([...porMes.entries()].map(([mes, monto]) => ({ mes, monto })));
+  if (serie.length < 2) return { serie, proyeccion: [], variacion: null, confianza: null };
+  return {
+    serie,
+    proyeccion: proyectarVentas(serie, 3),
+    variacion: variacionUltimoMes(serie),
+    // Sin esto, una raya sobre datos dispersos se lee como una previsión.
+    confianza: bondadDelAjuste(serie),
+  };
+}
+
 router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
   const me = await loadMe(req, res);
   if (!me) return;
@@ -100,6 +135,9 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
     renewalAlertDays: renewalDays,
     // Proyección = suma(neto × probabilidad) de las oportunidades del mes.
     projection: seeMoney ? weightedProjection(opportunities, month) : null,
+    // Tendencia sobre lo REALMENTE cerrado, que es otra cosa: la de arriba es
+    // una foto del embudo de hoy, esta dice hacia dónde va el negocio.
+    tendencia: seeMoney ? tendenciaDeVentas(contracts) : null,
     canSeeMoney: seeMoney,
   });
 });
