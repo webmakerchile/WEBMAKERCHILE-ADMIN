@@ -4,6 +4,7 @@ import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLe
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import { TiraBorradores } from "@/components/tira-borradores";
 import { FormatosInteractivosPanel } from "@/components/formatos-interactivos-panel";
+import { GuardarEnVideo } from "@/components/guardar-en-video";
 import {
   useSetEstudio,
   PersonalizacionSet,
@@ -988,6 +989,18 @@ export default function DescripcionesPage() {
                 <h2 className="text-lg font-display font-bold">Descripciones</h2>
                 <span className="text-xs text-muted-foreground">{new Date(resultado.fecha).toLocaleString("es-CL")}</span>
               </div>
+
+              {/* El copy se generaba bien y no llegaba a ninguna parte: había que
+                  bajar el ZIP, abrir el .txt y pegar red por red en el asistente
+                  de videos. Aquí va directo a la publicación. */}
+              <GuardarEnVideo
+                textos={REDES
+                  .filter((r) => resultado.descripciones[r.value])
+                  .map((r) => ({
+                    red: r.value,
+                    texto: obtenerTextoCompleto(r.value, resultado.descripciones[r.value]!),
+                  }))}
+              />
 
               {REDES.filter((r) => resultado.descripciones[r.value]).map((red) => {
                 const contenido = resultado.descripciones[red.value]!;
