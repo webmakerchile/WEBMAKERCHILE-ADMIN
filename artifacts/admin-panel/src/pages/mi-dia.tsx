@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useHubBoard } from "@/lib/hub-write";
 import { Layout } from "@/components/layout";
 import { CheckSquare2, Square, ChevronDown, ChevronUp, AlertTriangle, CalendarDays, Clock3, CalendarX, CheckCheck, Loader2, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -152,7 +153,7 @@ async function patchTask(id: number, stage: string) {
   return r.json();
 }
 
-function TaskRow({ task, onToggle, pending, onDelete }: { task: DayTask; onToggle: () => void; pending?: boolean; onDelete?: () => void }) {
+function TaskRow({ task, onToggle, pending, onDelete, nombreProyecto }: { task: DayTask; onToggle: () => void; pending?: boolean; onDelete?: () => void; nombreProyecto?: (id: string) => string }) {
   const done = task.stage === "done";
   const prio = task.priority in PRIO_COLOR ? task.priority as Priority : "media";
   const cl = task.checklist ?? [];
@@ -182,8 +183,13 @@ function TaskRow({ task, onToggle, pending, onDelete }: { task: DayTask; onToggl
             {prio}
           </span>
           <span className="text-[10px] text-muted-foreground">{STAGE_LABELS[task.stage] ?? task.stage}</span>
-          {task.projectRef && (
-            <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{task.projectRef}</span>
+          {/* El id crudo del proyecto ("id1a2b3c…") no le dice nada a nadie.
+              Si el nombre no se puede resolver se calla, en vez de enseñar el
+              id como si fuera información. */}
+          {task.projectRef && nombreProyecto?.(task.projectRef) && (
+            <span className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+              {nombreProyecto(task.projectRef)}
+            </span>
           )}
           {cl.length > 0 && (
             <span className={`text-[10px] ${clDone === cl.length ? "text-emerald-400" : "text-muted-foreground"}`}>☑ {clDone}/{cl.length}</span>
@@ -221,6 +227,7 @@ function Group({
   pendingIds,
   onToggle,
   onDelete,
+  nombreProyecto,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -230,6 +237,7 @@ function Group({
   pendingIds: Set<number>;
   onToggle: (task: DayTask) => void;
   onDelete?: (task: DayTask) => void;
+  nombreProyecto?: (id: string) => string;
 }) {
   const [open, setOpen] = useState(!defaultCollapsed);
   if (tasks.length === 0) return null;
@@ -258,7 +266,7 @@ function Group({
           >
             <div className="space-y-2">
               {tasks.map((t) => (
-                <TaskRow key={t.id} task={t} pending={pendingIds.has(t.id)} onToggle={() => onToggle(t)} onDelete={onDelete ? () => onDelete(t) : undefined} />
+                <TaskRow key={t.id} task={t} pending={pendingIds.has(t.id)} onToggle={() => onToggle(t)} onDelete={onDelete ? () => onDelete(t) : undefined} nombreProyecto={nombreProyecto} />
               ))}
             </div>
           </motion.div>
@@ -269,6 +277,14 @@ function Group({
 }
 
 export default function MiDiaPage() {
+  // El id crudo del proyecto no le dice nada a nadie: se resuelve a su nombre
+  // con el mismo tablero del que salen las tareas.
+  const { data: board } = useHubBoard();
+  const nombreProyecto = useCallback((id: string) => {
+    const p = (board?.data?.projects ?? []).find((x: { id?: string }) => x.id === id);
+    return p?.name ?? "";
+  }, [board]);
+
   const queryClient = useQueryClient();
   const authUser = useAuth();
   const canDelete = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
@@ -405,6 +421,7 @@ export default function MiDiaPage() {
               accent="text-red-400"
               tasks={g.vencidas}
               pendingIds={pendingIds}
+              nombreProyecto={nombreProyecto}
               onToggle={handleToggle}
               onDelete={canDelete ? handleDelete : undefined}
             />
@@ -414,6 +431,7 @@ export default function MiDiaPage() {
               accent="text-orange-400"
               tasks={g.hoy}
               pendingIds={pendingIds}
+              nombreProyecto={nombreProyecto}
               onToggle={handleToggle}
               onDelete={canDelete ? handleDelete : undefined}
             />
@@ -423,6 +441,7 @@ export default function MiDiaPage() {
               accent="text-blue-400"
               tasks={g.semana}
               pendingIds={pendingIds}
+              nombreProyecto={nombreProyecto}
               onToggle={handleToggle}
               onDelete={canDelete ? handleDelete : undefined}
             />
@@ -432,6 +451,7 @@ export default function MiDiaPage() {
               accent="text-foreground/50"
               tasks={g.sinFecha}
               pendingIds={pendingIds}
+              nombreProyecto={nombreProyecto}
               onToggle={handleToggle}
               onDelete={canDelete ? handleDelete : undefined}
             />
@@ -452,6 +472,7 @@ export default function MiDiaPage() {
                 tasks={g.completedToday}
                 defaultCollapsed={true}
                 pendingIds={pendingIds}
+              nombreProyecto={nombreProyecto}
                 onToggle={handleToggle}
                 onDelete={canDelete ? handleDelete : undefined}
               />
