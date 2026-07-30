@@ -21,9 +21,18 @@ export interface UsuarioConGoogle {
   googleRefreshToken?: string | null;
 }
 
-/** Mensaje único: la UI lo muestra tal cual, así que dice qué hacer. */
+/**
+ * Mensaje único: la UI lo muestra tal cual, así que dice qué hacer DE VERDAD.
+ *
+ * Antes decía "cierra sesión y vuelve a entrar con Google", y eso no concede
+ * Drive jamás: el login normal solo pide `profile` y `email`. Quien lo leía
+ * cerraba sesión, volvía a entrar y se encontraba exactamente igual.
+ */
 export const MENSAJE_SIN_GOOGLE =
-  "Tu cuenta no tiene Google Drive conectado. Cierra sesión y vuelve a entrar con Google para autorizar el acceso a Drive. Mientras tanto puedes pegar el enlace de la carpeta a mano.";
+  "Tu cuenta todavía no autorizó Google Drive. Pulsa \"Conectar Google Drive\" para dar el permiso — con volver a iniciar sesión no basta, porque el acceso normal no lo pide. Mientras tanto puedes pegar el enlace de la carpeta a mano.";
+
+/** Dónde mandar a quien todavía no conectó Drive. */
+export const RUTA_CONECTAR_DRIVE = "/api/auth/drive";
 
 /** true si el usuario tiene credenciales utilizables de Google. */
 export function tieneGoogle(user: UsuarioConGoogle | null | undefined): boolean {

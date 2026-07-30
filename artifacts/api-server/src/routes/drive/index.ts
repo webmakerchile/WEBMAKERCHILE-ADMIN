@@ -4,6 +4,7 @@ import {
   clienteGoogleDe,
   mensajeErrorGoogle,
   MENSAJE_SIN_GOOGLE,
+  RUTA_CONECTAR_DRIVE,
   type UsuarioConGoogle,
 } from "../../lib/google-auth";
 import multer from "multer";
@@ -27,8 +28,33 @@ function driveDe(user: unknown) {
 
 /** Responde 409 con el motivo si no hay Google conectado. */
 function sinGoogle(res: Response): void {
-  res.status(409).json({ error: MENSAJE_SIN_GOOGLE, code: "google_no_conectado" });
+  res.status(409).json({
+    error: MENSAJE_SIN_GOOGLE,
+    code: "google_no_conectado",
+    conectar: RUTA_CONECTAR_DRIVE,
+  });
 }
+
+/**
+ * Id de carpeta listo para meter en una query de Drive.
+ *
+ * La query se arma concatenando, así que una comilla en el id rompe la
+ * expresión o cuela condiciones ajenas. Drive escapa con barra invertida.
+ */
+function idSeguro(id: string): string {
+  return id.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+/**
+ * ¿Tiene esta cuenta permiso de Drive?
+ *
+ * La UI lo necesita para poder ofrecer "Conectar Google Drive" ANTES de que
+ * falle algo. Sin esto, lo único que veía la persona era una carpeta vacía.
+ */
+router.get("/drive/estado", (req, res) => {
+  const conectado = Boolean(clienteGoogleDe(req.user as UsuarioConGoogle));
+  res.json({ conectado, conectar: RUTA_CONECTAR_DRIVE, mensaje: conectado ? null : MENSAJE_SIN_GOOGLE });
+});
 
 router.get("/drive/files", async (req, res) => {
   const folderId = (req.query.folderId as string) || undefined;
@@ -40,7 +66,7 @@ router.get("/drive/files", async (req, res) => {
 
     let query = "trashed = false";
     if (folderId) {
-      query += ` and '${folderId}' in parents`;
+      query += ` and '${idSeguro(folderId)}' in parents`;
     }
 
     const response = await drive.files.list({
@@ -70,7 +96,7 @@ router.get("/drive/folders", async (req, res) => {
 
     let query = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
     if (parentId) {
-      query += ` and '${parentId}' in parents`;
+      query += ` and '${idSeguro(parentId)}' in parents`;
     }
 
     const response = await drive.files.list({

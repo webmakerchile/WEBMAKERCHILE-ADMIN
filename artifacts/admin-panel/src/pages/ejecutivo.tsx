@@ -1,4 +1,5 @@
 import { JornadaChip } from "@/components/jornada-card";
+import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
@@ -1391,6 +1392,8 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
 
+  const [faltaDrive, setFaltaDrive] = useState(false);
+
   const handleFile = async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       onToast("Solo se aceptan archivos PDF"); return;
@@ -1401,7 +1404,14 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
       fd.append("file", file);
       fd.append("parentId", HUB_DRIVE_ROOT);
       const res = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); onToast((e as any).error || "Error al subir PDF"); return; }
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: string; code?: string };
+        // El motivo real casi siempre es que la cuenta no autorizó Drive. Un
+        // "Error al subir PDF" a secas no daba ninguna pista de qué hacer.
+        if (e.code === "google_no_conectado") setFaltaDrive(true);
+        onToast(e.error || "Error al subir PDF");
+        return;
+      }
       const data = await res.json() as { name: string; webViewLink: string; uploadedAt: number };
       onChange({ url: data.webViewLink, title: data.name, uploadedAt: data.uploadedAt });
       onToast("PDF subido a Drive");
@@ -1443,6 +1453,13 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
         {uploading ? "Subiendo…" : "📎 Adjuntar PDF"}
       </button>
       <span className="pdf-hint">Solo PDF · máx 50 MB · se guarda en Google Drive</span>
+      {/* Si el adjunto falló porque la cuenta no autorizó Drive, el arreglo va
+          aquí mismo: antes solo salía un toast que no decía qué hacer. */}
+      {faltaDrive && (
+        <div style={{ marginTop: 8, width: "100%" }}>
+          <ConectarDrive volverA="ejecutivo" motivo="Por eso no se pudo subir el PDF." />
+        </div>
+      )}
     </div>
   );
 }
@@ -4477,14 +4494,26 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
 /* ============================================================
    HUB DRIVE VIEW
    ============================================================ */
-const HUB_DRIVE_ROOT = "15cBDWdrC2IIN6OlD4rP0fBCImGOh39--";
+/**
+ * Carpeta raíz del Drive del Hub.
+ *
+ * Configurable: había DOS ids escritos a fuego y distintos —uno aquí y otro en
+ * /drive—, así que los dos exploradores miraban carpetas diferentes y quien no
+ * tuviera acceso a ese id concreto lo veía todo vacío sin ninguna pista.
+ */
+const HUB_DRIVE_ROOT =
+  import.meta.env.VITE_HUB_DRIVE_ROOT_ID || "15cBDWdrC2IIN6OlD4rP0fBCImGOh39--";
 
 function HubDriveView() {
   const [currentFolderId, setCurrentFolderId] = useState<string>(HUB_DRIVE_ROOT);
   const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([{ id: HUB_DRIVE_ROOT, name: "Raíz" }]);
 
-  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentFolderId });
-  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentFolderId });
+  const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentFolderId });
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentFolderId });
+  const drive = useEstadoDrive();
+  // Un error NO es una carpeta vacía. Pintarlos igual es lo que ocultó durante
+  // meses que al ejecutivo comercial le faltaba el permiso de Drive.
+  const fallo = filesError || foldersError;
 
   const navigateToFolder = (id: string, name: string) => {
     setFolderHistory(prev => [...prev, { id, name }]);
@@ -4558,7 +4587,23 @@ function HubDriveView() {
                 </div>
               ))}
               {!foldersData?.length && !filesData?.files?.length && (
-                <div style={{ gridColumn: "1/-1", padding: "60px 0", textAlign: "center", color: "var(--faint)", fontSize: 13 }}>Esta carpeta está vacía.</div>
+                <div style={{ gridColumn: "1/-1", padding: "40px 0", textAlign: "center", color: "var(--faint)", fontSize: 13 }}>
+                  {!drive.cargando && !drive.conectado ? (
+                    <div style={{ maxWidth: 460, margin: "0 auto", textAlign: "left" }}>
+                      <ConectarDrive volverA="ejecutivo" motivo="Por eso esta carpeta se ve vacía." />
+                    </div>
+                  ) : fallo ? (
+                    <>
+                      <div style={{ color: "#f87171", fontWeight: 600 }}>No se pudo leer esta carpeta.</div>
+                      <div style={{ marginTop: 6, fontSize: 11.5 }}>
+                        {(fallo as Error).message || "El servidor devolvió un error."} Si la carpeta es de
+                        otra persona, pídele que la comparta con tu cuenta.
+                      </div>
+                    </>
+                  ) : (
+                    "Esta carpeta está vacía."
+                  )}
+                </div>
               )}
             </div>
           )}
