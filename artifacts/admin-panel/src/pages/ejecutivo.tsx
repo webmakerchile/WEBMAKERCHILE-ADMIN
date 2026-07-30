@@ -1,5 +1,6 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
+import { EnlaceFirma } from "@/components/enlace-firma";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
@@ -2749,6 +2750,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="sheet-sec"><h4>Notas</h4>
         <div className="field"><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} aria-label="Notas del contrato" /></div>
       </div>
+      <EnlaceFirma contractId={c.id} />
       <div className="sheet-sec"><h4>Documento PDF</h4>
         <div className="field">
           <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
@@ -3914,14 +3916,34 @@ const CONTRACT_STATUSES: Record<ContractStatus, { label: string; color: string }
 function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
+  // Rango de montos, como texto para poder dejarlo vacío sin que valga 0.
+  const [minTxt, setMinTxt] = useState("");
+  const [maxTxt, setMaxTxt] = useState("");
   // Estado efectivo: "vencido" derivado de la fecha real de vencimiento (salvo cancelados)
   const effStatus = (c: Contract): ContractStatus => (c.status !== "cancelado" && contractExpired(c)) ? "vencido" : c.status;
   const all = state.contracts;
   const counts: Record<string, number> = {};
   all.forEach(c => { const s = effStatus(c); counts[s] = (counts[s] || 0) + 1; });
+
+  // Quien no ve montos tampoco filtra por ellos: el servidor le borra `value`,
+  // así que el filtro le dejaría la lista vacía sin explicar por qué.
+  const verMontos = !all.some(c => c.moneyRedacted);
+  const num = (v: string) => { const n = Number(v.replace(/[^\d]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+  const min = verMontos ? num(minTxt) : null;
+  const max = verMontos ? num(maxTxt) : null;
+  const dentroDelRango = (c: Contract) => {
+    if (min === null && max === null) return true;
+    const v = Number(c.value) || 0;
+    // Un contrato sin monto no entra en un filtro por monto: colarlo mezclaría
+    // "vale menos de X" con "no sabemos cuánto vale".
+    if (v <= 0) return false;
+    return (min === null || v >= min) && (max === null || v <= max);
+  };
+
   const list = all
-    .filter(c => (!fStatus || effStatus(c) === fStatus) && (!q || (c.title + " " + (c.client || "") + " " + (c.value || "") + " " + (c.notes || "")).toLowerCase().includes(q)))
+    .filter(c => (!fStatus || effStatus(c) === fStatus) && dentroDelRango(c) && (!q || (c.title + " " + (c.client || "") + " " + (c.value || "") + " " + (c.notes || "")).toLowerCase().includes(q)))
     .sort((a, b) => b.createdAt - a.createdAt);
+  const totalFiltrado = list.reduce((a, c) => a + (Number(c.value) || 0), 0);
   return (
     <div className="wrap">
       {all.length > 0 && (
@@ -3938,6 +3960,36 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
               );
             })}
           </div>
+          {verMontos && (
+            <div className="fchips" role="group" aria-label="Filtrar por monto">
+              <input
+                value={minTxt}
+                onChange={e => setMinTxt(e.target.value)}
+                placeholder="Monto desde"
+                inputMode="numeric"
+                aria-label="Monto mínimo"
+                style={{ width: 120, fontSize: "0.78em" }}
+              />
+              <input
+                value={maxTxt}
+                onChange={e => setMaxTxt(e.target.value)}
+                placeholder="hasta"
+                inputMode="numeric"
+                aria-label="Monto máximo"
+                style={{ width: 110, fontSize: "0.78em" }}
+              />
+              {(min !== null || max !== null) && (
+                <>
+                  <button className="fchip" onClick={() => { setMinTxt(""); setMaxTxt(""); }}>Quitar</button>
+                  {/* El total de lo filtrado: filtrar por monto sin ver la suma
+                      obliga a sumarlo a mano, que es para lo que se filtra. */}
+                  <span className="fn" style={{ marginLeft: 4 }}>
+                    {list.length} · ${Math.round(totalFiltrado).toLocaleString("es-CL")}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {all.length === 0 ? (
