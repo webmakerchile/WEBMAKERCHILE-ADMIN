@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { hubServices, type HubServiceTier } from "@workspace/db/schema";
 import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { completarImportes } from "../../lib/precio-servicio";
 import { normalizeRole } from "@workspace/roles";
 
 /**
@@ -26,7 +27,17 @@ function forbid(res: Response): void {
 
 const tierSchema = z.object({
   plan: z.string().trim().min(1, "Cada plan necesita nombre").max(40),
+  /** Lo que se MUESTRA. Lleva matices ("/mes", "desde") que un número pierde. */
   price: z.string().trim().max(40).default(""),
+  /**
+   * Lo que se CALCULA. Va aparte del texto en vez de sustituirlo porque el
+   * texto sigue siendo lo que lee el cliente; el número es lo que se suma y lo
+   * que precarga la cotización.
+   *
+   * Si no viene, se deduce del texto: así los servicios que ya existen pasan a
+   * ser utilizables sin que nadie los reescriba a mano.
+   */
+  amount: z.number().int().nonnegative().nullable().optional(),
   detail: z.string().trim().max(300).default(""),
 });
 
@@ -195,7 +206,12 @@ router.get("/hub/services", async (_req: Request, res: Response) => {
     .select()
     .from(hubServices)
     .orderBy(asc(hubServices.sortOrder), asc(hubServices.id));
-  res.json({ services: rows });
+  // El importe se completa al leer, no al guardar: así los servicios que ya
+  // estaban sembrados quedan utilizables sin migrar nada, y un precio editado
+  // a mano se refleja al momento sin tener que reescribir su importe.
+  res.json({
+    services: rows.map((r) => ({ ...r, tiers: completarImportes(r.tiers ?? []) })),
+  });
 });
 
 router.post("/hub/services", async (req: Request, res: Response) => {
