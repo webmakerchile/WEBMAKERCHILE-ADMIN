@@ -1,8 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { contractSignatures } from "@workspace/db/schema";
+import { generarToken, caducidad, urlDeFirma } from "../../lib/firma-contrato";
 import { canSeeMoney, normalizeRole } from "@workspace/roles";
 import { resolveBoard, saveBoard } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
@@ -141,6 +143,89 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
     canSeeMoney: seeMoney,
   });
 });
+
+/**
+ * POST /hub/contracts/:id/firma — genera (o reutiliza) el enlace de aceptación.
+ *
+ * Reutiliza el pendiente en vez de crear uno nuevo cada vez: con un enlace
+ * distinto por clic, el cliente que abre el que le mandaron ayer se encuentra
+ * con que ya no vale, sin haber hecho nada mal.
+ */
+router.post("/hub/contracts/:id/firma", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Solo dirección y ventas generan enlaces de firma" }); return; }
+
+  const contractId = String(req.params.id ?? "");
+  if (!contractId) { res.status(400).json({ error: "Falta el contrato" }); return; }
+
+  try {
+    const board = await resolveBoard();
+    const contratos = board && Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
+    if (!contratos.some((c) => str(c.id) === contractId)) {
+      res.status(404).json({ error: "Ese contrato no existe" });
+      return;
+    }
+
+    const [existente] = await db.select().from(contractSignatures)
+      .where(and(eq(contractSignatures.contractId, contractId), eq(contractSignatures.estado, "pendiente")))
+      .limit(1);
+
+    const vigente = existente && (!existente.expiresAt || existente.expiresAt.getTime() > Date.now());
+    const fila = vigente
+      ? existente
+      : (await db.insert(contractSignatures).values({
+          contractId,
+          token: generarToken(),
+          createdById: me.id,
+          expiresAt: caducidad(),
+        }).returning())[0]!;
+
+    res.json({
+      token: fila.token,
+      url: urlDeFirma(basePublica(req), fila.token),
+      expiresAt: fila.expiresAt,
+      estado: fila.estado,
+    });
+  } catch (err) {
+    console.error("[hub/contracts/firma POST]", err);
+    res.status(500).json({ error: "No se pudo generar el enlace de firma" });
+  }
+});
+
+/** GET /hub/contracts/:id/firma — estado y constancia de la aceptación. */
+router.get("/hub/contracts/:id/firma", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Sin acceso" }); return; }
+  try {
+    const filas = await db.select().from(contractSignatures)
+      .where(eq(contractSignatures.contractId, String(req.params.id ?? "")));
+    res.json({
+      firmas: filas.map((f) => ({
+        estado: f.estado,
+        url: f.estado === "pendiente" ? urlDeFirma(basePublica(req), f.token) : null,
+        expiresAt: f.expiresAt,
+        signedAt: f.signedAt,
+        signerName: f.signerName,
+        signerEmail: f.signerEmail,
+        // La IP es parte de la constancia: sin ella el registro dice mucho menos.
+        signerIp: f.signerIp,
+      })),
+    });
+  } catch (err) {
+    console.error("[hub/contracts/firma GET]", err);
+    res.status(500).json({ error: "No se pudo leer el estado de la firma" });
+  }
+});
+
+/** Base pública del panel, para armar el enlace que se le manda al cliente. */
+function basePublica(req: Request): string {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
+  const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
+  const proto = req.get("x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
 
 const oppPatchSchema = z.object({
   pipelineStage: z.enum(PIPELINE_STAGES).optional(),

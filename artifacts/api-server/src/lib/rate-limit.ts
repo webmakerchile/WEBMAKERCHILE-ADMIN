@@ -47,3 +47,18 @@ export const uploadLimiter = buildLimiter({
   max: 60,
   tag: "upload",
 });
+
+/**
+ * Enlace público de aceptación de propuestas.
+ *
+ * Es la única ruta sin sesión que escribe en la base de datos, así que la
+ * clave es SIEMPRE la IP: sin usuario, `keyByUserOrIp` ya cae ahí, pero
+ * conviene que quede dicho. Un límite generoso —el cliente abre el enlace,
+ * quizá lo recarga y acepta— pero suficiente para que nadie se dedique a
+ * probar tokens al azar.
+ */
+export const firmaLimiter = buildLimiter({
+  windowMs: 60_000,
+  max: 20,
+  tag: "firma",
+});
