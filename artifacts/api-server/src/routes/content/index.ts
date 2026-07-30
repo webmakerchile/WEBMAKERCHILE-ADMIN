@@ -4,6 +4,7 @@ import { videos, users, campaigns, templates } from "@workspace/db/schema";
 import { eq, desc, lte, and, or, inArray, ilike, isNotNull, sql } from "drizzle-orm";
 import { recordActivity } from "../../lib/activity";
 import { handoffVideoApproved } from "../../lib/handoffs";
+import { cambioAlProgramar } from "../../lib/promover-programado";
 
 /**
  * Resolve a finite numeric library reference (campaignId/templateId) to either
@@ -849,6 +850,14 @@ router.patch("/content/videos/:id", async (req, res) => {
     }
   }
 
+  // Se lee el estado actual SOLO si hace falta decidir si hay que promoverlo:
+  // una consulta de más en cada PATCH sería caro para nada.
+  let estadoActual: string | null = null;
+  if (body.scheduledAt !== undefined && body.status === undefined) {
+    const [fila] = await db.select({ status: videos.status }).from(videos).where(eq(videos.id, id)).limit(1);
+    estadoActual = fila?.status ?? null;
+  }
+
   const updateData: Record<string, any> = { updatedAt: new Date() };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
@@ -884,7 +893,20 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.facebookPostId !== undefined) updateData.facebookPostId = body.facebookPostId;
   if (body.facebookError !== undefined) updateData.facebookError = body.facebookError;
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
-  if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+  if (body.scheduledAt !== undefined) {
+    updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+    // Poner fecha tiene que dejarlo PROGRAMADO. Antes solo se escribía la
+    // fecha: el calendario la mostraba, llegaba la hora y el publicador ni lo
+    // miraba, porque solo recorre los que están en "scheduled". Arrastrar un
+    // borrador en el calendario era, literalmente, no programar nada.
+    if (body.status === undefined) {
+      const promocion = cambioAlProgramar(estadoActual ?? "draft", body.scheduledAt ?? null);
+      if (promocion.status) {
+        updateData.status = promocion.status;
+        console.log(`[content] video ${id} ${promocion.motivo}`);
+      }
+    }
+  }
   if (body.campaignId !== undefined) {
     const userId = (req.user as { id?: number } | undefined)?.id ?? null;
     const resolved = await resolveOwnedLibraryId(body.campaignId, campaigns, userId);
