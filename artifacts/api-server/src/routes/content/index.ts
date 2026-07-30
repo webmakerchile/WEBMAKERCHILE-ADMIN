@@ -524,6 +524,7 @@ router.post("/content/videos/import-csv", async (req, res) => {
       const out: { id: number }[] = [];
       for (const p of prepared) {
         const [row] = await tx.insert(videos).values({
+          createdById: (req.user as { id?: number } | undefined)?.id ?? null,
           title: p.title,
           description: p.description,
           status: "draft",
@@ -578,6 +579,8 @@ router.post("/content/videos/:id/duplicate", async (req, res) => {
       ? src.templateId
       : null;
   const [row] = await db.insert(videos).values({
+    // Quién lo creó: es el destinatario de los avisos de publicación.
+    createdById: userId,
     title: baseTitle,
     description: src.description,
     coverPrompt: src.coverPrompt,
@@ -664,6 +667,8 @@ router.post("/content/videos", async (req, res) => {
   const [row] = await db
     .insert(videos)
     .values({
+      // Quién lo creó: es el destinatario de los avisos de publicación.
+      createdById: userId,
       title: body.title,
       description: body.description,
       coverPrompt: body.coverPrompt || null,
@@ -1250,6 +1255,7 @@ router.post("/content/videos/from-studio", async (req, res) => {
     const [video] = await db
       .insert(videos)
       .values({
+        createdById: (req.user as { id?: number } | undefined)?.id ?? null,
         title: title || "Sin título",
         description: description || "",
         status: "draft",

@@ -888,6 +888,29 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
   }
 }
 
+export /**
+ * Avisa del resultado de una publicación a quien de verdad le importa.
+ *
+ * Todas las notificaciones iban al primer admin, así que la persona que
+ * programó el video no se enteraba de nada: ni de que salió, ni de que falló.
+ * Ahora se avisa también al autor, sin duplicar cuando son la misma persona.
+ */
+async function avisarPublicacion(
+  adminId: number,
+  autorId: number | null | undefined,
+  aviso: { type: Parameters<typeof createNotification>[0]["type"]; title: string; body: string; link: string },
+): Promise<void> {
+  const destinatarios = new Set<number>([adminId]);
+  if (autorId && autorId !== adminId) destinatarios.add(autorId);
+  await Promise.all(
+    [...destinatarios].map((userId) =>
+      createNotification({ userId, ...aviso }).catch((e) => {
+        console.error(`[scheduler] no se pudo notificar a ${userId}:`, e?.message ?? e);
+      }),
+    ),
+  );
+}
+
 export async function processScheduledVideos() {
   if (schedulerRunning) return;
   schedulerRunning = true;
@@ -1234,16 +1257,14 @@ export async function processScheduledVideos() {
           const nextAtStr = videoNextRetryAt ? new Date(videoNextRetryAt).toISOString() : "pronto";
           console.log(`[Scheduler] Video #${video.id} retries pending; next attempt ~${nextAtStr}. Skipping outcome notification.`);
         } else if (nextStatus === "published") {
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_success",
             title: "Publicación exitosa",
             body: `"${video.title}" se publicó correctamente.`,
             link: `/videos?select=${video.id}`,
           });
         } else if (nextStatus === "partial") {
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_partial",
             title: "Publicación parcial",
             body: bloqueados.length > 0
@@ -1254,16 +1275,14 @@ export async function processScheduledVideos() {
         } else if (nothingToPublish) {
           // Nada que publicar (sin archivo ni descripciones): error claro en
           // vez de la antigua notificación de éxito sin publicación real.
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_error",
             title: "Error al publicar",
             body: `"${video.title}" no se publicó: ${NO_CONTENT_ERROR}`,
             link: `/videos?select=${video.id}`,
           });
         } else {
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_error",
             title: "Error al publicar",
             body: `"${video.title}" falló tras agotar reintentos: ${errorSummary}`,
