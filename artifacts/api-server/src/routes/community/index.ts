@@ -63,7 +63,7 @@ import {
   type ContenidoInteractivo,
   type FormatoInteractivo,
 } from "../../lib/formatos-interactivos";
-import { bloqueInteractivoSvg } from "../../lib/render-interactivo";
+import { bloqueInteractivoSvg, zonaInteractiva } from "../../lib/render-interactivo";
 import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -2941,8 +2941,10 @@ async function componerInteractivo(
     .png()
     .toBuffer();
 
-  // La zona baja: 34% del alto, con aire contra el borde.
-  const zona = { y: Math.round(height * 0.60), alto: Math.round(height * 0.34) };
+  // La zona la decide render-interactivo: es la MISMA base con la que los
+  // bloques se dimensionan. Calcularla aquí con otra proporción fue lo que hizo
+  // que solo cuadrara en 9:16 y se cortara en el feed.
+  const zona = zonaInteractiva({ width, height }, formato);
   const cuerpo = bloqueInteractivoSvg(formato.bloque, contenido, formato, { width, height }, zona, paleta, fotos);
   if (!cuerpo) return buf.toString("base64");
 
