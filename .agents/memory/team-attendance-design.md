@@ -28,3 +28,8 @@ Format regex alone is not enough for YYYY-MM-DD params: well-formed but impossib
 - Listing guild members requires the "Server Members Intent" toggle (403 → surface as reason "intent" so the UI can explain it).
 - Auto check-in (July 2026): the sweep opens a jornada for linked+approved users seen in voice with no open session. Guards: never on `voiceStatus === null`, and a 30-min grace after the last checkout so a deliberate salida isn't overridden by lingering in voice. Auto-sessions are flagged (`auto_started`) for transparency; side effects (notification + channel report) only after a successful insert, and 23505 = lost race with a manual check-in (not an error). No auto check-out — voice drops are too noisy to end a session on.
 - Gotcha: the Discord app's hex "Public Key" looks like a credential and users paste it as the bot token; a real bot token has 3 dot-separated segments. Detect (no dots / all-hex) and re-ask.
+
+## Sesiones zombi y entrada automática (jul 2026)
+Una sesión abierta >16 h ("salida olvidada") bloqueaba la entrada automática de los días siguientes: autoStart ve "sesión abierta" y no reabre, y el barrido la salta por el tope. Regla: el barrido cierra esas sesiones en checkOut = checkIn + 16 h (mismo tope con que se cuentan horas, así el total no cambia) y el usuario vuelve a ser elegible para auto-entrada en el mismo barrido.
+**Why:** pasó en producción — dos personas en voz sin marcar porque arrastraban sesiones abiertas del día anterior.
+Otras causas de "el bot no me marcó": gracia de 30 min tras marcar salida (diseño, no bug) y simplemente no estar en canal de voz. El check-in manual acepta userId ajeno para roles supervisores (mismo patrón objetivoPausa que las pausas) como respaldo.
