@@ -26,6 +26,11 @@ import {
   variacionUltimoMes,
   bondadDelAjuste,
 } from "../../lib/proyeccion-ventas";
+import {
+  esVentaCerrada,
+  tasaDeConversion,
+  perdidasPorMotivo,
+} from "../../lib/estado-contrato";
 
 /**
  * Torre de control de Ventas (pipeline, renovaciones y comisiones).
@@ -67,15 +72,20 @@ function currentMonth(): string {
 /**
  * Serie mensual de lo cerrado + tendencia por mínimos cuadrados.
  *
- * Cuenta solo contratos activos: los borradores son el embudo, no ventas
- * hechas, y mezclarlos infla la historia con cosas que aún pueden caerse.
+ * Cuenta las ventas HECHAS: los borradores son el embudo, no ventas, y
+ * mezclarlos infla la historia con cosas que aún pueden caerse. Antes se
+ * contaban solo los "activo", y eso borraba de su mes los contratos que se
+ * firmaron y meses después se cortaron: la venta ocurrió, y el mes pasado
+ * encogía sin que nadie lo notara. Ahora lo decide `desenlaceDe`, que además
+ * separa lo perdido de lo cancelado (ver lib/estado-contrato.ts).
+ *
  * Los meses sin ventas se rellenan con cero — si no, la recta se ajusta como
  * si esos meses no hubieran existido y la tendencia sale mejor de lo que fue.
  */
 function tendenciaDeVentas(contracts: Rec[]) {
   const porMes = new Map<string, number>();
   for (const c of contracts) {
-    if (str(c.status) !== "activo") continue;
+    if (!esVentaCerrada(c)) continue;
     const fecha = str(c.issuedAt) || str(c.createdAt);
     const mes = fecha.slice(0, 7);
     if (!MONTH_RE.test(mes)) continue;
@@ -102,6 +112,10 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
   const board = await resolveBoard();
   const contracts = board && Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
   const opportunities = pipelineContracts(contracts).map((c) => toOpportunity(c, seeMoney));
+  // Cuántas se ganan y en qué se pierden. No se podía calcular mientras
+  // "perdido" y "cancelado" fueran el mismo estado.
+  const conversion = tasaDeConversion(contracts);
+  const motivosPerdida = perdidasPorMotivo(contracts);
 
   const renewalDays = await getRenewalAlertDays();
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
@@ -140,6 +154,11 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
     // Tendencia sobre lo REALMENTE cerrado, que es otra cosa: la de arriba es
     // una foto del embudo de hoy, esta dice hacia dónde va el negocio.
     tendencia: seeMoney ? tendenciaDeVentas(contracts) : null,
+    // Cuántas se ganan y en qué se pierden. Va sin `seeMoney` a propósito: es
+    // un recuento, no un monto, y saber que se pierde por plazo o por no
+    // responder le sirve a producción tanto como a ventas.
+    conversion,
+    motivosPerdida,
     canSeeMoney: seeMoney,
   });
 });

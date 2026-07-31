@@ -103,11 +103,26 @@ function linkWhatsapp(v: string | undefined): string | null {
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
-type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
+/**
+ * "cancelado" servía para dos cosas distintas: la cotización que no ganamos y
+ * el contrato firmado que el cliente cortó después. Con las dos en el mismo
+ * cajón, la venta que sí ocurrió desaparecía de su mes en la serie histórica y
+ * la tasa de conversión no se podía calcular. De ahí "perdido".
+ */
+type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado" | "perdido";
+
+/** Por qué se perdió. Sin esto, "perdido" es solo un color. */
+const MOTIVOS_PERDIDA = ["precio", "plazo", "competencia", "sin_respuesta", "no_era_el_momento", "otro"] as const;
+const MOTIVO_LABEL: Record<string, string> = {
+  precio: "Precio", plazo: "Plazo", competencia: "Se fue con otro",
+  sin_respuesta: "Dejó de responder", no_era_el_momento: "No era el momento", otro: "Otro",
+};
 // `doc` guarda los datos estructurados con los que se generó el PDF (módulos,
 // precios, alcance, forma de pago). Es la fuente del documento: si cambia, el
 // PDF se puede regenerar. Los contratos antiguos o subidos a mano no lo tienen.
 interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; doc?: WizData;
+  /** Por qué se perdió, cuando el estado es "perdido". */
+  motivoPerdida?: string;
   /** Versión técnica del contrato: los requerimientos sin un solo monto. */
   brief?: ContractBrief; briefUrl?: string; briefTitle?: string; briefUploadedAt?: number;
   /** Lo marca el servidor cuando censuró los montos para este rol. */
@@ -224,7 +239,7 @@ function dueInfo(p: Project) {
   return { days, label: fmtDate(new Date(p.due + "T12:00:00").getTime()), cls: days < 0 ? "overdue" : days <= 7 ? "soon" : "" };
 }
 function blankState(): HubState { return { projects: [], clients: [], notes: [], meetings: [], tasks: [], contracts: [] }; }
-const CONTRACT_STATUS_IDS: readonly ContractStatus[] = ["borrador", "activo", "vencido", "cancelado"];
+const CONTRACT_STATUS_IDS: readonly ContractStatus[] = ["borrador", "activo", "vencido", "cancelado", "perdido"];
 function isContractStatus(v: unknown): v is ContractStatus { return typeof v === "string" && (CONTRACT_STATUS_IDS as readonly string[]).includes(v); }
 function contractExpired(c: Contract) { return !!c.expiresAt && new Date(c.expiresAt + "T23:59:59").getTime() < Date.now(); }
 
@@ -2190,7 +2205,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       {p.contractId && (() => {
         const c = state.contracts.find(x => x.id === p.contractId);
         if (!c) return null;
-        const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888" };
+        const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888", perdido: "#8a6a6a" };
         return (
           <div style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: "1em" }}>📄</span>
@@ -2613,6 +2628,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <option value="activo">Activo</option>
           <option value="vencido">Vencido</option>
           <option value="cancelado">Cancelado</option>
+          <option value="perdido">Perdido (no se ganó)</option>
         </select>
       </div>
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
@@ -2664,6 +2680,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <option value="activo">Activo</option>
           <option value="vencido">Vencido</option>
           <option value="cancelado">Cancelado</option>
+          <option value="perdido">Perdido (no se ganó)</option>
         </select>
       </div>
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
@@ -2715,10 +2732,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               <option value="activo">Activo</option>
               <option value="vencido">Vencido</option>
               <option value="cancelado">Cancelado</option>
+              <option value="perdido">Perdido (no se ganó)</option>
             </select>
           </div>
         </div>
       </div>
+      {/* El motivo solo aparece cuando hace falta: un campo siempre visible que
+          casi nunca aplica se ignora, y entonces "perdido" no dice nada. */}
+      {c.status === "perdido" && (
+        <div className="sheet-sec"><h4>Por qué se perdió</h4>
+          <div className="field">
+            <select ref={R("mp")} defaultValue={c.motivoPerdida || ""}>
+              <option value="">Sin indicar</option>
+              {MOTIVOS_PERDIDA.map(m => <option key={m} value={m}>{MOTIVO_LABEL[m]}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
       <div className="sheet-sec"><h4>Vigencia</h4>
         <div className="two field">
           <div><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
@@ -2775,7 +2805,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         // Si el documento tiene cambios pendientes (chat IA / edición), guardar
         // implica regenerar el PDF para que el documento refleje la ficha.
         if (docDirty && docDraft) { await regenerateContractDoc(c, docDraft); onClose(); return; }
-        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
+        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, motivoPerdida: V("mp") || x.motivoPerdida, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
       }}>{docDirty ? (regeneratingDoc ? "⏳ Regenerando documento…" : "Guardar y regenerar documento") : "Guardar cambios"}</button>}
 
@@ -3935,6 +3965,7 @@ const CONTRACT_STATUSES: Record<ContractStatus, { label: string; color: string }
   activo:   { label: "Activo",   color: "var(--done)" },
   vencido:  { label: "Vencido",  color: "#e0795a" },
   cancelado:{ label: "Cancelado",color: "var(--disc)" },
+  perdido:  { label: "Perdido",  color: "#8a6a6a" },
 };
 
 function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
@@ -3944,7 +3975,9 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
   const [minTxt, setMinTxt] = useState("");
   const [maxTxt, setMaxTxt] = useState("");
   // Estado efectivo: "vencido" derivado de la fecha real de vencimiento (salvo cancelados)
-  const effStatus = (c: Contract): ContractStatus => (c.status !== "cancelado" && contractExpired(c)) ? "vencido" : c.status;
+  // Ni un cancelado ni un perdido "vencen": ya terminaron por otro motivo.
+  const effStatus = (c: Contract): ContractStatus =>
+    (c.status !== "cancelado" && c.status !== "perdido" && contractExpired(c)) ? "vencido" : c.status;
   const all = state.contracts;
   const counts: Record<string, number> = {};
   all.forEach(c => { const s = effStatus(c); counts[s] = (counts[s] || 0) + 1; });
@@ -4027,7 +4060,7 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
         <div className="cardlist">
           {list.map(c => {
             const st = effStatus(c);
-            const expired = c.status !== "cancelado" && contractExpired(c);
+            const expired = c.status !== "cancelado" && c.status !== "perdido" && contractExpired(c);
             const s = CONTRACT_STATUSES[st] || CONTRACT_STATUSES.borrador;
             const nproj = state.projects.filter(p => p.contractId === c.id).length;
             const dleft = c.expiresAt ? Math.ceil((new Date(c.expiresAt + "T23:59:59").getTime() - Date.now()) / 86400000) : null;
