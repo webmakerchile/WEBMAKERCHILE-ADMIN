@@ -41,6 +41,24 @@ export const contractSignatures = pgTable(
     signerIp: text("signer_ip"),
     userAgent: text("user_agent"),
 
+    /* ---- Firma digital ---- */
+    /** Cómo firmó: "dibujo" | "imagen" | "texto". */
+    signatureKind: text("signature_kind"),
+    /**
+     * La firma en sí: data URI PNG/JPEG para dibujo e imagen; el texto tecleado
+     * para "texto". Va en la misma fila porque ES parte de la constancia: una
+     * firma separada de su registro no prueba nada.
+     */
+    signatureData: text("signature_data"),
+
+    /* ---- Correos de confirmación ---- */
+    /** "enviado" | "fallido" | "sin_correo" | "sin_configurar". Null = firma anterior a esta función. */
+    emailClienteEstado: text("email_cliente_estado"),
+    /** Ídem para el aviso al buzón del equipo. */
+    emailEquipoEstado: text("email_equipo_estado"),
+    /** Detalle del último error de envío, para verlo en el panel y no en logs. */
+    emailDetalle: text("email_detalle"),
+
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({

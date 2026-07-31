@@ -197,6 +197,13 @@
       "when": 1786233600000,
       "tag": "0032_auto_checkin_discord",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786320000000,
+      "tag": "0033_firma_digital",
+      "breakpoints": true
     }
   ]
 }
