@@ -1,13 +1,22 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { hubTasks, users, hubTaskActivity, hubTaskComments, type HubTaskRow, type HubChecklistItem, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
-import { eq, and, asc, desc, sql, gte, lte, isNull, or, ne } from "drizzle-orm";
+import { hubTasks, users, hubTaskActivity, hubTaskComments, videos, slaBreaches, sprintWeekClosures, type HubTaskRow, type HubChecklistItem, VALID_STAGES, VALID_PRIORITIES } from "@workspace/db/schema";
+import { eq, and, asc, desc, sql, gte, lte, isNull, isNotNull, or, ne } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { hubWriteScopesFor, normalizeRole } from "@workspace/roles";
 import { createNotification } from "../../lib/notifications";
 import { recordActivity } from "../../lib/activity";
+import { claveSemanaActual } from "../../lib/sprint-semanal";
+import { generarPlanContenido, type VideoSemana } from "../../lib/contenido-ia";
+import { buildBrandToneSuffix } from "../../lib/brand-tone";
 
 const router: IRouter = Router();
+
+// Alias para leer la otra mitad de un par de contenido en el mismo SELECT
+// (la tarea de redes muestra el estado de la de edición y viceversa).
+const pareja = alias(hubTasks, "pareja");
+const parejaUser = alias(users, "pareja_user");
 
 type AuthUser = { id: number; role?: string; teamRole?: string; name?: string; email?: string };
 
@@ -164,6 +173,11 @@ async function fetchTaskWithUsers(taskId: number) {
       updatedAt: hubTasks.updatedAt,
       checklist: hubTasks.checklist,
       origin: hubTasks.origin,
+      sprintWeek: hubTasks.sprintWeek,
+      pairedTaskId: hubTasks.pairedTaskId,
+      parejaTitle: pareja.title,
+      parejaStage: pareja.stage,
+      parejaAssigneeName: parejaUser.name,
       createdByName: sql<string | null>`cb.name`,
       createdByPicture: sql<string | null>`cb.picture`,
       assigneeName: sql<string | null>`asgn.name`,
@@ -172,6 +186,8 @@ async function fetchTaskWithUsers(taskId: number) {
     .from(hubTasks)
     .leftJoin(sql`${users} cb`, sql`cb.id = ${hubTasks.createdById}`)
     .leftJoin(sql`${users} asgn`, sql`asgn.id = ${hubTasks.assigneeId}`)
+    .leftJoin(pareja, eq(pareja.id, hubTasks.pairedTaskId))
+    .leftJoin(parejaUser, eq(parejaUser.id, pareja.assigneeId))
     .where(eq(hubTasks.id, taskId));
 
   if (!rows.length) return null;
@@ -194,6 +210,11 @@ async function fetchTaskWithUsers(taskId: number) {
     updatedAt: r.updatedAt,
     checklist: r.checklist ?? [],
     origin: r.origin,
+    sprintWeek: r.sprintWeek,
+    pairedTaskId: r.pairedTaskId,
+    pareja: r.pairedTaskId
+      ? { id: r.pairedTaskId, title: r.parejaTitle, stage: r.parejaStage, assigneeName: r.parejaAssigneeName }
+      : null,
     createdBy: { id: r.createdById, name: r.createdByName, picture: r.createdByPicture },
     assignee: r.assigneeId
       ? { id: r.assigneeId, name: r.assigneeName, picture: r.assigneePicture }
@@ -275,12 +296,19 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
         updatedAt: hubTasks.updatedAt,
         checklist: hubTasks.checklist,
         origin: hubTasks.origin,
+        sprintWeek: hubTasks.sprintWeek,
+        pairedTaskId: hubTasks.pairedTaskId,
+        parejaTitle: pareja.title,
+        parejaStage: pareja.stage,
+        parejaAssigneeName: parejaUser.name,
         assigneeName: users.name,
         assigneePicture: users.picture,
         assigneeEmail: users.email,
       })
       .from(hubTasks)
       .leftJoin(users, eq(users.id, hubTasks.assigneeId))
+      .leftJoin(pareja, eq(pareja.id, hubTasks.pairedTaskId))
+      .leftJoin(parejaUser, eq(parejaUser.id, pareja.assigneeId))
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(asc(hubTasks.orderIndex), asc(hubTasks.createdAt))
       .limit(lim)
@@ -304,6 +332,11 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
       updatedAt: r.updatedAt,
       checklist: r.checklist ?? [],
       origin: r.origin,
+      sprintWeek: r.sprintWeek,
+      pairedTaskId: r.pairedTaskId,
+      pareja: r.pairedTaskId
+        ? { id: r.pairedTaskId, title: r.parejaTitle, stage: r.parejaStage, assigneeName: r.parejaAssigneeName }
+        : null,
       assignee: r.assigneeId
         ? { id: r.assigneeId, name: r.assigneeName, picture: r.assigneePicture, email: r.assigneeEmail }
         : null,
@@ -348,6 +381,9 @@ router.post("/hub/tasks", async (req: Request, res: Response) => {
         stage: d.stage,
         stageSince: now,
         stageTime: {},
+        // Nacer fuera del backlog es comprometerse: cuenta para la semana
+        // en curso igual que una tarea movida a mano.
+        sprintWeek: d.stage !== "backlog" ? claveSemanaActual() : null,
         dueDate: d.dueDate ?? null,
         completedAt: d.stage === "done" ? now : null,
         orderIndex: d.orderIndex,
@@ -564,6 +600,382 @@ router.get("/hub/tasks/activity", async (req: Request, res: Response) => {
 });
 
 /* GET /hub/tasks/:id */
+/* GET /hub/tasks/mi-semana — mi carga de la semana + dónde puedo ayudar */
+router.get("/hub/tasks/mi-semana", async (req: Request, res: Response) => {
+  try {
+    const user = me(req);
+    const semana = claveSemanaActual();
+    const mias = await db
+      .select({ id: hubTasks.id, stage: hubTasks.stage })
+      .from(hubTasks)
+      .where(and(eq(hubTasks.assigneeId, user.id), eq(hubTasks.sprintWeek, semana)));
+    const total = mias.length;
+    const done = mias.filter((t) => t.stage === "done").length;
+    // La ayuda se desbloquea con la semana propia completa — y con algo hecho:
+    // cero tareas no es una semana cumplida, es una semana sin compromiso.
+    const elegible = total > 0 && done === total;
+
+    let sugerencias: Array<Record<string, unknown>> = [];
+    if (elegible) {
+      const prioridadOrden = sql`CASE ${hubTasks.priority} WHEN 'crítica' THEN 0 WHEN 'alta' THEN 1 WHEN 'media' THEN 2 ELSE 3 END`;
+      const abiertas = await db
+        .select({
+          id: hubTasks.id,
+          title: hubTasks.title,
+          priority: hubTasks.priority,
+          stage: hubTasks.stage,
+          projectRef: hubTasks.projectRef,
+          sprintWeek: hubTasks.sprintWeek,
+          assigneeId: hubTasks.assigneeId,
+          assigneeName: users.name,
+        })
+        .from(hubTasks)
+        .leftJoin(users, eq(users.id, hubTasks.assigneeId))
+        .where(and(
+          ne(hubTasks.stage, "done"),
+          or(isNull(hubTasks.assigneeId), ne(hubTasks.assigneeId, user.id)),
+        ))
+        .orderBy(prioridadOrden, asc(hubTasks.stageSince))
+        .limit(12);
+      // Tomable solo lo libre; lo asignado se ofrece ayuda, no se quita.
+      sugerencias = abiertas.map((t) => ({ ...t, puedeTomar: t.assigneeId == null }));
+    }
+    res.json({ semana, progreso: { total, done }, elegible, sugerencias });
+  } catch (err) {
+    console.error("[hub/tasks/mi-semana GET]", err);
+    res.status(500).json({ error: "Error al obtener la semana" });
+  }
+});
+
+/* GET /hub/tasks/desempeno — panel RRHH/dirección: cumplimiento por persona */
+router.get("/hub/tasks/desempeno", async (req: Request, res: Response) => {
+  if (!isCeoOrEjecutivo(req)) {
+    res.status(403).json({ error: "Sin acceso" }); return;
+  }
+  try {
+    const requester = me(req);
+    const semana = claveSemanaActual();
+    // Regla del dueño: igual que en team-members, el dueño no aparece para otros.
+    const whereUsers = requester.role === "superadmin"
+      ? eq(users.approvalStatus, "approved")
+      : and(eq(users.approvalStatus, "approved"), ne(users.role, "superadmin"));
+    const personas = await db
+      .select({ id: users.id, name: users.name, picture: users.picture, teamRole: users.teamRole })
+      .from(users)
+      .where(whereUsers)
+      .orderBy(asc(users.name));
+
+    const actual = await db
+      .select({
+        assigneeId: hubTasks.assigneeId,
+        total: sql<number>`count(*)::int`,
+        done: sql<number>`count(*) filter (where ${hubTasks.stage} = 'done')::int`,
+      })
+      .from(hubTasks)
+      .where(and(eq(hubTasks.sprintWeek, semana), isNotNull(hubTasks.assigneeId)))
+      .groupBy(hubTasks.assigneeId);
+
+    // Atrasos SLA de la semana: episodios ligados a tareas comprometidas a ella.
+    const atrasos = await db
+      .select({ responsibleId: slaBreaches.responsibleId, atrasos: sql<number>`count(*)::int` })
+      .from(slaBreaches)
+      .innerJoin(hubTasks, sql`${slaBreaches.entityId} = ${hubTasks.id}::text`)
+      .where(and(eq(slaBreaches.entityType, "task"), eq(hubTasks.sprintWeek, semana)))
+      .groupBy(slaBreaches.responsibleId);
+
+    // Historial: las fotos de las últimas 8 semanas cerradas (el arrastre
+    // reescribe las tareas, así que la evolución sale de aquí, no de ellas).
+    const desde = claveSemanaActual(new Date(Date.now() - 56 * 86_400_000));
+    const historial = await db
+      .select({
+        weekKey: sprintWeekClosures.weekKey,
+        userId: sprintWeekClosures.userId,
+        total: sprintWeekClosures.total,
+        done: sprintWeekClosures.done,
+        carried: sprintWeekClosures.carried,
+      })
+      .from(sprintWeekClosures)
+      .where(gte(sprintWeekClosures.weekKey, desde))
+      .orderBy(asc(sprintWeekClosures.weekKey));
+
+    res.json({ semana, personas, actual, atrasos, historial });
+  } catch (err) {
+    console.error("[hub/tasks/desempeno GET]", err);
+    res.status(500).json({ error: "Error al obtener desempeño" });
+  }
+});
+
+/* POST /hub/tasks/generar-contenido — plan semanal IA en pares redes ↔ edición */
+router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) => {
+  const u = me(req);
+  const rol = normalizeRole(u.teamRole, u.role === "superadmin");
+  if (!(rol === "social" || rol === "marketing" || rol === "ceo")) {
+    res.status(403).json({ error: "Solo redes, marketing o dirección pueden generar el plan" });
+    return;
+  }
+  try {
+    const user = me(req);
+    const semana = claveSemanaActual();
+    const force = Boolean((req.body as Record<string, unknown> | undefined)?.["force"]);
+
+    const existentesRows = await db
+      .select({ id: hubTasks.id, title: hubTasks.title })
+      .from(hubTasks)
+      .where(and(eq(hubTasks.origin, "contenido_ia"), eq(hubTasks.sprintWeek, semana)));
+    // Un plan por semana salvo intención explícita: el botón apretado dos
+    // veces no debe duplicar la pauta de todo el equipo.
+    if (existentesRows.length > 0 && !force) {
+      res.status(409).json({
+        error: `El plan de esta semana ya existe (${existentesRows.length} tareas). Regenera solo si de verdad quieres más.`,
+        existentes: existentesRows.length,
+      });
+      return;
+    }
+
+    // Las dos personas del par: redes y edición (aprobadas más antiguas).
+    const equipo = await db
+      .select({ id: users.id, name: users.name, teamRole: users.teamRole })
+      .from(users)
+      .where(eq(users.approvalStatus, "approved"))
+      .orderBy(asc(users.id));
+    const socialUser = equipo.find((p) => normalizeRole(p.teamRole) === "social");
+    const editoraUser = equipo.find((p) => normalizeRole(p.teamRole) === "editora");
+    if (!socialUser || !editoraUser) {
+      res.status(400).json({
+        error: !socialUser
+          ? "No hay nadie aprobado con rol de redes sociales"
+          : "No hay editora aprobada — el contenido siempre va en par redes ↔ edición",
+      });
+      return;
+    }
+
+    // Videos en juego: los agendados esta semana + los recientes sin fecha.
+    const ventana = await db
+      .select({ title: videos.title, scheduledAt: videos.scheduledAt, workflowStatus: videos.workflowStatus })
+      .from(videos)
+      .where(and(
+        gte(videos.scheduledAt, new Date(Date.now() - 8 * 86_400_000)),
+        lte(videos.scheduledAt, new Date(Date.now() + 8 * 86_400_000)),
+      ))
+      .limit(40);
+    const videosSemana: VideoSemana[] = ventana.filter(
+      (v) => v.scheduledAt && claveSemanaActual(v.scheduledAt) === semana,
+    );
+    const sinFecha = await db
+      .select({ title: videos.title, scheduledAt: videos.scheduledAt, workflowStatus: videos.workflowStatus })
+      .from(videos)
+      .where(and(isNull(videos.scheduledAt), ne(videos.workflowStatus, "publicado")))
+      .orderBy(desc(videos.createdAt))
+      .limit(10);
+
+    const items = await generarPlanContenido({
+      semana,
+      videos: [...videosSemana, ...sinFecha],
+      existentes: existentesRows.map((t) => t.title),
+      tono: await buildBrandToneSuffix(user.id),
+    });
+
+    // Todo el plan entra completo o no entra: el candado por semana
+    // serializa dos clics simultáneos (el perdedor ve el plan fresco al
+    // re-chequear y recibe 409), y un fallo a mitad de los pares revierte
+    // TODO — sin mitades huérfanas que encima bloquearían el reintento.
+    // La llamada a la IA queda deliberadamente FUERA de la transacción.
+    const now = new Date();
+    type ParCreado = { redesId: number; redesTitle: string; edicionId: number; edicionTitle: string };
+    const resultado = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`plan-contenido-${semana}`}))`);
+      const dedupe = await tx
+        .select({ id: hubTasks.id })
+        .from(hubTasks)
+        .where(and(eq(hubTasks.origin, "contenido_ia"), eq(hubTasks.sprintWeek, semana)));
+      if (dedupe.length > 0 && !force) {
+        return { duplicado: dedupe.length, creadas: [] as ParCreado[] };
+      }
+      const maxRows = await tx
+        .select({ max: sql<number>`coalesce(max(${hubTasks.orderIndex}), 0)::int` })
+        .from(hubTasks);
+      const base = (maxRows[0]?.max ?? 0) + 1;
+
+      const creadas: ParCreado[] = [];
+      for (const [i, item] of items.entries()) {
+        const chk = (lista: string[], cara: string): HubChecklistItem[] =>
+          lista.map((text, j) => ({ id: `cw${now.getTime().toString(36)}${i}${cara}${j}`, text, done: false }));
+        const comun = {
+          createdById: user.id,
+          priority: item.prioridad,
+          stage: "sprint" as const,
+          stageSince: now,
+          stageTime: {},
+          origin: "contenido_ia",
+          sprintWeek: semana,
+          dueDate: item.dia,
+        };
+        const [redesRow, edicionRow] = await tx
+          .insert(hubTasks)
+          .values([
+            {
+              ...comun,
+              title: item.redes.titulo,
+              notes: item.redes.descripcion || null,
+              assigneeId: socialUser.id,
+              orderIndex: base + i * 2,
+              checklist: chk(item.redes.checklist, "r"),
+            },
+            {
+              ...comun,
+              title: item.edicion.titulo,
+              notes: item.edicion.descripcion || null,
+              assigneeId: editoraUser.id,
+              orderIndex: base + i * 2 + 1,
+              checklist: chk(item.edicion.checklist, "e"),
+            },
+          ])
+          .returning({ id: hubTasks.id, title: hubTasks.title });
+        if (!redesRow || !edicionRow) continue;
+        // El enlace es bidireccional: cada mitad sabe de la otra.
+        await tx.update(hubTasks).set({ pairedTaskId: edicionRow.id }).where(eq(hubTasks.id, redesRow.id));
+        await tx.update(hubTasks).set({ pairedTaskId: redesRow.id }).where(eq(hubTasks.id, edicionRow.id));
+        creadas.push({ redesId: redesRow.id, redesTitle: redesRow.title, edicionId: edicionRow.id, edicionTitle: edicionRow.title });
+      }
+      return { duplicado: 0, creadas };
+    });
+    if (resultado.duplicado > 0) {
+      res.status(409).json({
+        error: `Alguien más generó el plan de esta semana hace un momento (${resultado.duplicado} tareas).`,
+        existentes: resultado.duplicado,
+      });
+      return;
+    }
+    const creadas = resultado.creadas;
+    if (creadas.length === 0) {
+      res.status(502).json({ error: "La IA no entregó un plan usable, intenta de nuevo" });
+      return;
+    }
+    // La bitácora va fuera de la transacción: si falla, no tumba el plan.
+    for (const par of creadas) {
+      await logActivity({ taskId: par.redesId, taskTitle: par.redesTitle, userId: user.id, action: "created" }).catch(() => {});
+      await logActivity({ taskId: par.edicionId, taskTitle: par.edicionTitle, userId: user.id, action: "created" }).catch(() => {});
+    }
+
+    recordActivity({
+      actorId: user.id,
+      entityType: "task",
+      entityId: creadas[0]!.redesId,
+      entityLabel: `Plan de contenido ${semana}: ${creadas.length} pares redes ↔ edición`,
+      action: "created",
+      detail: { semana, pares: creadas.length },
+    });
+    const aviso = (userId: number, title: string, body: string) =>
+      createNotification({ userId, type: "system", title, body, link: "/mis-tareas" }).catch(() => {});
+    if (socialUser.id !== user.id) {
+      await aviso(socialUser.id, "📅 Plan de contenido de la semana", `${creadas.length} tareas de redes nuevas (${semana})`);
+    }
+    if (editoraUser.id !== user.id) {
+      await aviso(editoraUser.id, "🎬 Ediciones de la semana", `${creadas.length} tareas de edición enlazadas a redes (${semana})`);
+    }
+
+    res.status(201).json({ semana, pares: creadas.length, tareas: creadas.length * 2 });
+  } catch (err) {
+    console.error("[hub/tasks/generar-contenido POST]", err);
+    res.status(502).json({ error: "No se pudo generar el plan de contenido (IA no disponible). Intenta de nuevo." });
+  }
+});
+
+/* POST /hub/tasks/:id/tomar — tomar una tarea libre para ayudar */
+router.post("/hub/tasks/:id/tomar", async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
+  try {
+    const user = me(req);
+    const [task] = await db
+      .select({
+        id: hubTasks.id,
+        title: hubTasks.title,
+        stage: hubTasks.stage,
+        assigneeId: hubTasks.assigneeId,
+        createdById: hubTasks.createdById,
+        sprintWeek: hubTasks.sprintWeek,
+      })
+      .from(hubTasks)
+      .where(eq(hubTasks.id, id))
+      .limit(1);
+    if (!task) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
+    if (task.stage === "done") { res.status(400).json({ error: "Esa tarea ya está lista" }); return; }
+    if (task.assigneeId != null) {
+      res.status(409).json({ error: "Ya tiene responsable — ofrécele ayuda en vez de tomarla" });
+      return;
+    }
+    const now = new Date();
+    // Anti doble-clic: el UPDATE exige que SIGA sin responsable; si dos
+    // personas la toman a la vez, solo una gana y la otra recibe 409.
+    const claimed = await db
+      .update(hubTasks)
+      .set({ assigneeId: user.id, sprintWeek: task.sprintWeek ?? claveSemanaActual(now), updatedAt: now })
+      .where(and(eq(hubTasks.id, id), isNull(hubTasks.assigneeId)))
+      .returning({ id: hubTasks.id });
+    if (claimed.length === 0) {
+      res.status(409).json({ error: "Alguien la tomó primero" });
+      return;
+    }
+    await logActivity({ taskId: id, taskTitle: task.title, userId: user.id, action: "assigned" }).catch(() => {});
+    // La ayuda queda en la bitácora: es mérito visible, no solo movimiento.
+    recordActivity({
+      actorId: user.id,
+      entityType: "task",
+      entityId: id,
+      entityLabel: task.title,
+      action: "assigned",
+      detail: { ayuda: true, semana: claveSemanaActual(now) },
+    });
+    if (task.createdById !== user.id) {
+      await createNotification({
+        userId: task.createdById,
+        type: "system",
+        title: "🙌 Tomaron tu tarea para ayudar",
+        body: `${user.name || "Alguien"} tomó "${task.title}"`,
+        link: "/ejecutivo",
+      }).catch(() => {});
+    }
+    res.json({ ok: true, id });
+  } catch (err) {
+    console.error("[hub/tasks/:id/tomar POST]", err);
+    res.status(500).json({ error: "Error al tomar la tarea" });
+  }
+});
+
+/* POST /hub/tasks/:id/ofrecer-ayuda — avisar al responsable que puedes ayudar */
+router.post("/hub/tasks/:id/ofrecer-ayuda", async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params["id"] ?? ""), 10);
+  if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
+  try {
+    const user = me(req);
+    const mensaje = String((req.body as Record<string, unknown> | undefined)?.["mensaje"] ?? "")
+      .trim()
+      .slice(0, 300);
+    const [task] = await db
+      .select({ id: hubTasks.id, title: hubTasks.title, stage: hubTasks.stage, assigneeId: hubTasks.assigneeId })
+      .from(hubTasks)
+      .where(eq(hubTasks.id, id))
+      .limit(1);
+    if (!task) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
+    if (task.stage === "done") { res.status(400).json({ error: "Esa tarea ya está lista" }); return; }
+    if (!task.assigneeId) { res.status(400).json({ error: "No tiene responsable: puedes tomarla directamente" }); return; }
+    if (task.assigneeId === user.id) { res.status(400).json({ error: "Es tu propia tarea" }); return; }
+    // Sin .catch: si el aviso no salió, el ofrecimiento no existió.
+    await createNotification({
+      userId: task.assigneeId,
+      type: "system",
+      title: "🙌 Te ofrecen ayuda",
+      body: `${user.name || "Alguien"} puede ayudarte con "${task.title}"${mensaje ? ` — "${mensaje}"` : ""}`,
+      link: "/mis-tareas",
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[hub/tasks/:id/ofrecer-ayuda POST]", err);
+    res.status(500).json({ error: "Error al ofrecer ayuda" });
+  }
+});
+
 router.get("/hub/tasks/:id", async (req: Request, res: Response) => {
   const id = parseInt(String(req.params["id"] ?? ""), 10);
   if (isNaN(id)) { res.status(400).json({ error: "ID inválido" }); return; }
@@ -652,6 +1064,14 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
       } else if (d.stage !== "done") {
         updates["completedAt"] = null;
       }
+      // Compromiso semanal: salir del backlog compromete la tarea a la semana
+      // en curso; volver al backlog la descompromete. Solo el servidor escribe
+      // sprintWeek — el cierre semanal arrastra las pendientes él solo.
+      if (d.stage === "backlog") {
+        updates["sprintWeek"] = null;
+      } else if (!existing.sprintWeek) {
+        updates["sprintWeek"] = claveSemanaActual(now);
+      }
     }
 
     await db.update(hubTasks).set(updates).where(eq(hubTasks.id, id));
@@ -703,6 +1123,25 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
         body: `"${existing.title}" — completada por ${user.name || "un miembro del equipo"}`,
         link: "/ejecutivo",
       }).catch(() => {});
+    }
+
+    // El par de contenido se avisa solo: grabación lista → a editar; edición
+    // lista → a publicar. Sin este aviso el enlace sería puro adorno.
+    if (d.stage === "done" && existing.stage !== "done" && existing.pairedTaskId) {
+      const [par] = await db
+        .select({ id: hubTasks.id, title: hubTasks.title, assigneeId: hubTasks.assigneeId, stage: hubTasks.stage })
+        .from(hubTasks)
+        .where(eq(hubTasks.id, existing.pairedTaskId))
+        .limit(1);
+      if (par?.assigneeId && par.assigneeId !== user.id && par.stage !== "done") {
+        await createNotification({
+          userId: par.assigneeId,
+          type: "system",
+          title: "🔗 Tu tarea enlazada quedó desbloqueada",
+          body: `"${existing.title}" está lista — te toca: "${par.title}"`,
+          link: "/mis-tareas",
+        }).catch(() => {});
+      }
     }
 
     const updated = await fetchTaskWithUsers(id);

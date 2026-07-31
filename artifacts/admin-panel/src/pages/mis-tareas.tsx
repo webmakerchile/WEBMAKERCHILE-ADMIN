@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fmtDate, daysUntil, type HubProject, type HubContract } from "@/lib/hub-owner";
 import { misProyectos, tieneAsignados, carpetaDe } from "@/lib/proyecto-asignacion";
 import { useHubBoard, useHubPatch, replaceEntity } from "@/lib/hub-write";
-import { useTareasHub, type TareaVista } from "@/lib/tareas-hub";
+import { useTareasHub, useMiSemana, useAyudar, type TareaVista } from "@/lib/tareas-hub";
 import { useAuth } from "@/App";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
@@ -18,6 +18,7 @@ import { Adjuntos } from "@/components/adjuntos";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
   ChevronDown, ChevronLeft, ChevronRight, Plus, Flame, X, Check, Timer,
+  CalendarCheck, HeartHandshake,
 } from "lucide-react";
 
 /** Mismas etapas y colores que el Scrumban del Hub Ejecutivo. */
@@ -70,7 +71,11 @@ function projectProgress(projectId: string, tasks: TareaVista[]) {
 }
 
 export default function MisTareasPage() {
-  const { data: board, isLoading, error } = useHubBoard();
+  // El tablero del Hub aporta proyectos y contratos, pero NO es requisito:
+  // para redes/edición/rrhh ese endpoint está cerrado por área y aun así su
+  // lista de tareas (ruta exenta) debe funcionar. Si falla, se degrada a
+  // "sin proyectos" en vez de romper la página.
+  const { data: board, isLoading } = useHubBoard();
   const patch = useHubPatch();
   const { toast } = useToast();
 
@@ -82,6 +87,10 @@ export default function MisTareasPage() {
   const miId = typeof usuario?.id === "number" ? usuario.id : null;
   const tareasHub = useTareasHub(miId);
   const tasks = tareasHub.tareas;
+  const miSemana = useMiSemana();
+  const ayudar = useAyudar();
+  const semanaKey = miSemana.data?.semana ?? null;
+  const [soloSemana, setSoloSemana] = useState(false);
   const projects = useMemo(() => board?.data?.projects ?? [], [board]);
   const contracts = useMemo(() => board?.data?.contracts ?? [], [board]);
   // El servidor decide qué puede tocar este rol; la UI solo obedece.
@@ -93,10 +102,13 @@ export default function MisTareasPage() {
   const [nueva, setNueva] = useState<{ title: string; projectId: string; crit: string } | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
 
-  const visible = useMemo(
-    () => (projectId === "todos" ? tasks : tasks.filter(t => t.projectId === projectId)),
-    [tasks, projectId],
-  );
+  const visible = useMemo(() => {
+    let list = projectId === "todos" ? tasks : tasks.filter(t => t.projectId === projectId);
+    // El filtro de semana muestra SOLO lo comprometido a la semana en curso:
+    // la vista de sprint, sin backlog ni semanas pasadas ya cerradas.
+    if (soloSemana && semanaKey) list = list.filter(t => t.sprintWeek === semanaKey);
+    return list;
+  }, [tasks, projectId, soloSemana, semanaKey]);
 
   const byStage = useMemo(() => {
     const map = new Map<string, TareaVista[]>(STAGES.map(s => [s.id, []]));
@@ -199,6 +211,16 @@ export default function MisTareasPage() {
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             )}
+            {semanaKey && (
+              <Button
+                size="sm"
+                variant={soloSemana ? "default" : "outline"}
+                onClick={() => setSoloSemana(v => !v)}
+                title={`Solo tareas comprometidas a la semana ${semanaKey}`}
+              >
+                <CalendarCheck className="w-4 h-4 mr-1.5" /> Esta semana
+              </Button>
+            )}
             {puedeEditarTareas && (
               <Button
                 size="sm"
@@ -210,20 +232,46 @@ export default function MisTareasPage() {
           </div>
         </header>
 
-        {isLoading && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
+        {(isLoading || tareasHub.cargando) && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
 
-        {error && (
+        {tareasHub.error && (
           <div className="rounded-xl border border-red-500/20 bg-red-500/10 text-red-400 px-4 py-3 text-sm flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <span>{(error as Error).message}</span>
+            <span>{tareasHub.error.message}</span>
           </div>
         )}
 
-        {!isLoading && !error && (
+        {!isLoading && !tareasHub.cargando && !tareasHub.error && (
           <>
             {/* Dos señales que el tablero por sí solo no da: cuánto tengo abierto
                 a la vez y qué lleva días sin moverse. */}
-            <div className="grid sm:grid-cols-3 gap-3">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <Card className="bg-card/40 border-foreground/10">
+                <CardContent className="p-4">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                    Mi semana{semanaKey ? ` · ${semanaKey}` : ""}
+                  </p>
+                  {miSemana.data ? (
+                    <>
+                      <p className="text-2xl font-bold text-primary">
+                        {miSemana.data.progreso.done}
+                        <span className="text-sm text-muted-foreground font-normal"> / {miSemana.data.progreso.total} listas</span>
+                      </p>
+                      <div className="h-1.5 rounded-full bg-foreground/10 mt-2 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${miSemana.data.elegible ? "bg-emerald-400" : "bg-primary"}`}
+                          style={{ width: `${miSemana.data.progreso.total ? Math.round((100 * miSemana.data.progreso.done) / miSemana.data.progreso.total) : 0}%` }}
+                        />
+                      </div>
+                      {miSemana.data.progreso.total === 0 && (
+                        <p className="text-[11px] text-muted-foreground mt-1">Sin tareas comprometidas: saca algo del backlog.</p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">—</p>
+                  )}
+                </CardContent>
+              </Card>
               <Card className={enDesarrollo > WIP_LIMITE ? "bg-amber-500/10 border-amber-500/30" : "bg-card/40 border-foreground/10"}>
                 <CardContent className="p-4">
                   <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">En desarrollo a la vez</p>
@@ -253,6 +301,68 @@ export default function MisTareasPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Semana completa → se abre la puerta a ayudar a otras áreas.
+                La elegibilidad la decide el servidor; aquí solo se muestra. */}
+            {miSemana.data?.elegible && (
+              <Card className="bg-emerald-500/5 border-emerald-500/25">
+                <CardContent className="p-4">
+                  <p className="text-sm font-semibold flex items-center gap-2 text-emerald-400">
+                    <HeartHandshake className="w-4 h-4" /> ¿Dónde puedo ayudar?
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 mb-3">
+                    Tu semana está completa 🎉 Estas tareas de otras áreas siguen abiertas: toma una libre o avísale al responsable que puedes echar una mano.
+                  </p>
+                  {miSemana.data.sugerencias.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No hay tareas abiertas de otras áreas ahora mismo.</p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {miSemana.data.sugerencias.map(s => (
+                        <li key={s.id} className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-card/50 px-2.5 py-1.5">
+                          <span
+                            className="px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap"
+                            style={{ background: `${CRIT_COLOR[s.priority] || "#7a8699"}22`, color: CRIT_COLOR[s.priority] || "#7a8699" }}
+                          >
+                            {s.priority}
+                          </span>
+                          <span className="text-xs flex-1 truncate" title={s.title}>{s.title}</span>
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                            {s.assigneeName ? `de ${s.assigneeName}` : "libre"}
+                          </span>
+                          {s.puedeTomar ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-[11px] border-emerald-500/40 text-emerald-400"
+                              disabled={ayudar.tomar.isPending}
+                              onClick={() => ayudar.tomar.mutate(s.id, {
+                                onSuccess: () => toast({ title: `“${s.title}” ahora es tuya 🙌` }),
+                                onError: e => toast({ title: "No se pudo tomar", description: (e as Error).message, variant: "destructive" }),
+                              })}
+                            >
+                              Tomar
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-[11px] text-muted-foreground"
+                              disabled={ayudar.ofrecer.isPending}
+                              onClick={() => ayudar.ofrecer.mutate({ id: s.id }, {
+                                onSuccess: () => toast({ title: "Aviso enviado: sabrá que puedes ayudar" }),
+                                onError: e => toast({ title: "No se pudo avisar", description: (e as Error).message, variant: "destructive" }),
+                              })}
+                            >
+                              Puedo ayudar
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Qué se le vendió a este proyecto. Solo con uno elegido: en
                 "todos los proyectos" no hay un alcance que enseñar. */}
@@ -333,7 +443,7 @@ export default function MisTareasPage() {
                               key={t.id}
                               tarea={t}
                               proyecto={projectName(t.projectId)}
-                              editable={puedeEditarTareas}
+                              editable={puedeEditarTareas || (miId !== null && t.asignadoA?.id === miId)}
                               abierta={editando === t.id}
                               guardando={tareasHub.actualizar.isPending}
                               onAbrir={() => setEditando(editando === t.id ? null : t.id)}
@@ -631,9 +741,19 @@ function TarjetaTarea({
             className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 whitespace-nowrap"
             title={tarea.origin === "arranque_ia"
               ? "Requerimiento generado con IA al activarse el proyecto"
-              : "Requerimiento generado automáticamente desde el brief al activarse el proyecto"}
+              : tarea.origin === "contenido_ia"
+                ? "Tarea del plan semanal de contenido generado con IA"
+                : "Requerimiento generado automáticamente desde el brief al activarse el proyecto"}
           >
-            ⚡ {tarea.origin === "arranque_ia" ? "IA" : "auto"}
+            ⚡ {tarea.origin === "arranque_brief" ? "auto" : "IA"}
+          </span>
+        )}
+        {tarea.pareja && (
+          <span
+            className={`px-1.5 py-0.5 rounded whitespace-nowrap ${tarea.pareja.stage === "done" ? "bg-emerald-500/15 text-emerald-400" : "bg-violet-500/15 text-violet-400"}`}
+            title={`Tarea enlazada: “${tarea.pareja.title}”${tarea.pareja.assigneeName ? ` (${tarea.pareja.assigneeName})` : ""} — el contenido va en par: redes y edición avanzan juntas`}
+          >
+            🔗 {tarea.pareja.stage === "done" ? "par listo" : `par: ${STAGES.find(s => s.id === tarea.pareja!.stage)?.label ?? tarea.pareja.stage}`}
           </span>
         )}
         <span className="truncate flex-1">{proyecto}</span>

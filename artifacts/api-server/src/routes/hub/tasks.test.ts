@@ -2,14 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
-vi.mock("@workspace/db", () => ({
-  db: {
+vi.mock("@workspace/db", () => {
+  // El mock también hace de "tx": db.transaction entrega el mismo objeto,
+  // así los tests encolan selects/inserts sin importar si van en transacción.
+  const dbMock: Record<string, unknown> = {
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
-  },
-}));
+    execute: vi.fn(async () => ({ rows: [] })),
+  };
+  dbMock["transaction"] = vi.fn(async (cb: (tx: unknown) => unknown) => cb(dbMock));
+  return { db: dbMock };
+});
 
 vi.mock("../../lib/notifications", () => ({
   createNotification: vi.fn().mockResolvedValue(undefined),
@@ -691,5 +696,317 @@ describe("GET /hub/tasks/team-members — gate", () => {
   it("edición no puede pedir la lista de asignables", async () => {
     const res = await request(await buildApp(mockEditorUser)).get("/hub/tasks/team-members");
     expect(res.status).toBe(403);
+  });
+});
+
+/* ─────────────────── Sprints semanales y pares de contenido ─────────────────── */
+
+// La IA del plan vive en su propio módulo (con sus propios tests); aquí se
+// prueba la RUTA: gates, dedupe, inserción en pares y enlaces bidireccionales.
+const { planMock, tonoMock, bitacoraMock } = vi.hoisted(() => ({
+  planMock: vi.fn(),
+  tonoMock: vi.fn().mockResolvedValue(""),
+  bitacoraMock: vi.fn(),
+}));
+vi.mock("../../lib/contenido-ia", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  generarPlanContenido: planMock,
+}));
+vi.mock("../../lib/brand-tone", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  buildBrandToneSuffix: tonoMock,
+}));
+vi.mock("../../lib/activity", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  recordActivity: bitacoraMock,
+}));
+
+const mockSocialUser = { id: 7, role: "user", teamRole: "social", email: "redes@test.com" };
+
+/** Cadena drizzle "acepta todo": cualquier método encadena, await resuelve filas. */
+function cadenaFluida(rows: unknown[]) {
+  const chain: Record<string, unknown> = {};
+  for (const m of ["from", "leftJoin", "innerJoin", "where", "orderBy", "groupBy", "limit", "offset", "values", "set", "returning", "onConflictDoNothing"]) {
+    chain[m] = vi.fn().mockReturnValue(chain);
+  }
+  (chain as { then: unknown }).then = (ok: (v: unknown) => unknown, ko?: (e: unknown) => unknown) =>
+    Promise.resolve(rows).then(ok, ko);
+  return chain as Record<string, ReturnType<typeof vi.fn>> & { then: unknown };
+}
+
+/** Encola respuestas de db.select en orden; lo que sobre resuelve vacío. */
+function colaSelects(...rowSets: unknown[][]) {
+  vi.mocked(db.select).mockReset();
+  for (const rows of rowSets) {
+    vi.mocked(db.select).mockReturnValueOnce(cadenaFluida(rows) as never);
+  }
+  vi.mocked(db.select).mockReturnValue(cadenaFluida([]) as never);
+}
+
+describe("GET /hub/tasks/mi-semana", () => {
+  it("semana completa → elegible, con lo libre marcado como tomable", async () => {
+    colaSelects(
+      [{ id: 1, stage: "done" }, { id: 2, stage: "done" }],
+      [
+        { id: 7, title: "Libre", priority: "alta", stage: "sprint", projectRef: null, sprintWeek: null, assigneeId: null, assigneeName: null },
+        { id: 8, title: "De Ana", priority: "media", stage: "doing", projectRef: null, sprintWeek: null, assigneeId: 9, assigneeName: "Ana" },
+      ],
+    );
+    const res = await request(await buildApp(mockDevUser)).get("/hub/tasks/mi-semana");
+    expect(res.status).toBe(200);
+    expect(res.body.semana).toMatch(/^\d{4}-W\d{2}$/);
+    expect(res.body.progreso).toEqual({ total: 2, done: 2 });
+    expect(res.body.elegible).toBe(true);
+    expect(res.body.sugerencias).toHaveLength(2);
+    expect(res.body.sugerencias[0].puedeTomar).toBe(true);
+    expect(res.body.sugerencias[1].puedeTomar).toBe(false);
+  });
+
+  it("semana incompleta → no elegible y sin sugerencias", async () => {
+    colaSelects([{ id: 1, stage: "done" }, { id: 2, stage: "doing" }]);
+    const res = await request(await buildApp(mockDevUser)).get("/hub/tasks/mi-semana");
+    expect(res.status).toBe(200);
+    expect(res.body.elegible).toBe(false);
+    expect(res.body.sugerencias).toEqual([]);
+  });
+
+  it("cero tareas comprometidas NO es una semana cumplida", async () => {
+    colaSelects([]);
+    const res = await request(await buildApp(mockDevUser)).get("/hub/tasks/mi-semana");
+    expect(res.status).toBe(200);
+    expect(res.body.elegible).toBe(false);
+  });
+});
+
+describe("GET /hub/tasks/desempeno", () => {
+  it("quien no dirige (edición) recibe 403", async () => {
+    const res = await request(await buildApp(mockEditorUser)).get("/hub/tasks/desempeno");
+    expect(res.status).toBe(403);
+  });
+
+  it("dirección ve personas, carga actual, atrasos e historial", async () => {
+    colaSelects(
+      [{ id: 2, name: "Montse", picture: null, teamRole: "edicion" }],
+      [{ assigneeId: 2, total: 3, done: 1 }],
+      [{ responsibleId: 2, atrasos: 1 }],
+      [{ weekKey: "2026-W30", userId: 2, total: 4, done: 4, carried: 0 }],
+    );
+    const res = await request(await buildApp(mockCeoUser)).get("/hub/tasks/desempeno");
+    expect(res.status).toBe(200);
+    expect(res.body.semana).toMatch(/^\d{4}-W\d{2}$/);
+    expect(res.body.personas).toHaveLength(1);
+    expect(res.body.actual[0]).toEqual({ assigneeId: 2, total: 3, done: 1 });
+    expect(res.body.atrasos[0]).toEqual({ responsibleId: 2, atrasos: 1 });
+    expect(res.body.historial[0].weekKey).toBe("2026-W30");
+  });
+});
+
+describe("POST /hub/tasks/generar-contenido", () => {
+  beforeEach(() => {
+    planMock.mockReset();
+    bitacoraMock.mockReset();
+    vi.mocked(createNotification).mockClear();
+  });
+
+  it("el programador no genera el plan de contenido", async () => {
+    const res = await request(await buildApp(mockDevUser)).post("/hub/tasks/generar-contenido").send({});
+    expect(res.status).toBe(403);
+    expect(planMock).not.toHaveBeenCalled();
+  });
+
+  it("plan ya existente esta semana sin force → 409, sin llamar a la IA", async () => {
+    colaSelects([{ id: 50, title: "Grabar reel" }]);
+    const res = await request(await buildApp(mockSocialUser)).post("/hub/tasks/generar-contenido").send({});
+    expect(res.status).toBe(409);
+    expect(res.body.existentes).toBe(1);
+    expect(planMock).not.toHaveBeenCalled();
+  });
+
+  it("sin editora aprobada → 400: el contenido jamás va sin su par", async () => {
+    colaSelects(
+      [], // sin plan previo
+      [{ id: 31, name: "Dani", teamRole: "social" }], // equipo sin editora
+    );
+    const res = await request(await buildApp(mockSocialUser)).post("/hub/tasks/generar-contenido").send({});
+    expect(res.status).toBe(400);
+    expect(planMock).not.toHaveBeenCalled();
+  });
+
+  it("crea cada item como PAR enlazado y avisa a redes y edición", async () => {
+    colaSelects(
+      [], // sin plan previo
+      [{ id: 31, name: "Dani", teamRole: "social" }, { id: 32, name: "Montse", teamRole: "edicion" }],
+      [], // videos agendados en la ventana
+      [], // videos sin fecha
+      [], // re-chequeo dentro del candado: sigue sin plan
+      [{ max: 5 }], // orderIndex más alto
+    );
+    planMock.mockResolvedValue([{
+      tema: "Detrás de cámaras",
+      prioridad: "alta",
+      dia: "2026-08-03",
+      redes: { titulo: "Grabar detrás de cámaras", descripcion: "En la oficina", checklist: ["Guion"] },
+      edicion: { titulo: "Editar detrás de cámaras", descripcion: "Cortes", checklist: ["Montaje"] },
+    }]);
+    const parChain = cadenaFluida([]);
+    (parChain["returning"] as ReturnType<typeof vi.fn>).mockReturnValue(cadenaFluida([
+      { id: 101, title: "Grabar detrás de cámaras" },
+      { id: 102, title: "Editar detrás de cámaras" },
+    ]));
+    vi.mocked(db.insert).mockReset();
+    vi.mocked(db.insert)
+      .mockReturnValueOnce(parChain as never)
+      .mockReturnValue(cadenaFluida([]) as never); // bitácora interna de la tarea
+    vi.mocked(db.update).mockReset();
+    vi.mocked(db.update).mockReturnValue(cadenaFluida([]) as never);
+
+    // Genera marketing (id 4): ni redes ni edición — ambas deben recibir aviso.
+    const res = await request(await buildApp(mockMarketingUser)).post("/hub/tasks/generar-contenido").send({});
+
+    expect(res.status).toBe(201);
+    expect(res.body.pares).toBe(1);
+    expect(res.body.tareas).toBe(2);
+
+    // Un solo insert con las DOS caras: mismo origen, misma semana, en sprint.
+    const values = (parChain["values"] as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Array<Record<string, unknown>>;
+    expect(values).toHaveLength(2);
+    expect(values[0]).toMatchObject({ assigneeId: 31, origin: "contenido_ia", stage: "sprint", orderIndex: 6, dueDate: "2026-08-03" });
+    expect(values[1]).toMatchObject({ assigneeId: 32, origin: "contenido_ia", stage: "sprint", orderIndex: 7 });
+    expect(String(values[0]!["sprintWeek"])).toMatch(/^\d{4}-W\d{2}$/);
+
+    // Enlace bidireccional: dos updates, uno por mitad.
+    expect(db.update).toHaveBeenCalledTimes(2);
+
+    // Avisos a ambas personas del par, y el plan queda en la bitácora.
+    const avisados = vi.mocked(createNotification).mock.calls.map((c) => (c[0] as { userId: number }).userId);
+    expect(avisados).toContain(31);
+    expect(avisados).toContain(32);
+    expect(bitacoraMock).toHaveBeenCalledTimes(1);
+    expect(bitacoraMock.mock.calls[0]![0]).toMatchObject({ action: "created", entityType: "task" });
+  });
+
+  it("carrera: otro generó el plan mientras la IA pensaba → 409 dentro del candado, sin insertar", async () => {
+    colaSelects(
+      [], // chequeo previo: aún no hay plan
+      [{ id: 31, name: "Dani", teamRole: "social" }, { id: 32, name: "Montse", teamRole: "edicion" }],
+      [], // ventana de videos
+      [], // sin fecha
+      [{ id: 900 }], // re-chequeo DENTRO del candado: alguien ya insertó
+    );
+    planMock.mockResolvedValue([{
+      tema: "x",
+      prioridad: "media",
+      dia: null,
+      redes: { titulo: "Grabar x", descripcion: "", checklist: [] },
+      edicion: { titulo: "Editar x", descripcion: "", checklist: [] },
+    }]);
+    vi.mocked(db.insert).mockReset();
+    vi.mocked(db.insert).mockReturnValue(cadenaFluida([]) as never);
+
+    const res = await request(await buildApp(mockSocialUser)).post("/hub/tasks/generar-contenido").send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body.existentes).toBe(1);
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /hub/tasks — sello de semana al nacer", () => {
+  it("crear directo al sprint estampa la semana en curso", async () => {
+    colaSelects();
+    vi.mocked(db.insert).mockReset();
+    const ins = cadenaFluida([{ id: 77, title: "Grabar intro" }]);
+    vi.mocked(db.insert).mockReturnValueOnce(ins as never).mockReturnValue(cadenaFluida([]) as never);
+
+    const res = await request(await buildApp(mockCeoUser))
+      .post("/hub/tasks")
+      .send({ title: "Grabar intro", stage: "sprint" });
+
+    expect(res.status).toBe(201);
+    const vals = (ins["values"] as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(String(vals["sprintWeek"])).toMatch(/^\d{4}-W\d{2}$/);
+  });
+
+  it("crear al backlog no compromete semana todavía", async () => {
+    colaSelects();
+    vi.mocked(db.insert).mockReset();
+    const ins = cadenaFluida([{ id: 78, title: "Idea suelta" }]);
+    vi.mocked(db.insert).mockReturnValueOnce(ins as never).mockReturnValue(cadenaFluida([]) as never);
+
+    const res = await request(await buildApp(mockCeoUser))
+      .post("/hub/tasks")
+      .send({ title: "Idea suelta" });
+
+    expect(res.status).toBe(201);
+    const vals = (ins["values"] as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(vals["sprintWeek"]).toBeNull();
+  });
+});
+
+describe("POST /hub/tasks/:id/tomar", () => {
+  beforeEach(() => {
+    bitacoraMock.mockReset();
+    vi.mocked(createNotification).mockClear();
+  });
+
+  it("toma una tarea libre, la anota en bitácora y avisa a quien la creó", async () => {
+    colaSelects([{ id: 9, title: "Suelta", stage: "sprint", assigneeId: null, createdById: 1, sprintWeek: null }]);
+    vi.mocked(db.update).mockReset();
+    const upd = cadenaFluida([{ id: 9 }]);
+    vi.mocked(db.update).mockReturnValue(upd as never);
+    vi.mocked(db.insert).mockReset();
+    vi.mocked(db.insert).mockReturnValue(cadenaFluida([]) as never);
+
+    const res = await request(await buildApp(mockDevUser)).post("/hub/tasks/9/tomar");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, id: 9 });
+    // El claim exige que SIGA libre y estampa la semana en curso.
+    const set = (upd["set"] as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>;
+    expect(set["assigneeId"]).toBe(mockDevUser.id);
+    expect(String(set["sprintWeek"])).toMatch(/^\d{4}-W\d{2}$/);
+    expect(bitacoraMock.mock.calls[0]![0]).toMatchObject({ action: "assigned", detail: expect.objectContaining({ ayuda: true }) });
+    expect(vi.mocked(createNotification).mock.calls[0]![0]).toMatchObject({ userId: 1 });
+  });
+
+  it("ya tiene responsable → 409 sin intentar el claim", async () => {
+    colaSelects([{ id: 9, title: "Ocupada", stage: "doing", assigneeId: 3, createdById: 1, sprintWeek: null }]);
+    vi.mocked(db.update).mockReset();
+    const res = await request(await buildApp(mockDevUser)).post("/hub/tasks/9/tomar");
+    expect(res.status).toBe(409);
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("carrera: el UPDATE condicional no devolvió filas → 409, sin bitácora", async () => {
+    colaSelects([{ id: 9, title: "Suelta", stage: "sprint", assigneeId: null, createdById: 1, sprintWeek: null }]);
+    vi.mocked(db.update).mockReset();
+    vi.mocked(db.update).mockReturnValue(cadenaFluida([]) as never);
+    const res = await request(await buildApp(mockDevUser)).post("/hub/tasks/9/tomar");
+    expect(res.status).toBe(409);
+    expect(bitacoraMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /hub/tasks/:id/ofrecer-ayuda", () => {
+  beforeEach(() => {
+    vi.mocked(createNotification).mockClear();
+  });
+
+  it("avisa al responsable con el mensaje incluido", async () => {
+    colaSelects([{ id: 3, title: "Portada", stage: "doing", assigneeId: 2 }]);
+    const res = await request(await buildApp(mockDevUser))
+      .post("/hub/tasks/3/ofrecer-ayuda")
+      .send({ mensaje: "puedo con la portada" });
+    expect(res.status).toBe(200);
+    const aviso = vi.mocked(createNotification).mock.calls[0]![0] as { userId: number; body: string };
+    expect(aviso.userId).toBe(2);
+    expect(aviso.body).toContain("puedo con la portada");
+  });
+
+  it("sobre tu propia tarea → 400, sin aviso", async () => {
+    colaSelects([{ id: 3, title: "Portada", stage: "doing", assigneeId: mockDevUser.id }]);
+    const res = await request(await buildApp(mockDevUser)).post("/hub/tasks/3/ofrecer-ayuda").send({});
+    expect(res.status).toBe(400);
+    expect(createNotification).not.toHaveBeenCalled();
   });
 });

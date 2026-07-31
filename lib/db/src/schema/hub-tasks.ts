@@ -43,9 +43,23 @@ export const hubTasks = pgTable(
      * De dónde salió la tarea. null = la escribió una persona.
      *  · "arranque_ia":    generada por IA al activarse el contrato
      *  · "arranque_brief": generada mecánicamente desde el brief (IA no disponible)
-     * Solo la escribe el servidor en el arranque; ninguna ruta la acepta del cliente.
+     *  · "contenido_ia":   plan semanal de contenido (redes ↔ edición)
+     * Solo la escribe el servidor; ninguna ruta la acepta del cliente.
      */
     origin: text("origin"),
+    /**
+     * Semana de sprint a la que está comprometida la tarea (clave ISO en hora
+     * de Santiago, ej. "2026-W31"). null = todavía en backlog, sin semana.
+     * La fija el servidor: al salir del backlog, al generarse contenido, o el
+     * cierre semanal cuando arrastra pendientes. El cliente no la escribe.
+     */
+    sprintWeek: text("sprint_week"),
+    /**
+     * La otra mitad de un par de contenido: la tarea de redes apunta a la de
+     * edición y viceversa. El contenido orgánico SIEMPRE involucra a ambas;
+     * si una se borra, la otra queda suelta (set null), no se borra en cascada.
+     */
+    pairedTaskId: integer("paired_task_id"),
     dueDate: text("due_date"),
     /** Checklist embebido: [{ id, text, done }] */
     checklist: jsonb("checklist").$type<HubChecklistItem[]>().notNull().default([]),

@@ -44,10 +44,14 @@ export interface TareaVista {
   /** true si la tarea la creó otra persona: es trabajo que te asignaron. */
   ajena: boolean;
   /**
-   * "arranque_ia" | "arranque_brief" si la generó el sistema al activarse el
-   * contrato; null si la escribió una persona. Solo lectura: la fija el servidor.
+   * "arranque_ia" | "arranque_brief" | "contenido_ia" si la generó el sistema;
+   * null si la escribió una persona. Solo lectura: la fija el servidor.
    */
   origin: string | null;
+  /** Semana ISO comprometida ("2026-W31") o null si sigue en backlog. */
+  sprintWeek: string | null;
+  /** La otra mitad del par de contenido (redes ↔ edición), si existe. */
+  pareja: { id: number; title: string; stage: string; assigneeName: string | null } | null;
 }
 
 interface FilaServidor {
@@ -63,6 +67,8 @@ interface FilaServidor {
   updatedAt: string;
   assignee: { id: number; name: string | null; email: string | null } | null;
   origin?: string | null;
+  sprintWeek?: string | null;
+  pareja?: { id: number; title: string; stage: string; assigneeName: string | null } | null;
 }
 
 const ms = (v: string | null | undefined, porDefecto: number): number => {
@@ -87,6 +93,8 @@ export function aVista(r: FilaServidor, miId: number | null): TareaVista {
     asignadoA: r.assignee,
     ajena: miId !== null && r.createdById !== miId,
     origin: r.origin ?? null,
+    sprintWeek: r.sprintWeek ?? null,
+    pareja: r.pareja ?? null,
   };
 }
 
@@ -161,4 +169,81 @@ export function useTareasHub(miId: number | null) {
   });
 
   return { tareas, cargando: query.isLoading, error: query.error as Error | null, crear, actualizar, refrescar };
+}
+
+/* ── Mi semana: carga, cumplimiento y dónde ayudar ──────────────────────── */
+
+export const MI_SEMANA_QUERY_KEY = ["hub-tasks-mi-semana"] as const;
+
+export interface SugerenciaAyuda {
+  id: number;
+  title: string;
+  priority: string;
+  stage: string;
+  projectRef: string | null;
+  sprintWeek: string | null;
+  assigneeId: number | null;
+  assigneeName: string | null;
+  /** true = está libre y se puede tomar; false = tiene dueño, solo ofrecer ayuda. */
+  puedeTomar: boolean;
+}
+
+export interface MiSemana {
+  /** Clave ISO de la semana en curso, ej. "2026-W31". */
+  semana: string;
+  progreso: { total: number; done: number };
+  /** El servidor decide: semana propia completa (y con algo hecho). */
+  elegible: boolean;
+  sugerencias: SugerenciaAyuda[];
+}
+
+export function useMiSemana() {
+  return useQuery({
+    queryKey: MI_SEMANA_QUERY_KEY,
+    queryFn: () => pedir<MiSemana>(`${API_BASE}/hub/tasks/mi-semana`),
+    staleTime: 30_000,
+  });
+}
+
+/** Tomar una tarea libre, o avisarle al responsable que puedes ayudar. */
+export function useAyudar() {
+  const qc = useQueryClient();
+  const refrescar = () => {
+    void qc.invalidateQueries({ queryKey: TAREAS_QUERY_KEY });
+    void qc.invalidateQueries({ queryKey: MI_SEMANA_QUERY_KEY });
+  };
+  const tomar = useMutation({
+    mutationFn: (id: number) => pedir(`${API_BASE}/hub/tasks/${id}/tomar`, { method: "POST" }),
+    onSuccess: refrescar,
+  });
+  const ofrecer = useMutation({
+    mutationFn: (p: { id: number; mensaje?: string }) =>
+      pedir(`${API_BASE}/hub/tasks/${p.id}/ofrecer-ayuda`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mensaje: p.mensaje ?? "" }),
+      }),
+    onSuccess: refrescar,
+  });
+  return { tomar, ofrecer };
+}
+
+/** Generar el plan semanal de contenido: pares redes ↔ edición con IA. */
+export function useGenerarContenido() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (force?: boolean) =>
+      pedir<{ semana: string; pares: number; tareas: number }>(
+        `${API_BASE}/hub/tasks/generar-contenido`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ force: Boolean(force) }),
+        },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: TAREAS_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: MI_SEMANA_QUERY_KEY });
+    },
+  });
 }

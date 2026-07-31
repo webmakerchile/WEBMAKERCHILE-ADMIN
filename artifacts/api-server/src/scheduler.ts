@@ -8,6 +8,7 @@ import { randomBytes } from "crypto";
 import { writeFile, unlink, mkdir } from "fs/promises";
 import path from "path";
 import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-serve";
+import { checkCierreSemanal } from "./lib/sprint-semanal";
 import {
   prepararImagenInstagram,
   motivoNoPublicable,
@@ -1567,6 +1568,12 @@ async function tick() {
     await checkHubTaskDueReminders();
   } catch (err: any) {
     console.error("[Scheduler] checkHubTaskDueReminders failed:", err?.message || err);
+  }
+  // Cierre de semana del tablero (foto + arrastre): auto-debounced a 10 min.
+  try {
+    await checkCierreSemanal();
+  } catch (err: any) {
+    console.error("[Scheduler] checkCierreSemanal failed:", err?.message || err);
   }
   // Estancado y atrasado: auto-debounced a 12 h internamente.
   try {

@@ -15,6 +15,7 @@ import { MetasInline } from "@/components/metas-inline";
 import { useAsistencia } from "@/lib/asistencia";
 import { PaseDeLista } from "@/components/pase-de-lista";
 import { EvaluationsManager, LeaveManager, OnboardingManager, PersonDocuments } from "@/components/rrhh-ops";
+import { DesempenoSemanal } from "@/components/desempeno-semanal";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -387,6 +388,8 @@ export default function RrhhPage() {
                 />
               </CardContent>
             </Card>
+
+            <DesempenoSemanal />
 
             <LeaveManager />
 

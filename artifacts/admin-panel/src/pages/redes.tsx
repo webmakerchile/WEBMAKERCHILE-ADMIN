@@ -5,8 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/App";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
+import { useTareasHub, useGenerarContenido, type TareaVista } from "@/lib/tareas-hub";
 import {
   useVideos, useAnalytics, usePatchVideo, publishedNetworks, WORKFLOW_META, fmtFecha, fmtNumero,
   NETWORKS, NETWORK_LABELS, type ContentVideo, type Network, type WorkflowStatus, type VideoPatch,
@@ -263,6 +265,10 @@ export default function RedesPage() {
           </Card>
         )}
 
+        {/* El plan de la semana en tareas: cada contenido nace en par
+            redes ↔ edición, generado con IA sobre los videos en juego. */}
+        <PlanContenidoSemana />
+
         {totales && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
@@ -449,5 +455,86 @@ function ProximaFila({ video }: { video: ContentVideo }) {
       <Badge className={meta.className}>{meta.label}</Badge>
       <ControlFecha video={video} compacto />
     </li>
+  );
+}
+
+/** Etapas del tablero en palabras de esta página. */
+const ETAPA_LABEL: Record<string, string> = {
+  backlog: "backlog", sprint: "por hacer", doing: "en curso", qa_sent: "en QA", qa_rev: "en QA", done: "lista",
+};
+
+/**
+ * Plan semanal de contenido: el botón genera pares redes ↔ edición con IA y
+ * la lista muestra cómo van. Las etapas se mueven desde "Mis tareas"; aquí
+ * está el pulso, no el tablero. El servidor decide quién puede generar.
+ */
+function PlanContenidoSemana() {
+  const { toast } = useToast();
+  const usuario = useAuth();
+  const miId = typeof usuario?.id === "number" ? usuario.id : null;
+  const { tareas } = useTareasHub(miId);
+  const generar = useGenerarContenido();
+
+  const deContenido = useMemo(
+    () => tareas.filter((t: TareaVista) => t.origin === "contenido_ia").slice(0, 14),
+    [tareas],
+  );
+
+  const alGenerar = () => {
+    generar.mutate(undefined, {
+      onSuccess: r => toast({ title: `Plan listo: ${r.pares} contenidos → ${r.tareas} tareas en par 🎬` }),
+      onError: e => toast({ title: "No se pudo generar el plan", description: (e as Error).message, variant: "destructive" }),
+    });
+  };
+
+  return (
+    <Card className="bg-card/40 border-foreground/10">
+      <CardContent className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" /> Plan de contenido de la semana
+          </p>
+          <Button size="sm" onClick={alGenerar} disabled={generar.isPending}>
+            {generar.isPending
+              ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+              : <Sparkles className="w-4 h-4 mr-1.5" />}
+            Generar tareas con IA
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Cada contenido nace en par: la tarea de redes y su edición quedan enlazadas, y cuando una parte está lista la otra persona recibe el aviso.
+        </p>
+        {deContenido.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            Aún no hay tareas de contenido. Genera el plan y aparecerán aquí y en “Mis tareas”.
+          </p>
+        ) : (
+          <>
+            <ul className="space-y-1.5">
+              {deContenido.map((t: TareaVista) => (
+                <li key={t.id} className="flex items-center gap-2 rounded-lg border border-foreground/10 bg-card/50 px-2.5 py-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.stage === "done" ? "bg-emerald-400" : "bg-amber-400"}`} />
+                  <span className="text-xs flex-1 truncate" title={t.title}>{t.title}</span>
+                  {t.pareja && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${t.pareja.stage === "done" ? "bg-emerald-500/15 text-emerald-400" : "bg-violet-500/15 text-violet-400"}`}
+                      title={`Enlazada: “${t.pareja.title}”${t.pareja.assigneeName ? ` (${t.pareja.assigneeName})` : ""}`}
+                    >
+                      🔗 {t.pareja.stage === "done" ? "par listo" : "par en curso"}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    {ETAPA_LABEL[t.stage] ?? t.stage}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Las etapas se avanzan desde <Link href="/mis-tareas" className="text-primary hover:underline">Mis tareas</Link>.
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

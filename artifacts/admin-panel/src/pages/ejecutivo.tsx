@@ -60,6 +60,8 @@ interface HubTask {
   checklist?: ChecklistItem[];
   /** "arranque_ia" | "arranque_brief" si la generó el sistema al activarse el contrato. */
   origin?: string | null;
+  sprintWeek?: string | null;
+  pareja?: { id: number; title: string; stage: string; assigneeName: string | null } | null;
   assignee: { id: number; name: string | null; picture: string | null; email?: string | null } | null;
 }
 interface TeamMember {
@@ -718,9 +720,22 @@ function TaskCard({ t, projects, onClick, onDragStart, onDragEnd, onDelete }: { 
             style={{ background: "rgba(56,152,236,.14)", color: "#5aa9f0" }}
             title={t.origin === "arranque_ia"
               ? "Requerimiento generado con IA al activarse el proyecto"
-              : "Requerimiento generado automáticamente desde el brief al activarse el proyecto"}
+              : t.origin === "contenido_ia"
+                ? "Tarea del plan semanal de contenido generado con IA"
+                : "Requerimiento generado automáticamente desde el brief al activarse el proyecto"}
           >
-            ⚡ {t.origin === "arranque_ia" ? "IA" : "auto"}
+            ⚡ {t.origin === "arranque_brief" ? "auto" : "IA"}
+          </span>
+        )}
+        {t.pareja && (
+          <span
+            className="chip"
+            style={t.pareja.stage === "done"
+              ? { background: "rgba(29,184,123,.14)", color: "#1db87b" }
+              : { background: "rgba(139,92,246,.14)", color: "#a78bfa" }}
+            title={`Tarea enlazada: “${t.pareja.title}”${t.pareja.assigneeName ? ` (${t.pareja.assigneeName})` : ""} — contenido en par redes ↔ edición`}
+          >
+            🔗 {t.pareja.stage === "done" ? "par listo" : "en par"}
           </span>
         )}
         <span className="tcard-proj">{proj ? proj.name : "—"}</span>
