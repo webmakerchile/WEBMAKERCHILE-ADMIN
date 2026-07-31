@@ -19,6 +19,11 @@ export const HUB_ROLE_GATED_PATHS: ReadonlySet<string> = new Set([
   // Estaba gateado por área, así que marketing —que sí crea tareas y sí lee
   // proyectos— recibía un 403 al pedir ayuda para redactarlas.
   "/projects/ai-extract-tasks",
+  // Los recordatorios los recibe TODO el equipo, así que leer las reglas por
+  // las que a uno le escriben no puede depender del área; y quien las cambia es
+  // Programación, que tampoco es del área ejecutivo. El router se guarda solo:
+  // lectura para cualquiera autenticado, escritura solo dirección/Programación.
+  "/recordatorios",
 ]);
 
 /** ¿Este sub-path de `/hub` necesita además el gate por área? */

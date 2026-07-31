@@ -44,6 +44,8 @@ export type NotificationType =
   | "publish_partial"
   | "publish_error"
   | "schedule_reminder"
+  /** Trabajo estancado, aparcado o atrasado. Ver `lib/recordatorios.ts`. */
+  | "recordatorio"
   | "idea_done"
   | "connection_expiring"
   | "connection_expired"

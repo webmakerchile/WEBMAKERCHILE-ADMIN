@@ -11,6 +11,7 @@ import { useTareasHub, type TareaVista } from "@/lib/tareas-hub";
 import { useAuth } from "@/App";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
+import { ConfigRecordatorios, useReglasRecordatorio } from "@/components/config-recordatorios";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
   ChevronDown, ChevronLeft, ChevronRight, Plus, Flame, X, Check, Timer,
@@ -36,7 +37,14 @@ const PROJ_STATUS: Record<string, string> = { lead: "Lead", disc: "Discovery", d
 /** Cuántas tareas en desarrollo a la vez antes de que avisemos. */
 const WIP_LIMITE = 3;
 
-/** Horas a partir de las cuales una tarea lleva demasiado tiempo quieta. */
+/**
+ * Horas a partir de las cuales una tarea lleva demasiado tiempo quieta.
+ *
+ * Es solo el valor de arranque mientras cargan las reglas: el criterio de
+ * verdad se configura en "Cuándo avisarme" y es el mismo que usa el aviso por
+ * notificación. Si la tarjeta y el aviso no coincidieran, no se creería a
+ * ninguno de los dos.
+ */
 const ESTANCADA_HORAS = 72;
 
 function horasEnEtapa(t: TareaVista): number {
@@ -155,9 +163,12 @@ export default function MisTareasPage() {
   };
 
   const enDesarrollo = tasks.filter(t => t.stage === "doing").length;
+  const { data: reglas } = useReglasRecordatorio();
+  const horasEstancada = (reglas?.reglas.diasTareaEstancada ?? ESTANCADA_HORAS / 24) * 24;
+  const diasEstancada = Math.round(horasEstancada / 24);
   const estancadas = useMemo(
-    () => tasks.filter(t => t.stage !== "done" && t.stage !== "backlog" && horasEnEtapa(t) >= ESTANCADA_HORAS),
-    [tasks],
+    () => tasks.filter(t => t.stage !== "done" && t.stage !== "backlog" && horasEnEtapa(t) >= horasEstancada),
+    [tasks, horasEstancada],
   );
 
   return (
@@ -219,7 +230,9 @@ export default function MisTareasPage() {
               </Card>
               <Card className={estancadas.length > 0 ? "bg-red-500/10 border-red-500/25" : "bg-card/40 border-foreground/10"}>
                 <CardContent className="p-4">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Sin moverse (+3 días)</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                    Sin moverse (+{diasEstancada} día{diasEstancada === 1 ? "" : "s"})
+                  </p>
                   <p className={`text-2xl font-bold ${estancadas.length > 0 ? "text-red-400" : "text-muted-foreground"}`}>{estancadas.length}</p>
                   {estancadas.length > 0 && (
                     <p className="text-[11px] text-muted-foreground mt-1 truncate">{estancadas[0].title}</p>
@@ -233,6 +246,8 @@ export default function MisTareasPage() {
                 </CardContent>
               </Card>
             </div>
+
+            <ConfigRecordatorios />
 
             <MetasInline />
 

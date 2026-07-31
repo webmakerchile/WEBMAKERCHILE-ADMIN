@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Lightbulb,
   Clock,
+  Flame,
   Info,
   X,
   BellOff,
@@ -52,6 +53,10 @@ function iconFor(type: string) {
       return <AlertCircle className="w-5 h-5 text-rose-500" />;
     case "schedule_reminder":
       return <Clock className="w-5 h-5 text-blue-500" />;
+    // Estancado y atrasado: se distingue del recordatorio de agenda porque no
+    // pide llegar a tiempo a algo, avisa de que algo lleva parado demasiado.
+    case "recordatorio":
+      return <Flame className="w-5 h-5 text-orange-500" />;
     case "idea_done":
       return <Lightbulb className="w-5 h-5 text-violet-500" />;
     default:
