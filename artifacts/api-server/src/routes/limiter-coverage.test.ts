@@ -72,7 +72,28 @@ const MUST_UPLOAD = [
   "/api/cotizaciones/pdf",
 ];
 
+/**
+ * La ruta de aceptación de propuestas es la ÚNICA sin sesión que escribe en la
+ * base de datos. Sin límite, cualquiera puede probar tokens al azar todo el
+ * día contra un endpoint que da por aceptado un contrato.
+ */
+const firmaRegex = /^\/api\/firma\//;
+
+const MUST_FIRMA = [
+  "/api/firma/AbC-123_token",
+  "/api/firma/AbC-123_token/aceptar",
+];
+
 describe("Rate-limit regex coverage in app.ts", () => {
+  it.each(MUST_FIRMA)("firmaLimiter covers %s", (p) => {
+    expect(firmaRegex.test(p)).toBe(true);
+  });
+
+  it("el límite de firma no se aplica al resto del panel", () => {
+    expect(firmaRegex.test("/api/hub/contracts/1/firma")).toBe(false);
+    expect(firmaRegex.test("/api/content/videos")).toBe(false);
+  });
+
   it.each(MUST_AI)("aiLimiter covers %s", (p) => {
     expect(aiRegex.test(p)).toBe(true);
   });

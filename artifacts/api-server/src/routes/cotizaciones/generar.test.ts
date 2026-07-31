@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
-import { MMODA_EXAMPLE } from "./example-mmoda";
+import { EJEMPLO_ESTILO } from "./example-estilo";
 import type { Cotizacion } from "./schema";
 
 const openaiCreate = vi.fn();
@@ -15,7 +15,7 @@ vi.mock("./pdf", () => ({
 }));
 
 function cotConNetos(netos: number[], mensualidadNeto?: number): Cotizacion {
-  const base = JSON.parse(JSON.stringify(MMODA_EXAMPLE)) as Cotizacion;
+  const base = JSON.parse(JSON.stringify(EJEMPLO_ESTILO)) as Cotizacion;
   base.modulos = base.modulos.slice(0, netos.length).map((m, i) => ({ ...m, neto: netos[i] }));
   if (mensualidadNeto !== undefined && base.mensualidad) base.mensualidad.neto = mensualidadNeto;
   return base;
@@ -129,6 +129,103 @@ describe("generarContenidoCotizacion — estimación automática de precios", ()
 
     expect(intentos).toBe(1);
     expect(openaiCreate).toHaveBeenCalledTimes(1);
+  });
+
+  /* ---------------- Precios parciales ----------------
+
+     Antes esto no existía: o venían TODOS los precios o ninguno. El panel
+     exigía que cada módulo tuviera precio para mandarlos, así que quien sabía
+     el de tres de cuatro veía cómo la IA se inventaba también esos tres — y en
+     una cotización eso no se nota hasta que el cliente la recibe. */
+
+  it("respeta el precio dado y deja estimar solo el que falta", async () => {
+    const { generarContenidoCotizacion } = await import("./llm");
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, 420000])));
+
+    const { data, intentos } = await generarContenidoCotizacion({
+      contexto_cliente: CONTEXTO,
+      precios_netos: [900000, null],
+    });
+
+    expect(intentos).toBe(1);
+    expect(data.modulos[0].neto).toBe(900000);
+    // El segundo lo puso el modelo: no se compara contra nada, solo se acepta.
+    expect(data.modulos[1].neto).toBe(420000);
+  });
+
+  it("sigue exigiendo el precio dado aunque otro venga vacío", async () => {
+    const { generarContenidoCotizacion } = await import("./llm");
+    // El modelo cambia el precio que se le dio: eso tiene que reintentarse.
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([777000, 420000])));
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, 420000])));
+
+    const { data, intentos } = await generarContenidoCotizacion({
+      contexto_cliente: CONTEXTO,
+      precios_netos: [900000, null],
+    });
+
+    expect(intentos).toBe(2);
+    expect(data.modulos[0].neto).toBe(900000);
+    const reintento = openaiCreate.mock.calls[1][0] as { messages: Array<{ role: string; content: string }> };
+    expect(reintento.messages[reintento.messages.length - 1].content).toContain("900000");
+  });
+
+  // El aviso de "estima este" solo miraba el caso sin ningún precio, así que
+  // con precios parciales el módulo sin precio se quedaba en -1 y eso bloquea
+  // la vista previa: la cotización salía sin poder verse y sin decir por qué.
+  it("pide estimar el módulo que quedó pendiente", async () => {
+    const { generarContenidoCotizacion } = await import("./llm");
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, -1])));
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, 380000])));
+
+    const { data, intentos } = await generarContenidoCotizacion({
+      contexto_cliente: CONTEXTO,
+      precios_netos: [900000, null],
+    });
+
+    expect(intentos).toBe(2);
+    expect(data.modulos[1].neto).toBe(380000);
+    const reintento = openaiCreate.mock.calls[1][0] as { messages: Array<{ role: string; content: string }> };
+    expect(reintento.messages[reintento.messages.length - 1].content).toContain("PRECIOS PENDIENTES");
+  });
+
+  // El few-shot era la cotización real de una clienta: su nombre, sus
+  // volúmenes de venta y su dominio viajaban a un servicio externo dentro de la
+  // cotización de cualquier otro cliente, con la instrucción de imitarla. No da
+  // error: sale un documento impecable con los datos de otra persona dentro.
+  it("no manda datos de ningún cliente real en el ejemplo", async () => {
+    const { generarContenidoCotizacion } = await import("./llm");
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, 550000])));
+
+    await generarContenidoCotizacion({ contexto_cliente: CONTEXTO });
+
+    const primera = openaiCreate.mock.calls[0][0] as { messages: Array<{ role: string; content: string }> };
+    const prompt = primera.messages.map((m) => m.content).join("\n");
+    for (const rastro of ["M&M", "Magaly", "mmoda.cl", "Moda"]) {
+      expect(prompt, `el prompt no debe llevar "${rastro}"`).not.toContain(rastro);
+    }
+  });
+
+  it("el ejemplo sigue siendo concreto: un texto vago genera copy vago", async () => {
+    // La calidad del few-shot viene de que dice cifras y situaciones. Si alguien
+    // lo "limpia" hasta dejarlo genérico, deja de servir para lo que está.
+    expect(EJEMPLO_ESTILO.contexto.parrafos.join(" ").length).toBeGreaterThan(300);
+    expect(EJEMPLO_ESTILO.contexto.stats).toHaveLength(3);
+    expect(EJEMPLO_ESTILO.modulos.every((m) => m.descripcion.length >= 100)).toBe(true);
+  });
+
+  it("el prompt dice a qué módulo va cada precio", async () => {
+    const { generarContenidoCotizacion } = await import("./llm");
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, 420000])));
+
+    await generarContenidoCotizacion({ contexto_cliente: CONTEXTO, precios_netos: [900000, null] });
+
+    const primera = openaiCreate.mock.calls[0][0] as { messages: Array<{ role: string; content: string }> };
+    const prompt = primera.messages[1].content;
+    // Una lista suelta ("900000") no dice a cuál de los módulos corresponde, y
+    // el modelo los reordena.
+    expect(prompt).toContain("Módulo 1: 900000");
+    expect(prompt).toContain("Módulo 2: ESTÍMALO");
   });
 });
 

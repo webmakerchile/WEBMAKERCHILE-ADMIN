@@ -28,3 +28,5 @@ export * from "./activity-log";
 export * from "./playbooks";
 export * from "./sla";
 export * from "./marketing";
+export * from "./contract-signatures";
+export * from "./attachments";

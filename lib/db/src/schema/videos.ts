@@ -81,6 +81,19 @@ export const videos = pgTable("videos", {
   campaignId: integer("campaign_id"),
   /** Optional template the video was created from. */
   templateId: integer("template_id"),
+  /**
+   * Quién creó el video.
+   *
+   * Existe porque todas las notificaciones de publicación se mandaban al primer
+   * admin, y la persona que programó el video no se enteraba de nada: ni de que
+   * salió, ni de que falló. Sin esta columna no había forma de saber a quién
+   * avisar. Es nullable por los videos que ya existían.
+   *
+   * Sin `.references()` por la misma razón que campaignId/templateId: la tabla
+   * `users` se importa después que este archivo y drizzle-zod resuelve las
+   * referencias al cargar el módulo.
+   */
+  createdById: integer("created_by_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -278,13 +278,6 @@ export interface DriveFileList {
   nextPageToken?: string;
 }
 
-export interface DriveUploadBody {
-  name: string;
-  folderId: string;
-  base64Data: string;
-  mimeType: string;
-}
-
 export type VideoContentStatus =
   (typeof VideoContentStatus)[keyof typeof VideoContentStatus];
 

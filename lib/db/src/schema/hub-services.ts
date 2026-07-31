@@ -9,8 +9,16 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 
-/** Plan de precios de un servicio (ej: Inicia / Escala / Domina). */
-export type HubServiceTier = { plan: string; price: string; detail: string };
+/**
+ * Plan de precios de un servicio (ej: Inicia / Escala / Domina).
+ *
+ * `price` es lo que se MUESTRA (lleva matices: "desde", "/mes"); `amount` es
+ * lo que se CALCULA. Van separados porque con solo el texto no se podía sumar
+ * ni precargar una cotización, y el asistente acababa estimando los precios
+ * con IA teniendo el catálogo real al lado. Opcional: se deduce del texto para
+ * los servicios que ya existían.
+ */
+export type HubServiceTier = { plan: string; price: string; detail: string; amount?: number | null };
 
 /**
  * Catálogo de servicios del Hub Ejecutivo (antes hardcodeado en el frontend).

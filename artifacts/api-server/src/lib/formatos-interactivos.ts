@@ -426,6 +426,47 @@ const lista = (v: unknown, max: number, maxItem: number): string[] =>
  * no es una encuesta a medias: es una imagen con una pregunta que no se puede
  * responder, y dejarla pasar en verde es peor que fallar.
  */
+/**
+ * Quita comentarios `//` y `/* *​/` que estén FUERA de una cadena.
+ *
+ * Un modelo puede añadir un comentario aunque no se lo pidamos, y entonces
+ * `JSON.parse` falla y el rescate por regex falla igual —extrae el mismo texto
+ * roto—, así que la pieza no se genera. Recorre carácter a carácter en vez de
+ * usar una expresión regular porque `"https://…"` lleva `//` dentro de una
+ * cadena y una regex se lo comería junto con el resto de la línea.
+ */
+export function quitarComentariosJson(texto: string): string {
+  let salida = "";
+  let enCadena = false;
+  let escapado = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i]!;
+    if (enCadena) {
+      salida += c;
+      if (escapado) escapado = false;
+      else if (c === "\\") escapado = true;
+      else if (c === '"') enCadena = false;
+      continue;
+    }
+    if (c === '"') { enCadena = true; salida += c; continue; }
+    if (c === "/" && texto[i + 1] === "/") {
+      while (i < texto.length && texto[i] !== "\n") i++;
+      salida += "\n";
+      continue;
+    }
+    if (c === "/" && texto[i + 1] === "*") {
+      i += 2;
+      while (i < texto.length && !(texto[i] === "*" && texto[i + 1] === "/")) i++;
+      i++;
+      continue;
+    }
+    salida += c;
+  }
+  // Una coma colgando antes de } o ] tampoco es JSON, y aparece justo al
+  // borrar el comentario de la última línea.
+  return salida.replace(/,(\s*[}\]])/g, "$1");
+}
+
 export function parseContenidoInteractivo(
   raw: string,
   formato: FormatoInteractivo,
@@ -436,12 +477,16 @@ export function parseContenidoInteractivo(
     .trim();
 
   let obj: unknown = null;
-  try {
-    obj = JSON.parse(limpio);
-  } catch {
+  const intentar = (s: string): unknown => {
+    try { return JSON.parse(s); } catch { /* siguiente estrategia */ }
+    try { return JSON.parse(quitarComentariosJson(s)); } catch { return undefined; }
+  };
+  obj = intentar(limpio);
+  if (obj === undefined) {
     const m = limpio.match(/\{[\s\S]*\}/);
     if (!m) return null;
-    try { obj = JSON.parse(m[0]); } catch { return null; }
+    obj = intentar(m[0]);
+    if (obj === undefined) return null;
   }
   if (!obj || typeof obj !== "object") return null;
   const r = obj as Record<string, unknown>;
@@ -515,9 +560,17 @@ export function titularDe(c: ContenidoInteractivo, formato: FormatoInteractivo):
 const EJEMPLO_CAMPO: Record<CampoFormato, string> = {
   pregunta: '"pregunta": "la pregunta, máximo 12 palabras"',
   opciones: '"opciones": ["opción 1", "opción 2"]',
-  correcta: '"correcta": 0,  // índice (empezando en 0) de la opción correcta',
+  // OJO: nada de comentarios `//` aquí dentro. Este texto se le enseña al
+  // modelo como "el JSON que tienes que devolver", y el modelo copia lo que ve.
+  // Un comentario hace que JSON.parse falle Y que el rescate por regex falle
+  // igual, porque extrae el mismo texto roto: la pieza no se genera nunca.
+  // Lo que haya que explicar del campo va en las reglas en prosa, no aquí.
+  correcta: '"correcta": 0',
   afirmacion: '"afirmacion": "la creencia puesta a prueba"',
-  veredicto: '"veredicto": "VERDADERO" o "FALSO"',
+  // Igual que arriba: `"VERDADERO" o "FALSO"` tampoco es JSON. Aquí se colaba
+  // porque el modelo casi siempre elige uno de los dos y devuelve algo válido,
+  // pero la plantilla estaba rota y era cuestión de tiempo.
+  veredicto: '"veredicto": "FALSO"',
   explicacion: '"explicacion": "máximo 2 frases con el porqué"',
   items: '"items": ["señal 1", "señal 2", "señal 3"]',
   izquierda: '"izquierda": "opción de la izquierda, máx 4 palabras"',
@@ -561,8 +614,8 @@ REGLAS QUE NO SE NEGOCIAN:
 - Nada de "desliza", "link en bio", "dale like" ni fórmulas de manual tipo "¿Sabías que...?".
 - Si el formato pide una cifra, tiene que ser REAL. Si no tienes una cierta, escribe una que sea verificable y de conocimiento común, nunca inventada con decimales falsos.
 - La pieza tiene que poder RESPONDERSE mirándola: si alguien no sabe qué hacer al verla, está mal escrita.
-
-Devuelve EXCLUSIVAMENTE este JSON, sin markdown ni backticks:
+${formato.campos.includes("correcta") ? `- "correcta" es un ÍNDICE dentro de "opciones" y se empieza a contar en 0: la primera opción es 0. Cuál es la que hay que señalar te lo dice el apartado de arriba sobre cómo se escribe este formato.\n` : ""}${formato.campos.includes("veredicto") ? `- "veredicto" solo admite dos valores exactos: "VERDADERO" o "FALSO". En la plantilla va uno de ejemplo; pon el que corresponda.\n` : ""}
+Devuelve EXCLUSIVAMENTE este JSON, sin markdown, sin backticks y SIN COMENTARIOS:
 {
   "titular": "el gancho que va arriba, máximo 8 palabras, en mayúsculas o normal",
 ${campos},

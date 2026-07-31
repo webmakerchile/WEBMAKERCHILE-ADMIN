@@ -4,6 +4,7 @@ import { videos, users, campaigns, templates } from "@workspace/db/schema";
 import { eq, desc, lte, and, or, inArray, ilike, isNotNull, sql } from "drizzle-orm";
 import { recordActivity } from "../../lib/activity";
 import { handoffVideoApproved } from "../../lib/handoffs";
+import { cambioAlProgramar, avisosDeProgramacion, resumirAvisos } from "../../lib/promover-programado";
 
 /**
  * Resolve a finite numeric library reference (campaignId/templateId) to either
@@ -523,6 +524,7 @@ router.post("/content/videos/import-csv", async (req, res) => {
       const out: { id: number }[] = [];
       for (const p of prepared) {
         const [row] = await tx.insert(videos).values({
+          createdById: (req.user as { id?: number } | undefined)?.id ?? null,
           title: p.title,
           description: p.description,
           status: "draft",
@@ -577,6 +579,8 @@ router.post("/content/videos/:id/duplicate", async (req, res) => {
       ? src.templateId
       : null;
   const [row] = await db.insert(videos).values({
+    // Quién lo creó: es el destinatario de los avisos de publicación.
+    createdById: userId,
     title: baseTitle,
     description: src.description,
     coverPrompt: src.coverPrompt,
@@ -663,6 +667,8 @@ router.post("/content/videos", async (req, res) => {
   const [row] = await db
     .insert(videos)
     .values({
+      // Quién lo creó: es el destinatario de los avisos de publicación.
+      createdById: userId,
       title: body.title,
       description: body.description,
       coverPrompt: body.coverPrompt || null,
@@ -849,6 +855,14 @@ router.patch("/content/videos/:id", async (req, res) => {
     }
   }
 
+  // Se lee el estado actual SOLO si hace falta decidir si hay que promoverlo:
+  // una consulta de más en cada PATCH sería caro para nada.
+  let estadoActual: string | null = null;
+  if (body.scheduledAt !== undefined && body.status === undefined) {
+    const [fila] = await db.select({ status: videos.status }).from(videos).where(eq(videos.id, id)).limit(1);
+    estadoActual = fila?.status ?? null;
+  }
+
   const updateData: Record<string, any> = { updatedAt: new Date() };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.description !== undefined) updateData.description = body.description;
@@ -884,7 +898,20 @@ router.patch("/content/videos/:id", async (req, res) => {
   if (body.facebookPostId !== undefined) updateData.facebookPostId = body.facebookPostId;
   if (body.facebookError !== undefined) updateData.facebookError = body.facebookError;
   if (body.scheduleHour !== undefined) updateData.scheduleHour = body.scheduleHour;
-  if (body.scheduledAt !== undefined) updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+  if (body.scheduledAt !== undefined) {
+    updateData.scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+    // Poner fecha tiene que dejarlo PROGRAMADO. Antes solo se escribía la
+    // fecha: el calendario la mostraba, llegaba la hora y el publicador ni lo
+    // miraba, porque solo recorre los que están en "scheduled". Arrastrar un
+    // borrador en el calendario era, literalmente, no programar nada.
+    if (body.status === undefined) {
+      const promocion = cambioAlProgramar(estadoActual ?? "draft", body.scheduledAt ?? null);
+      if (promocion.status) {
+        updateData.status = promocion.status;
+        console.log(`[content] video ${id} ${promocion.motivo}`);
+      }
+    }
+  }
   if (body.campaignId !== undefined) {
     const userId = (req.user as { id?: number } | undefined)?.id ?? null;
     const resolved = await resolveOwnedLibraryId(body.campaignId, campaigns, userId);
@@ -952,7 +979,23 @@ router.patch("/content/videos/:id", async (req, res) => {
       });
     }
   }
-  res.json(row);
+  // Qué redes NO van a publicar aunque quede programado, y por qué.
+  //
+  // El publicador ya las marca `skipped` con su motivo, pero eso se ve DESPUÉS
+  // y en otra pantalla: quien programó se queda creyendo que estaba todo listo
+  // y se entera cuando pasó la hora y no salió nada. No es un error —el archivo
+  // se puede subir después— así que no bloquea: avisa.
+  const quedaProgramado = row.status === "scheduled";
+  const redesObjetivo = quedaProgramado
+    ? ["youtube", "tiktok", "instagram", "linkedin", "x", "facebook"].filter(
+        (red) => (row as Record<string, unknown>)[`${red}Status`] === "pending",
+      )
+    : [];
+  const avisos = redesObjetivo.length > 0
+    ? avisosDeProgramacion(row as unknown as Parameters<typeof avisosDeProgramacion>[0], redesObjetivo)
+    : [];
+
+  res.json({ ...row, avisos, avisoResumen: resumirAvisos(avisos) });
 });
 
 router.delete("/content/videos/:id", async (req, res) => {
@@ -1228,6 +1271,7 @@ router.post("/content/videos/from-studio", async (req, res) => {
     const [video] = await db
       .insert(videos)
       .values({
+        createdById: (req.user as { id?: number } | undefined)?.id ?? null,
         title: title || "Sin título",
         description: description || "",
         status: "draft",

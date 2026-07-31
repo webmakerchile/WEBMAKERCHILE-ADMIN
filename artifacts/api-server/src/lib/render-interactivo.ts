@@ -34,7 +34,86 @@ export interface ZonaBloque {
 const MARGEN_LATERAL = 0.085; // proporción del ancho
 const RADIO = 26;
 
-function fit(texto: string, maxWidth: number, maxFontSize: number, minFontSize: number, maxLineas = 2): TextoAjustado {
+/* ==================== La zona del bloque ================================ */
+
+/**
+ * Alto que piden los bloques, en proporción del ANCHO del lienzo.
+ *
+ * Va sobre el ancho y no sobre el alto porque todo el interior del bloque
+ * —píldoras, tarjetas, tipografía— se dimensiona con el ancho. La zona se
+ * calculaba con el alto (`height * 0.34`) y por eso solo cuadraba en 9:16: en
+ * 1:1 dejaba 367 px para bloques que piden más de 400, y el resultado era
+ * "en Historias funciona, en el Feed se corta".
+ */
+const ALTO_ZONA = 0.46;
+
+/**
+ * Los formatos con sticker nativo de Instagram necesitan MÁS sitio.
+ *
+ * Encima de nuestra pieza se pega el sticker real de Instagram, que es más
+ * grande que la tarjeta que dibujamos: si no se le reserva su espacio, tapa al
+ * zorro. Reservarlo aquí es lo que hace que quepa sin invadir la ilustración.
+ */
+const ALTO_ZONA_STICKER = 0.56;
+
+/**
+ * Suelo en proporción del ALTO, para no perder sitio en los lienzos altos.
+ *
+ * Sin esto, calcular la zona solo desde el ancho la ENCOGÍA en 9:16 respecto de
+ * lo que había (653 px → 605), justo en la relación donde el equipo pide más
+ * espacio para pegar el sticker de Instagram. Se toma el mayor de los dos.
+ */
+const PISO_ALTO = 0.34;
+const PISO_ALTO_STICKER = 0.40;
+
+/** Aire contra el borde inferior, en proporción del alto. */
+const MARGEN_INFERIOR = 0.05;
+
+/** Techo: por encima de esto el bloque se comería la ilustración entera. */
+const MAX_PROPORCION_ALTO = 0.46;
+
+/**
+ * Dónde va el bloque y cuánto alto tiene, para una relación de aspecto dada.
+ *
+ * ÚNICA fuente de verdad. Antes cada bloque decidía su alto por su cuenta y la
+ * zona se calculaba en otro sitio con otra base, así que ninguno de los dos
+ * sabía lo que hacía el otro.
+ */
+export function zonaInteractiva(
+  lienzo: Lienzo,
+  formato?: { stickerIg?: string | null },
+): ZonaBloque {
+  const conSticker = Boolean(formato?.stickerIg);
+  const margen = Math.round(lienzo.height * MARGEN_INFERIOR);
+  // El mayor de los dos: el ancho manda en los lienzos cuadrados (donde antes
+  // se quedaba corto) y el alto manda en los verticales (donde antes había más
+  // sitio del que da el ancho, y perderlo sería empeorar historias).
+  const porAncho = Math.round(lienzo.width * (conSticker ? ALTO_ZONA_STICKER : ALTO_ZONA));
+  const porAlto = Math.round(lienzo.height * (conSticker ? PISO_ALTO_STICKER : PISO_ALTO));
+  const techo = Math.round(lienzo.height * MAX_PROPORCION_ALTO);
+  const alto = Math.max(90, Math.min(Math.max(porAncho, porAlto), techo));
+  return { y: Math.max(0, lienzo.height - margen - alto), alto };
+}
+
+/**
+ * Alto que puede ocupar un bloque, nunca más que su zona.
+ *
+ * Existe porque siete bloques usaban `zona.alto` solo para centrarse y jamás
+ * para acotarse: crecían con el texto y se salían por abajo. Son justo los que
+ * el equipo reportó como "falta espacio" y "las frases se cortan".
+ */
+function encajar(altoNatural: number, zona: ZonaBloque): number {
+  return Math.min(altoNatural, zona.alto);
+}
+
+function fit(
+  texto: string,
+  maxWidth: number,
+  maxFontSize: number,
+  minFontSize: number,
+  maxLineas = 2,
+  maxHeight?: number,
+): TextoAjustado {
   return ajustarTextoMedido(texto, {
     maxWidth,
     maxLineas,
@@ -42,6 +121,7 @@ function fit(texto: string, maxWidth: number, maxFontSize: number, minFontSize: 
     minFontSize,
     fuenteId: "montserrat_bold",
     lineHeight: 1.18,
+    ...(maxHeight !== undefined ? { maxHeight } : {}),
   });
 }
 
@@ -271,11 +351,13 @@ function checklist(
 function cajaPregunta(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta: PaletaComposicion): string {
   const margen = lienzo.width * MARGEN_LATERAL;
   const ancho = lienzo.width - margen * 2;
-  const fInv = fit(c.invitacion, ancho - 56, Math.round(lienzo.width * 0.045), 20, 3);
+  // El texto se mide contra el alto REAL disponible, no contra el infinito:
+  // sin esto una invitación larga estiraba la caja fuera de la zona.
   const altoCampo = Math.round(lienzo.width * 0.09);
-  const altoCaja = fInv.alto + altoCampo + 66;
+  const fInv = fit(c.invitacion, ancho - 56, Math.round(lienzo.width * 0.045), 20, 3, zona.alto - altoCampo - 66);
+  const altoCaja = encajar(fInv.alto + altoCampo + 66, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoCaja) / 2);
-  const yCampo = y0 + fInv.alto + 44;
+  const yCampo = y0 + altoCaja - altoCampo - 22;
 
   const fCta = fit("Escribe aquí…", ancho - 120, Math.round(altoCampo * 0.36), 16, 1);
 
@@ -294,9 +376,9 @@ function hueco(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta
   // El "___" que escribe la IA se dibuja como una línea de verdad: en texto
   // se ve como un error de tipeo.
   const frase = c.frase.replace(/_{2,}/g, "").replace(/\s+/g, " ").trim();
-  const f = fit(frase, ancho - 56, Math.round(lienzo.width * 0.055), 22, 3);
+  const f = fit(frase, ancho - 56, Math.round(lienzo.width * 0.055), 22, 3, zona.alto - 74);
   const anchoLinea = ancho * 0.6;
-  const altoTotal = f.alto + 74;
+  const altoTotal = encajar(f.alto + 74, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoTotal) / 2);
 
   return [
@@ -312,7 +394,7 @@ function escala(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, palet
   const ancho = lienzo.width - margen * 2;
   const fDato = fit(c.dato, ancho * 0.7, Math.round(lienzo.width * 0.16), 40, 1);
   const altoBarra = Math.round(lienzo.width * 0.028);
-  const altoTotal = fDato.alto + altoBarra + 76;
+  const altoTotal = encajar(fDato.alto + altoBarra + 76, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoTotal) / 2);
   const yBarra = y0 + fDato.alto + 44;
 
@@ -455,7 +537,7 @@ function escalaCaras(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, 
   const ancho = lienzo.width - margen * 2;
   const radio = Math.round(ancho / 5 / 2.55);
   const altoRotulo = Math.round(lienzo.width * 0.042);
-  const altoTotal = radio * 2 + altoRotulo + 40;
+  const altoTotal = encajar(radio * 2 + altoRotulo + 40, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoTotal) / 2);
   const cy = y0 + radio + 12;
   const paso = ancho / 5;
@@ -575,7 +657,7 @@ function tarjetaDefinicion(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBl
   const ancho = lienzo.width - margen * 2;
   const fTermino = fit(c.termino, ancho - 80, Math.round(lienzo.width * 0.15), 32, 2);
   const altoRotulo = Math.round(lienzo.width * 0.05);
-  const altoTotal = fTermino.alto + altoRotulo + 90;
+  const altoTotal = encajar(fTermino.alto + altoRotulo + 90, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoTotal) / 2);
   const cx = lienzo.width / 2;
   const anchoLinea = ancho * 0.55;
@@ -597,7 +679,7 @@ function marcoVacio(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, p
   const ancho = lienzo.width - margen * 2;
   const fInv = fit(c.invitacion, ancho - 56, Math.round(lienzo.width * 0.042), 18, 3);
   const altoMarco = Math.round(lienzo.width * 0.22);
-  const altoTotal = fInv.alto + altoMarco + 46;
+  const altoTotal = encajar(fInv.alto + altoMarco + 46, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoTotal) / 2);
   const yMarco = y0 + fInv.alto + 34;
   const brazo = Math.round(altoMarco * 0.24);
@@ -614,9 +696,18 @@ function marcoVacio(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, p
     lineasCentradas(fInv, lienzo.width / 2, y0 + fInv.alto / 2, "#FFFFFF", { sombra: true }),
     // Con foto, el marco deja de estar vacío y pasa a enmarcarla: es
     // exactamente el gesto del formato, ponerle título a ESTA imagen.
+    //
+    // Sin foto, el marco NO puede ser un rectángulo gris y mudo: así es
+    // idéntico al hueco de una imagen que no cargó, y el equipo lo reportó
+    // literalmente como "la imagen no carga". Se dibuja una línea de escritura
+    // dentro, que dice "esto lo escribes tú" sin necesidad de instrucciones.
     fotos.get("marco")
       ? imagenRecortada(fotos.get("marco")!, "marco-foto", x1, y1, x2 - x1, altoMarco, 18)
-      : `<rect x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" width="${(x2 - x1).toFixed(1)}" height="${altoMarco}" rx="18" fill="#FFFFFF" fill-opacity="0.13"/>`,
+      : `<rect x="${x1.toFixed(1)}" y="${y1.toFixed(1)}" width="${(x2 - x1).toFixed(1)}" height="${altoMarco}" rx="18" fill="#FFFFFF" fill-opacity="0.10"/>` +
+        `<rect x="${(x1 + (x2 - x1) * 0.18).toFixed(1)}" y="${(y1 + altoMarco * 0.62).toFixed(1)}" ` +
+        `width="${((x2 - x1) * 0.64).toFixed(1)}" height="5" rx="2.5" fill="${paleta.colorAcento}" fill-opacity="0.85"/>` +
+        `<rect x="${(x1 + (x2 - x1) * 0.30).toFixed(1)}" y="${(y1 + altoMarco * 0.62 - 26).toFixed(1)}" ` +
+        `width="${((x2 - x1) * 0.40).toFixed(1)}" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.30"/>`,
     esquina(x1, y1, 1, 1), esquina(x2, y1, -1, 1),
     esquina(x1, y2, 1, -1), esquina(x2, y2, -1, -1),
   ].join("\n    ");
@@ -627,8 +718,11 @@ function cita(c: ContenidoInteractivo, lienzo: Lienzo, zona: ZonaBloque, paleta:
   const margen = lienzo.width * MARGEN_LATERAL;
   const ancho = lienzo.width - margen * 2;
   const comillas = Math.round(lienzo.width * 0.13);
-  const f = fit(c.frase, ancho - 120, Math.round(lienzo.width * 0.052), 20, 4);
-  const altoTotal = f.alto + comillas * 0.7 + 76;
+  // "¿De acuerdo?" fue el que reportaron como "las frases se cortan": la caja
+  // crecía con la frase y se salía por abajo. Ahora la frase se mide contra lo
+  // que queda de verdad y la caja no puede pasar de su zona.
+  const f = fit(c.frase, ancho - 120, Math.round(lienzo.width * 0.052), 20, 4, zona.alto - comillas * 0.7 - 76);
+  const altoTotal = encajar(f.alto + comillas * 0.7 + 76, zona);
   const y0 = zona.y + Math.max(0, (zona.alto - altoTotal) / 2);
   const cx = lienzo.width / 2;
 

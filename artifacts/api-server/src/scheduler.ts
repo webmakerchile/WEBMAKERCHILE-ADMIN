@@ -1,7 +1,7 @@
 import type { TikTokTokenJson, TikTokInitJson, IgContainerJson, IgStatusJson, IgPublishJson } from "./lib/platform-types";
 import { db } from "@workspace/db";
-import { videos, users, publishAttempts, hubTasks } from "@workspace/db/schema";
-import { eq, and, lte, or, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
+import { videos, users, publishAttempts, hubTasks, notifications } from "@workspace/db/schema";
+import { eq, and, lte, or, isNull, isNotNull, inArray, ne, sql, gte } from "drizzle-orm";
 import { google } from "googleapis";
 import { Readable } from "stream";
 import { randomBytes } from "crypto";
@@ -26,6 +26,19 @@ import { getCredential } from "./lib/credentials";
 import { checkSlaBreaches } from "./lib/sla";
 import { checkDocumentExpiryAlerts } from "./lib/hr-ops";
 import { checkSalesFollowUps, checkContractRenewals } from "./lib/ventas";
+import { resolveBoard } from "./lib/hub-board";
+import {
+  normalizarReglas,
+  avisosDeTareas,
+  avisosDeProyectos,
+  filtrarAvisos,
+  refsEnviadas,
+  recuentoReciente,
+  enlaceConRef,
+  TIPO_NOTIFICACION,
+  type ReglasRecordatorio,
+  type ProyectoVigilado,
+} from "./lib/recordatorios";
 
 type PublishPlatform = "youtube" | "tiktok" | "instagram" | "linkedin" | "x" | "facebook";
 
@@ -888,6 +901,29 @@ async function uploadToInstagram(video: any, user: any): Promise<{ success: bool
   }
 }
 
+export /**
+ * Avisa del resultado de una publicación a quien de verdad le importa.
+ *
+ * Todas las notificaciones iban al primer admin, así que la persona que
+ * programó el video no se enteraba de nada: ni de que salió, ni de que falló.
+ * Ahora se avisa también al autor, sin duplicar cuando son la misma persona.
+ */
+async function avisarPublicacion(
+  adminId: number,
+  autorId: number | null | undefined,
+  aviso: { type: Parameters<typeof createNotification>[0]["type"]; title: string; body: string; link: string },
+): Promise<void> {
+  const destinatarios = new Set<number>([adminId]);
+  if (autorId && autorId !== adminId) destinatarios.add(autorId);
+  await Promise.all(
+    [...destinatarios].map((userId) =>
+      createNotification({ userId, ...aviso }).catch((e) => {
+        console.error(`[scheduler] no se pudo notificar a ${userId}:`, e?.message ?? e);
+      }),
+    ),
+  );
+}
+
 export async function processScheduledVideos() {
   if (schedulerRunning) return;
   schedulerRunning = true;
@@ -1234,16 +1270,14 @@ export async function processScheduledVideos() {
           const nextAtStr = videoNextRetryAt ? new Date(videoNextRetryAt).toISOString() : "pronto";
           console.log(`[Scheduler] Video #${video.id} retries pending; next attempt ~${nextAtStr}. Skipping outcome notification.`);
         } else if (nextStatus === "published") {
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_success",
             title: "Publicación exitosa",
             body: `"${video.title}" se publicó correctamente.`,
             link: `/videos?select=${video.id}`,
           });
         } else if (nextStatus === "partial") {
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_partial",
             title: "Publicación parcial",
             body: bloqueados.length > 0
@@ -1254,16 +1288,14 @@ export async function processScheduledVideos() {
         } else if (nothingToPublish) {
           // Nada que publicar (sin archivo ni descripciones): error claro en
           // vez de la antigua notificación de éxito sin publicación real.
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_error",
             title: "Error al publicar",
             body: `"${video.title}" no se publicó: ${NO_CONTENT_ERROR}`,
             link: `/videos?select=${video.id}`,
           });
         } else {
-          await createNotification({
-            userId: adminUser.id,
+          await avisarPublicacion(adminUser.id, video.createdById, {
             type: "publish_error",
             title: "Error al publicar",
             body: `"${video.title}" falló tras agotar reintentos: ${errorSummary}`,
@@ -1397,6 +1429,87 @@ async function checkHubTaskDueReminders(): Promise<void> {
   }
 }
 
+/* ---------- Recordatorios de trabajo estancado ---------- */
+
+let lastRecordatorios = 0;
+
+/**
+ * Avisa de tareas sin avanzar, aparcadas o atrasadas, y de proyectos parados.
+ *
+ * Corre cada 12 h, no cada minuto, por una razón concreta: el tope de avisos
+ * por persona sólo significa algo si las rondas son escasas. Con una ronda por
+ * minuto, treinta tareas paradas se mandarían de cinco en cinco hasta salir
+ * todas igual, sólo que a plazos.
+ *
+ * El dedupe no vive en una columna nueva: la referencia del aviso viaja dentro
+ * del `link` de la notificación (`enlaceConRef`), así que la ronda siguiente
+ * sabe qué se mandó ya leyendo lo que hay en `notifications`.
+ */
+async function checkRecordatorios(): Promise<void> {
+  const nowMs = Date.now();
+  if (nowMs - lastRecordatorios < 12 * 60 * 60 * 1000) return;
+  lastRecordatorios = nowMs;
+
+  const ahora = new Date(nowMs);
+  const hoy = santiagoDateString(0);
+
+  const tareas = await db
+    .select({
+      id: hubTasks.id,
+      title: hubTasks.title,
+      stage: hubTasks.stage,
+      priority: hubTasks.priority,
+      stageSince: hubTasks.stageSince,
+      assigneeId: hubTasks.assigneeId,
+      dueDate: hubTasks.dueDate,
+    })
+    .from(hubTasks)
+    .where(and(isNotNull(hubTasks.assigneeId), ne(hubTasks.stage, "done")));
+
+  // Las reglas y los proyectos viven en el mismo tablero compartido, así que
+  // una sola lectura sirve para los dos. Si el tablero no existe todavía se
+  // avisa igual de las tareas: son relacionales y no dependen de él.
+  const board = await resolveBoard().catch(() => null);
+  const datos = (board?.data ?? {}) as Record<string, unknown>;
+  const reglas = normalizarReglas(datos.recordatorios as Partial<ReglasRecordatorio> | null);
+  const proyectos = (Array.isArray(datos.projects) ? datos.projects : []) as ProyectoVigilado[];
+
+  const avisos = [
+    ...avisosDeTareas(tareas, reglas, ahora, hoy),
+    ...avisosDeProyectos(proyectos, reglas, ahora),
+  ];
+  if (avisos.length === 0) return;
+
+  // Ventana amplia: el escalón mayor es de un año, y si el histórico se
+  // acortara, un aviso ya mandado volvería a salir como nuevo.
+  const desdeHistorico = new Date(nowMs - 400 * 24 * 60 * 60 * 1000);
+  const previas = await db
+    .select({ userId: notifications.userId, link: notifications.link, createdAt: notifications.createdAt })
+    .from(notifications)
+    .where(and(
+      eq(notifications.type, TIPO_NOTIFICACION),
+      gte(notifications.createdAt, desdeHistorico),
+    ));
+
+  const enviadas = refsEnviadas(previas.map((p) => p.link));
+  const recibidosHoy = recuentoReciente(previas, new Date(nowMs - 24 * 60 * 60 * 1000));
+
+  for (const aviso of filtrarAvisos(avisos, enviadas, undefined, recibidosHoy)) {
+    try {
+      await createNotification({
+        userId: aviso.userId,
+        type: TIPO_NOTIFICACION,
+        title: aviso.titulo,
+        body: aviso.cuerpo,
+        link: enlaceConRef(aviso),
+      });
+    } catch (err: any) {
+      // Un destinatario que falla no puede llevarse por delante al resto.
+      console.error(`[Scheduler] recordatorio ${aviso.ref} failed:`, err?.message || err);
+    }
+  }
+}
+
 let lastSlaCheck = 0;
 let lastDocExpiryCheck = 0;
 
@@ -1442,6 +1555,12 @@ async function tick() {
     await checkHubTaskDueReminders();
   } catch (err: any) {
     console.error("[Scheduler] checkHubTaskDueReminders failed:", err?.message || err);
+  }
+  // Estancado y atrasado: auto-debounced a 12 h internamente.
+  try {
+    await checkRecordatorios();
+  } catch (err: any) {
+    console.error("[Scheduler] checkRecordatorios failed:", err?.message || err);
   }
   // Daily-debounced inside checkConnectionsForAdmin, safe to call every minute.
   try {

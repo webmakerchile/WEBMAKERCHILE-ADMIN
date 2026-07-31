@@ -1,8 +1,10 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { contractSignatures } from "@workspace/db/schema";
+import { generarToken, caducidad, urlDeFirma } from "../../lib/firma-contrato";
 import { canSeeMoney, normalizeRole } from "@workspace/roles";
 import { resolveBoard, saveBoard } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
@@ -16,7 +18,19 @@ import {
   setRenewalAlertDays,
   toOpportunity,
   weightedProjection,
+  contractNet,
 } from "../../lib/ventas";
+import {
+  completarMeses,
+  proyectarVentas,
+  variacionUltimoMes,
+  bondadDelAjuste,
+} from "../../lib/proyeccion-ventas";
+import {
+  esVentaCerrada,
+  tasaDeConversion,
+  perdidasPorMotivo,
+} from "../../lib/estado-contrato";
 
 /**
  * Torre de control de Ventas (pipeline, renovaciones y comisiones).
@@ -55,6 +69,39 @@ function currentMonth(): string {
  * Pipeline normalizado + renovaciones próximas + proyección ponderada del mes.
  * La proyección y los netos solo se incluyen para roles con canSeeMoney.
  */
+/**
+ * Serie mensual de lo cerrado + tendencia por mínimos cuadrados.
+ *
+ * Cuenta las ventas HECHAS: los borradores son el embudo, no ventas, y
+ * mezclarlos infla la historia con cosas que aún pueden caerse. Antes se
+ * contaban solo los "activo", y eso borraba de su mes los contratos que se
+ * firmaron y meses después se cortaron: la venta ocurrió, y el mes pasado
+ * encogía sin que nadie lo notara. Ahora lo decide `desenlaceDe`, que además
+ * separa lo perdido de lo cancelado (ver lib/estado-contrato.ts).
+ *
+ * Los meses sin ventas se rellenan con cero — si no, la recta se ajusta como
+ * si esos meses no hubieran existido y la tendencia sale mejor de lo que fue.
+ */
+function tendenciaDeVentas(contracts: Rec[]) {
+  const porMes = new Map<string, number>();
+  for (const c of contracts) {
+    if (!esVentaCerrada(c)) continue;
+    const fecha = str(c.issuedAt) || str(c.createdAt);
+    const mes = fecha.slice(0, 7);
+    if (!MONTH_RE.test(mes)) continue;
+    porMes.set(mes, (porMes.get(mes) ?? 0) + contractNet(c));
+  }
+  const serie = completarMeses([...porMes.entries()].map(([mes, monto]) => ({ mes, monto })));
+  if (serie.length < 2) return { serie, proyeccion: [], variacion: null, confianza: null };
+  return {
+    serie,
+    proyeccion: proyectarVentas(serie, 3),
+    variacion: variacionUltimoMes(serie),
+    // Sin esto, una raya sobre datos dispersos se lee como una previsión.
+    confianza: bondadDelAjuste(serie),
+  };
+}
+
 router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
   const me = await loadMe(req, res);
   if (!me) return;
@@ -65,6 +112,10 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
   const board = await resolveBoard();
   const contracts = board && Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
   const opportunities = pipelineContracts(contracts).map((c) => toOpportunity(c, seeMoney));
+  // Cuántas se ganan y en qué se pierden. No se podía calcular mientras
+  // "perdido" y "cancelado" fueran el mismo estado.
+  const conversion = tasaDeConversion(contracts);
+  const motivosPerdida = perdidasPorMotivo(contracts);
 
   const renewalDays = await getRenewalAlertDays();
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
@@ -100,9 +151,100 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
     renewalAlertDays: renewalDays,
     // Proyección = suma(neto × probabilidad) de las oportunidades del mes.
     projection: seeMoney ? weightedProjection(opportunities, month) : null,
+    // Tendencia sobre lo REALMENTE cerrado, que es otra cosa: la de arriba es
+    // una foto del embudo de hoy, esta dice hacia dónde va el negocio.
+    tendencia: seeMoney ? tendenciaDeVentas(contracts) : null,
+    // Cuántas se ganan y en qué se pierden. Va sin `seeMoney` a propósito: es
+    // un recuento, no un monto, y saber que se pierde por plazo o por no
+    // responder le sirve a producción tanto como a ventas.
+    conversion,
+    motivosPerdida,
     canSeeMoney: seeMoney,
   });
 });
+
+/**
+ * POST /hub/contracts/:id/firma — genera (o reutiliza) el enlace de aceptación.
+ *
+ * Reutiliza el pendiente en vez de crear uno nuevo cada vez: con un enlace
+ * distinto por clic, el cliente que abre el que le mandaron ayer se encuentra
+ * con que ya no vale, sin haber hecho nada mal.
+ */
+router.post("/hub/contracts/:id/firma", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Solo dirección y ventas generan enlaces de firma" }); return; }
+
+  const contractId = String(req.params.id ?? "");
+  if (!contractId) { res.status(400).json({ error: "Falta el contrato" }); return; }
+
+  try {
+    const board = await resolveBoard();
+    const contratos = board && Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
+    if (!contratos.some((c) => str(c.id) === contractId)) {
+      res.status(404).json({ error: "Ese contrato no existe" });
+      return;
+    }
+
+    const [existente] = await db.select().from(contractSignatures)
+      .where(and(eq(contractSignatures.contractId, contractId), eq(contractSignatures.estado, "pendiente")))
+      .limit(1);
+
+    const vigente = existente && (!existente.expiresAt || existente.expiresAt.getTime() > Date.now());
+    const fila = vigente
+      ? existente
+      : (await db.insert(contractSignatures).values({
+          contractId,
+          token: generarToken(),
+          createdById: me.id,
+          expiresAt: caducidad(),
+        }).returning())[0]!;
+
+    res.json({
+      token: fila.token,
+      url: urlDeFirma(basePublica(req), fila.token),
+      expiresAt: fila.expiresAt,
+      estado: fila.estado,
+    });
+  } catch (err) {
+    console.error("[hub/contracts/firma POST]", err);
+    res.status(500).json({ error: "No se pudo generar el enlace de firma" });
+  }
+});
+
+/** GET /hub/contracts/:id/firma — estado y constancia de la aceptación. */
+router.get("/hub/contracts/:id/firma", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Sin acceso" }); return; }
+  try {
+    const filas = await db.select().from(contractSignatures)
+      .where(eq(contractSignatures.contractId, String(req.params.id ?? "")));
+    res.json({
+      firmas: filas.map((f) => ({
+        estado: f.estado,
+        url: f.estado === "pendiente" ? urlDeFirma(basePublica(req), f.token) : null,
+        expiresAt: f.expiresAt,
+        signedAt: f.signedAt,
+        signerName: f.signerName,
+        signerEmail: f.signerEmail,
+        // La IP es parte de la constancia: sin ella el registro dice mucho menos.
+        signerIp: f.signerIp,
+      })),
+    });
+  } catch (err) {
+    console.error("[hub/contracts/firma GET]", err);
+    res.status(500).json({ error: "No se pudo leer el estado de la firma" });
+  }
+});
+
+/** Base pública del panel, para armar el enlace que se le manda al cliente. */
+function basePublica(req: Request): string {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;
+  const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
+  const proto = req.get("x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
 
 const oppPatchSchema = z.object({
   pipelineStage: z.enum(PIPELINE_STAGES).optional(),

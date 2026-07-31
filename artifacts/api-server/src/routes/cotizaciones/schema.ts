@@ -119,7 +119,7 @@ export type Cotizacion = z.infer<typeof CotizacionSchema>;
  */
 export function validarPreciosEntregados(
   data: Cotizacion,
-  preciosNetos?: number[] | null,
+  preciosNetos?: (number | null)[] | null,
   mensualidadNeto?: number | null,
   esquemaPago?: { porcentaje: number; momento: string }[] | null
 ): string[] {
@@ -131,9 +131,15 @@ export function validarPreciosEntregados(
       );
     } else {
       data.modulos.forEach((m, i) => {
-        if (m.neto !== preciosNetos[i]) {
+        // `null` en una posición significa "este estímalo tú". Antes no existía
+        // esa posibilidad: o venían todos los precios o ninguno, así que quien
+        // sabía el precio de tres módulos de cuatro veía cómo la IA se
+        // inventaba también esos tres.
+        const esperado = preciosNetos[i];
+        if (esperado == null) return;
+        if (m.neto !== esperado) {
           errores.push(
-            `El módulo ${i + 1} ("${m.nombre}") tiene neto ${m.neto} pero el precio entregado es ${preciosNetos[i]}; usa exactamente el precio entregado.`
+            `El módulo ${i + 1} ("${m.nombre}") tiene neto ${m.neto} pero el precio entregado es ${esperado}; usa exactamente el precio entregado.`
           );
         }
       });

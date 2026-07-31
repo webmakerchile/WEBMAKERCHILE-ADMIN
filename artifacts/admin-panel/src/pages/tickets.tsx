@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
+import { Adjuntos } from "@/components/adjuntos";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AsistenteRedaccion } from "@/components/asistente-redaccion";
@@ -307,6 +308,10 @@ function TicketRow({ ticket, meId, canConvert, open, onToggle, onPatch, onToTask
       {open && (
         <div className="px-3 pb-3 space-y-3 border-t border-foreground/10 pt-3">
           {ticket.description && <p className="text-sm whitespace-pre-wrap">{ticket.description}</p>}
+
+          {/* La captura del error, el mockup, el logo que manda el cliente:
+              antes no había dónde ponerlos y acababan en WhatsApp. */}
+          <Adjuntos tipo="ticket" id={String(ticket.id)} titulo="Archivos de la solicitud" />
 
           <div className="flex flex-wrap items-center gap-2">
             <select

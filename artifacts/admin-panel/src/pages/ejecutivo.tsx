@@ -1,4 +1,9 @@
 import { JornadaChip } from "@/components/jornada-card";
+import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
+import { EnlaceFirma } from "@/components/enlace-firma";
+import { AsignarProyecto } from "@/components/asignar-proyecto";
+import { ElegirDelCatalogo } from "@/components/elegir-del-catalogo";
+import { asignadosDe, idDeCarpeta, nombreDeCarpeta } from "@/lib/proyecto-asignacion";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
@@ -70,6 +75,16 @@ interface Project {
   owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string;
   createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>;
   /**
+   * Id de la carpeta de Drive, ya extraído del enlace.
+   *
+   * `link` es texto libre dentro de un blob sin esquema: a veces guarda la URL
+   * de la carpeta, a veces una compartida ajena y a veces cualquier cosa. Este
+   * campo es el que se puede usar sin volver a adivinar.
+   */
+  driveFolderId?: string;
+  /** A quién le toca, por id real de usuario. Vacío = de todo el equipo. */
+  assigneeIds?: number[];
+  /**
    * true = el área de marketing trabaja en este proyecto.
    *
    * Opt-in explícito: a diferencia de Programación, que recibe todos los
@@ -99,11 +114,26 @@ function linkWhatsapp(v: string | undefined): string | null {
 interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
 interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
-type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";
+/**
+ * "cancelado" servía para dos cosas distintas: la cotización que no ganamos y
+ * el contrato firmado que el cliente cortó después. Con las dos en el mismo
+ * cajón, la venta que sí ocurrió desaparecía de su mes en la serie histórica y
+ * la tasa de conversión no se podía calcular. De ahí "perdido".
+ */
+type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado" | "perdido";
+
+/** Por qué se perdió. Sin esto, "perdido" es solo un color. */
+const MOTIVOS_PERDIDA = ["precio", "plazo", "competencia", "sin_respuesta", "no_era_el_momento", "otro"] as const;
+const MOTIVO_LABEL: Record<string, string> = {
+  precio: "Precio", plazo: "Plazo", competencia: "Se fue con otro",
+  sin_respuesta: "Dejó de responder", no_era_el_momento: "No era el momento", otro: "Otro",
+};
 // `doc` guarda los datos estructurados con los que se generó el PDF (módulos,
 // precios, alcance, forma de pago). Es la fuente del documento: si cambia, el
 // PDF se puede regenerar. Los contratos antiguos o subidos a mano no lo tienen.
 interface Contract { id: string; title: string; client: string; value: string; status: ContractStatus; signedAt: string; expiresAt: string; notes: string; createdAt: number; updatedAt: number; pdfUrl?: string; pdfTitle?: string; pdfUploadedAt?: number; doc?: WizData;
+  /** Por qué se perdió, cuando el estado es "perdido". */
+  motivoPerdida?: string;
   /** Versión técnica del contrato: los requerimientos sin un solo monto. */
   brief?: ContractBrief; briefUrl?: string; briefTitle?: string; briefUploadedAt?: number;
   /** Lo marca el servidor cuando censuró los montos para este rol. */
@@ -221,7 +251,7 @@ function dueInfo(p: Project) {
   return { days, label: fmtDate(new Date(p.due + "T12:00:00").getTime()), cls: days < 0 ? "overdue" : days <= 7 ? "soon" : "" };
 }
 function blankState(): HubState { return { projects: [], clients: [], notes: [], meetings: [], tasks: [], contracts: [] }; }
-const CONTRACT_STATUS_IDS: readonly ContractStatus[] = ["borrador", "activo", "vencido", "cancelado"];
+const CONTRACT_STATUS_IDS: readonly ContractStatus[] = ["borrador", "activo", "vencido", "cancelado", "perdido"];
 function isContractStatus(v: unknown): v is ContractStatus { return typeof v === "string" && (CONTRACT_STATUS_IDS as readonly string[]).includes(v); }
 function contractExpired(c: Contract) { return !!c.expiresAt && new Date(c.expiresAt + "T23:59:59").getTime() < Date.now(); }
 
@@ -520,13 +550,17 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
   const [history, setHistory] = useState<{ id: string; name: string }[]>([{ id: folderId, name: rootName }]);
   const [expanded, setExpanded] = useState(false);
 
-  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentId });
-  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentId });
+  const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentId });
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentId });
 
   const isLoading = filesLoading || foldersLoading;
+  // Un fallo NO es una carpeta vacía. Este era el tercer explorador que los
+  // pintaba igual: sin permiso de Drive, o con la raíz mal apuntada, decía
+  // "La carpeta está vacía" y no había forma de enterarse.
+  const fallo = filesError || foldersError;
   const folders = foldersData || [];
   const files = filesData?.files || [];
-  const empty = !isLoading && folders.length === 0 && files.length === 0;
+  const empty = !isLoading && !fallo && folders.length === 0 && files.length === 0;
 
   const goInto = (id: string, name: string) => {
     setHistory(prev => [...prev, { id, name }]);
@@ -575,6 +609,15 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
           <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
             {isLoading && (
               <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--faint)" }}>Cargando…</div>
+            )}
+            {fallo && (
+              <div style={{ padding: "16px 14px", fontSize: 12 }}>
+                <div style={{ color: "#f87171", fontWeight: 600 }}>No se pudo leer esta carpeta.</div>
+                <div style={{ marginTop: 4, color: "var(--faint)" }}>
+                  {(fallo as Error).message || "El servidor devolvió un error."} Si es de otra persona,
+                  pídele que la comparta con tu cuenta.
+                </div>
+              </div>
             )}
             {empty && (
               <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--faint)" }}>La carpeta está vacía.</div>
@@ -956,6 +999,16 @@ async function buildTechnicalVersion(doc: WizData, contract?: Partial<Contract>)
     const blob = await buildBriefPdf(brief, doc);
     const name = `Brief-Tecnico-${(doc.client || "cliente").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
     const uploaded = await uploadPdfToDrive(blob, name);
+    // Si Drive falla, el PDF ya está hecho: descargarlo es infinitamente mejor
+    // que tirarlo. La cotización ya lo hacía; el brief se perdía en silencio y
+    // había que volver a generarlo entero (con otra llamada a la IA).
+    if (!uploaded) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    }
     return { brief, briefUrl: uploaded?.url, briefTitle: uploaded?.title, briefUploadedAt: uploaded?.uploadedAt };
   } catch {
     return { brief, briefUrl: undefined, briefTitle: undefined, briefUploadedAt: undefined };
@@ -1277,8 +1330,8 @@ function FolderPickerPanel({ onSelect }: { onSelect: (id: string, name: string, 
   );
 }
 
-function DriveFolderSelector({ value, onChange, projectName, onToast }: {
-  value: string; onChange: (link: string) => void; projectName: string; onToast: (msg: string) => void;
+function DriveFolderSelector({ value, onChange, projectName, clientName, onToast }: {
+  value: string; onChange: (link: string) => void; projectName: string; clientName?: string; onToast: (msg: string) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1291,12 +1344,16 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
   const folderId = extractDriveFolderId(value);
 
   const handleCreate = async () => {
-    const name = projectName.trim() || "Proyecto";
+    // El nombre lleva el cliente porque dos clientes piden "Landing" el mismo
+    // mes, y en la lista de Drive dos carpetas iguales no se distinguen.
+    const name = nombreDeCarpeta(projectName, clientName);
     setCreating(true);
     try {
       const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        credentials: "include", body: JSON.stringify({ name }),
+        // Sin parentId la carpeta se creaba suelta en "Mi unidad" de quien la
+        // creó, no dentro de la raíz de clientes: nadie más volvía a verla.
+        credentials: "include", body: JSON.stringify({ name, parentId: "hub" }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Error desconocido" }));
@@ -1393,6 +1450,8 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
 
+  const [faltaDrive, setFaltaDrive] = useState(false);
+
   const handleFile = async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       onToast("Solo se aceptan archivos PDF"); return;
@@ -1403,7 +1462,14 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
       fd.append("file", file);
       fd.append("parentId", HUB_DRIVE_ROOT);
       const res = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); onToast((e as any).error || "Error al subir PDF"); return; }
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: string; code?: string };
+        // El motivo real casi siempre es que la cuenta no autorizó Drive. Un
+        // "Error al subir PDF" a secas no daba ninguna pista de qué hacer.
+        if (e.code === "google_no_conectado") setFaltaDrive(true);
+        onToast(e.error || "Error al subir PDF");
+        return;
+      }
       const data = await res.json() as { name: string; webViewLink: string; uploadedAt: number };
       onChange({ url: data.webViewLink, title: data.name, uploadedAt: data.uploadedAt });
       onToast("PDF subido a Drive");
@@ -1445,6 +1511,13 @@ function PdfUploadField({ value, onChange, onToast }: { value: PdfData | null; o
         {uploading ? "Subiendo…" : "📎 Adjuntar PDF"}
       </button>
       <span className="pdf-hint">Solo PDF · máx 50 MB · se guarda en Google Drive</span>
+      {/* Si el adjunto falló porque la cuenta no autorizó Drive, el arreglo va
+          aquí mismo: antes solo salía un toast que no decía qué hacer. */}
+      {faltaDrive && (
+        <div style={{ marginTop: 8, width: "100%" }}>
+          <ConectarDrive volverA="ejecutivo" motivo="Por eso no se pudo subir el PDF." />
+        </div>
+      )}
     </div>
   );
 }
@@ -1726,6 +1799,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [driveFolderLink, setDriveFolderLink] = useState("");
   /** Si el área de marketing trabaja en el proyecto abierto (opt-in explícito). */
   const [marketingOn, setMarketingOn] = useState(false);
+  /** A quién le toca el proyecto abierto, por id real de usuario. */
+  const [asignados, setAsignados] = useState<number[]>([]);
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [wizStep, setWizStep] = useState(1);
@@ -1798,7 +1873,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); setMarketingOn(p.marketing === true); }
+      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); setMarketingOn(p.marketing === true); setAsignados(asignadosDe(p)); }
       // Reset Scrum proposals when switching to a different project
       if (lastScrumProjIdRef.current !== (sheet as { id: string }).id) {
         setScrumProposed([]); setScrumLoading(false);
@@ -2088,7 +2163,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       </div>
       <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} defaultValue={pf.due || ""} /></div>
       <div className="field"><label>Carpeta de Drive</label>
-        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} onToast={onToast} />
+        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} clientName={V("cli")} onToast={onToast} />
       </div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={pf.notes || ""} /></div>
       {(playbooksData?.playbooks?.filter(pb => !pb.archived).length ?? 0) > 0 && (
@@ -2120,7 +2195,40 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           return;
         }
         const newProjId = uid();
-        onSave({ ...state, projects: [...state.projects, { id: newProjId, name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, contractId: fromCid, createdAt: now, updatedAt: now }] });
+        const cliente = V("cli").trim();
+        onSave({ ...state, projects: [...state.projects, { id: newProjId, name, client: cliente, type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, driveFolderId: idDeCarpeta(driveFolderLink) ?? undefined, contractId: fromCid, createdAt: now, updatedAt: now }] });
+
+        // Carpeta automática: si nadie eligió ni creó una, se crea sola. Era un
+        // botón que había que acordarse de pulsar, así que la mitad de los
+        // proyectos acababa sin carpeta y el trabajo se repartía por chats.
+        //
+        // Va DESPUÉS de guardar el proyecto y sin bloquear: si Drive falla, el
+        // proyecto ya existe. Al revés, un fallo de Drive impediría crear el
+        // proyecto por algo que no tiene nada que ver con él.
+        if (!driveFolderLink) {
+          void (async () => {
+            try {
+              const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
+                method: "POST", credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: nombreDeCarpeta(name, cliente), parentId: "hub" }),
+              });
+              if (!res.ok) {
+                const e = await res.json().catch(() => ({})) as { error?: string };
+                throw new Error(e.error || `El servidor respondió ${res.status}`);
+              }
+              const d = await res.json() as { id?: string; webViewLink?: string };
+              const link = d.webViewLink || (d.id ? `https://drive.google.com/drive/folders/${d.id}` : "");
+              if (!link) return;
+              onSave({ ...state, projects: state.projects.map(p => p.id !== newProjId ? p : { ...p, link, driveFolderId: d.id, updatedAt: Date.now() }) });
+              onToast(`Carpeta de Drive creada para "${name}"`);
+            } catch (e: unknown) {
+              // Se dice. Un fallo callado deja el proyecto sin carpeta y nadie
+              // se entera hasta que va a buscar los archivos.
+              onToast(`El proyecto se creó, pero no se pudo crear su carpeta: ${e instanceof Error ? e.message : "error desconocido"}`);
+            }
+          })();
+        }
         if (playbookId) {
           // Genera las tareas estándar del playbook para el proyecto recién creado.
           fetch(`${DRIVE_API_BASE}/hub/playbooks/${playbookId}/apply`, {
@@ -2154,11 +2262,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div><label>Estado</label><select ref={R("st")} defaultValue={p.status}>{STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div><label>Dueño</label><input type="text" ref={R("ow")} defaultValue={p.owner || ""} /></div>
       </div>
+      <AsignarProyecto asignados={asignados} soloLectura={!canWrite("projects")} onChange={setAsignados} />
       <div className="field"><label>Fecha límite</label><input type="date" ref={R("due")} defaultValue={p.due || ""} /></div>
       {p.contractId && (() => {
         const c = state.contracts.find(x => x.id === p.contractId);
         if (!c) return null;
-        const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888" };
+        const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888", perdido: "#8a6a6a" };
         return (
           <div style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: "1em" }}>📄</span>
@@ -2207,7 +2316,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
           const computedProg = projProg(x.id, apiTasks).pct;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, marketing: marketingOn, updatedAt: Date.now() };
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, driveFolderId: idDeCarpeta(driveFolderLink) ?? undefined, assigneeIds: asignados, marketing: marketingOn, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });
@@ -2581,6 +2690,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <option value="activo">Activo</option>
           <option value="vencido">Vencido</option>
           <option value="cancelado">Cancelado</option>
+          <option value="perdido">Perdido (no se ganó)</option>
         </select>
       </div>
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
@@ -2632,6 +2742,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <option value="activo">Activo</option>
           <option value="vencido">Vencido</option>
           <option value="cancelado">Cancelado</option>
+          <option value="perdido">Perdido (no se ganó)</option>
         </select>
       </div>
       <div className="field"><label>Fecha de firma</label><input type="date" ref={R("si")} /></div>
@@ -2683,10 +2794,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               <option value="activo">Activo</option>
               <option value="vencido">Vencido</option>
               <option value="cancelado">Cancelado</option>
+              <option value="perdido">Perdido (no se ganó)</option>
             </select>
           </div>
         </div>
       </div>
+      {/* El motivo solo aparece cuando hace falta: un campo siempre visible que
+          casi nunca aplica se ignora, y entonces "perdido" no dice nada. */}
+      {c.status === "perdido" && (
+        <div className="sheet-sec"><h4>Por qué se perdió</h4>
+          <div className="field">
+            <select ref={R("mp")} defaultValue={c.motivoPerdida || ""}>
+              <option value="">Sin indicar</option>
+              {MOTIVOS_PERDIDA.map(m => <option key={m} value={m}>{MOTIVO_LABEL[m]}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
       <div className="sheet-sec"><h4>Vigencia</h4>
         <div className="two field">
           <div><label>Fecha de firma</label><input type="date" ref={R("si")} defaultValue={c.signedAt} /></div>
@@ -2724,6 +2848,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="sheet-sec"><h4>Notas</h4>
         <div className="field"><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} aria-label="Notas del contrato" /></div>
       </div>
+      <EnlaceFirma contractId={c.id} />
       <div className="sheet-sec"><h4>Documento PDF</h4>
         <div className="field">
           <PdfUploadField value={pdfData} onChange={setPdfData} onToast={onToast} />
@@ -2742,7 +2867,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         // Si el documento tiene cambios pendientes (chat IA / edición), guardar
         // implica regenerar el PDF para que el documento refleje la ficha.
         if (docDirty && docDraft) { await regenerateContractDoc(c, docDraft); onClose(); return; }
-        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
+        onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, motivoPerdida: V("mp") || x.motivoPerdida, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
       }}>{docDirty ? (regeneratingDoc ? "⏳ Regenerando documento…" : "Guardar y regenerar documento") : "Guardar cambios"}</button>}
 
@@ -3132,7 +3257,17 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 
             <div className="wiz-mod-header-row">
               <span className="wiz-mod-title">Módulos (opcional — si no los defines, la IA los propone con precios estimados)</span>
-              <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
+              <span style={{ display: "inline-flex", gap: 6 }}>
+                {/* El catálogo ya tiene los precios cargados: sin este botón
+                    había que copiarlos a mano o dejar que la IA los estimara. */}
+                <ElegirDelCatalogo onElegir={m => setWiz(w => {
+                  const primero = w.modules[0];
+                  const vacio = w.modules.length === 1 && !primero.name.trim() && !primero.desc.trim() && !primero.price;
+                  const nuevo = { id: newModId(), ...m };
+                  return { ...w, modules: vacio ? [nuevo] : [...w.modules, nuevo] };
+                })} />
+                <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
+              </span>
             </div>
             {wiz.modules.map((m, i) => {
               const mIva = Math.round(m.price * 0.19), mTotal = m.price + mIva;
@@ -3206,8 +3341,16 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               ].filter(Boolean).join("\n");
               const body: Record<string, unknown> = { contexto_cliente: contexto };
               if (validMods.length > 0) body.modulos_sugeridos = validMods.map(m => m.desc ? `${m.name}: ${m.desc}` : m.name).join("; ");
-              const conPrecios = validMods.length > 0 && validMods.length <= 4 && validMods.every(m => m.price > 0);
-              if (conPrecios) body.precios_netos = validMods.map(m => Math.round(m.price));
+              // Un precio por módulo, en orden; null = "estímalo tú". Antes se
+              // exigía que TODOS lo tuvieran: quien sabía el precio de tres de
+              // cuatro veía cómo la IA se inventaba también esos tres.
+              const cabenPrecios = validMods.length > 0 && validMods.length <= 4;
+              if (cabenPrecios && validMods.some(m => m.price > 0)) {
+                body.precios_netos = validMods.map(m => (m.price > 0 ? Math.round(m.price) : null));
+              }
+              // "Estimado" si la IA puso aunque sea un precio: basta uno inventado
+              // para que el total no sea el que la agencia cobra.
+              const algoEstimado = !cabenPrecios || validMods.some(m => !(m.price > 0));
               const mensualidadNeto = Math.round(Number(wiz.monthlyPrice) || 0);
               if (mensualidadNeto > 0) body.mensualidad_neto = mensualidadNeto;
               const pct = Math.round(wiz.downPct);
@@ -3226,7 +3369,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 onToast(data.error || `Error generando la cotización (${res.status})`);
                 return;
               }
-              setCotEstimated(!conPrecios);
+              setCotEstimated(algoEstimado);
               setCotJson(JSON.stringify(data.cotizacion, null, 2));
               setCotHtml(data.html || null);
               setCotError(data.htmlError || null);
@@ -3884,19 +4027,42 @@ const CONTRACT_STATUSES: Record<ContractStatus, { label: string; color: string }
   activo:   { label: "Activo",   color: "var(--done)" },
   vencido:  { label: "Vencido",  color: "#e0795a" },
   cancelado:{ label: "Cancelado",color: "var(--disc)" },
+  perdido:  { label: "Perdido",  color: "#8a6a6a" },
 };
 
 function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
+  // Rango de montos, como texto para poder dejarlo vacío sin que valga 0.
+  const [minTxt, setMinTxt] = useState("");
+  const [maxTxt, setMaxTxt] = useState("");
   // Estado efectivo: "vencido" derivado de la fecha real de vencimiento (salvo cancelados)
-  const effStatus = (c: Contract): ContractStatus => (c.status !== "cancelado" && contractExpired(c)) ? "vencido" : c.status;
+  // Ni un cancelado ni un perdido "vencen": ya terminaron por otro motivo.
+  const effStatus = (c: Contract): ContractStatus =>
+    (c.status !== "cancelado" && c.status !== "perdido" && contractExpired(c)) ? "vencido" : c.status;
   const all = state.contracts;
   const counts: Record<string, number> = {};
   all.forEach(c => { const s = effStatus(c); counts[s] = (counts[s] || 0) + 1; });
+
+  // Quien no ve montos tampoco filtra por ellos: el servidor le borra `value`,
+  // así que el filtro le dejaría la lista vacía sin explicar por qué.
+  const verMontos = !all.some(c => c.moneyRedacted);
+  const num = (v: string) => { const n = Number(v.replace(/[^\d]/g, "")); return Number.isFinite(n) && n > 0 ? n : null; };
+  const min = verMontos ? num(minTxt) : null;
+  const max = verMontos ? num(maxTxt) : null;
+  const dentroDelRango = (c: Contract) => {
+    if (min === null && max === null) return true;
+    const v = Number(c.value) || 0;
+    // Un contrato sin monto no entra en un filtro por monto: colarlo mezclaría
+    // "vale menos de X" con "no sabemos cuánto vale".
+    if (v <= 0) return false;
+    return (min === null || v >= min) && (max === null || v <= max);
+  };
+
   const list = all
-    .filter(c => (!fStatus || effStatus(c) === fStatus) && (!q || (c.title + " " + (c.client || "") + " " + (c.value || "") + " " + (c.notes || "")).toLowerCase().includes(q)))
+    .filter(c => (!fStatus || effStatus(c) === fStatus) && dentroDelRango(c) && (!q || (c.title + " " + (c.client || "") + " " + (c.value || "") + " " + (c.notes || "")).toLowerCase().includes(q)))
     .sort((a, b) => b.createdAt - a.createdAt);
+  const totalFiltrado = list.reduce((a, c) => a + (Number(c.value) || 0), 0);
   return (
     <div className="wrap">
       {all.length > 0 && (
@@ -3913,6 +4079,36 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
               );
             })}
           </div>
+          {verMontos && (
+            <div className="fchips" role="group" aria-label="Filtrar por monto">
+              <input
+                value={minTxt}
+                onChange={e => setMinTxt(e.target.value)}
+                placeholder="Monto desde"
+                inputMode="numeric"
+                aria-label="Monto mínimo"
+                style={{ width: 120, fontSize: "0.78em" }}
+              />
+              <input
+                value={maxTxt}
+                onChange={e => setMaxTxt(e.target.value)}
+                placeholder="hasta"
+                inputMode="numeric"
+                aria-label="Monto máximo"
+                style={{ width: 110, fontSize: "0.78em" }}
+              />
+              {(min !== null || max !== null) && (
+                <>
+                  <button className="fchip" onClick={() => { setMinTxt(""); setMaxTxt(""); }}>Quitar</button>
+                  {/* El total de lo filtrado: filtrar por monto sin ver la suma
+                      obliga a sumarlo a mano, que es para lo que se filtra. */}
+                  <span className="fn" style={{ marginLeft: 4 }}>
+                    {list.length} · ${Math.round(totalFiltrado).toLocaleString("es-CL")}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {all.length === 0 ? (
@@ -3926,7 +4122,7 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
         <div className="cardlist">
           {list.map(c => {
             const st = effStatus(c);
-            const expired = c.status !== "cancelado" && contractExpired(c);
+            const expired = c.status !== "cancelado" && c.status !== "perdido" && contractExpired(c);
             const s = CONTRACT_STATUSES[st] || CONTRACT_STATUSES.borrador;
             const nproj = state.projects.filter(p => p.contractId === c.id).length;
             const dleft = c.expiresAt ? Math.ceil((new Date(c.expiresAt + "T23:59:59").getTime() - Date.now()) / 86400000) : null;
@@ -4479,14 +4675,33 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
 /* ============================================================
    HUB DRIVE VIEW
    ============================================================ */
-const HUB_DRIVE_ROOT = "15cBDWdrC2IIN6OlD4rP0fBCImGOh39--";
+/**
+ * Carpeta raíz del Drive del Hub.
+ *
+ * Configurable: había DOS ids escritos a fuego y distintos —uno aquí y otro en
+ * /drive—, así que los dos exploradores miraban carpetas diferentes y quien no
+ * tuviera acceso a ese id concreto lo veía todo vacío sin ninguna pista.
+ */
+/**
+ * Alias de la carpeta del Hub.
+ *
+ * Ya no es un id: lo resuelve el servidor, que es donde vive la configuración.
+ * Antes era una constante escrita a fuego —distinta de la de /drive— usada en
+ * cinco sitios de este archivo, y quien no tuviera acceso a ESE id veía el
+ * explorador vacío sin ninguna pista.
+ */
+const HUB_DRIVE_ROOT = "hub";
 
 function HubDriveView() {
   const [currentFolderId, setCurrentFolderId] = useState<string>(HUB_DRIVE_ROOT);
   const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([{ id: HUB_DRIVE_ROOT, name: "Raíz" }]);
 
-  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentFolderId });
-  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentFolderId });
+  const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentFolderId });
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentFolderId });
+  const drive = useEstadoDrive();
+  // Un error NO es una carpeta vacía. Pintarlos igual es lo que ocultó durante
+  // meses que al ejecutivo comercial le faltaba el permiso de Drive.
+  const fallo = filesError || foldersError;
 
   const navigateToFolder = (id: string, name: string) => {
     setFolderHistory(prev => [...prev, { id, name }]);
@@ -4560,7 +4775,23 @@ function HubDriveView() {
                 </div>
               ))}
               {!foldersData?.length && !filesData?.files?.length && (
-                <div style={{ gridColumn: "1/-1", padding: "60px 0", textAlign: "center", color: "var(--faint)", fontSize: 13 }}>Esta carpeta está vacía.</div>
+                <div style={{ gridColumn: "1/-1", padding: "40px 0", textAlign: "center", color: "var(--faint)", fontSize: 13 }}>
+                  {!drive.cargando && !drive.conectado ? (
+                    <div style={{ maxWidth: 460, margin: "0 auto", textAlign: "left" }}>
+                      <ConectarDrive volverA="ejecutivo" motivo="Por eso esta carpeta se ve vacía." />
+                    </div>
+                  ) : fallo ? (
+                    <>
+                      <div style={{ color: "#f87171", fontWeight: 600 }}>No se pudo leer esta carpeta.</div>
+                      <div style={{ marginTop: 6, fontSize: 11.5 }}>
+                        {(fallo as Error).message || "El servidor devolvió un error."} Si la carpeta es de
+                        otra persona, pídele que la comparta con tu cuenta.
+                      </div>
+                    </>
+                  ) : (
+                    "Esta carpeta está vacía."
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -5108,7 +5339,10 @@ function AttendanceView() {
   });
 
   // Cerrar la jornada de otra persona: una pausa no es una salida, y sin esto
-  // una jornada que quedo encendida no habia forma de apagarla desde aqui.
+  // una jornada que quedó encendida no había forma de apagarla desde aquí.
+  //
+  // Es la contraparte de `startMut`, que se añadió en paralelo: una abre la
+  // jornada a mano y la otra la cierra. Hacían falta las dos.
   const cerrarMut = useMutation({
     mutationFn: async (p: { userId: number }) => {
       const res = await fetch(`${HUB_API_BASE}/jornada/check-out`, {

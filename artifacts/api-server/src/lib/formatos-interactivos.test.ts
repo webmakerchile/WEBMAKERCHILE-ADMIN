@@ -166,6 +166,78 @@ describe("parseContenidoInteractivo", () => {
   });
 });
 
+describe("el parser aguanta un JSON con comentarios", () => {
+  // Segundo cinturón: aunque la plantilla ya esté limpia, el modelo puede
+  // añadir un comentario por su cuenta. Antes eso era mortal — fallaban el
+  // parseo Y el rescate por regex, porque el rescate extrae el mismo texto.
+  it("un comentario de línea no tumba la generación", () => {
+    const crudo = `{
+      "titular": "Un titular",
+      "pregunta": "¿Cuánto cuesta una web?",
+      "opciones": ["Menos de 100", "Entre 100 y 500", "Más de 500"],
+      "correcta": 1,  // la del medio
+      "explicacion": "Depende del alcance.",
+      "cta": "Responde"
+    }`;
+    const c = parseContenidoInteractivo(crudo, quiz);
+    expect(c, "el quiz con comentario debería parsearse").not.toBeNull();
+    expect(c!.correcta).toBe(1);
+  });
+
+  it("un // dentro de una cadena NO se toca", () => {
+    // Una URL lleva `//`. Borrar hasta el fin de línea se comería el resto.
+    const crudo = `{"titular":"Mira https://webmakerlatam.com ahora","pregunta":"¿P?","opciones":["a","b"]}`;
+    const c = parseContenidoInteractivo(crudo, encuesta);
+    expect(c).not.toBeNull();
+    expect(c!.titular).toBe("Mira https://webmakerlatam.com ahora");
+  });
+
+  it("la coma colgante que deja el comentario tampoco rompe", () => {
+    const crudo = `{"pregunta":"¿P?","opciones":["a","b"],  // sobra\n}`;
+    expect(parseContenidoInteractivo(crudo, encuesta)).not.toBeNull();
+  });
+});
+
+describe("el JSON de ejemplo del prompt es JSON de verdad", () => {
+  // El prompt le enseña al modelo "devuelve EXCLUSIVAMENTE este JSON" y le
+  // muestra una plantilla. El modelo copia lo que ve. Si la plantilla no es
+  // JSON válido, lo que devuelve tampoco lo es: JSON.parse falla, el rescate
+  // por regex extrae el MISMO texto roto y falla igual, y la pieza nunca se
+  // genera. Le pasó al Quiz con un comentario "//" y nadie lo vio, porque
+  // ningún test miraba la plantilla.
+  const bloqueJson = (prompt: string): string => {
+    const i = prompt.indexOf("{");
+    const j = prompt.lastIndexOf("}");
+    return i >= 0 && j > i ? prompt.slice(i, j + 1) : "";
+  };
+
+  for (const f of FORMATOS_INTERACTIVOS) {
+    it(`${f.id}: la plantilla se puede parsear`, () => {
+      const crudo = bloqueJson(buildPromptInteractivo(f, "tener página web propia"));
+      expect(crudo, `${f.id}: el prompt no contiene ningún bloque JSON`).not.toBe("");
+      expect(() => JSON.parse(crudo), `${f.id}: la plantilla NO es JSON válido`).not.toThrow();
+    });
+  }
+
+  it("ninguna plantilla lleva comentarios", () => {
+    const conComentario = FORMATOS_INTERACTIVOS.filter((f) =>
+      /\/\/|\/\*/.test(bloqueJson(buildPromptInteractivo(f, "tema"))),
+    );
+    expect(conComentario.map((f) => f.id)).toEqual([]);
+  });
+
+  it("la plantilla pide exactamente los campos del formato", () => {
+    // Si el prompt pidiera menos campos de los que el parser exige, el
+    // resultado se rechazaría siempre y el formato sería ingenerable.
+    for (const f of FORMATOS_INTERACTIVOS) {
+      const plantilla = JSON.parse(bloqueJson(buildPromptInteractivo(f, "tema"))) as Record<string, unknown>;
+      for (const campo of f.campos) {
+        expect(Object.keys(plantilla), `${f.id} no pide "${campo}"`).toContain(campo);
+      }
+    }
+  });
+});
+
 describe("titularDe", () => {
   it("usa el titular de la IA cuando existe", () => {
     const c = parseContenidoInteractivo(JSON.stringify({

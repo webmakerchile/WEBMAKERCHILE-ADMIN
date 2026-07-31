@@ -202,13 +202,65 @@ router.get("/auth/youtube", requireAuth, requireApproved, async (req: Request, r
   res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
 });
 
+/**
+ * Conectar SOLO Google Drive.
+ *
+ * El scope de Drive se obtenía únicamente por `/auth/youtube`, cuyo botón vive
+ * en `/cuentas` — una página a la que ventas no tiene acceso. Resultado: el
+ * ejecutivo comercial nunca ha tenido tokens de Drive, y por eso adjuntar,
+ * subir la cotización y ver el explorador fallaban siempre con 409.
+ *
+ * Va aparte de `/auth/youtube` porque pedirle a un comercial permiso para
+ * SUBIR VIDEOS A YOUTUBE, solo para que pueda adjuntar un PDF, es
+ * desproporcionado y además asusta en la pantalla de consentimiento.
+ *
+ * Reutiliza a propósito el redirect_uri de YouTube: ya está registrado en la
+ * consola de Google, así que esto funciona sin tocar nada allí. Un
+ * redirect_uri nuevo sin registrar daría "redirect_uri_mismatch".
+ */
+router.get("/auth/drive", requireAuth, requireApproved, async (req: Request, res: Response) => {
+  if (!GOOGLE_CLIENT_ID) {
+    res.status(500).json({ error: "Google OAuth no configurado" });
+    return;
+  }
+  const csrfState = crypto.randomBytes(16).toString("hex");
+  (req.session as any).youtubeCsrf = csrfState;
+  // Volver a la página desde la que se pidió, no siempre a /cuentas: quien
+  // pulsa esto desde el panel ejecutivo no tiene acceso a /cuentas.
+  (req.session as any).googleReturnTo = destinoSeguro(req.query.from);
+  await new Promise<void>((resolve) => req.session.save(resolve));
+
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: getYouTubeCallbackURL(),
+    response_type: "code",
+    scope: "https://www.googleapis.com/auth/drive",
+    access_type: "offline",
+    prompt: "consent",
+    state: csrfState,
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+/**
+ * A dónde volver tras conectar. Lista blanca: un `from` libre en la URL sería
+ * un redirect abierto hacia cualquier sitio.
+ */
+export const DESTINOS_CONEXION = ["/cuentas", "/ejecutivo", "/mis-tareas", "/videos", "/drive"] as const;
+export function destinoSeguro(from: unknown): string {
+  const v = typeof from === "string" ? (from.startsWith("/") ? from : `/${from}`) : "";
+  return (DESTINOS_CONEXION as readonly string[]).includes(v) ? v : "/cuentas";
+}
+
 router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: Request, res: Response) => {
   const { code, state, error } = req.query;
   const user = req.user as any;
+  const volverA = (req.session as any).googleReturnTo || "/cuentas";
+  delete (req.session as any).googleReturnTo;
 
   if (error) {
     console.error("[YouTube connect] OAuth error:", error);
-    res.redirect("/cuentas?youtube=error&msg=access_denied");
+    res.redirect(`${volverA}?youtube=error&msg=access_denied`);
     return;
   }
 
@@ -217,12 +269,12 @@ router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: R
 
   if (!storedState || state !== storedState) {
     console.error("[YouTube connect] CSRF state mismatch");
-    res.redirect("/cuentas?youtube=error&msg=csrf_mismatch");
+    res.redirect(`${volverA}?youtube=error&msg=csrf_mismatch`);
     return;
   }
 
   if (!code) {
-    res.redirect("/cuentas?youtube=error&msg=no_code");
+    res.redirect(`${volverA}?youtube=error&msg=no_code`);
     return;
   }
 
@@ -243,7 +295,7 @@ router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: R
 
     if (!tokenData.access_token) {
       console.error("[YouTube connect] No access token in response:", JSON.stringify(tokenData));
-      res.redirect("/cuentas?youtube=error&msg=token_failed");
+      res.redirect(`${volverA}?youtube=error&msg=token_failed`);
       return;
     }
 
@@ -261,10 +313,10 @@ router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: R
     try { await clearNetworkRevoked(user.id, "youtube"); } catch {}
 
     console.log("[YouTube connect] Tokens stored for user", user.id);
-    res.redirect("/cuentas?youtube=connected");
+    res.redirect(`${volverA}?drive=connected`);
   } catch (err: any) {
     console.error("[YouTube connect] Error:", err.message);
-    res.redirect("/cuentas?youtube=error&msg=server_error");
+    res.redirect(`${volverA}?youtube=error&msg=server_error`);
   }
 });
 

@@ -6,6 +6,7 @@ import connectPgSimple from "connect-pg-simple";
 import path from "path";
 import router from "./routes";
 import authRouter, { passport, requireAuth, requireApproved } from "./routes/auth";
+import firmaRouter from "./routes/firma";
 
 const app: Express = express();
 
@@ -68,7 +69,13 @@ app.use("/api", healthRouter);
 import { serveTempVideo } from "./routes/instagram/temp-serve";
 app.get("/api/instagram/temp-video/:token", serveTempVideo);
 
-import { aiLimiter, publishLimiter, uploadLimiter } from "./lib/rate-limit";
+// Aceptación de propuestas por enlace: la abre el CLIENTE, que no tiene cuenta
+// en el panel, así que va antes de requireAuth. Todo lo que expone sale del
+// token — desde aquí no se puede listar ni enumerar nada.
+app.use(/^\/api\/firma\//, firmaLimiter);
+app.use("/api", firmaRouter);
+
+import { aiLimiter, publishLimiter, uploadLimiter, firmaLimiter } from "./lib/rate-limit";
 // Apply rate limits to high-cost endpoints. These run before requireAuth so
 // keying falls back to IP for unauth'd callers; once a session is loaded the
 // keyGenerator switches to user id automatically.

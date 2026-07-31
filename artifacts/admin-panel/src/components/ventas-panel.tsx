@@ -33,7 +33,16 @@ interface Resumen {
   month: string; sellers: { id: number; name: string }[]; stages: Stage[];
   stageDefaults: Record<Stage, number>; opportunities: Opp[]; renewals: Renewal[];
   renewalAlertDays: number; projection: number | null; canSeeMoney: boolean;
+  /** Cuántas se ganan de las que se cierran. Va sin montos: es un recuento. */
+  conversion?: { ganados: number; perdidos: number; tasa: number | null };
+  motivosPerdida?: { motivo: string; total: number }[];
 }
+
+const MOTIVO_LABEL: Record<string, string> = {
+  precio: "precio", plazo: "plazo", competencia: "se fue con otro",
+  sin_respuesta: "dejó de responder", no_era_el_momento: "no era el momento",
+  otro: "otro", sin_indicar: "sin indicar",
+};
 interface ComisionRow {
   contractId: string; title: string; client: string; salesOwnerId: number | null;
   ownerName: string | null; paidAt: string; amountNet: number; commissionPct: number; commission: number;
@@ -114,6 +123,25 @@ export default function VentasPanel({ showToast }: { showToast: (msg: string) =>
           <div className="rounded-lg border px-4 py-2" style={{ borderColor: "rgba(128,128,128,.35)" }} data-testid="text-projection">
             <div className="text-[11px] uppercase tracking-wide opacity-60">Proyección ponderada · {data.month}</div>
             <div className="text-xl font-semibold">{clp(data.projection)} <span className="text-xs font-normal opacity-60">neto</span></div>
+          </div>
+        )}
+        {/* Conversión: no se podía calcular mientras "perdido" y "cancelado"
+            fueran el mismo estado. Se enseña con el recuento al lado para que
+            un 100% sobre dos cierres no se lea como un 100% sobre cincuenta. */}
+        {data.conversion && data.conversion.tasa !== null && (
+          <div className="rounded-lg border px-4 py-2" style={{ borderColor: "rgba(128,128,128,.35)" }} data-testid="text-conversion">
+            <div className="text-[11px] uppercase tracking-wide opacity-60">Conversión</div>
+            <div className="text-xl font-semibold">
+              {data.conversion.tasa}%{" "}
+              <span className="text-xs font-normal opacity-60">
+                {data.conversion.ganados} de {data.conversion.ganados + data.conversion.perdidos} cerradas
+              </span>
+            </div>
+            {(data.motivosPerdida?.length ?? 0) > 0 && (
+              <div className="text-[11px] opacity-60 mt-0.5">
+                Se pierde por: {data.motivosPerdida!.slice(0, 3).map(m => `${MOTIVO_LABEL[m.motivo] ?? m.motivo} (${m.total})`).join(", ")}
+              </div>
+            )}
           </div>
         )}
         {overdue > 0 && (

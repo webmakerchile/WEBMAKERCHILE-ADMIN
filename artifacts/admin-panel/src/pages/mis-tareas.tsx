@@ -5,11 +5,16 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fmtDate, daysUntil, type HubProject, type HubContract } from "@/lib/hub-owner";
+import { misProyectos, tieneAsignados, carpetaDe } from "@/lib/proyecto-asignacion";
 import { useHubBoard, useHubPatch, replaceEntity } from "@/lib/hub-write";
 import { useTareasHub, type TareaVista } from "@/lib/tareas-hub";
 import { useAuth } from "@/App";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
+import { ConfigRecordatorios, useReglasRecordatorio } from "@/components/config-recordatorios";
+import { ResumenServicios } from "@/components/resumen-servicios";
+import { CarpetaProyecto, SinCarpetaProyecto } from "@/components/carpeta-proyecto";
+import { Adjuntos } from "@/components/adjuntos";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
   ChevronDown, ChevronLeft, ChevronRight, Plus, Flame, X, Check, Timer,
@@ -35,7 +40,14 @@ const PROJ_STATUS: Record<string, string> = { lead: "Lead", disc: "Discovery", d
 /** Cuántas tareas en desarrollo a la vez antes de que avisemos. */
 const WIP_LIMITE = 3;
 
-/** Horas a partir de las cuales una tarea lleva demasiado tiempo quieta. */
+/**
+ * Horas a partir de las cuales una tarea lleva demasiado tiempo quieta.
+ *
+ * Es solo el valor de arranque mientras cargan las reglas: el criterio de
+ * verdad se configura en "Cuándo avisarme" y es el mismo que usa el aviso por
+ * notificación. Si la tarjeta y el aviso no coincidieran, no se creería a
+ * ninguno de los dos.
+ */
 const ESTANCADA_HORAS = 72;
 
 function horasEnEtapa(t: TareaVista): number {
@@ -102,6 +114,12 @@ export default function MisTareasPage() {
   const projectName = (id: string) => projects.find(p => p.id === id)?.name ?? "Sin proyecto";
 
   const activos = useMemo(() => projects.filter((p: HubProject) => p.status !== "done"), [projects]);
+  // Antes esta lista eran TODOS los proyectos activos de la agencia, para
+  // cualquiera que entrara: no había forma de saber cuáles te tocaban a ti.
+  const [soloMios, setSoloMios] = useState(true);
+  const mios = useMemo(() => misProyectos(activos, miId), [activos, miId]);
+  const visibles = soloMios ? mios : activos;
+  const hayAsignaciones = useMemo(() => activos.some(tieneAsignados), [activos]);
   const pendientes = visible.filter(t => t.stage !== "done").length;
 
   const alFallar = (e: unknown) =>
@@ -148,9 +166,16 @@ export default function MisTareasPage() {
   };
 
   const enDesarrollo = tasks.filter(t => t.stage === "doing").length;
+  const { data: reglas } = useReglasRecordatorio();
+  const horasEstancada = (reglas?.reglas.diasTareaEstancada ?? ESTANCADA_HORAS / 24) * 24;
+  const diasEstancada = Math.round(horasEstancada / 24);
+  const proyectoElegido = useMemo(
+    () => (projectId === "todos" ? null : projects.find(p => p.id === projectId) ?? null),
+    [projects, projectId],
+  );
   const estancadas = useMemo(
-    () => tasks.filter(t => t.stage !== "done" && t.stage !== "backlog" && horasEnEtapa(t) >= ESTANCADA_HORAS),
-    [tasks],
+    () => tasks.filter(t => t.stage !== "done" && t.stage !== "backlog" && horasEnEtapa(t) >= horasEstancada),
+    [tasks, horasEstancada],
   );
 
   return (
@@ -212,7 +237,9 @@ export default function MisTareasPage() {
               </Card>
               <Card className={estancadas.length > 0 ? "bg-red-500/10 border-red-500/25" : "bg-card/40 border-foreground/10"}>
                 <CardContent className="p-4">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Sin moverse (+3 días)</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                    Sin moverse (+{diasEstancada} día{diasEstancada === 1 ? "" : "s"})
+                  </p>
                   <p className={`text-2xl font-bold ${estancadas.length > 0 ? "text-red-400" : "text-muted-foreground"}`}>{estancadas.length}</p>
                   {estancadas.length > 0 && (
                     <p className="text-[11px] text-muted-foreground mt-1 truncate">{estancadas[0].title}</p>
@@ -226,6 +253,14 @@ export default function MisTareasPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Qué se le vendió a este proyecto. Solo con uno elegido: en
+                "todos los proyectos" no hay un alcance que enseñar. */}
+            {proyectoElegido && (
+              <ResumenServicios proyecto={proyectoElegido} contratos={contracts} tareas={tasks} />
+            )}
+
+            <ConfigRecordatorios />
 
             <MetasInline />
 
@@ -442,12 +477,28 @@ export default function MisTareasPage() {
 
             <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-4">
-                <p className="text-sm font-semibold mb-3 flex items-center gap-2"><FolderKanban className="w-4 h-4 text-primary" /> Proyectos activos</p>
-                {activos.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-6 text-center">No hay proyectos activos.</p>
+                <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                  <p className="text-sm font-semibold flex items-center gap-2"><FolderKanban className="w-4 h-4 text-primary" /> Proyectos activos</p>
+                  {/* El interruptor solo aparece si hay asignaciones: sin ellas
+                      no filtraría nada y sería un control que miente. */}
+                  {hayAsignaciones && (
+                    <button
+                      type="button"
+                      onClick={() => setSoloMios(v => !v)}
+                      aria-pressed={soloMios}
+                      className={`text-[11px] px-2 py-1 rounded-lg border transition ${soloMios ? "border-primary bg-primary/10 text-primary" : "border-foreground/15 text-muted-foreground hover:border-foreground/30"}`}
+                    >
+                      {soloMios ? `Los míos (${mios.length})` : `Todos (${activos.length})`}
+                    </button>
+                  )}
+                </div>
+                {visibles.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">
+                    {activos.length > 0 && soloMios ? "No tienes proyectos asignados." : "No hay proyectos activos."}
+                  </p>
                 ) : (
                   <ul className="space-y-3">
-                    {activos.map(p => {
+                    {visibles.map(p => {
                       const prog = projectProgress(p.id, tasks);
                       const days = daysUntil(p.due);
                       return (
@@ -469,11 +520,7 @@ export default function MisTareasPage() {
                                 Entrega {fmtDate(p.due)}
                               </span>
                             )}
-                            {p.link && (
-                              <a href={p.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                                Archivos <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
-                            )}
+
                             {puedeEditarProyectos && prog.total === 0 && (
                               // Sin tareas no hay avance calculable: se informa a mano
                               // para que el proyecto no se vea muerto en el panel.
@@ -491,6 +538,14 @@ export default function MisTareasPage() {
                               </label>
                             )}
                           </div>
+
+                          {/* Los archivos, aquí mismo. Era un enlace que abría
+                              Drive en otra pestaña: para ver si el cliente
+                              subió el logo había que salir del tablero. */}
+                          {carpetaDe(p)
+                            ? <CarpetaProyecto carpetaId={carpetaDe(p)!} nombre={p.name} />
+                            : <SinCarpetaProyecto />}
+                          <Adjuntos tipo="project" id={p.id} titulo="Adjuntos del proyecto" />
                         </li>
                       );
                     })}
@@ -607,6 +662,10 @@ function TarjetaTarea({
               </button>
             ))}
           </div>
+
+          {/* La captura, el archivo fuente, lo que haga falta para trabajarla.
+              Antes no había dónde ponerlo y acababa en un chat. */}
+          <Adjuntos tipo="task" id={String(tarea.id)} titulo="Archivos de la tarea" />
         </div>
       )}
     </div>

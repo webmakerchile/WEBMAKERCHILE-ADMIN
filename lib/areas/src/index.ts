@@ -38,7 +38,11 @@ export const AREA_BADGE: Record<Area, { bg: string; text: string }> = {
  */
 export const AREA_PAGES: Record<Area, string[] | "*"> = {
   ceo:       "*",
-  ejecutivo: ["/ejecutivo", "/mi-dia", "/ayuda"],
+  // /drive y /mis-tareas estaban en ROLES pero NO aquí, y el guardia de área
+  // manda: el ítem salía en el menú y al pulsarlo daba "acceso restringido".
+  // El área "ejecutivo" cubre a ventas y a desarrollo, que son justo quienes
+  // necesitan la carpeta del proyecto.
+  ejecutivo: ["/ejecutivo", "/mis-tareas", "/drive", "/mi-dia", "/ayuda"],
   edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/mi-dia", "/ayuda"],
   marketing: ["/insights", "/historias", "/descripciones", "/schedule", "/cuentas", "/mi-dia", "/ayuda"],
   rrhh:      ["/ejecutivo", "/equipo", "/", "/mi-dia", "/ayuda"],

@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { CotizacionSchema, validarPreciosEntregados, type Cotizacion } from "./schema";
-import { MMODA_EXAMPLE } from "./example-mmoda";
+import { EJEMPLO_ESTILO } from "./example-estilo";
 
 /**
  * Generación del CONTENIDO de la cotización vía LLM.
@@ -64,7 +64,7 @@ const SCHEMA_HINT = `Estructura exacta del JSON (todos los campos obligatorios s
 export interface GenerarCotizacionInput {
   contexto_cliente: string;
   modulos_sugeridos?: string;
-  precios_netos?: number[];
+  precios_netos?: (number | null)[];
   mensualidad_neto?: number;
   esquema_pago?: { porcentaje: number; momento: string }[];
 }
@@ -82,7 +82,12 @@ function buildUserMessage(input: GenerarCotizacionInput, hoy: Date): string {
   const mesAnio = `${meses[hoy.getMonth()]} ${hoy.getFullYear()}`;
   const parts: string[] = [
     SCHEMA_HINT,
-    `\nEJEMPLO DE REFERENCIA (caso real M&M Moda — este es el estándar de calidad de redacción que debes igualar):\n${JSON.stringify(MMODA_EXAMPLE, null, 2)}`,
+    // Cliente inventado a propósito: antes aquí iba la cotización real de una
+    // clienta —con su nombre, sus volúmenes de venta y su dominio— y se mandaba
+    // entera a un servicio externo en cada generación, con la instrucción de
+    // imitarla. El modelo copiaba sus cifras y su rubro a la cotización de
+    // cualquier otro cliente.
+    `\nEJEMPLO DE REFERENCIA (caso ficticio — es el estándar de REDACCIÓN que debes igualar, no un contenido a copiar: usa el rubro, las cifras y las situaciones del cliente real de abajo):\n${JSON.stringify(EJEMPLO_ESTILO, null, 2)}`,
     `\nFecha actual: usa "mes_anio": "${mesAnio}" y "anio": "${hoy.getFullYear()}".`,
     `\nCONTEXTO DEL CLIENTE:\n${input.contexto_cliente}`,
   ];
@@ -90,8 +95,16 @@ function buildUserMessage(input: GenerarCotizacionInput, hoy: Date): string {
     parts.push(`\nMÓDULOS SUGERIDOS (respeta esta estructura de módulos):\n${input.modulos_sugeridos.trim()}`);
   }
   if (input.precios_netos && input.precios_netos.length > 0) {
+    // Se enumera módulo por módulo en vez de mandar una lista suelta: con
+    // precios parciales, "450000, 300000" no dice a cuál de los cuatro va cada
+    // uno, y el modelo los reordena.
+    const detalle = input.precios_netos
+      .map((p, i) => (p == null
+        ? `  · Módulo ${i + 1}: ESTÍMALO tú con la GUÍA DE PRECIOS.`
+        : `  · Módulo ${i + 1}: ${p} (exacto, no lo cambies).`))
+      .join("\n");
     parts.push(
-      `\nPRECIOS NETOS ENTREGADOS (en CLP, sin IVA — úsalos EXACTOS y en este orden, un módulo por precio; genera exactamente ${input.precios_netos.length} módulos): ${input.precios_netos.join(", ")}`
+      `\nPRECIOS NETOS POR MÓDULO (CLP sin IVA). Genera exactamente ${input.precios_netos.length} módulos, en este orden:\n${detalle}`
     );
   } else {
     parts.push(
@@ -182,15 +195,18 @@ export async function generarContenidoCotizacion(
     // (bloquea la vista previa) en vez de fallar la generación completa.
     if (intento <= MAX_RETRIES) {
       const pendientes: string[] = [];
-      if (!input.precios_netos || input.precios_netos.length === 0) {
-        result.data.modulos.forEach((m, i) => {
-          if (m.neto === -1) {
-            pendientes.push(
-              `- El módulo ${i + 1} ("${m.nombre}") quedó con neto -1: estima un precio neto realista (entero CLP redondeado a miles) usando la GUÍA DE PRECIOS.`
-            );
-          }
-        });
-      }
+      // Se revisa siempre, no solo cuando no vino ningún precio: con precios
+      // parciales, los módulos sin precio son justo los que hay que estimar, y
+      // saltarse el aviso los dejaba en -1 y bloqueaba la vista previa.
+      result.data.modulos.forEach((m, i) => {
+        const entregado = input.precios_netos?.[i];
+        if (entregado != null) return;
+        if (m.neto === -1) {
+          pendientes.push(
+            `- El módulo ${i + 1} ("${m.nombre}") quedó con neto -1: estima un precio neto realista (entero CLP redondeado a miles) usando la GUÍA DE PRECIOS.`
+          );
+        }
+      });
       if (input.mensualidad_neto == null && result.data.mensualidad && result.data.mensualidad.neto === -1) {
         pendientes.push(
           `- La mensualidad quedó con neto -1: estima un neto mensual realista (entero CLP redondeado a miles) usando la GUÍA DE PRECIOS.`

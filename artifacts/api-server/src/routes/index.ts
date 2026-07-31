@@ -36,6 +36,8 @@ import hubServicesRouter from "./hub/services";
 import hubPlaybooksRouter from "./hub/playbooks";
 import hubVentasRouter from "./hub/ventas";
 import hubTorreRouter from "./hub/torre";
+import hubRecordatoriosRouter from "./hub/recordatorios";
+import adjuntosRouter from "./adjuntos";
 import jornadaRouter from "./jornada";
 import redactarRouter from "./redactar";
 import marketingRouter from "./marketing";
@@ -106,6 +108,10 @@ router.use(hrSelfRouter);
 // dentro del router (dirección/ventas/rrhh) — mismo patrón que jornada.
 router.use(activityRouter);
 
+// Adjuntos: transversal a proyectos, tareas, tickets y contratos, que son de
+// areas distintas. El router se guarda solo (autenticacion + dueño al borrar).
+router.use(adjuntosRouter);
+
 // Hub routes: ejecutivo area only
 // hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y
 // /hub/services/* NO queden bajo el middleware CEO (gestión gateada por ruta).
@@ -122,6 +128,7 @@ router.use(hubServicesRouter);
 router.use(hubPlaybooksRouter);
 router.use(hubVentasRouter);
 router.use(hubTorreRouter);
+router.use(hubRecordatoriosRouter);
 router.use(slaRouter);
 router.use(hubRouter);
 router.use(hrRouter);

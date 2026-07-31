@@ -391,24 +391,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/DriveFile"
-  /drive/upload:
-    post:
-      operationId: uploadToDrive
-      tags: [drive]
-      summary: Upload a file to Google Drive
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/DriveUploadBody"
-      responses:
-        "200":
-          description: Uploaded file info
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DriveFile"
   /content/videos:
     get:
       operationId: listVideos
@@ -1001,22 +983,6 @@ components:
           type: string
       required:
         - files
-    DriveUploadBody:
-      type: object
-      properties:
-        name:
-          type: string
-        folderId:
-          type: string
-        base64Data:
-          type: string
-        mimeType:
-          type: string
-      required:
-        - name
-        - folderId
-        - base64Data
-        - mimeType
     VideoContent:
       type: object
       properties:

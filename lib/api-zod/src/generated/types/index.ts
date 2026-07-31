@@ -28,7 +28,6 @@ export * from "./createGeminiConversationBody";
 export * from "./createVideoBody";
 export * from "./driveFile";
 export * from "./driveFileList";
-export * from "./driveUploadBody";
 export * from "./geminiConversation";
 export * from "./geminiConversationWithMessages";
 export * from "./geminiError";

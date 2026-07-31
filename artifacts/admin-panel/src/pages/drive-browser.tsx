@@ -1,19 +1,37 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRaicesDrive } from "@/lib/raices-drive";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
+import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
+import { ConfigRaicesDrive } from "@/components/config-raices-drive";
 import { Layout } from "@/components/layout";
 import { 
   Folder, File, HardDrive, ArrowLeft, Loader2, ExternalLink
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-const DEFAULT_ROOT_ID = "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
-
 export default function DriveBrowserPage() {
-  const [currentFolderId, setCurrentFolderId] = useState<string>(DEFAULT_ROOT_ID);
-  const [folderHistory, setFolderHistory] = useState<{id: string, name: string}[]>([{ id: DEFAULT_ROOT_ID, name: "Raíz" }]);
+  // La raíz la decide el servidor y se configura desde el panel: era una
+  // constante escrita a fuego, distinta de la del Hub, y quien no tuviera
+  // acceso a ESE id lo veía todo vacío sin saber por qué.
+  const { data: config } = useRaicesDrive();
+  const raiz = config?.raices.equipo ?? "";
+  const [currentFolderId, setCurrentFolderId] = useState<string>("");
+  const [folderHistory, setFolderHistory] = useState<{id: string, name: string}[]>([]);
 
-  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentFolderId });
-  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentFolderId });
+  // Al llegar la configuración se abre la raíz. No se puede pedir nada antes:
+  // sin id, la consulta traería la unidad entera de quien mire.
+  useEffect(() => {
+    if (!raiz || currentFolderId) return;
+    setCurrentFolderId(raiz);
+    setFolderHistory([{ id: raiz, name: "Raíz" }]);
+  }, [raiz, currentFolderId]);
+
+  const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentFolderId });
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentFolderId });
+  const drive = useEstadoDrive();
+  // Un fallo NO es una carpeta vacía. Pintarlos igual era lo que hacía
+  // imposible darse cuenta de que faltaba el permiso de Drive.
+  const fallo = filesError || foldersError;
 
   const navigateToFolder = (id: string, name: string) => {
     setFolderHistory(prev => [...prev, { id, name }]);
@@ -133,8 +151,29 @@ export default function DriveBrowserPage() {
 
                 {(!foldersData?.length && !filesData?.files?.length) && (
                   <div className="col-span-full py-20 flex flex-col items-center justify-center text-muted-foreground">
-                    <img src={`${import.meta.env.BASE_URL}images/empty-state.png`} alt="Empty" className="w-32 h-32 mb-6 opacity-50 mix-blend-screen" />
-                    <p>Esta carpeta está vacía.</p>
+                    {!drive.cargando && !drive.conectado ? (
+                      <div className="max-w-md w-full">
+                        <ConectarDrive volverA="drive" motivo="Por eso no se ve ningún archivo." />
+                      </div>
+                    ) : fallo ? (
+                      <>
+                        <p className="text-red-400 font-semibold">No se pudo leer esta carpeta.</p>
+                        <p className="text-xs mt-1 max-w-sm text-center">
+                          {(fallo as Error).message || "El servidor devolvió un error."} Si la carpeta
+                          es de otra persona, pídele que la comparta con tu cuenta.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <img src={`${import.meta.env.BASE_URL}images/empty-state.png`} alt="" className="w-32 h-32 mb-6 opacity-50 mix-blend-screen" />
+                        <p>Esta carpeta está vacía.</p>
+                        {/* Una raíz mal apuntada se ve EXACTAMENTE igual que una
+                            carpeta sin archivos. Desde aquí se puede comprobar. */}
+                        <div className="mt-4 w-full max-w-md text-left">
+                          <ConfigRaicesDrive />
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

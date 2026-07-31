@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import sharp from "sharp";
 import { setupFonts } from "./fonts.js";
-import { bloqueInteractivoSvg, type Lienzo, type ZonaBloque } from "./render-interactivo.js";
+import { bloqueInteractivoSvg, zonaInteractiva, type Lienzo, type ZonaBloque } from "./render-interactivo.js";
 import { svgDefs, PALETA_COMMUNITY } from "./story-render.js";
 import {
   FORMATOS_INTERACTIVOS,
@@ -20,8 +20,22 @@ import {
 
 beforeAll(() => { setupFonts(); });
 
-const LIENZO: Lienzo = { width: 1080, height: 1920 };
-const ZONA: ZonaBloque = { y: 1180, alto: 560 };
+/**
+ * Las TRES relaciones que se generan de verdad.
+ *
+ * Antes solo se probaba 9:16 y por eso el feed estaba roto sin que nadie se
+ * enterara: la zona se calculaba con el alto del lienzo y los bloques con el
+ * ancho, así que solo cuadraban en historias. En 1:1 quedaban 367 px para
+ * bloques que piden más de 400.
+ */
+const LIENZOS: Array<[string, Lienzo]> = [
+  ["9:16", { width: 1080, height: 1920 }],
+  ["4:5", { width: 1080, height: 1350 }],
+  ["1:1", { width: 1080, height: 1080 }],
+];
+
+const LIENZO: Lienzo = LIENZOS[0]![1];
+const ZONA: ZonaBloque = zonaInteractiva(LIENZO);
 
 /** Textos deliberadamente hostiles: largos, con tildes y sin espacios. */
 const HOSTILES = [
@@ -31,6 +45,10 @@ const HOSTILES = [
   "¿Tu negocio ya tiene página web propia y funcionando hoy?",
   "Respondes mensajes de clientes después de las diez de la noche casi todos los días",
   "ÁÉÍÓÚÑ ÜÇ àèìòù",
+  // Al TOPE de lo que el parser deja pasar (120 caracteres). Es el caso que de
+  // verdad estira las tarjetas, y sin él los topes de alto nunca se ejercitan:
+  // el test pasaría igual aunque los quitáramos.
+  "Tener una página web propia y bien hecha te deja vender mientras duermes, sin responder el mismo mensaje veinte veces",
 ];
 
 /** Contenido de prueba para un formato, con el texto hostil en todos sus campos. */
@@ -68,9 +86,9 @@ function contenidoDe(f: FormatoInteractivo, texto: string): ContenidoInteractivo
  */
 const MARGEN_TEST = 400;
 
-function svgCompleto(cuerpo: string): Buffer {
+function svgCompleto(cuerpo: string, lienzo: Lienzo = LIENZO): Buffer {
   return Buffer.from(
-    `<svg width="${LIENZO.width + MARGEN_TEST * 2}" height="${LIENZO.height + MARGEN_TEST * 2}" xmlns="http://www.w3.org/2000/svg">` +
+    `<svg width="${lienzo.width + MARGEN_TEST * 2}" height="${lienzo.height + MARGEN_TEST * 2}" xmlns="http://www.w3.org/2000/svg">` +
       `${svgDefs(PALETA_COMMUNITY.scrim)}` +
       `<g transform="translate(${MARGEN_TEST} ${MARGEN_TEST})">${cuerpo}</g></svg>`,
   );
@@ -98,17 +116,22 @@ async function cajaDeTinta(svg: Buffer) {
 // se pinta hacia fuera del rectángulo. Nada de eso es texto desbordado.
 const TOLERANCIA = 26;
 
-describe("los bloques interactivos caben en su zona", () => {
+describe.each(LIENZOS)("los bloques caben en su zona · %s", (nombreRel, lienzo) => {
+  const zona = zonaInteractiva(lienzo);
+
   for (const formato of FORMATOS_INTERACTIVOS) {
     it(`${formato.id} (${formato.bloque})`, async () => {
+      // La zona de los formatos con sticker es más alta: hay que reservarle
+      // sitio al sticker nativo de Instagram, que va pegado encima.
+      const z = zonaInteractiva(lienzo, formato);
       for (const texto of HOSTILES) {
         const c = contenidoDe(formato, texto);
-        const cuerpo = bloqueInteractivoSvg(formato.bloque, c, formato, LIENZO, ZONA, PALETA_COMMUNITY);
+        const cuerpo = bloqueInteractivoSvg(formato.bloque, c, formato, lienzo, z, PALETA_COMMUNITY);
         expect(cuerpo, `${formato.id} no dibujó nada con "${texto.slice(0, 24)}"`).not.toBe("");
 
-        const caja = await cajaDeTinta(svgCompleto(cuerpo));
+        const caja = await cajaDeTinta(svgCompleto(cuerpo, lienzo));
         expect(caja, `${formato.id} salió vacío`).not.toBeNull();
-        const ctx = `${formato.id} · "${texto.slice(0, 30)}"`;
+        const ctx = `${nombreRel} · ${formato.id} · "${texto.slice(0, 30)}"`;
 
         // Coordenadas del diseño: se descuenta el margen del lienzo de prueba.
         const x0 = caja!.x0 - MARGEN_TEST;
@@ -118,14 +141,61 @@ describe("los bloques interactivos caben en su zona", () => {
 
         // Dentro del ancho del lienzo real.
         expect(x0, `${ctx}: se sale por la izquierda`).toBeGreaterThanOrEqual(-TOLERANCIA);
-        expect(x1, `${ctx}: se sale por la derecha`).toBeLessThanOrEqual(LIENZO.width + TOLERANCIA);
+        expect(x1, `${ctx}: se sale por la derecha`).toBeLessThanOrEqual(lienzo.width + TOLERANCIA);
 
-        // Y dentro de su zona vertical: invadir hacia arriba se come al zorro.
-        expect(ZONA.y - y0, `${ctx}: desborda la zona por arriba`).toBeLessThanOrEqual(TOLERANCIA);
-        expect(y1 - (ZONA.y + ZONA.alto), `${ctx}: desborda la zona por abajo`).toBeLessThanOrEqual(TOLERANCIA);
+        // Y dentro de su zona vertical: invadir hacia arriba se come al zorro,
+        // y hacia abajo se sale de la imagen.
+        expect(z.y - y0, `${ctx}: desborda la zona por arriba`).toBeLessThanOrEqual(TOLERANCIA);
+        expect(y1 - (z.y + z.alto), `${ctx}: desborda la zona por abajo`).toBeLessThanOrEqual(TOLERANCIA);
+
+        // Y dentro del lienzo: da igual la zona si se sale de la imagen.
+        expect(y1, `${ctx}: se sale por debajo del lienzo`).toBeLessThanOrEqual(lienzo.height + TOLERANCIA);
       }
-    }, 60_000);
+    }, 120_000);
   }
+});
+
+describe("la zona del bloque", () => {
+  it("cabe siempre dentro del lienzo, en las tres relaciones", () => {
+    for (const [nombre, lienzo] of LIENZOS) {
+      for (const f of [undefined, { stickerIg: "Encuesta" }]) {
+        const z = zonaInteractiva(lienzo, f);
+        expect(z.y, `${nombre}: la zona empieza fuera`).toBeGreaterThanOrEqual(0);
+        expect(z.y + z.alto, `${nombre}: la zona termina fuera del lienzo`).toBeLessThanOrEqual(lienzo.height);
+      }
+    }
+  });
+
+  // Es el arreglo de "la encuesta de Instagram no cabe": el sticker nativo es
+  // más grande que nuestra tarjeta y hay que reservarle sitio.
+  it("los formatos con sticker nativo reciben más alto", () => {
+    for (const [nombre, lienzo] of LIENZOS) {
+      const sin = zonaInteractiva(lienzo);
+      const con = zonaInteractiva(lienzo, { stickerIg: "Encuesta" });
+      expect(con.alto, `${nombre}: el sticker no recibe más sitio`).toBeGreaterThanOrEqual(sin.alto);
+    }
+  });
+
+  // El fallo original: la zona salía del ALTO del lienzo y los bloques del
+  // ANCHO, así que solo cuadraban en 9:16. En 1:1 quedaban 367 px.
+  it("nunca da menos sitio que la fórmula que estaba rota", () => {
+    for (const [nombre, lienzo] of LIENZOS) {
+      const viejo = Math.round(lienzo.height * 0.34);
+      expect(zonaInteractiva(lienzo).alto, `${nombre}: se perdió sitio`).toBeGreaterThanOrEqual(viejo);
+      expect(
+        zonaInteractiva(lienzo, { stickerIg: "Encuesta" }).alto,
+        `${nombre}: el sticker se quedó igual o peor`,
+      ).toBeGreaterThanOrEqual(viejo);
+    }
+  });
+
+  it("el feed deja de quedarse muy por detrás de historias", () => {
+    const historia = zonaInteractiva(LIENZOS[0]![1]).alto;
+    const cuadrado = zonaInteractiva(LIENZOS[2]![1]).alto;
+    // Antes era 367/653 = 0,56: el bloque del feed tenía casi la mitad de
+    // sitio que el de historias, y por eso se veía apretado.
+    expect(cuadrado / historia).toBeGreaterThan(0.7);
+  });
 });
 
 describe("degradación honesta", () => {

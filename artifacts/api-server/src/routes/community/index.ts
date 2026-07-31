@@ -63,7 +63,7 @@ import {
   type ContenidoInteractivo,
   type FormatoInteractivo,
 } from "../../lib/formatos-interactivos";
-import { bloqueInteractivoSvg } from "../../lib/render-interactivo";
+import { bloqueInteractivoSvg, zonaInteractiva } from "../../lib/render-interactivo";
 import { revisarCarrusel } from "../../lib/carrusel-revision";
 import { readFile } from "fs/promises";
 import path from "path";
@@ -920,6 +920,15 @@ async function generarFrameHistoria(args: {
   numero: number;
   total: number;
   estiloTitular?: string;
+  /**
+   * Relación final de la pieza. 9:16 por defecto — Historias no cambia.
+   *
+   * Antes esto no existía y TODO se generaba y componía a 9:16, así que una
+   * pieza de feed se recortaba después: el titular ya estaba dibujado dentro y
+   * el recorte se llevaba el 30 % del alto en 4:5 y el 44 % en 1:1. Por eso "en
+   * Historias funciona y en el feed no".
+   */
+  relacion?: FormatoImagen;
 }): Promise<{
   numero_frame: number;
   total_frames: number;
@@ -929,6 +938,7 @@ async function generarFrameHistoria(args: {
   texto: { copy_principal: string; sub_copy: string; cta: string; hashtags: string };
   guion: FrameGuion;
 }> {
+  const relacion: FormatoImagen = args.relacion ?? "9:16";
   const frameCtx: FrameContext | undefined = args.total > 1
     ? { numero: args.numero, total: args.total, rol: (args.frameGuion.paso as RolFrame) }
     : undefined;
@@ -963,12 +973,16 @@ async function generarFrameHistoria(args: {
       const resp = await ai.models.generateContent({
         model: "gemini-3-pro-image-preview",
         contents,
-        config: { ...GEMINI_IMAGE_BASE_CONFIG, imageSize: FORMATO_DIMS["9:16"].apiSize },
+        // El lienzo que se le pide al modelo es el más cercano a la relación
+        // final: para 1:1 existe 1024x1024, y generarlo en 2:3 para recortarlo
+        // después tiraba un tercio de la ilustración que el modelo compuso.
+        config: { ...GEMINI_IMAGE_BASE_CONFIG, imageSize: FORMATO_DIMS[relacion].apiSize },
       });
       const finalImg = extractFinalImage(resp);
       if (!finalImg) throw new Error("Gemini no devolvió imagen final");
-      // Recorte SIEMPRE al 9:16 exacto prometido (1080x1920)
-      imgBase64 = await ajustarAspectoExacto(finalImg.data, "9:16");
+      // Un solo recorte, al aspecto final. El texto se dibuja después, ya sobre
+      // el lienzo bueno, así que no hay un segundo recorte que se lo lleve.
+      imgBase64 = await ajustarAspectoExacto(finalImg.data, relacion);
       mime = "image/png";
       break;
     } catch (e) {
@@ -988,6 +1002,7 @@ async function generarFrameHistoria(args: {
         frameInfo: args.total > 1 ? { numero: args.numero, total: args.total } : undefined,
         estiloTitularId: args.estiloTitular,
         paleta: paletaDe(args.set.direccion),
+        lienzo: { width: FORMATO_DIMS[relacion].width, height: FORMATO_DIMS[relacion].height },
       });
     } catch (e) {
       console.error("[Historia frame] render texto fallo:", e);
@@ -2854,6 +2869,9 @@ router.post("/community/interactivo/generar", async (req, res) => {
       numero: 1,
       total: 1,
       estiloTitular: resolverEstiloTitulo(body.estilo_titular),
+      // Sin esto, el titular se dibujaba sobre un lienzo 9:16 y el recorte
+      // posterior al feed se lo llevaba por delante.
+      relacion: body.relacion,
     });
 
     // 3) El elemento interactivo encima.
@@ -2936,13 +2954,19 @@ async function componerInteractivo(
   fotos: FotosPorRanura = new Map(),
 ): Promise<string> {
   const { width, height } = FORMATO_DIMS[relacion];
+  // La imagen ya llega con este tamaño: el frame se genera y se recorta una
+  // sola vez, a la relación final. Esto es una red de seguridad, no un recorte
+  // — antes SÍ recortaba aquí, y como el titular ya venía dibujado sobre un
+  // lienzo 9:16, se lo llevaba por delante.
   const buf = await sharp(Buffer.from(imagenBase64, "base64"))
     .resize(width, height, { fit: "cover", position: "center" })
     .png()
     .toBuffer();
 
-  // La zona baja: 34% del alto, con aire contra el borde.
-  const zona = { y: Math.round(height * 0.60), alto: Math.round(height * 0.34) };
+  // La zona la decide render-interactivo: es la MISMA base con la que los
+  // bloques se dimensionan. Calcularla aquí con otra proporción fue lo que hizo
+  // que solo cuadrara en 9:16 y se cortara en el feed.
+  const zona = zonaInteractiva({ width, height }, formato);
   const cuerpo = bloqueInteractivoSvg(formato.bloque, contenido, formato, { width, height }, zona, paleta, fotos);
   if (!cuerpo) return buf.toString("base64");
 
