@@ -395,8 +395,21 @@ export default function SchedulePage() {
         toast({ title: "No se pudo mover la publicación", variant: "destructive" });
       }
     },
-    onSuccess: (_d, vars) => {
-      if (!vars.silent) toast({ title: "Publicación reprogramada" });
+    onSuccess: (d, vars) => {
+      if (vars.silent) return;
+      // El servidor dice qué redes NO van a publicar aunque quede programado.
+      // No es un error —el archivo se sube después— pero enterarse cuando ya
+      // pasó la hora es lo que hacía parecer que "programar no funciona".
+      const resumen = (d as { avisoResumen?: string } | undefined)?.avisoResumen;
+      if (resumen) {
+        toast({
+          title: "Programada, pero algo falta",
+          description: resumen,
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Publicación reprogramada" });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: VIDEOS_QUERY_KEY });

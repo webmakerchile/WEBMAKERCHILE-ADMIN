@@ -4,7 +4,7 @@ import { videos, users, campaigns, templates } from "@workspace/db/schema";
 import { eq, desc, lte, and, or, inArray, ilike, isNotNull, sql } from "drizzle-orm";
 import { recordActivity } from "../../lib/activity";
 import { handoffVideoApproved } from "../../lib/handoffs";
-import { cambioAlProgramar } from "../../lib/promover-programado";
+import { cambioAlProgramar, avisosDeProgramacion, resumirAvisos } from "../../lib/promover-programado";
 
 /**
  * Resolve a finite numeric library reference (campaignId/templateId) to either
@@ -979,7 +979,23 @@ router.patch("/content/videos/:id", async (req, res) => {
       });
     }
   }
-  res.json(row);
+  // Qué redes NO van a publicar aunque quede programado, y por qué.
+  //
+  // El publicador ya las marca `skipped` con su motivo, pero eso se ve DESPUÉS
+  // y en otra pantalla: quien programó se queda creyendo que estaba todo listo
+  // y se entera cuando pasó la hora y no salió nada. No es un error —el archivo
+  // se puede subir después— así que no bloquea: avisa.
+  const quedaProgramado = row.status === "scheduled";
+  const redesObjetivo = quedaProgramado
+    ? ["youtube", "tiktok", "instagram", "linkedin", "x", "facebook"].filter(
+        (red) => (row as Record<string, unknown>)[`${red}Status`] === "pending",
+      )
+    : [];
+  const avisos = redesObjetivo.length > 0
+    ? avisosDeProgramacion(row as unknown as Parameters<typeof avisosDeProgramacion>[0], redesObjetivo)
+    : [];
+
+  res.json({ ...row, avisos, avisoResumen: resumirAvisos(avisos) });
 });
 
 router.delete("/content/videos/:id", async (req, res) => {
