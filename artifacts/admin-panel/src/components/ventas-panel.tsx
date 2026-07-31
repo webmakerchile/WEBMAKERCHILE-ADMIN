@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
+import { TrendingUp } from "lucide-react";
 
 /**
  * Torre de control de Ventas: pipeline por etapa con probabilidad y proyección
@@ -169,6 +171,15 @@ export default function VentasPanel({ showToast }: { showToast: (msg: string) =>
             {overdue} seguimiento{overdue > 1 ? "s" : ""} vencido{overdue > 1 ? "s" : ""}
           </div>
         )}
+        <Link
+          href="/proyecciones"
+          className="rounded-lg border px-4 py-2 text-sm hover:bg-foreground/5 transition-colors flex items-center gap-1.5"
+          style={{ borderColor: "rgba(128,128,128,.35)" }}
+          data-testid="link-proyecciones"
+          title="Tendencia histórica y proyección por mínimos cuadrados"
+        >
+          <TrendingUp className="w-4 h-4 text-primary" /> Proyecciones
+        </Link>
       </div>
 
       {/* Pipeline por etapa */}

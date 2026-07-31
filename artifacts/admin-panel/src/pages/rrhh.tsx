@@ -8,8 +8,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ROLES, normalizeRole, type TeamRole } from "@workspace/roles";
 import {
   Loader2, Users2, AlertTriangle, UserPlus, Check, X, Pencil,
-  CalendarDays, Phone, FileText, ExternalLink, Power,
+  CalendarDays, Phone, FileText, ExternalLink, Power, TrendingUp,
 } from "lucide-react";
+import { Link } from "wouter";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
 import { useAsistencia } from "@/lib/asistencia";
@@ -389,7 +390,18 @@ export default function RrhhPage() {
               </CardContent>
             </Card>
 
-            <DesempenoSemanal />
+            <div className="space-y-1.5">
+              <DesempenoSemanal />
+              <div className="flex justify-end">
+                <Link
+                  href="/proyecciones"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                  data-testid="link-proyecciones"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" /> Ver proyecciones de horas y cumplimiento
+                </Link>
+              </div>
+            </div>
 
             <LeaveManager />
 

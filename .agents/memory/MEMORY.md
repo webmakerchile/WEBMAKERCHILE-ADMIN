@@ -1,5 +1,7 @@
 # Memory Index
 
+- [Verificación autenticada en dev](dev-auth-verification.md) — screenshots llegan sin sesión; usar la cuenta de prueba + flip de team_role en DB dev; restaurar rol y borrar semillas al final.
+
 - [Startup data migrations](startup-data-migrations.md) — boot-time migrations run on every republish; only translate explicit legacy values, never reset to a default outside an allowlist.
 
 - [Cotizaciones PDF pipeline](cotizaciones-pdf-pipeline.md) — LLM outputs JSON only, server does all money math; Puppeteer typing quirks; limiter-coverage test is an invariant that must be updated with app.ts.

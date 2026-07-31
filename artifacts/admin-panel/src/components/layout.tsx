@@ -33,6 +33,7 @@ import {
   Share2,
   Megaphone,
   Target,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
@@ -100,6 +101,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         { href: "/tickets", icon: TicketIcon, label: t.navTickets, tour: "nav-tickets" },
         { href: "/mis-tareas", icon: ListChecks, label: t.navMyTasks, tour: "nav-mis-tareas" },
         { href: "/reportes", icon: Receipt, label: t.navReports, tour: "nav-reportes" },
+        { href: "/proyecciones", icon: TrendingUp, label: t.navProyecciones, tour: "nav-proyecciones" },
         { href: "/rrhh", icon: IdCard, label: t.navHr, tour: "nav-rrhh" },
       ],
     },

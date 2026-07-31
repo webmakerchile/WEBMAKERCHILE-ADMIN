@@ -32,13 +32,12 @@ import {
   contractNet,
 } from "../../lib/ventas";
 import {
-  completarMeses,
   proyectarVentas,
   variacionUltimoMes,
   bondadDelAjuste,
 } from "../../lib/proyeccion-ventas";
+import { serieVentasCerradas } from "../../lib/proyecciones";
 import {
-  esVentaCerrada,
   motivoValido,
   tasaDeConversion,
   perdidasPorMotivo,
@@ -108,15 +107,9 @@ const nuevoId = () => "id" + Date.now().toString(36) + Math.random().toString(36
  * si esos meses no hubieran existido y la tendencia sale mejor de lo que fue.
  */
 function tendenciaDeVentas(contracts: Rec[]) {
-  const porMes = new Map<string, number>();
-  for (const c of contracts) {
-    if (!esVentaCerrada(c)) continue;
-    const fecha = str(c.issuedAt) || str(c.createdAt);
-    const mes = fecha.slice(0, 7);
-    if (!MONTH_RE.test(mes)) continue;
-    porMes.set(mes, (porMes.get(mes) ?? 0) + contractNet(c));
-  }
-  const serie = completarMeses([...porMes.entries()].map(([mes, monto]) => ({ mes, monto })));
+  // La agrupación vive en lib/proyecciones para que la sección Proyecciones y
+  // esta torre cuenten EXACTAMENTE la misma historia de ventas cerradas.
+  const serie = serieVentasCerradas(contracts).map(({ periodo, valor }) => ({ mes: periodo, monto: valor }));
   if (serie.length < 2) return { serie, proyeccion: [], variacion: null, confianza: null };
   return {
     serie,
