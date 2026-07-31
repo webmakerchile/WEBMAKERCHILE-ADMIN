@@ -6,7 +6,7 @@ import { z } from "zod";
 import { contractSignatures } from "@workspace/db/schema";
 import { generarToken, caducidad, urlDeFirma } from "../../lib/firma-contrato";
 import { canSeeMoney, normalizeRole } from "@workspace/roles";
-import { resolveBoard, saveBoard } from "../../lib/hub-board";
+import { resolveBoard, saveBoard, saveBoardSiVersion } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
 import {
   PIPELINE_STAGES,
@@ -28,9 +28,20 @@ import {
 } from "../../lib/proyeccion-ventas";
 import {
   esVentaCerrada,
+  motivoValido,
   tasaDeConversion,
   perdidasPorMotivo,
 } from "../../lib/estado-contrato";
+import {
+  TIPOS_REUNION,
+  DESENLACES_REUNION,
+  MOTIVOS_FUTURO,
+  siguienteTipo,
+  esReunionVentas,
+  embudoVentas,
+  casosFuturo,
+  casosPerdidos,
+} from "../../lib/reuniones-ventas";
 
 /**
  * Torre de control de Ventas (pipeline, renovaciones y comisiones).
@@ -63,6 +74,9 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 function currentMonth(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" }).slice(0, 7);
 }
+
+/** Id con el mismo formato que usan las demás entidades del tablero. */
+const nuevoId = () => "id" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /**
  * GET /hub/ventas/resumen?month=YYYY-MM
@@ -159,6 +173,12 @@ router.get("/hub/ventas/resumen", async (req: Request, res: Response) => {
     // responder le sirve a producción tanto como a ventas.
     conversion,
     motivosPerdida,
+    // Embudo por fase del flujo de reuniones + historiales consultables.
+    // También recuentos sin montos, por la misma razón que `conversion`.
+    embudo: embudoVentas(contracts),
+    casosFuturo: casosFuturo(contracts),
+    casosPerdidos: casosPerdidos(contracts),
+    motivosFuturo: MOTIVOS_FUTURO,
     canSeeMoney: seeMoney,
   });
 });
@@ -294,6 +314,203 @@ router.patch("/hub/ventas/opportunities/:id", async (req: Request, res: Response
     });
   }
   res.json({ ok: true, opportunity: toOpportunity(next[idx], canSeeMoney(roleOf(me))) });
+});
+
+const reunionSchema = z.object({
+  tipo: z.enum(TIPOS_REUNION),
+  date: z.string().regex(DATE_RE, "Fecha inválida"),
+  summary: z.string().max(2000).optional(),
+});
+
+/**
+ * POST /hub/ventas/opportunities/:id/reuniones — agenda una reunión del flujo
+ * de ventas (discovery/propuesta/seguimiento) vinculada a la oportunidad.
+ *
+ * La reunión queda en la colección de reuniones del tablero (se ve en la
+ * pestaña Reuniones) y el seguimiento de la oportunidad pasa a apuntar a esa
+ * fecha; de avisar si pasa sin resultado se encarga el recordatorio de
+ * reuniones sin desenlace (el de seguimientos vencidos se calla en ese caso
+ * para no avisar dos veces por lo mismo). No se crea evento en Google
+ * Calendar: el permiso actual del OAuth es de solo lectura, y prometer un
+ * evento que no se crea es peor que decirlo.
+ */
+router.post("/hub/ventas/opportunities/:id/reuniones", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Solo dirección y ventas agendan reuniones de venta" }); return; }
+  const parsed = reunionSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Datos inválidos" }); return; }
+
+  // Guardado condicionado a la versión leída: si otro guardado del tablero se
+  // cruza (el PATCH completo del Hub, otro endpoint), se relee y se reintenta
+  // en vez de pisar esos cambios con una copia vieja.
+  for (let intento = 0; intento < 3; intento++) {
+    const board = await resolveBoard();
+    if (!board) { res.status(409).json({ error: "Todavía no hay un tablero de dirección" }); return; }
+    const contracts = Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
+    const meetings = Array.isArray(board.data.meetings) ? (board.data.meetings as Rec[]) : [];
+    const idx = contracts.findIndex((c) => str(c?.id) === req.params.id);
+    if (idx === -1) { res.status(404).json({ error: "Oportunidad no encontrada" }); return; }
+    if (str(contracts[idx].status) !== "borrador") { res.status(409).json({ error: "Este contrato ya salió del embudo de ventas" }); return; }
+
+    const c = contracts[idx];
+    const now = Date.now();
+    const meeting: Rec = {
+      id: nuevoId(),
+      client: str(c.client),
+      date: parsed.data.date,
+      summary: (parsed.data.summary?.trim() || `Reunión ${parsed.data.tipo}: ${str(c.title)}`).slice(0, 200),
+      notes: "",
+      tipo: parsed.data.tipo,
+      contractId: str(c.id),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextContracts = [...contracts];
+    // Agendar reactiva el caso: si estaba "a futuro" vuelve al embudo activo,
+    // y el seguimiento pasa a apuntar a la fecha de la reunión.
+    nextContracts[idx] = { ...c, nextFollowUp: parsed.data.date, futuroMotivo: "", futuroFecha: "", futuroNota: "", updatedAt: now };
+    const guardado = await saveBoardSiVersion(
+      board.boardUserId,
+      { ...board.data, contracts: nextContracts, meetings: [...meetings, meeting] },
+      board.version,
+    );
+    if (!guardado) continue;
+
+    recordActivity({
+      actorId: me.id,
+      entityType: "contract",
+      entityId: 0,
+      entityLabel: `Reunión ${parsed.data.tipo} agendada: ${str(c.client) || str(c.title)} — ${parsed.data.date}`,
+      action: "created",
+      detail: { tipo: parsed.data.tipo, date: parsed.data.date },
+    });
+    res.status(201).json({ ok: true, meeting, opportunity: toOpportunity(nextContracts[idx], canSeeMoney(roleOf(me))) });
+    return;
+  }
+  res.status(503).json({ error: "El tablero está recibiendo otros cambios; intenta de nuevo en unos segundos" });
+});
+
+const desenlaceSchema = z.object({
+  desenlace: z.enum(DESENLACES_REUNION),
+  motivoPerdida: z.string().max(60).optional(),
+  futuroMotivo: z.enum(MOTIVOS_FUTURO).optional(),
+  futuroFecha: z.string().regex(DATE_RE, "Fecha inválida").optional(),
+  futuroNota: z.string().max(500).optional(),
+  siguienteFecha: z.string().regex(DATE_RE, "Fecha inválida").optional(),
+  siguienteTipo: z.enum(TIPOS_REUNION).optional(),
+});
+
+/**
+ * POST /hub/ventas/reuniones/:id/desenlace — registra cómo terminó una
+ * reunión de venta y aplica el paso siguiente sobre la oportunidad:
+ *
+ *   siguiente_reunion → crea la próxima reunión (discovery→propuesta→seguimiento)
+ *   acepta_inmediato  → la oportunidad pasa a etapa cierre
+ *   acepta_futuro     → guarda motivo + fecha estimada; el aviso de "casos a
+ *                       futuro" recuerda retomar cuando la fecha se acerque
+ *   perdido           → el contrato pasa a "perdido" con su motivo
+ *
+ * Se registra una sola vez: para corregir un desenlace está la ficha del
+ * contrato, donde el estado se cambia con todas sus consecuencias a la vista.
+ */
+router.post("/hub/ventas/reuniones/:id/desenlace", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Solo dirección y ventas registran desenlaces" }); return; }
+  const parsed = desenlaceSchema.safeParse(req.body ?? {});
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message || "Datos inválidos" }); return; }
+  const body = parsed.data;
+
+  // Validaciones condicionales por desenlace, antes de tocar el tablero.
+  const motivo = body.desenlace === "perdido" ? motivoValido(body.motivoPerdida) : null;
+  if (body.desenlace === "perdido" && !motivo) { res.status(400).json({ error: "Indica el motivo de la pérdida" }); return; }
+  if (body.desenlace === "acepta_futuro" && (!body.futuroMotivo || !body.futuroFecha)) {
+    res.status(400).json({ error: "Indica el motivo y la fecha estimada del caso a futuro" });
+    return;
+  }
+  if (body.desenlace === "siguiente_reunion" && !body.siguienteFecha) {
+    res.status(400).json({ error: "Indica la fecha de la siguiente reunión" });
+    return;
+  }
+
+  // Mismo guardado condicionado a versión que al agendar. De paso resuelve la
+  // carrera de dos desenlaces simultáneos: el segundo reintenta con el tablero
+  // fresco y se encuentra la reunión ya resuelta (409).
+  for (let intento = 0; intento < 3; intento++) {
+    const board = await resolveBoard();
+    if (!board) { res.status(409).json({ error: "Todavía no hay un tablero de dirección" }); return; }
+    const meetings = Array.isArray(board.data.meetings) ? (board.data.meetings as Rec[]) : [];
+    const contracts = Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
+    const mIdx = meetings.findIndex((m) => str(m?.id) === req.params.id);
+    if (mIdx === -1) { res.status(404).json({ error: "Reunión no encontrada" }); return; }
+    const m = meetings[mIdx];
+    // Solo reuniones del flujo de ventas (vinculadas y con tipo válido): una
+    // reunión suelta o enlazada a mano no puede perder ni cerrar un contrato.
+    if (!esReunionVentas(m)) { res.status(409).json({ error: "Esta reunión no es del flujo de ventas (falta vincularla a una oportunidad)" }); return; }
+    if (str(m.desenlace) !== "") { res.status(409).json({ error: "Esta reunión ya tiene desenlace registrado. Para corregirlo, edita el contrato." }); return; }
+    const cIdx = contracts.findIndex((c) => str(c?.id) === str(m.contractId));
+    if (cIdx === -1) { res.status(404).json({ error: "La oportunidad de esta reunión ya no existe" }); return; }
+    if (str(contracts[cIdx].status) !== "borrador") { res.status(409).json({ error: "Este contrato ya salió del embudo de ventas" }); return; }
+
+    const c = contracts[cIdx];
+    const now = Date.now();
+    const nextMeetings = [...meetings];
+    nextMeetings[mIdx] = { ...m, desenlace: body.desenlace, desenlaceAt: now, updatedAt: now };
+    const contrato: Rec = { ...c, updatedAt: now };
+    let creada: Rec | null = null;
+    let label = "";
+
+    if (body.desenlace === "siguiente_reunion") {
+      const tipoNext = body.siguienteTipo ?? siguienteTipo(m.tipo);
+      creada = {
+        id: nuevoId(),
+        client: str(c.client),
+        date: body.siguienteFecha,
+        summary: `Reunión ${tipoNext}: ${str(c.title)}`.slice(0, 200),
+        notes: "",
+        tipo: tipoNext,
+        contractId: str(c.id),
+        createdAt: now,
+        updatedAt: now,
+      };
+      nextMeetings.push(creada);
+      Object.assign(contrato, { nextFollowUp: body.siguienteFecha, futuroMotivo: "", futuroFecha: "", futuroNota: "" });
+      label = `Reunión con ${str(c.client) || str(c.title)}: siguiente (${tipoNext}) el ${body.siguienteFecha}`;
+    } else if (body.desenlace === "acepta_inmediato") {
+      // El cliente dijo que sí: a etapa cierre. El contrato se activa recién
+      // con la firma — eso sigue siendo el flujo de siempre. El seguimiento
+      // apuntaba a esta reunión ya resuelta: se apaga para que no suene el
+      // aviso de "seguimiento vencido" por una fecha que ya pasó bien.
+      Object.assign(contrato, { pipelineStage: "cierre", probability: STAGE_DEFAULT_PROB.cierre, nextFollowUp: "", futuroMotivo: "", futuroFecha: "", futuroNota: "" });
+      label = `Oportunidad ${str(c.title)}: el cliente acepta — pasa a cierre`;
+    } else if (body.desenlace === "acepta_futuro") {
+      // El seguimiento normal se apaga: de recordarlo se encarga el aviso de
+      // casos a futuro, con la fecha que el cliente dio.
+      Object.assign(contrato, { futuroMotivo: body.futuroMotivo, futuroFecha: body.futuroFecha, futuroNota: body.futuroNota?.trim() || "", nextFollowUp: "" });
+      label = `Oportunidad ${str(c.title)}: a futuro (retomar ${body.futuroFecha})`;
+    } else {
+      Object.assign(contrato, { status: "perdido", motivoPerdida: motivo });
+      label = `Oportunidad ${str(c.title)}: perdida (${motivo})`;
+    }
+
+    const nextContracts = [...contracts];
+    nextContracts[cIdx] = contrato;
+    const guardado = await saveBoardSiVersion(board.boardUserId, { ...board.data, meetings: nextMeetings, contracts: nextContracts }, board.version);
+    if (!guardado) continue;
+
+    recordActivity({
+      actorId: me.id,
+      entityType: "contract",
+      entityId: 0,
+      entityLabel: label,
+      action: body.desenlace === "siguiente_reunion" ? "stage_change" : "status_change",
+      detail: { desenlace: body.desenlace },
+    });
+    res.json({ ok: true, meeting: nextMeetings[mIdx], opportunity: toOpportunity(contrato, canSeeMoney(roleOf(me))), siguiente: creada });
+    return;
+  }
+  res.status(503).json({ error: "El tablero está recibiendo otros cambios; intenta de nuevo en unos segundos" });
 });
 
 /**

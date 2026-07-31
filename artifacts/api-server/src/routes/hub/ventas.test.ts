@@ -21,9 +21,16 @@ vi.mock("../../lib/notifications", () => ({ createNotification: vi.fn() }));
 /** Tablero simulado + última escritura. */
 let boardData: Record<string, unknown> = {};
 let saved: Record<string, unknown> | null = null;
+/** Cuántos guardados condicionados deben "chocar" (simula escrituras cruzadas). */
+let choquesDeVersion = 0;
 vi.mock("../../lib/hub-board", () => ({
   resolveBoard: async () => ({ boardUserId: 1, data: boardData, owner: null, version: 0 }),
   saveBoard: async (_uid: number, data: Record<string, unknown>) => { saved = data; },
+  saveBoardSiVersion: async (_uid: number, data: Record<string, unknown>, _v: number) => {
+    if (choquesDeVersion > 0) { choquesDeVersion--; return null; }
+    saved = data;
+    return { data, version: Date.now() };
+  },
 }));
 
 const rows: {
@@ -90,6 +97,7 @@ async function api(as: Record<string, unknown>, method: string, path: string, bo
 beforeEach(() => {
   boardData = {};
   saved = null;
+  choquesDeVersion = 0;
   rows.profiles = [];
   rows.settings = [{ id: 1, renewalAlertDays: 30 }];
 });
@@ -114,6 +122,11 @@ describe("GET /hub/ventas/resumen", () => {
     expect(r.body.canSeeMoney).toBe(true);
     // El activo que vence dentro de la antelación aparece como renovación.
     expect(r.body.renewals.map((x: { id: string }) => x.id)).toContain("a1");
+    // Embudo por fases: o1 tiene propuesta sobre la mesa, o2 sigue en
+    // reuniones y el activo cuenta como ganado. Recuentos, sin montos.
+    expect(r.body.embudo).toEqual({ enReuniones: 1, propuestaEnviada: 1, aFuturo: 0, ganados: 1, perdidos: 0 });
+    expect(r.body.casosFuturo).toEqual([]);
+    expect(r.body.casosPerdidos).toEqual([]);
   });
 
   it("otros roles no entran a la torre", async () => {
@@ -195,5 +208,150 @@ describe("GET /hub/ventas/comisiones", () => {
   it("roles sin dinero no acceden", async () => {
     const r = await api(CONTADOR, "GET", "/hub/ventas/comisiones");
     expect(r.status).toBe(403);
+  });
+});
+
+describe("POST /hub/ventas/opportunities/:id/reuniones", () => {
+  it("agenda la reunión vinculada, fija el seguimiento y reactiva casos a futuro", async () => {
+    boardData = {
+      contracts: [{ id: "o1", title: "Web ACME", client: "ACME", status: "borrador", futuroFecha: "2026-09-01", futuroMotivo: "fondos" }],
+      meetings: [],
+    };
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/opportunities/o1/reuniones", { tipo: "discovery", date: "2026-08-05" });
+    expect(r.status).toBe(201);
+    const meetings = saved!.meetings as Record<string, unknown>[];
+    expect(meetings).toHaveLength(1);
+    expect(meetings[0].tipo).toBe("discovery");
+    expect(meetings[0].contractId).toBe("o1");
+    expect(meetings[0].client).toBe("ACME");
+    const c = (saved!.contracts as Record<string, unknown>[])[0];
+    expect(c.nextFollowUp).toBe("2026-08-05");
+    expect(c.futuroFecha).toBe(""); // volver a agendar reactiva el caso
+    expect(c.futuroMotivo).toBe("");
+  });
+
+  it("no se agenda sobre un contrato que ya salió del embudo", async () => {
+    boardData = { contracts: [{ id: "o1", status: "activo" }], meetings: [] };
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/opportunities/o1/reuniones", { tipo: "discovery", date: "2026-08-05" });
+    expect(r.status).toBe(409);
+    expect(saved).toBeNull();
+  });
+
+  it("otros roles no agendan reuniones de venta", async () => {
+    boardData = { contracts: [{ id: "o1", status: "borrador" }], meetings: [] };
+    const r = await api(CONTADOR, "POST", "/hub/ventas/opportunities/o1/reuniones", { tipo: "discovery", date: "2026-08-05" });
+    expect(r.status).toBe(403);
+    expect(saved).toBeNull();
+  });
+});
+
+describe("POST /hub/ventas/reuniones/:id/desenlace", () => {
+  const conReunion = (extraMeeting: Record<string, unknown> = {}, extraContract: Record<string, unknown> = {}) => {
+    boardData = {
+      contracts: [{ id: "o1", title: "Web", client: "ACME", status: "borrador", nextFollowUp: "2026-07-30", ...extraContract }],
+      meetings: [{ id: "m1", client: "ACME", date: "2026-07-30", tipo: "discovery", contractId: "o1", ...extraMeeting }],
+    };
+  };
+
+  it("siguiente_reunion crea la próxima (discovery → propuesta) y mueve el seguimiento", async () => {
+    conReunion();
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "siguiente_reunion", siguienteFecha: "2026-08-10" });
+    expect(r.status).toBe(200);
+    const meetings = saved!.meetings as Record<string, unknown>[];
+    expect(meetings).toHaveLength(2);
+    expect(meetings[0].desenlace).toBe("siguiente_reunion");
+    expect(meetings[1].tipo).toBe("propuesta"); // el tipo siguiente sale solo
+    expect(meetings[1].date).toBe("2026-08-10");
+    expect(meetings[1].contractId).toBe("o1");
+    expect((saved!.contracts as Record<string, unknown>[])[0].nextFollowUp).toBe("2026-08-10");
+    expect(r.body.siguiente).not.toBeNull();
+  });
+
+  it("acepta_inmediato empuja la oportunidad a cierre (la activa la firma, no esto)", async () => {
+    conReunion({ tipo: "propuesta" });
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "acepta_inmediato" });
+    expect(r.status).toBe(200);
+    const c = (saved!.contracts as Record<string, unknown>[])[0];
+    expect(c.pipelineStage).toBe("cierre");
+    expect(c.probability).toBe(90);
+    expect(c.status).toBe("borrador");
+    // El seguimiento apuntaba a la reunión ya resuelta: se apaga para que no
+    // suene "seguimiento vencido" por una fecha que ya pasó bien.
+    expect(c.nextFollowUp).toBe("");
+  });
+
+  it("acepta_futuro guarda motivo y fecha, y apaga el seguimiento normal", async () => {
+    conReunion();
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", {
+      desenlace: "acepta_futuro", futuroMotivo: "fondos", futuroFecha: "2026-10-01", futuroNota: "espera aprobación del banco",
+    });
+    expect(r.status).toBe(200);
+    const c = (saved!.contracts as Record<string, unknown>[])[0];
+    expect(c.futuroMotivo).toBe("fondos");
+    expect(c.futuroFecha).toBe("2026-10-01");
+    expect(c.futuroNota).toBe("espera aprobación del banco");
+    expect(c.nextFollowUp).toBe(""); // de recordarlo se encarga el aviso de casos a futuro
+  });
+
+  it("acepta_futuro sin fecha no pasa", async () => {
+    conReunion();
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "acepta_futuro", futuroMotivo: "fondos" });
+    expect(r.status).toBe(400);
+    expect(saved).toBeNull();
+  });
+
+  it("perdido marca el contrato con su motivo", async () => {
+    conReunion();
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "perdido", motivoPerdida: "precio" });
+    expect(r.status).toBe(200);
+    const c = (saved!.contracts as Record<string, unknown>[])[0];
+    expect(c.status).toBe("perdido");
+    expect(c.motivoPerdida).toBe("precio");
+    expect((saved!.meetings as Record<string, unknown>[])[0].desenlace).toBe("perdido");
+  });
+
+  it("perdido sin motivo no pasa", async () => {
+    conReunion();
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "perdido" });
+    expect(r.status).toBe(400);
+    expect(saved).toBeNull();
+  });
+
+  it("una reunión ya resuelta no se resuelve dos veces", async () => {
+    conReunion({ desenlace: "siguiente_reunion" });
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "perdido", motivoPerdida: "precio" });
+    expect(r.status).toBe(409);
+    expect(saved).toBeNull();
+  });
+
+  it("las reuniones manuales (sin oportunidad) no llevan desenlace", async () => {
+    boardData = { contracts: [], meetings: [{ id: "m1", date: "2026-07-30" }] };
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "acepta_inmediato" });
+    expect(r.status).toBe(409);
+    expect(saved).toBeNull();
+  });
+
+  it("una reunión enlazada a mano pero sin tipo de venta tampoco: no puede cerrar ni perder un contrato", async () => {
+    conReunion({ tipo: undefined });
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "perdido", motivoPerdida: "precio" });
+    expect(r.status).toBe(409);
+    expect(saved).toBeNull();
+    expect((boardData.contracts as Record<string, unknown>[])[0].status).toBe("borrador");
+  });
+
+  it("si otro guardado del tablero se cruza, reintenta con la copia fresca en vez de pisarla", async () => {
+    conReunion();
+    choquesDeVersion = 1;
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "acepta_inmediato" });
+    expect(r.status).toBe(200);
+    expect((saved!.contracts as Record<string, unknown>[])[0].pipelineStage).toBe("cierre");
+  });
+
+  it("si el tablero no deja de cambiar, avisa (503) en vez de guardar una copia vieja", async () => {
+    conReunion();
+    choquesDeVersion = 99;
+    const r = await api(VENDEDORA, "POST", "/hub/ventas/reuniones/m1/desenlace", { desenlace: "acepta_inmediato" });
+    expect(r.status).toBe(503);
+    expect(saved).toBeNull();
   });
 });

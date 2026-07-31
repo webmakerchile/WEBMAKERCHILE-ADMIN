@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { hubState, users } from "@workspace/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { normalizeRole } from "@workspace/roles";
 
 /**
@@ -85,6 +85,43 @@ export async function resolveBoard(): Promise<BoardRef | null> {
     version: stamp(ownRow),
     exists: !!ownRow,
   };
+}
+
+/**
+ * Guarda el tablero SOLO si nadie lo escribió desde que se leyó (la versión
+ * es la marca de `updatedAt` que entregó resolveBoard). Devuelve null si otro
+ * guardado se cruzó: el que llama debe releer y reintentar, en vez de pisar
+ * con su copia vieja los cambios del otro. Es la variante para endpoints que
+ * leen-modifican-guardan el tablero fuera del PATCH con fusión por entidad.
+ */
+export async function saveBoardSiVersion(
+  boardUserId: number,
+  data: Record<string, unknown>,
+  expectedVersion: number,
+): Promise<{ data: Record<string, unknown>; version: number } | null> {
+  const now = new Date();
+  if (expectedVersion === 0) {
+    // Al leer no había tablero: crearlo solo si sigue sin existir.
+    const inserted = await db
+      .insert(hubState)
+      .values({ userId: boardUserId, data, updatedAt: now })
+      .onConflictDoNothing()
+      .returning();
+    if (inserted.length === 0) return null;
+    return { data: (inserted[0]!.data ?? data) as Record<string, unknown>, version: now.getTime() };
+  }
+  // La versión viaja en milisegundos (Date.getTime); se trunca el lado SQL a
+  // esa misma precisión por si la columna guardó microsegundos.
+  const updated = await db
+    .update(hubState)
+    .set({ data, updatedAt: now })
+    .where(and(
+      eq(hubState.userId, boardUserId),
+      sql`date_trunc('milliseconds', ${hubState.updatedAt}) = ${new Date(expectedVersion)}`,
+    ))
+    .returning();
+  if (updated.length === 0) return null;
+  return { data: (updated[0]!.data ?? data) as Record<string, unknown>, version: now.getTime() };
 }
 
 /** Guarda el tablero completo en la fila que corresponde. */

@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { normalizeRole } from "@workspace/roles";
 import { resolveBoard } from "./hub-board";
 import { createNotification } from "./notifications";
+import { esReunionVentas } from "./reuniones-ventas";
 
 /**
  * Torre de control de Ventas.
@@ -41,6 +42,9 @@ export interface Opportunity {
   salesOwnerId: number | null;
   renewalOfId: string;
   updatedAt: number;
+  /** Caso "a futuro": el cliente aceptó pero pospone el arranque. */
+  futuroFecha: string;
+  futuroMotivo: string;
   /** Neto (sin IVA) — solo se incluye para roles con canSeeMoney. */
   amountNet?: number;
 }
@@ -88,6 +92,8 @@ export function toOpportunity(contract: Rec, includeMoney: boolean): Opportunity
     salesOwnerId: Number.isInteger(ownerRaw) && ownerRaw > 0 ? ownerRaw : null,
     renewalOfId: str(contract.renewalOfId),
     updatedAt: Number(contract.updatedAt) || 0,
+    futuroFecha: str(contract.futuroFecha),
+    futuroMotivo: str(contract.futuroMotivo),
   };
   if (includeMoney) opp.amountNet = contractNet(contract);
   return opp;
@@ -225,14 +231,23 @@ async function claimAlert(kind: string, contractRef: string, marker: string): Pr
  * Seguimientos vencidos: oportunidades cuyo `nextFollowUp` ya pasó y siguen
  * en pipeline. Un aviso por (oportunidad, fecha): si el ejecutivo agenda una
  * nueva fecha tras contactar, el marcador cambia y se rearma solo.
+ *
+ * Si el seguimiento apunta a una reunión de venta que sigue sin desenlace,
+ * este aviso se calla: del mismo hecho ya avisa el recordatorio de reuniones
+ * sin desenlace, con la instrucción concreta (anotar el resultado). Dos
+ * avisos por lo mismo enseñan a ignorar ambos.
  */
 export async function checkSalesFollowUps(now: Date = new Date()): Promise<number> {
   const board = await resolveBoard();
   if (!board) return 0;
   const today = localDateStr(now);
+  const meetings = Array.isArray(board.data.meetings) ? (board.data.meetings as Rec[]) : [];
+  const cubiertoPorReunion = (c: Rec) => meetings.some((m) =>
+    esReunionVentas(m) && str(m.contractId) === str(c.id) &&
+    str(m.desenlace) === "" && str(m.date) === str(c.nextFollowUp));
   const due = pipelineContracts(board.data.contracts).filter((c) => {
     const f = str(c.nextFollowUp);
-    return f !== "" && f < today;
+    return f !== "" && f < today && !cubiertoPorReunion(c);
   });
   if (due.length === 0) return 0;
 
@@ -294,6 +309,113 @@ export async function checkContractRenewals(now: Date = new Date()): Promise<num
         type: "system",
         title: `Contrato por vencer: ${str(c.client) || str(c.title)}`,
         body: `"${str(c.title)}" vence el ${str(c.expiresAt)}. Inicia la renovación desde la torre de Ventas antes de que caduque.`,
+        link: "/ejecutivo",
+      }).catch(() => {});
+    }
+    sent++;
+  }
+  return sent;
+}
+
+/* ================= Casos "a futuro" y reuniones sin desenlace ============ */
+
+/** Con cuánta anticipación se avisa que un caso a futuro llega a su fecha. */
+export const FUTURO_AVISO_DIAS = 7;
+
+const FUTURO_LABEL: Record<string, string> = {
+  fondos: "le faltan fondos",
+  inversionista: "espera a un inversionista",
+  planificacion_pagos: "planificación de pagos",
+  otro: "otro motivo",
+};
+
+/**
+ * Casos "a futuro" cuya fecha estimada de retomar ya llegó o está a menos de
+ * FUTURO_AVISO_DIAS (los vencidos siguen contando: peor sería callarlos).
+ * Un aviso por (oportunidad, fecha): si al conversar se fija una fecha nueva,
+ * el marcador cambia y el aviso se rearma solo.
+ */
+export async function checkCasosFuturo(now: Date = new Date()): Promise<number> {
+  const board = await resolveBoard();
+  if (!board) return 0;
+  const limit = localDateStr(new Date(now.getTime() + FUTURO_AVISO_DIAS * 86400000));
+  const due = pipelineContracts(board.data.contracts).filter((c) => {
+    const f = str(c.futuroFecha);
+    return f !== "" && f <= limit;
+  });
+  if (due.length === 0) return 0;
+
+  let fallback: number[] | null = null;
+  let sent = 0;
+  for (const c of due) {
+    if (!(await claimAlert("futuro", str(c.id), str(c.futuroFecha)))) continue;
+    const ownerRaw = Number(c.salesOwnerId);
+    let recipients: number[];
+    if (Number.isInteger(ownerRaw) && ownerRaw > 0) {
+      recipients = [ownerRaw];
+    } else {
+      fallback ??= await ventasUserIds();
+      recipients = fallback;
+    }
+    const motivo = FUTURO_LABEL[str(c.futuroMotivo)] || "sin motivo registrado";
+    for (const uid of recipients) {
+      await createNotification({
+        userId: uid,
+        type: "system",
+        title: `Caso a futuro por retomar: ${str(c.client) || str(c.title)}`,
+        body: `"${str(c.title)}" quedó a futuro (${motivo}) con fecha estimada ${str(c.futuroFecha)}. Retoma el contacto y agenda la reunión.`,
+        link: "/ejecutivo",
+      }).catch(() => {});
+    }
+    sent++;
+  }
+  return sent;
+}
+
+/**
+ * Reuniones de venta que ya pasaron y siguen sin desenlace registrado,
+ * mientras la oportunidad sigue viva. Es el agujero clásico del embudo: la
+ * reunión se hizo, nadie anotó el resultado y el caso muere en silencio.
+ * Un aviso por (reunión, fecha de la reunión).
+ */
+export async function checkReunionesSinDesenlace(now: Date = new Date()): Promise<number> {
+  const board = await resolveBoard();
+  if (!board) return 0;
+  const today = localDateStr(now);
+  const meetings = Array.isArray(board.data.meetings) ? (board.data.meetings as Rec[]) : [];
+  const contracts = Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
+  const porId = new Map(contracts.map((c) => [str(c.id), c] as const));
+
+  const due = meetings.filter((m) => {
+    if (!m || typeof m !== "object" || !esReunionVentas(m)) return false;
+    if (str(m.desenlace) !== "") return false;
+    const d = str(m.date);
+    if (d === "" || d >= today) return false;
+    const c = porId.get(str(m.contractId));
+    // Si la oportunidad ya se cerró por fuera (o se borró), no hay nada que registrar.
+    return !!c && str(c.status) === "borrador";
+  });
+  if (due.length === 0) return 0;
+
+  let fallback: number[] | null = null;
+  let sent = 0;
+  for (const m of due) {
+    if (!(await claimAlert("reunion_desenlace", str(m.contractId), `${str(m.id)}:${str(m.date)}`))) continue;
+    const c = porId.get(str(m.contractId))!;
+    const ownerRaw = Number(c.salesOwnerId);
+    let recipients: number[];
+    if (Number.isInteger(ownerRaw) && ownerRaw > 0) {
+      recipients = [ownerRaw];
+    } else {
+      fallback ??= await ventasUserIds();
+      recipients = fallback;
+    }
+    for (const uid of recipients) {
+      await createNotification({
+        userId: uid,
+        type: "system",
+        title: `Reunión sin desenlace: ${str(m.client) || str(c.title)}`,
+        body: `La reunión ${str(m.tipo)} del ${str(m.date)} con "${str(m.client) || str(c.title)}" no tiene desenlace registrado. Anótalo en la ficha del contrato: siguiente reunión, acepta, a futuro o perdido.`,
         link: "/ejecutivo",
       }).catch(() => {});
     }

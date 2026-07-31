@@ -27,6 +27,8 @@ interface Opp {
   id: string; title: string; client: string; stage: Stage; probability: number;
   nextFollowUp: string; expectedClose: string; salesOwnerId: number | null;
   renewalOfId: string; amountNet?: number;
+  /** Caso "a futuro": aceptó pero pospone el arranque. */
+  futuroFecha?: string; futuroMotivo?: string;
 }
 interface Renewal { id: string; title: string; client: string; expiresAt: string; expired: boolean; renewalStarted: boolean }
 interface Resumen {
@@ -36,12 +38,20 @@ interface Resumen {
   /** Cuántas se ganan de las que se cierran. Va sin montos: es un recuento. */
   conversion?: { ganados: number; perdidos: number; tasa: number | null };
   motivosPerdida?: { motivo: string; total: number }[];
+  /** Embudo por fase del flujo de reuniones + historiales. También recuentos. */
+  embudo?: { enReuniones: number; propuestaEnviada: number; aFuturo: number; ganados: number; perdidos: number };
+  casosFuturo?: { id: string; title: string; client: string; futuroFecha: string; futuroMotivo: string; futuroNota: string }[];
+  casosPerdidos?: { id: string; title: string; client: string; motivo: string; fecha: number }[];
 }
 
 const MOTIVO_LABEL: Record<string, string> = {
   precio: "precio", plazo: "plazo", competencia: "se fue con otro",
   sin_respuesta: "dejó de responder", no_era_el_momento: "no era el momento",
   otro: "otro", sin_indicar: "sin indicar",
+};
+const FUTURO_LABEL: Record<string, string> = {
+  fondos: "le faltan fondos", inversionista: "espera a un inversionista",
+  planificacion_pagos: "planificación de pagos", otro: "otro motivo",
 };
 interface ComisionRow {
   contractId: string; title: string; client: string; salesOwnerId: number | null;
@@ -144,6 +154,16 @@ export default function VentasPanel({ showToast }: { showToast: (msg: string) =>
             )}
           </div>
         )}
+        {data.embudo && (
+          <div className="rounded-lg border px-4 py-2" style={{ borderColor: "rgba(128,128,128,.35)" }} data-testid="text-embudo">
+            <div className="text-[11px] uppercase tracking-wide opacity-60">Embudo</div>
+            <div className="text-sm font-medium mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+              <span>{data.embudo.enReuniones} en reuniones</span>
+              <span>{data.embudo.propuestaEnviada} con propuesta</span>
+              <span className={data.embudo.aFuturo > 0 ? "text-amber-400" : "opacity-60"}>{data.embudo.aFuturo} a futuro</span>
+            </div>
+          </div>
+        )}
         {overdue > 0 && (
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400" data-testid="text-overdue">
             {overdue} seguimiento{overdue > 1 ? "s" : ""} vencido{overdue > 1 ? "s" : ""}
@@ -166,6 +186,11 @@ export default function VentasPanel({ showToast }: { showToast: (msg: string) =>
                 <div key={o.id} className="rounded border p-2 space-y-2 text-sm" style={{ borderColor: "rgba(128,128,128,.25)" }} data-testid={`card-opp-${o.id}`}>
                   <div className="font-medium leading-tight">{o.title || "(sin título)"}</div>
                   <div className="text-xs opacity-60">{o.client}{o.renewalOfId ? " · renovación" : ""}</div>
+                  {o.futuroFecha && (
+                    <div className="text-[11px] text-amber-400" data-testid={`text-futuro-${o.id}`}>
+                      ⏸ A futuro · retomar {o.futuroFecha}{o.futuroMotivo ? ` · ${FUTURO_LABEL[o.futuroMotivo] ?? o.futuroMotivo}` : ""}
+                    </div>
+                  )}
                   {data.canSeeMoney && o.amountNet !== undefined && o.amountNet > 0 && (
                     <div className="text-xs">{clp(o.amountNet)} neto</div>
                   )}
@@ -277,6 +302,52 @@ export default function VentasPanel({ showToast }: { showToast: (msg: string) =>
           </div>
         ))}
       </section>
+
+      {/* Casos a futuro: aceptaron pero posponen. Es venta que espera, no perdida. */}
+      {(data.casosFuturo?.length ?? 0) > 0 && (
+        <section className="rounded-lg border p-4 space-y-3" style={{ borderColor: "rgba(128,128,128,.3)" }} data-testid="section-futuro">
+          <h3 className="text-sm font-semibold uppercase tracking-wide">
+            Casos a futuro <span className="font-normal normal-case opacity-50">(aceptaron, esperan para partir)</span>
+          </h3>
+          {data.casosFuturo!.map(cf => {
+            const pronto = cf.futuroFecha <= new Date(Date.now() + 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+            return (
+              <div key={cf.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm" style={{ borderColor: "rgba(128,128,128,.25)" }} data-testid={`row-futuro-${cf.id}`}>
+                <div>
+                  <div className="font-medium">{cf.title || "(sin título)"}</div>
+                  <div className="text-xs opacity-60">
+                    {cf.client}
+                    {cf.futuroMotivo ? ` · ${FUTURO_LABEL[cf.futuroMotivo] ?? cf.futuroMotivo}` : ""}
+                    {cf.futuroNota ? ` · ${cf.futuroNota}` : ""}
+                  </div>
+                </div>
+                <span className={`text-xs ${pronto ? "text-amber-400 font-semibold" : "opacity-60"}`}>retomar {cf.futuroFecha}</span>
+              </div>
+            );
+          })}
+          <p className="text-[11px] opacity-40">Al acercarse la fecha llega un aviso al ejecutivo. Agendar una reunión desde la ficha del contrato reactiva el caso.</p>
+        </section>
+      )}
+
+      {/* Historial de perdidos, consultable sin salir de la torre. */}
+      {(data.casosPerdidos?.length ?? 0) > 0 && (
+        <details className="rounded-lg border p-4" style={{ borderColor: "rgba(128,128,128,.3)" }} data-testid="section-perdidos">
+          <summary className="text-sm font-semibold uppercase tracking-wide cursor-pointer select-none">
+            Oportunidades perdidas · {data.casosPerdidos!.length}
+          </summary>
+          <div className="mt-3 space-y-2">
+            {data.casosPerdidos!.map(cp => (
+              <div key={cp.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm" style={{ borderColor: "rgba(128,128,128,.25)" }} data-testid={`row-perdido-${cp.id}`}>
+                <div>
+                  <div className="font-medium">{cp.title || "(sin título)"}</div>
+                  <div className="text-xs opacity-60">{cp.client} · {MOTIVO_LABEL[cp.motivo] ?? cp.motivo}</div>
+                </div>
+                {cp.fecha > 0 && <span className="text-xs opacity-50">{new Date(cp.fecha).toLocaleDateString("es-CL")}</span>}
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {/* Comisiones */}
       <section className="rounded-lg border p-4 space-y-3" style={{ borderColor: "rgba(128,128,128,.3)" }}>

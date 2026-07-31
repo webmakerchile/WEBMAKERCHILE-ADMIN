@@ -16,3 +16,4 @@
 - [Modelo de imágenes (portadas)](image-model-choice.md) — gpt-image-1 se queda: gpt-image-2 rechaza input_fidelity y pierde la identidad en fotos de persona; A/B vía AI_IMAGE_MODEL.
 - [Facebook: token de página](facebook-page-token.md) — el #200 de Meta al publicar suele ser token de usuario de sistema en vez del de página; derivarlo con /{page-id}?fields=access_token.
 - [Plantillas y tipografía de portadas v2](cover-templates-typography.md) — layout por métricas calibradas (no ratios), efectos como capas de text sin tspans, plantillas rotativas por formato, multi-foto al edit para fidelidad de rostro.
+- [Concurrencia del tablero Hub](hub-board-concurrency.md) — el blob se guarda condicionado a la versión leída (la fusión no cubre escrituras cruzadas); fichas no controladas pisan cambios del servidor: cerrarlas tras transiciones firmes.

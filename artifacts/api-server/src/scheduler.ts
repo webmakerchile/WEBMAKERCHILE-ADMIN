@@ -25,7 +25,7 @@ import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections"
 import { getCredential } from "./lib/credentials";
 import { checkSlaBreaches } from "./lib/sla";
 import { checkDocumentExpiryAlerts } from "./lib/hr-ops";
-import { checkSalesFollowUps, checkContractRenewals } from "./lib/ventas";
+import { checkSalesFollowUps, checkContractRenewals, checkCasosFuturo, checkReunionesSinDesenlace } from "./lib/ventas";
 import { resolveBoard } from "./lib/hub-board";
 import {
   normalizarReglas,
@@ -1532,6 +1532,18 @@ async function tick() {
       await checkContractRenewals();
     } catch (err: any) {
       console.error("[Scheduler] checkContractRenewals failed:", err?.message || err);
+    }
+    // Flujo de reuniones de venta: casos "a futuro" que se acercan a su fecha
+    // y reuniones pasadas sin desenlace registrado (dedupe en DB).
+    try {
+      await checkCasosFuturo();
+    } catch (err: any) {
+      console.error("[Scheduler] checkCasosFuturo failed:", err?.message || err);
+    }
+    try {
+      await checkReunionesSinDesenlace();
+    } catch (err: any) {
+      console.error("[Scheduler] checkReunionesSinDesenlace failed:", err?.message || err);
     }
   }
   await processScheduledVideos();

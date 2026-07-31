@@ -1,6 +1,7 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { EnlaceFirma } from "@/components/enlace-firma";
+import { ReunionesOportunidad } from "@/components/reuniones-oportunidad";
 import { AsignarProyecto } from "@/components/asignar-proyecto";
 import { ElegirDelCatalogo } from "@/components/elegir-del-catalogo";
 import { asignadosDe, idDeCarpeta, nombreDeCarpeta } from "@/lib/proyecto-asignacion";
@@ -111,7 +112,16 @@ function linkWhatsapp(v: string | undefined): string | null {
   const d = soloDigitos(v || "");
   return d.length >= 8 ? `https://wa.me/${d}` : null;
 }
-interface Meeting { id: string; client: string; date: string; summary: string; notes: string; createdAt: number; }
+/** Reuniones del flujo de ventas: el tipo ordena el embudo y el desenlace
+ *  registra cómo terminó. Los escribe el servidor (ficha del contrato). */
+type TipoReunionVenta = "discovery" | "propuesta" | "seguimiento";
+type DesenlaceReunionVenta = "siguiente_reunion" | "acepta_inmediato" | "acepta_futuro" | "perdido";
+const TIPO_REUNION_LABEL: Record<string, string> = { discovery: "Discovery", propuesta: "Propuesta", seguimiento: "Seguimiento" };
+const DESENLACE_REUNION_LABEL: Record<string, string> = { siguiente_reunion: "→ siguiente reunión", acepta_inmediato: "Aceptó ✓", acepta_futuro: "A futuro", perdido: "Perdido" };
+interface Meeting {
+  id: string; client: string; date: string; summary: string; notes: string; createdAt: number;
+  tipo?: TipoReunionVenta; contractId?: string; desenlace?: DesenlaceReunionVenta; desenlaceAt?: number; updatedAt?: number;
+}
 interface Note { id: string; cat: NoteCat; title: string; body: string; pinned?: boolean; createdAt: number; updatedAt: number; }
 interface Task { id: string; title: string; projectId: string; crit: Prio; stage: TaskStage; stageSince: number; stageTime: Record<string, number>; notes: string; createdAt: number; updatedAt: number; }
 /**
@@ -140,6 +150,8 @@ interface Contract { id: string; title: string; client: string; value: string; s
   moneyRedacted?: boolean;
   /** Pipeline de ventas (solo borradores = oportunidades). Ver torre de Ventas. */
   pipelineStage?: string; probability?: number; nextFollowUp?: string; expectedClose?: string;
+  /** Caso "a futuro": el cliente aceptó pero pospone el arranque. */
+  futuroMotivo?: string; futuroFecha?: string; futuroNota?: string;
   salesOwnerId?: number | null; renewalOfId?: string; }
 
 interface BriefModule { modulo: string; descripcion: string; entregables: string[]; requisitos: string[] }
@@ -1787,9 +1799,9 @@ function BriefView({ brief, briefUrl, doc, onGenerate, generating, estadoContrat
   );
 }
 
-interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; canWrite: (scope: HubScope) => boolean; apiTasks: HubTask[]; teamMembers: TeamMember[]; onRefreshTasks: () => void; }
+interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; canWrite: (scope: HubScope) => boolean; apiTasks: HubTask[]; teamMembers: TeamMember[]; onRefreshTasks: () => void; onBoardRefresh: () => void; }
 
-function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, canWrite, apiTasks, teamMembers, onRefreshTasks }: SheetProps) {
+function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, canWrite, apiTasks, teamMembers, onRefreshTasks, onBoardRefresh }: SheetProps) {
   const authUser = useAuth();
   const canDeleteTasks = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
@@ -2514,11 +2526,24 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const m = state.meetings.find(x => x.id === sheet.id); if (!m) return null;
     return (<>
       <div className="sheet-head"><h2>Reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      {m.contractId && (
+        <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span className="badge">Venta · {m.tipo ? TIPO_REUNION_LABEL[m.tipo] || m.tipo : "reunión"}</span>
+          {m.desenlace && <span className="badge">{DESENLACE_REUNION_LABEL[m.desenlace] || m.desenlace}</span>}
+          {state.contracts.some(x => x.id === m.contractId) && (
+            <button type="button" className="add-btn" style={{ width: "auto", padding: "4px 10px", fontSize: "0.75em" }} onClick={() => onOpenSheet({ kind: "contract", id: m.contractId! })}>
+              Ver oportunidad →
+            </button>
+          )}
+        </div>
+      )}
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={m.client || ""} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} defaultValue={m.date || ""} /></div></div>
       <div className="field"><label>Resumen</label><textarea ref={R("sm") as React.Ref<HTMLTextAreaElement>} rows={3} defaultValue={m.summary || ""} /></div>
       <div className="field"><label>Notas completas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={7} defaultValue={m.notes || ""} /></div>
       <button className="save" onClick={() => {
-        onSave({ ...state, meetings: state.meetings.map(x => x.id !== m.id ? x : { ...x, client: V("cl").trim(), date: V("dt"), summary: V("sm"), notes: V("no") }) });
+        // Sin subir updatedAt, la fusión del servidor puede preferir la copia
+        // vieja si otro proceso (p. ej. un desenlace) tocó la misma reunión.
+        onSave({ ...state, meetings: state.meetings.map(x => x.id !== m.id ? x : { ...x, client: V("cl").trim(), date: V("dt"), summary: V("sm"), notes: V("no"), updatedAt: Date.now() }) });
         onClose(); onToast("Reunión actualizada");
       }}>Guardar cambios</button>
       <button className="del-link" onClick={() => {
@@ -2848,6 +2873,20 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <div className="sheet-sec"><h4>Notas</h4>
         <div className="field"><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={c.notes || ""} aria-label="Notas del contrato" /></div>
       </div>
+      {(c.status === "borrador" || state.meetings.some(m => m.contractId === c.id)) && (
+        <ReunionesOportunidad
+          contractId={c.id}
+          estado={c.status}
+          futuroFecha={c.futuroFecha}
+          futuroMotivo={c.futuroMotivo}
+          futuroNota={c.futuroNota}
+          meetings={state.meetings}
+          canManage={!readOnlyContract}
+          onToast={onToast}
+          onChanged={onBoardRefresh}
+          onCloseSheet={onClose}
+        />
+      )}
       <EnlaceFirma contractId={c.id} />
       <div className="sheet-sec"><h4>Documento PDF</h4>
         <div className="field">
@@ -3924,6 +3963,10 @@ function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => 
       <div className="gsub">{m.date ? fmtDate(new Date(m.date + "T12:00:00").getTime()) : fmtDate(m.createdAt)}</div>
       {(m.summary || "").trim() !== "" && <div className="gbody">{m.summary}</div>}
       <div className="gfoot">
+        {m.tipo && <span className="badge">{TIPO_REUNION_LABEL[m.tipo] || m.tipo}</span>}
+        {m.desenlace
+          ? <span className="badge">{DESENLACE_REUNION_LABEL[m.desenlace] || m.desenlace}</span>
+          : (m.contractId && !isUpcoming ? <span className="badge" style={{ color: "#e0a52a" }}>Sin desenlace</span> : null)}
         {isUpcoming && <span className="badge">Próxima</span>}
         <span className="gdate">{fmtDate(m.createdAt)}</span>
       </div>
@@ -5886,6 +5929,20 @@ export default function EjecutivoPage() {
     return () => { cancelled = true; clearInterval(timer); };
   }, [storageKey, adoptServerData]);
 
+  /** Refresco bajo demanda tras acciones que escriben el tablero directo en el
+   *  servidor (agendar reunión de venta, registrar desenlace). Mismas reglas
+   *  que el pull periódico: jamás por encima de cambios locales sin enviar. */
+  const refreshBoard = useCallback(() => {
+    if (dirtyRef.current) return;
+    void fetchHubFromServer().then(snap => {
+      if (!snap || dirtyRef.current) return;
+      setScopes(snap.scopes);
+      setWriteScopes(snap.writeScopes);
+      setBoardOwner(snap.owner);
+      adoptServerData(snap.data, snap.version);
+    });
+  }, [adoptServerData]);
+
   const canWrite = useCallback((scope: HubScope) => writeScopes.includes(scope), [writeScopes]);
 
   const [tab, setTabRaw] = useState<Tab>(() => {
@@ -6231,7 +6288,7 @@ export default function EjecutivoPage() {
           {sheet && <>
             <div className="overlay" onClick={() => setSheet(null)} />
             <div className="sheet">
-              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} apiTasks={apiTasks} teamMembers={teamMembers} onRefreshTasks={onRefreshTasks} canWrite={canWrite} />
+              <SheetContent sheet={sheet} state={state} onClose={() => setSheet(null)} onSave={setState} onToast={showToast} onNavigate={navigate} onOpenSheet={openSheet} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} apiTasks={apiTasks} teamMembers={teamMembers} onRefreshTasks={onRefreshTasks} canWrite={canWrite} onBoardRefresh={refreshBoard} />
             </div>
           </>}
 
