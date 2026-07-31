@@ -1,6 +1,8 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { EnlaceFirma } from "@/components/enlace-firma";
+import { AsignarProyecto } from "@/components/asignar-proyecto";
+import { asignadosDe, idDeCarpeta } from "@/lib/proyecto-asignacion";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
@@ -1752,6 +1754,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [driveFolderLink, setDriveFolderLink] = useState("");
   /** Si el área de marketing trabaja en el proyecto abierto (opt-in explícito). */
   const [marketingOn, setMarketingOn] = useState(false);
+  /** A quién le toca el proyecto abierto, por id real de usuario. */
+  const [asignados, setAsignados] = useState<number[]>([]);
   const [projNameDraft, setProjNameDraft] = useState("");
   const [pdfData, setPdfData] = useState<PdfData | null>(null);
   const [wizStep, setWizStep] = useState(1);
@@ -1824,7 +1828,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   useEffect(() => {
     if (sheet?.kind === "proj") {
       const p = state.projects.find(x => x.id === (sheet as { id: string }).id);
-      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); setMarketingOn(p.marketing === true); }
+      if (p) { setDriveFolderLink(p.link || ""); setProjNameDraft(p.name || ""); setMarketingOn(p.marketing === true); setAsignados(asignadosDe(p)); }
       // Reset Scrum proposals when switching to a different project
       if (lastScrumProjIdRef.current !== (sheet as { id: string }).id) {
         setScrumProposed([]); setScrumLoading(false);
@@ -2180,6 +2184,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <div><label>Estado</label><select ref={R("st")} defaultValue={p.status}>{STATUS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div><label>Dueño</label><input type="text" ref={R("ow")} defaultValue={p.owner || ""} /></div>
       </div>
+      <AsignarProyecto asignados={asignados} soloLectura={!canWrite("projects")} onChange={setAsignados} />
       <div className="field"><label>Fecha límite</label><input type="date" ref={R("due")} defaultValue={p.due || ""} /></div>
       {p.contractId && (() => {
         const c = state.contracts.find(x => x.id === p.contractId);
@@ -2233,7 +2238,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
           const computedProg = projProg(x.id, apiTasks).pct;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, marketing: marketingOn, updatedAt: Date.now() };
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, driveFolderId: idDeCarpeta(driveFolderLink) ?? undefined, assigneeIds: asignados, marketing: marketingOn, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });

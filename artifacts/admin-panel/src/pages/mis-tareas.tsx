@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fmtDate, daysUntil, type HubProject, type HubContract } from "@/lib/hub-owner";
+import { misProyectos, tieneAsignados, carpetaDe, urlDeCarpeta } from "@/lib/proyecto-asignacion";
 import { useHubBoard, useHubPatch, replaceEntity } from "@/lib/hub-write";
 import { useTareasHub, type TareaVista } from "@/lib/tareas-hub";
 import { useAuth } from "@/App";
@@ -102,6 +103,12 @@ export default function MisTareasPage() {
   const projectName = (id: string) => projects.find(p => p.id === id)?.name ?? "Sin proyecto";
 
   const activos = useMemo(() => projects.filter((p: HubProject) => p.status !== "done"), [projects]);
+  // Antes esta lista eran TODOS los proyectos activos de la agencia, para
+  // cualquiera que entrara: no había forma de saber cuáles te tocaban a ti.
+  const [soloMios, setSoloMios] = useState(true);
+  const mios = useMemo(() => misProyectos(activos, miId), [activos, miId]);
+  const visibles = soloMios ? mios : activos;
+  const hayAsignaciones = useMemo(() => activos.some(tieneAsignados), [activos]);
   const pendientes = visible.filter(t => t.stage !== "done").length;
 
   const alFallar = (e: unknown) =>
@@ -442,12 +449,28 @@ export default function MisTareasPage() {
 
             <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-4">
-                <p className="text-sm font-semibold mb-3 flex items-center gap-2"><FolderKanban className="w-4 h-4 text-primary" /> Proyectos activos</p>
-                {activos.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-6 text-center">No hay proyectos activos.</p>
+                <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                  <p className="text-sm font-semibold flex items-center gap-2"><FolderKanban className="w-4 h-4 text-primary" /> Proyectos activos</p>
+                  {/* El interruptor solo aparece si hay asignaciones: sin ellas
+                      no filtraría nada y sería un control que miente. */}
+                  {hayAsignaciones && (
+                    <button
+                      type="button"
+                      onClick={() => setSoloMios(v => !v)}
+                      aria-pressed={soloMios}
+                      className={`text-[11px] px-2 py-1 rounded-lg border transition ${soloMios ? "border-primary bg-primary/10 text-primary" : "border-foreground/15 text-muted-foreground hover:border-foreground/30"}`}
+                    >
+                      {soloMios ? `Los míos (${mios.length})` : `Todos (${activos.length})`}
+                    </button>
+                  )}
+                </div>
+                {visibles.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">
+                    {activos.length > 0 && soloMios ? "No tienes proyectos asignados." : "No hay proyectos activos."}
+                  </p>
                 ) : (
                   <ul className="space-y-3">
-                    {activos.map(p => {
+                    {visibles.map(p => {
                       const prog = projectProgress(p.id, tasks);
                       const days = daysUntil(p.due);
                       return (
@@ -469,9 +492,14 @@ export default function MisTareasPage() {
                                 Entrega {fmtDate(p.due)}
                               </span>
                             )}
-                            {p.link && (
-                              <a href={p.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                                Archivos <ExternalLink className="w-2.5 h-2.5" />
+                            {carpetaDe(p) && (
+                              <a
+                                href={urlDeCarpeta(carpetaDe(p)!)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-primary hover:underline"
+                              >
+                                Carpeta del proyecto <ExternalLink className="w-2.5 h-2.5" />
                               </a>
                             )}
                             {puedeEditarProyectos && prog.total === 0 && (

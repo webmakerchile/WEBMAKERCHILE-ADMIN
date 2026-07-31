@@ -69,6 +69,20 @@ export interface HubProject {
   owner: string; prog: number; notes: string; link: string; due?: string;
   contractId?: string; createdAt: number; updatedAt: number;
   /**
+   * A quién le toca este proyecto, por id real de usuario.
+   *
+   * `owner` era texto libre ("Josué"), imposible de comparar con nadie: por eso
+   * "mis proyectos" no existía y /mis-tareas listaba todos los de la agencia.
+   * Se conserva `owner` para no perder lo ya escrito.
+   *
+   * Vacío o ausente = sin asignar, y eso significa "de todos": los proyectos
+   * que ya existen no lo tienen, y tratarlos como de nadie los haría
+   * desaparecer de la vista de todo el equipo.
+   */
+  assigneeIds?: number[];
+  /** Id de la carpeta de Drive, ya extraído del enlace que se haya pegado. */
+  driveFolderId?: string;
+  /**
    * true = el área de marketing trabaja en este proyecto.
    *
    * Opt-in explícito, a diferencia de Programación, que recibe todos los
