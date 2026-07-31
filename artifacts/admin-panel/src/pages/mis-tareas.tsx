@@ -12,6 +12,7 @@ import { useAuth } from "@/App";
 import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
 import { ConfigRecordatorios, useReglasRecordatorio } from "@/components/config-recordatorios";
+import { ResumenServicios } from "@/components/resumen-servicios";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
   ChevronDown, ChevronLeft, ChevronRight, Plus, Flame, X, Check, Timer,
@@ -166,6 +167,10 @@ export default function MisTareasPage() {
   const { data: reglas } = useReglasRecordatorio();
   const horasEstancada = (reglas?.reglas.diasTareaEstancada ?? ESTANCADA_HORAS / 24) * 24;
   const diasEstancada = Math.round(horasEstancada / 24);
+  const proyectoElegido = useMemo(
+    () => (projectId === "todos" ? null : projects.find(p => p.id === projectId) ?? null),
+    [projects, projectId],
+  );
   const estancadas = useMemo(
     () => tasks.filter(t => t.stage !== "done" && t.stage !== "backlog" && horasEnEtapa(t) >= horasEstancada),
     [tasks, horasEstancada],
@@ -246,6 +251,12 @@ export default function MisTareasPage() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Qué se le vendió a este proyecto. Solo con uno elegido: en
+                "todos los proyectos" no hay un alcance que enseñar. */}
+            {proyectoElegido && (
+              <ResumenServicios proyecto={proyectoElegido} contratos={contracts} tareas={tasks} />
+            )}
 
             <ConfigRecordatorios />
 
