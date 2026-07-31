@@ -1,5 +1,6 @@
 import { resolveBoard, saveBoardSiVersion } from "./hub-board";
 import { recordActivity } from "./activity";
+import { handoffContractClosed } from "./handoffs";
 
 /**
  * El contrato del tablero pasa a "activo" cuando el cliente firma.
@@ -17,6 +18,12 @@ import { recordActivity } from "./activity";
  *
  * Si aun así no se puede guardar, la firma vale igual: el contrato se puede
  * activar a mano en la ficha, y el fallo queda a gritos en el log.
+ *
+ * Al quedar activo se dispara además el ARRANQUE del proyecto (proyecto en el
+ * tablero + requerimientos iniciales + aviso a desarrollo) en segundo plano:
+ * la respuesta de la firma no espera a la IA, y el handoff es idempotente
+ * (claim venta_cerrada), así que si dirección activa a mano y este camino
+ * llega segundo —o al revés—, el segundo no duplica nada.
  */
 export type ResultadoActivacion = "activado" | "ya_resuelto" | "no_encontrado" | "fallo";
 
@@ -67,6 +74,13 @@ export async function activarContratoFirmado(p: {
         detail: { firmado: true, to: "activo" },
       });
     }
+
+    // Arranque automático, fuera del camino de la respuesta. Sin actor
+    // conocido (enlace viejo) firma el dueño del tablero: hub_tasks exige un
+    // creador real y ese usuario siempre existe.
+    void handoffContractClosed(next[idx]!, p.actorId ?? board.boardUserId).catch((err) =>
+      console.error(`[activar-contrato] arranque del proyecto del contrato ${p.contractId} falló:`, err),
+    );
     return "activado";
   }
   return "fallo";

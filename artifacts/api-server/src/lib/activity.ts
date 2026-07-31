@@ -1,7 +1,7 @@
 import { db } from "@workspace/db";
 import { activityLog, activityDaySummaries, hubDayLogs } from "@workspace/db/schema";
 import { and, eq, sql } from "drizzle-orm";
-import { stripMoneyFromText } from "./contract-view";
+import { stripAllMoneyFromText } from "./contract-view";
 
 /**
  * Bitácora de actividad transversal.
@@ -36,10 +36,7 @@ export interface ActivityEntry {
  * pueden ver dinero (invariante del servidor, no del cliente).
  */
 export function sanitizeLabel(label: string): string {
-  return stripMoneyFromText(label)
-    // Complemento a stripMoneyFromText: montos UF con la cifra antes ("990 UF").
-    .replace(/\b[\d.,]+\s?(UF|uf)\b/g, "[monto reservado]")
-    .slice(0, 300);
+  return stripAllMoneyFromText(label).slice(0, 300);
 }
 
 /** Registra una entrada en la bitácora. No lanza: errores solo van a consola. */

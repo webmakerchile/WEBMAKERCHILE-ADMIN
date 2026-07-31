@@ -58,6 +58,8 @@ interface HubTask {
   createdAt: string;
   updatedAt: string;
   checklist?: ChecklistItem[];
+  /** "arranque_ia" | "arranque_brief" si la generó el sistema al activarse el contrato. */
+  origin?: string | null;
   assignee: { id: number; name: string | null; picture: string | null; email?: string | null } | null;
 }
 interface TeamMember {
@@ -710,6 +712,17 @@ function TaskCard({ t, projects, onClick, onDragStart, onDragEnd, onDelete }: { 
       <div className="tcard-title" style={onDelete ? { paddingRight: 16 } : undefined}>{t.title}</div>
       <div className="tcard-meta">
         <span className={`chip prio-${t.priority}`}>{t.priority}</span>
+        {t.origin && (
+          <span
+            className="chip"
+            style={{ background: "rgba(56,152,236,.14)", color: "#5aa9f0" }}
+            title={t.origin === "arranque_ia"
+              ? "Requerimiento generado con IA al activarse el proyecto"
+              : "Requerimiento generado automáticamente desde el brief al activarse el proyecto"}
+          >
+            ⚡ {t.origin === "arranque_ia" ? "IA" : "auto"}
+          </span>
+        )}
         <span className="tcard-proj">{proj ? proj.name : "—"}</span>
         {t.assignee && <span className="tcard-timer" title={`Asignada a ${t.assignee.name || ""}`}>👤 {(t.assignee.name || "").split(" ")[0]}</span>}
         {cl.length > 0 && <span className="tcard-timer" title="Checklist" style={clDone === cl.length ? { color: "#1db87b" } : undefined}>☑ {clDone}/{cl.length}</span>}

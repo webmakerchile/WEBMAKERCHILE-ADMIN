@@ -39,6 +39,13 @@ export const hubTasks = pgTable(
     stageTime: jsonb("stage_time").$type<Record<string, number>>().notNull().default({}),
     /** Human priority: crítica | alta | media | baja */
     priority: text("priority").notNull().default("media"),
+    /**
+     * De dónde salió la tarea. null = la escribió una persona.
+     *  · "arranque_ia":    generada por IA al activarse el contrato
+     *  · "arranque_brief": generada mecánicamente desde el brief (IA no disponible)
+     * Solo la escribe el servidor en el arranque; ninguna ruta la acepta del cliente.
+     */
+    origin: text("origin"),
     dueDate: text("due_date"),
     /** Checklist embebido: [{ id, text, done }] */
     checklist: jsonb("checklist").$type<HubChecklistItem[]>().notNull().default([]),

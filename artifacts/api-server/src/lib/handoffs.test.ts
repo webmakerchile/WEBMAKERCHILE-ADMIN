@@ -6,6 +6,8 @@ vi.mock("@workspace/db", () => ({
 vi.mock("./notifications", () => ({ createNotification: vi.fn().mockResolvedValue({}) }));
 vi.mock("./activity", () => ({ recordActivity: vi.fn() }));
 vi.mock("./hub-board", () => ({ resolveBoard: vi.fn() }));
+const { generarReqsMock } = vi.hoisted(() => ({ generarReqsMock: vi.fn() }));
+vi.mock("./requerimientos-ia", () => ({ generarRequerimientos: generarReqsMock }));
 
 import { db } from "@workspace/db";
 import { createNotification } from "./notifications";
@@ -40,6 +42,9 @@ function selectChain(rows: unknown[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Por defecto la IA "no está": los tests históricos prueban el arranque
+  // mecánico desde el brief, que sigue siendo la red de seguridad.
+  generarReqsMock.mockRejectedValue(new Error("IA apagada en tests"));
 });
 
 describe("claimHandoff (idempotencia)", () => {
@@ -94,8 +99,13 @@ describe("handoffContractClosed", () => {
 
     // Tareas desde el brief (2 módulos)
     const tasksInsert = vi.mocked(db.insert).mock.results[1]!.value as { values: ReturnType<typeof vi.fn> };
-    const values = tasksInsert.values.mock.calls[0]![0] as Array<{ title: string; notes: string | null }>;
+    const values = tasksInsert.values.mock.calls[0]![0] as Array<{ title: string; notes: string | null; origin: string; assigneeId: number | null }>;
     expect(values.map(v => v.title)).toEqual(["Home", "Checkout"]);
+
+    // Sin IA, el origen dice la verdad ("desde el brief") y el trabajo queda
+    // asignado al dev más antiguo: nadie tiene que repartir a mano.
+    expect(values.every(v => v.origin === "arranque_brief")).toBe(true);
+    expect(values.every(v => v.assigneeId === 2)).toBe(true);
 
     // El brief tiene que LLEGAR a la tarea. Antes se leía `item.detalle`, que
     // no existe en el brief real, y notes salía null siempre: el dev recibía
@@ -116,6 +126,112 @@ describe("handoffContractClosed", () => {
     const notified = vi.mocked(createNotification).mock.calls.map(c => (c[0] as { userId: number }).userId);
     expect(notified).toContain(2);
     expect(notified).not.toContain(3);
+  });
+
+  it("con IA disponible: requerimientos con checklist, prioridad y asignación por tipo de trabajo", async () => {
+    generarReqsMock.mockResolvedValueOnce([
+      { titulo: "Desarrollar catálogo de productos", descripcion: "Catálogo con filtros y fichas", checklist: ["Modelar productos", "Armar filtros"], prioridad: "alta", area: "desarrollo" },
+      { titulo: "Configurar campaña de lanzamiento", descripcion: "", checklist: [], prioridad: "media", area: "marketing" },
+      { titulo: "Coordinar contenidos con el cliente", descripcion: "Fotos y textos", checklist: [], prioridad: "baja", area: "otro" },
+    ]);
+    vi.mocked(db.insert)
+      .mockReturnValueOnce(mockClaim([{ id: 1 }]) as never) // claim
+      .mockReturnValueOnce(mockClaim([]) as never); // hubTasks insert
+    vi.mocked(resolveBoard).mockResolvedValue({
+      boardUserId: 1, owner: null, data: { projects: [] }, version: 0, exists: true,
+    } as never);
+    vi.mocked(db.select).mockReturnValue(selectChain([
+      { id: 2, teamRole: "dev", role: "user", approvalStatus: "approved" },
+      { id: 3, teamRole: "ventas", role: "user", approvalStatus: "approved" },
+      { id: 5, teamRole: "marketing", role: "user", approvalStatus: "approved" },
+    ]) as never);
+
+    await handoffContractClosed({ id: "c2", title: "Tienda Acme", client: "Acme", status: "activo" }, 1);
+
+    const tasksInsert = vi.mocked(db.insert).mock.results[1]!.value as { values: ReturnType<typeof vi.fn> };
+    const values = tasksInsert.values.mock.calls[0]![0] as Array<{
+      title: string; notes: string | null; origin: string; assigneeId: number | null;
+      priority: string; checklist: Array<{ id: string; text: string; done: boolean }>;
+    }>;
+
+    expect(values.map(v => v.title)).toEqual([
+      "Desarrollar catálogo de productos",
+      "Configurar campaña de lanzamiento",
+      "Coordinar contenidos con el cliente",
+    ]);
+    expect(values.every(v => v.origin === "arranque_ia")).toBe(true);
+    // Asignación por tipo de trabajo: desarrollo y coordinación → dev (2),
+    // marketing → marketing (5).
+    expect(values.map(v => v.assigneeId)).toEqual([2, 5, 2]);
+    expect(values.map(v => v.priority)).toEqual(["alta", "media", "baja"]);
+    // El checklist llega como items reales, listos para marcar.
+    expect(values[0]!.checklist.map(c => c.text)).toEqual(["Modelar productos", "Armar filtros"]);
+    expect(values[0]!.checklist.every(c => c.done === false && c.id.length > 0)).toBe(true);
+
+    // Avisos: al dev por área, y a marketing en persona (el aviso de
+    // desarrollo no le llega). Ventas no pinta nada aquí.
+    const notified = vi.mocked(createNotification).mock.calls.map(c => (c[0] as { userId: number }).userId);
+    expect(notified).toContain(2);
+    expect(notified).toContain(5);
+    expect(notified).not.toContain(3);
+  });
+
+  it("si la IA falla NO se pierde el arranque ni se libera el claim: caen las tareas del brief", async () => {
+    // El default del beforeEach ya simula la IA caída; aquí el contrato no
+    // tiene brief → arranque genérico, y el claim NO se libera (no hay delete).
+    vi.mocked(db.insert)
+      .mockReturnValueOnce(mockClaim([{ id: 1 }]) as never)
+      .mockReturnValueOnce(mockClaim([]) as never);
+    vi.mocked(resolveBoard).mockResolvedValue({
+      boardUserId: 1, owner: null, data: { projects: [] }, version: 0, exists: true,
+    } as never);
+    vi.mocked(db.select).mockReturnValue(selectChain([]) as never);
+
+    await handoffContractClosed({ id: "c3", title: "Web Beta", status: "activo" }, 1);
+
+    const tasksInsert = vi.mocked(db.insert).mock.results[1]!.value as { values: ReturnType<typeof vi.fn> };
+    const values = tasksInsert.values.mock.calls[0]![0] as Array<{ title: string; origin: string; assigneeId: number | null }>;
+    expect(values.length).toBe(3); // kickoff genérico
+    expect(values.every(v => v.origin === "arranque_brief")).toBe(true);
+    expect(values.every(v => v.assigneeId === null)).toBe(true); // sin equipo, sin asignar
+    expect(db.delete).not.toHaveBeenCalled(); // el claim sigue: nada que reintentar
+  });
+
+  it("un brief legado con montos NO los cuela en tareas ni avisos (invariante de dinero)", async () => {
+    // El brief normal nace limpio (sanitizeBrief), pero uno importado o viejo
+    // pudo guardarse con cifras. La frontera es el arranque: nada pasa.
+    vi.mocked(db.insert)
+      .mockReturnValueOnce(mockClaim([{ id: 1 }]) as never)
+      .mockReturnValueOnce(mockClaim([]) as never);
+    vi.mocked(resolveBoard).mockResolvedValue({
+      boardUserId: 1, owner: null, data: { projects: [] }, version: 0, exists: true,
+    } as never);
+    vi.mocked(db.select).mockReturnValue(selectChain([
+      { id: 2, teamRole: "dev", role: "user", approvalStatus: "approved" },
+    ]) as never);
+
+    await handoffContractClosed(
+      { id: "c4", title: "Web Gama por $2.500.000", status: "activo",
+        brief: {
+          alcance: [{
+            modulo: "Checkout de $1.200.000",
+            descripcion: "Pasarela por 990 UF",
+            requisitos: ["Cobrar $500.000 de anticipo"],
+          }],
+        } },
+      1,
+    );
+
+    const tasksInsert = vi.mocked(db.insert).mock.results[1]!.value as { values: ReturnType<typeof vi.fn> };
+    const values = tasksInsert.values.mock.calls[0]![0] as Array<{ title: string; notes: string | null }>;
+    const textoTareas = JSON.stringify(values);
+    expect(textoTareas).not.toContain("1.200.000");
+    expect(textoTareas).not.toContain("990");
+    expect(textoTareas).not.toContain("500.000");
+
+    const avisos = JSON.stringify(vi.mocked(createNotification).mock.calls);
+    expect(avisos).not.toContain("2.500.000");
+    expect(avisos).not.toContain("1.200.000");
   });
 
   it("no duplica el proyecto si el contrato ya tiene uno", async () => {

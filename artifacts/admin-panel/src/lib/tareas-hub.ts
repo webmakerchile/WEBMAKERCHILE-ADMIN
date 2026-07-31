@@ -43,6 +43,11 @@ export interface TareaVista {
   asignadoA: { id: number; name: string | null; email: string | null } | null;
   /** true si la tarea la creó otra persona: es trabajo que te asignaron. */
   ajena: boolean;
+  /**
+   * "arranque_ia" | "arranque_brief" si la generó el sistema al activarse el
+   * contrato; null si la escribió una persona. Solo lectura: la fija el servidor.
+   */
+  origin: string | null;
 }
 
 interface FilaServidor {
@@ -57,6 +62,7 @@ interface FilaServidor {
   createdAt: string;
   updatedAt: string;
   assignee: { id: number; name: string | null; email: string | null } | null;
+  origin?: string | null;
 }
 
 const ms = (v: string | null | undefined, porDefecto: number): number => {
@@ -80,6 +86,7 @@ export function aVista(r: FilaServidor, miId: number | null): TareaVista {
     updatedAt: ms(r.updatedAt, creada),
     asignadoA: r.assignee,
     ajena: miId !== null && r.createdById !== miId,
+    origin: r.origin ?? null,
   };
 }
 

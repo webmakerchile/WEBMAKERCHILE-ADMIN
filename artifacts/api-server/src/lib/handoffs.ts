@@ -2,7 +2,8 @@
  * Motor de handoffs entre áreas: cuando una etapa termina, el trabajo de la
  * siguiente área aparece solo.
  *
- *  - venta cerrada (contrato → activo)  → proyecto + tareas desde el brief, aviso a desarrollo
+ *  - venta cerrada (contrato → activo)  → proyecto + requerimientos con IA
+ *    desde el contrato (o desde el brief si la IA falla), aviso a desarrollo
  *  - video aprobado                     → cola de redes con fecha sugerida, aviso a marketing
  *  - proyecto entregado (status done)   → ticket de cobranza al contador
  *
@@ -15,11 +16,14 @@
  */
 import { db } from "@workspace/db";
 import { handoffLog, hubTasks, playbooks, tickets, users, videos } from "@workspace/db/schema";
+import type { HubChecklistItem } from "@workspace/db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { normalizeRole, ticketAreasFor } from "@workspace/roles";
 import { createNotification } from "./notifications";
 import { recordActivity } from "./activity";
 import { resolveBoard } from "./hub-board";
+import { generarRequerimientos } from "./requerimientos-ia";
+import { stripAllMoneyFromText } from "./contract-view";
 
 export type HandoffKind = "venta_cerrada" | "video_aprobado" | "proyecto_entregado";
 
@@ -212,19 +216,71 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
       }
     }
 
+    // Requerimientos iniciales: primero la IA (extensión del brief técnico —
+    // mismo insumo sin precios, pero devuelve tareas con checklist, prioridad
+    // y tipo de trabajo). Si el modelo no está o falla, arranque mecánico
+    // desde el brief. El fallo de la IA JAMÁS libera el claim ni deja el
+    // proyecto sin tareas: peor que tareas genéricas es un arranque mudo.
+    type DefTarea = { title: string; notes: string | null; checklist: HubChecklistItem[]; priority: string; area: string };
+    let defs: DefTarea[] | null = null;
+    let origen: "arranque_ia" | "arranque_brief" = "arranque_brief";
+    try {
+      const reqs = await generarRequerimientos(contract);
+      defs = reqs.map((r, i) => ({
+        title: r.titulo,
+        notes: r.descripcion || null,
+        checklist: r.checklist.map((texto, j) => ({ id: `cl${now.toString(36)}${i}x${j}`, text: texto, done: false })),
+        priority: r.prioridad,
+        area: r.area,
+      }));
+      origen = "arranque_ia";
+    } catch (err) {
+      console.log(`[handoff] ${contractId}: IA no disponible (${(err as Error)?.message}); arranque desde el brief`);
+    }
+    if (!defs) {
+      defs = tasksFromBrief(contract).map((t) => ({ ...t, checklist: [], priority: "media", area: "desarrollo" }));
+    }
+
+    // Invariante de dinero en la FRONTERA, venga de donde venga: la IA ya
+    // limpia lo suyo, pero un brief guardado pudo entrar importado o viejo
+    // con montos adentro, y de ahí saltaría a tareas y avisos que ven roles
+    // sin permiso de dinero. Ninguna cifra pasa de aquí.
+    defs = defs.map((t) => ({
+      ...t,
+      title: stripAllMoneyFromText(t.title).trim().slice(0, 200) || "(tarea)",
+      notes: t.notes ? stripAllMoneyFromText(t.notes).slice(0, 2000) : null,
+      checklist: t.checklist.map((c) => ({ ...c, text: stripAllMoneyFromText(c.text).slice(0, 200) })),
+    }));
+
+    // A quién le toca cada tarea: la persona aprobada más antigua del rol que
+    // atiende ese tipo de trabajo. "marketing" → marketing; el resto
+    // (desarrollo, coordinación) → dev, que es quien arranca el proyecto.
+    // Sin nadie del rol cae a dev; sin dev queda sin asignar (dirección la
+    // ve igual, porque ella figura como creadora).
+    const team = await db
+      .select({ id: users.id, teamRole: users.teamRole, role: users.role, approvalStatus: users.approvalStatus })
+      .from(users)
+      .orderBy(asc(users.id));
+    const delRol = (rol: string) =>
+      team.find((u) => u.approvalStatus === "approved" && normalizeRole(u.teamRole, u.role === "superadmin") === rol) ?? null;
+    const dev = delRol("dev");
+    const asignadoPara = (area: string) => (area === "marketing" ? (delRol("marketing") ?? dev) : dev);
+
     const stamp = new Date();
-    const taskDefs = tasksFromBrief(contract);
-    if (taskDefs.length > 0) {
+    if (defs.length > 0) {
       await db.insert(hubTasks).values(
-        taskDefs.map((t, i) => ({
+        defs.map((t, i) => ({
           title: t.title,
           notes: t.notes,
           createdById: actorId,
+          assigneeId: asignadoPara(t.area)?.id ?? null,
           projectRef: projectId,
           stage: "backlog",
           stageSince: stamp,
           stageTime: {},
-          priority: "media",
+          priority: t.priority,
+          checklist: t.checklist,
+          origin: origen,
           orderIndex: i,
         })),
       );
@@ -232,14 +288,36 @@ export async function handoffContractClosed(contract: ContractEntity, actorId: n
 
     recordActivity({
       actorId, entityType: "project", entityId: projectId || contractId, entityLabel: label,
-      action: "created", detail: { handoff: "venta_cerrada", tareas: taskDefs.length },
+      action: "created", detail: { handoff: "venta_cerrada", tareas: defs.length, origen },
     });
+
+    // Aviso a desarrollo con el alcance real (títulos, que ya vienen sin
+    // montos). Los asignados que NO atienden desarrollo (marketing) reciben
+    // además un aviso personal: el de área no les llegaría.
+    const labelLimpio = stripAllMoneyFromText(label);
+    const resumen = defs.slice(0, 3).map((d) => d.title).join(" · ");
     await notifyArea(
       "desarrollo", actorId,
-      `Venta cerrada: "${label}" ya es proyecto`,
-      `Se creó el proyecto con ${taskDefs.length} tareas iniciales desde el brief. Revisa el tablero.`,
-      "/hub",
+      `Proyecto nuevo: "${labelLimpio}" arranca ahora`,
+      `Se crearon ${defs.length} requerimientos iniciales (${origen === "arranque_ia" ? "generados con IA desde el contrato" : "desde el brief técnico"}): ${resumen}${defs.length > 3 ? "…" : ""}. Revisa "Mis tareas".`,
+      "/mis-tareas",
     );
+    const avisados = new Set<number>();
+    for (const d of defs) {
+      const u = asignadoPara(d.area);
+      if (!u || u.id === actorId || avisados.has(u.id)) continue;
+      const areasU = ticketAreasFor(normalizeRole(u.teamRole, u.role === "superadmin")) as readonly string[];
+      if (areasU.includes("desarrollo")) continue; // ya cubierto por el aviso de área
+      avisados.add(u.id);
+      const n = defs.filter((x) => asignadoPara(x.area)?.id === u.id).length;
+      await createNotification({
+        userId: u.id,
+        type: "system",
+        title: `Proyecto nuevo: "${labelLimpio}"`,
+        body: `Se te asignaron ${n} requerimiento${n === 1 ? "" : "s"} del arranque. Revisa "Mis tareas".`,
+        link: "/mis-tareas",
+      }).catch(() => {});
+    }
   });
 }
 

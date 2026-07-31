@@ -211,6 +211,13 @@
       "when": 1786406400000,
       "tag": "0034_cobros_pagos",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786492800000,
+      "tag": "0035_arranque_origin",
+      "breakpoints": true
     }
   ]
 }

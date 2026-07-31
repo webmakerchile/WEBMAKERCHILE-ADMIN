@@ -387,6 +387,34 @@ export default function MisTareasPage() {
 
                           {open && (
                             <div className="px-3 pb-3 pt-1 border-t border-foreground/10 space-y-3 text-xs">
+                              {(() => {
+                                // Qué generó el arranque automático para este contrato y
+                                // a quién quedó asignado. Se calcula desde las tareas que
+                                // esta persona puede ver: dirección lo ve completo, el
+                                // resto ve las suyas.
+                                const proyecto = projects.find(p => p.contractId === c.id);
+                                const generadas = proyecto
+                                  ? tareasHub.tareas.filter(t => t.projectId === proyecto.id && t.origin)
+                                  : [];
+                                if (generadas.length === 0) return null;
+                                return (
+                                  <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-2.5">
+                                    <p className="text-[11px] font-medium text-sky-400 mb-1">
+                                      ⚡ Arranque automático: {generadas.length} requerimiento{generadas.length === 1 ? "" : "s"} generado{generadas.length === 1 ? "" : "s"} al activarse el proyecto
+                                    </p>
+                                    <ul className="space-y-0.5">
+                                      {generadas.map(t => (
+                                        <li key={t.id} className="flex items-center gap-2 text-[11px]">
+                                          <span className="truncate flex-1">{t.title}</span>
+                                          <span className="text-muted-foreground flex-shrink-0">
+                                            {t.asignadoA ? `→ ${(t.asignadoA.name || t.asignadoA.email || "").split(" ")[0]}` : "sin asignar"}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                );
+                              })()}
                               {!brief ? (
                                 <p className="text-muted-foreground">
                                   Este contrato todavía no tiene brief técnico. Se genera solo cuando dirección
@@ -598,6 +626,16 @@ function TarjetaTarea({
       )}
       <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
         <span className="px-1.5 py-0.5 rounded" style={{ background: `${CRIT_COLOR[tarea.crit] || "#7a8699"}22`, color: CRIT_COLOR[tarea.crit] || "#7a8699" }}>{tarea.crit}</span>
+        {tarea.origin && (
+          <span
+            className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 whitespace-nowrap"
+            title={tarea.origin === "arranque_ia"
+              ? "Requerimiento generado con IA al activarse el proyecto"
+              : "Requerimiento generado automáticamente desde el brief al activarse el proyecto"}
+          >
+            ⚡ {tarea.origin === "arranque_ia" ? "IA" : "auto"}
+          </span>
+        )}
         <span className="truncate flex-1">{proyecto}</span>
         {tarea.stage !== "done" && (
           <span className={`whitespace-nowrap inline-flex items-center gap-0.5 ${estancada ? "text-red-400 font-semibold" : ""}`}>

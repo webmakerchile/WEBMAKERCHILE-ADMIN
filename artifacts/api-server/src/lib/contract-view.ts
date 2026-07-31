@@ -79,3 +79,12 @@ export function stripMoneyFromText(text: string): string {
     .replace(/\b[\d.,]{4,}\s?(CLP|clp|pesos|USD|usd|UF|uf)\b/g, "[monto reservado]")
     .replace(/\b(UF|uf)\s?[\d.,]+/g, "[monto reservado]");
 }
+
+/**
+ * stripMoneyFromText + montos UF con la cifra antes ("990 UF"), que el filtro
+ * base solo pilla desde 4 dígitos. El punto ÚNICO para "ni una cifra": lo usan
+ * la bitácora, los requerimientos con IA y el arranque de proyectos.
+ */
+export function stripAllMoneyFromText(text: string): string {
+  return stripMoneyFromText(text).replace(/\b[\d.,]+\s?(UF|uf)\b/g, "[monto reservado]");
+}

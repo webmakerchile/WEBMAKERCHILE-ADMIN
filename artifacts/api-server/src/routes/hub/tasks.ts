@@ -163,6 +163,7 @@ async function fetchTaskWithUsers(taskId: number) {
       createdAt: hubTasks.createdAt,
       updatedAt: hubTasks.updatedAt,
       checklist: hubTasks.checklist,
+      origin: hubTasks.origin,
       createdByName: sql<string | null>`cb.name`,
       createdByPicture: sql<string | null>`cb.picture`,
       assigneeName: sql<string | null>`asgn.name`,
@@ -192,6 +193,7 @@ async function fetchTaskWithUsers(taskId: number) {
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     checklist: r.checklist ?? [],
+    origin: r.origin,
     createdBy: { id: r.createdById, name: r.createdByName, picture: r.createdByPicture },
     assignee: r.assigneeId
       ? { id: r.assigneeId, name: r.assigneeName, picture: r.assigneePicture }
@@ -272,6 +274,7 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
         createdAt: hubTasks.createdAt,
         updatedAt: hubTasks.updatedAt,
         checklist: hubTasks.checklist,
+        origin: hubTasks.origin,
         assigneeName: users.name,
         assigneePicture: users.picture,
         assigneeEmail: users.email,
@@ -300,6 +303,7 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       checklist: r.checklist ?? [],
+      origin: r.origin,
       assignee: r.assigneeId
         ? { id: r.assigneeId, name: r.assigneeName, picture: r.assigneePicture, email: r.assigneeEmail }
         : null,

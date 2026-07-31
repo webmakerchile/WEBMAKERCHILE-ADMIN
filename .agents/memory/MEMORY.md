@@ -6,7 +6,7 @@
 - [DB migrations workflow](db-migrations-workflow.md) — drizzle push hangs; apply DDL via SQL + numbered drizzle file; Publish auto-diffs dev→prod schema; agent prod SQL is read-only.
 - [Team attendance design](team-attendance-design.md) — team-wide self-service APIs must avoid the area-gated /hub prefix; Santiago-TZ day bucketing, Monday weeks, 16h open-session cap.
 - [Activity log design](activity-log-design.md) — all bitácora writes go through recordActivity + money-sanitized labels; team feed visibility mirrors jornada oversight roles.
-- [Handoffs & playbooks](handoffs-playbooks.md) — claim-then-release idempotency in handoff_log; atomic jsonb append for board writes from background jobs; DST-safe Santiago scheduling.
+- [Handoffs & playbooks](handoffs-playbooks.md) — claim-then-release en handoff_log; append jsonb atómico; fallos de IA se tragan DENTRO del claim (fallback), dinero se limpia en la frontera del insert.
 - [Monorepo lib builds](monorepo-lib-builds.md) — after task merges, run pnpm install + tsc -b on lib/* before assuming merged code is broken; custom user names must never be overwritten by Google profile on login.
 - [Render de portadas](cover-rendering.md) — librsvg pierde espacios en bordes de tspan (unir con &#160;); fuentes nix invisibles para fontconfig → empaquetar TTFs + FONTCONFIG_FILE al boot.
 - [Dirección de arte portadas](cover-art-direction.md) — familia "estudio spotlight" en vertical 9:16 y miniaturas YouTube 16:9 (persona real fotorrealista o Webi); utilería física, jamás stickers.
