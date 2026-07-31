@@ -14,8 +14,8 @@ import {
 } from "./adjuntos";
 
 describe("a qué se puede adjuntar", () => {
-  it("acepta las cuatro entidades del panel", () => {
-    for (const t of ["project", "task", "ticket", "contract"]) {
+  it("acepta las entidades del panel y la bóveda de la empresa", () => {
+    for (const t of ["project", "task", "ticket", "contract", "empresa"]) {
       expect(tipoValido(t)).toBe(t);
     }
     expect(tipoValido("PROJECT")).toBe("project");

@@ -30,3 +30,4 @@ export * from "./sla";
 export * from "./marketing";
 export * from "./contract-signatures";
 export * from "./attachments";
+export * from "./contract-payments";

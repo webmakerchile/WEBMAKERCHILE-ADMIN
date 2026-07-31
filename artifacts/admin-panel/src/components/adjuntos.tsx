@@ -14,7 +14,7 @@ import { Paperclip, Loader2, AlertTriangle, X, ExternalLink, Upload } from "luci
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
-export type TipoAdjuntable = "project" | "task" | "ticket" | "contract";
+export type TipoAdjuntable = "project" | "task" | "ticket" | "contract" | "empresa";
 
 interface Adjunto {
   id: number;

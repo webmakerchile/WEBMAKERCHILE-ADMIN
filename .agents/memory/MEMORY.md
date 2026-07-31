@@ -18,3 +18,4 @@
 - [Plantillas y tipografía de portadas v2](cover-templates-typography.md) — layout por métricas calibradas (no ratios), efectos como capas de text sin tspans, plantillas rotativas por formato, multi-foto al edit para fidelidad de rostro.
 - [Concurrencia del tablero Hub](hub-board-concurrency.md) — el blob se guarda condicionado a la versión leída (la fusión no cubre escrituras cruzadas); fichas no controladas pisan cambios del servidor: cerrarlas tras transiciones firmes.
 - [Resend vía conector](resend-correo.md) — llave solo-envío (401 en /domains); sin dominio verificado solo entrega al dueño de la cuenta; RESEND_FROM define el remitente; el correo jamás decide la suerte del flujo.
+- [Cobros y pagos](cobros-pagos.md) — ledger en tabla real (no en el blob); estadoPago siempre calculado; auto-marca "pagado" one-way con re-chequeo fresco (fechaPago = último abono, de ahí salen comisiones); anti doble-clic server-side.

@@ -20,10 +20,11 @@ import { ActivityFeed } from "@/components/activity-feed";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun, HandCoins,
 } from "lucide-react";
 import { JornadaCard } from "@/components/jornada-card";
 import VentasPanel from "@/components/ventas-panel";
+import CobrosPanel from "@/components/cobros-panel";
 import TorrePanel from "@/components/torre-panel";
 import "./ejecutivo.css";
 
@@ -68,7 +69,7 @@ interface TeamMember {
   approvalStatus: string | null;
 }
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "svc" | "drive" | "team" | "att" | "midia";
+type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "cobros" | "svc" | "drive" | "team" | "att" | "midia";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project {
@@ -211,6 +212,7 @@ const TAB_TITLES: Record<Tab, [string, string]> = {
   notes: ["Notas", "Ideas, acuerdos y estrategia"],
   contracts: ["Contratos", "Acuerdos, términos y vencimientos"],
   ventas: ["Ventas", "Pipeline · renovaciones · comisiones"],
+  cobros: ["Cobros", "Proyectos activos · pagos recibidos · cuenta y documentos"],
   torre: ["Torre CEO", "Semáforo por área · metas de empresa · rentabilidad"],
   svc: ["Servicios", "Catálogo de referencia"],
   drive: ["Drive", "Explorador de archivos del proyecto"],
@@ -5770,6 +5772,7 @@ const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
   notes: FileText,
   contracts: FileCheck2,
   ventas: TrendingUp,
+  cobros: HandCoins,
   torre: Gauge,
   drive: FolderTree,
   svc: Package,
@@ -5791,6 +5794,7 @@ const TabIcons: Record<Tab, React.ReactNode> = {
   torre: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M12 14l4-4"/><path d="M3.34 19a10 10 0 1117.32 0z"/></svg>,
   svc: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
   drive: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
+  cobros: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>,
 };
 
 /* ============================================================
@@ -5960,7 +5964,7 @@ export default function EjecutivoPage() {
     };
     const scope = tabScope[tab];
     // La pestaña guardada puede no corresponder al rol (o al alcance del tablero).
-    if ((tab === "svc" && !canSeeSvc) || (tab === "ventas" && !canManageSvc) || (tab === "torre" && !isCeo) || (tab === "att" && !canSeeAtt) || (scope && !scopes.includes(scope))) {
+    if ((tab === "svc" && !canSeeSvc) || (tab === "ventas" && !canManageSvc) || (tab === "cobros" && !canManageSvc) || (tab === "torre" && !isCeo) || (tab === "att" && !canSeeAtt) || (scope && !scopes.includes(scope))) {
       setTabRaw("dash");
       try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
     }
@@ -6090,13 +6094,15 @@ export default function EjecutivoPage() {
     { id: "contracts" as Tab, cnt: state.contracts.length },
     // Torre de Ventas: misma gente que gestiona el catálogo (dirección/ventas).
     ...(canManageSvc ? [{ id: "ventas" as Tab, cnt: state.contracts.filter(c => c.status === "borrador").length }] : []),
+    // Cobros: la caja — la misma gente que la torre de ventas.
+    ...(canManageSvc ? [{ id: "cobros" as Tab, cnt: state.contracts.filter(c => c.status === "activo").length }] : []),
     { id: "drive" as Tab },
     ...(canSeeSvc ? [{ id: "svc" as Tab }] : []),
   ] as { id: Tab; cnt?: number }[]).filter(t => {
     const scope = TAB_SCOPE[t.id];
     return !scope || scopes.includes(scope);
   });
-  const TAB_LABELS: Record<Tab, string> = { midia: "Mi día", team: "Equipo", att: "Asistencia", dash: "Dashboard", torre: "Torre CEO", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", svc: "Servicios", drive: "Drive" };
+  const TAB_LABELS: Record<Tab, string> = { midia: "Mi día", team: "Equipo", att: "Asistencia", dash: "Dashboard", torre: "Torre CEO", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", cobros: "Cobros", svc: "Servicios", drive: "Drive" };
 
   return (
     <>
@@ -6247,6 +6253,7 @@ export default function EjecutivoPage() {
             )}
             {tab === "svc" && canSeeSvc && <SvcView canManage={canManageSvc} showToast={showToast} />}
             {tab === "ventas" && canManageSvc && <VentasPanel showToast={showToast} />}
+            {tab === "cobros" && canManageSvc && <CobrosPanel showToast={showToast} />}
             {tab === "torre" && isCeo && <TorrePanel showToast={showToast} />}
           </div>
 

@@ -17,6 +17,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { contractSignatures } from "@workspace/db/schema";
+import { activarContratoFirmado } from "../../lib/activar-contrato";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import {
   motivoNoFirmable,
@@ -191,6 +192,23 @@ router.post("/firma/:token/aceptar", async (req: Request, res: Response) => {
     }
 
     console.log(`[firma] contrato ${enlace!.contractId} firmado por "${nombre}" (${firma.kind})`);
+
+    // La venta se concreta AQUÍ: el contrato del tablero pasa de borrador a
+    // activo. Es una transición acotada (ver activar-contrato.ts) y ningún
+    // dato del firmante entra al tablero. Si no se puede guardar, la firma
+    // vale igual: se activa a mano en la ficha, y el fallo queda en el log.
+    try {
+      const activacion = await activarContratoFirmado({
+        contractId: enlace!.contractId,
+        fechaFirma: ahora,
+        actorId: enlace!.createdById ?? null,
+      });
+      if (activacion === "fallo") {
+        console.error(`[firma] contrato ${enlace!.contractId}: firmado OK pero NO se pudo activar en el tablero — activar a mano en la ficha`);
+      }
+    } catch (e) {
+      console.error(`[firma] contrato ${enlace!.contractId}: firmado OK pero la activación reventó`, e);
+    }
 
     // ---- Correos de confirmación (el resultado SIEMPRE queda en la fila) ----
     const correos = await mandarCorreos({

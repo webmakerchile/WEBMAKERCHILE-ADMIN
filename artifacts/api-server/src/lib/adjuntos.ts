@@ -11,7 +11,7 @@
 // o un nombre que rompe la carpeta.
 
 /** A qué se puede adjuntar algo. */
-export const TIPOS_ADJUNTABLES = ["project", "task", "ticket", "contract"] as const;
+export const TIPOS_ADJUNTABLES = ["project", "task", "ticket", "contract", "empresa"] as const;
 export type TipoAdjuntable = (typeof TIPOS_ADJUNTABLES)[number];
 
 export function tipoValido(v: unknown): TipoAdjuntable | null {
@@ -95,6 +95,9 @@ export const NOMBRE_TIPO: Record<TipoAdjuntable, string> = {
   task: "la tarea",
   ticket: "la solicitud",
   contract: "el contrato",
+  // La bóveda de documentos de la empresa (e-RUT, escritura, certificados):
+  // una sola "entidad" fija, con id "webmaker".
+  empresa: "la empresa",
 };
 
 /** Tamaño legible. `null` cuando Drive no lo devolvió. */

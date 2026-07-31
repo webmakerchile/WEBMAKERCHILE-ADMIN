@@ -1,13 +1,24 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { users } from "@workspace/db/schema";
-import { and, eq } from "drizzle-orm";
+import { contractPayments, users } from "@workspace/db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { contractSignatures } from "@workspace/db/schema";
 import { generarToken, caducidad, urlDeFirma } from "../../lib/firma-contrato";
 import { canSeeMoney, normalizeRole } from "@workspace/roles";
 import { resolveBoard, saveBoard, saveBoardSiVersion } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
+import { notifyCeos } from "../../lib/notifications";
+import { entityLabel } from "../../lib/hub-diff";
+import type { HubEntity } from "../../lib/hub-merge";
+import {
+  CUENTA_COBRO,
+  MAX_MONTO_PAGO,
+  estadoPagoDe,
+  sumaPagos,
+  textoTransferencia,
+  totalConIva,
+} from "../../lib/cobros";
 import {
   PIPELINE_STAGES,
   STAGE_DEFAULT_PROB,
@@ -624,6 +635,369 @@ router.get("/hub/ventas/comisiones", async (req: Request, res: Response) => {
       collectedNet: rows.reduce((a, r) => a + r.amountNet, 0),
       commission: rows.reduce((a, r) => a + r.commission, 0),
     },
+  });
+});
+
+/* ------------------------------------------------------------------
+   Cobros: la caja de la agencia.
+
+   Los proyectos activos con sus montos, los pagos que van llegando y la
+   cuenta donde transfiere el cliente. Vive bajo /hub (misma área que la
+   torre de ventas) y TODO exige canSeeMoney: aquí no hay versión "sin
+   montos" — sin montos no hay cobranza.
+
+   El estado de cobro del contrato (pendiente/facturado/pagado/incobrable)
+   sigue siendo la marca de gestión de siempre; los pagos son el registro
+   contable de lo que de verdad llegó. Se tocan en un solo punto: cuando
+   los abonos completan el total, el contrato se marca "pagado" solo.
+   ------------------------------------------------------------------ */
+
+/** Estados del contrato con plata en juego: lo activo y lo vencido con saldo. */
+const COBRABLES = new Set(["activo", "vencido"]);
+
+const hoySantiago = (): string =>
+  new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
+
+router.get("/hub/cobros", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  const role = normalizeRole(me.teamRole, me.role === "superadmin");
+  if (!canSeeMoney(role)) {
+    res.status(403).json({ error: "Tu rol no puede ver la cobranza" });
+    return;
+  }
+
+  const board = await resolveBoard();
+  const contracts = board && Array.isArray(board.data.contracts)
+    ? (board.data.contracts as Rec[])
+    : [];
+  const cobrables = contracts.filter((c) => COBRABLES.has(String(c?.status ?? "")));
+
+  const ids = cobrables.map((c) => String(c?.id ?? "")).filter(Boolean);
+  const pagos = ids.length > 0
+    ? await db.select().from(contractPayments)
+        .where(inArray(contractPayments.contractRef, ids))
+        .orderBy(desc(contractPayments.fecha), desc(contractPayments.id))
+    : [];
+
+  // En plata, el "quién anotó esto" es parte del dato.
+  const gente = ids.length > 0 ? await db.select().from(users) : [];
+  const nombreDe = (uid: number | null): string | null => {
+    if (!uid) return null;
+    const u = (gente as Rec[]).find((x) => Number(x.id) === uid);
+    return u ? String(u.name || u.email || "") || null : null;
+  };
+
+  const porRef = new Map<string, typeof pagos>();
+  for (const p of pagos) {
+    const lista = porRef.get(p.contractRef) ?? [];
+    lista.push(p);
+    porRef.set(p.contractRef, lista);
+  }
+
+  const proyectos = cobrables.map((c) => {
+    const id = String(c.id ?? "");
+    const neto = contractNet(c);
+    const total = totalConIva(neto);
+    const lista = porRef.get(id) ?? [];
+    const pagado = sumaPagos(lista);
+    const cobro = c.cobro && typeof c.cobro === "object" ? (c.cobro as Rec) : null;
+    return {
+      id,
+      title: String(c.title ?? ""),
+      client: String(c.client ?? ""),
+      status: String(c.status ?? ""),
+      signedAt: String(c.signedAt ?? "") || null,
+      expiresAt: String(c.expiresAt ?? "") || null,
+      cobro: cobro
+        ? {
+            estado: String(cobro.estado ?? ""),
+            factura: String(cobro.factura ?? ""),
+            fechaPago: String(cobro.fechaPago ?? ""),
+            nota: String(cobro.nota ?? ""),
+          }
+        : null,
+      neto,
+      iva: total - neto,
+      total,
+      pagado,
+      saldo: Math.max(total - pagado, 0),
+      estadoPago: estadoPagoDe(total, pagado),
+      pagos: lista.map((p) => ({
+        id: p.id,
+        fecha: p.fecha,
+        monto: p.monto,
+        nota: p.nota,
+        createdById: p.createdById,
+        creadoPor: nombreDe(p.createdById),
+      })),
+    };
+  });
+
+  // Activos primero; dentro de cada grupo, el saldo más grande arriba: es lo
+  // que hay que salir a cobrar.
+  proyectos.sort((a, b) =>
+    a.status === b.status ? b.saldo - a.saldo : a.status === "activo" ? -1 : 1);
+
+  res.json({
+    cuenta: { ...CUENTA_COBRO, textoCopiar: textoTransferencia() },
+    proyectos,
+    totales: {
+      proyectos: proyectos.length,
+      total: proyectos.reduce((s, p) => s + p.total, 0),
+      pagado: proyectos.reduce((s, p) => s + p.pagado, 0),
+      saldo: proyectos.reduce((s, p) => s + p.saldo, 0),
+    },
+    miId: me.id,
+    esDireccion: role === "ceo",
+  });
+});
+
+const pagoSchema = z.object({
+  fecha: z.string().regex(DATE_RE, "La fecha va como YYYY-MM-DD"),
+  monto: z
+    .number()
+    .int("El monto va en pesos enteros, sin decimales")
+    .positive("El monto tiene que ser mayor que cero")
+    .max(MAX_MONTO_PAGO, "Ese monto no cabe en un pago"),
+  nota: z.string().max(300, "La nota es muy larga (máx. 300)").optional().default(""),
+});
+
+router.post("/hub/cobros/:id/pagos", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  const role = normalizeRole(me.teamRole, me.role === "superadmin");
+  if (!canSeeMoney(role)) {
+    res.status(403).json({ error: "Tu rol no puede gestionar la cobranza" });
+    return;
+  }
+
+  const parsed = pagoSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join("; ") });
+    return;
+  }
+  // Aquí se anota plata que YA llegó; una fecha futura es casi seguro un dedo
+  // resbalado, y ensucia las comisiones del mes en que caiga.
+  if (parsed.data.fecha > hoySantiago()) {
+    res.status(400).json({ error: "La fecha del pago no puede ser futura" });
+    return;
+  }
+
+  const board = await resolveBoard();
+  if (!board) { res.status(409).json({ error: "Todavía no hay un tablero de dirección" }); return; }
+  const contracts = Array.isArray(board.data.contracts) ? (board.data.contracts as Rec[]) : [];
+  const contractId = String(req.params.id ?? "");
+  const contrato = contracts.find((c) => String(c?.id ?? "") === contractId);
+  if (!contrato) { res.status(404).json({ error: "Contrato no encontrado" }); return; }
+  if (!COBRABLES.has(String(contrato.status ?? ""))) {
+    res.status(409).json({ error: "Solo se registran pagos de proyectos activos o vencidos" });
+    return;
+  }
+
+  // ¿Doble clic o reintento de red? Mismo autor, misma fecha y mismo monto
+  // hace segundos no es otro abono: es el mismo botón dos veces. En un
+  // registro manual de plata, el duplicado silencioso es el peor error.
+  const recientes = await db
+    .select()
+    .from(contractPayments)
+    .where(eq(contractPayments.contractRef, contractId));
+  const hace30s = Date.now() - 30_000;
+  const repetido = recientes.some((p) =>
+    p.fecha === parsed.data.fecha &&
+    p.monto === parsed.data.monto &&
+    p.createdById === me.id &&
+    p.createdAt instanceof Date &&
+    p.createdAt.getTime() > hace30s);
+  if (repetido) {
+    res.status(409).json({ error: "Ese mismo pago quedó registrado hace un momento (¿doble clic?). Si de verdad hubo dos abonos iguales, registra el segundo en medio minuto." });
+    return;
+  }
+
+  const [pago] = await db.insert(contractPayments).values({
+    contractRef: contractId,
+    fecha: parsed.data.fecha,
+    monto: parsed.data.monto,
+    nota: parsed.data.nota.trim(),
+    createdById: me.id,
+  }).returning();
+
+  // La foto se recalcula desde la base con el pago ya dentro — no sumando
+  // "lo de antes + esto": otro pago pudo entrar en paralelo.
+  const lista = await db.select().from(contractPayments)
+    .where(eq(contractPayments.contractRef, contractId));
+  const total = totalConIva(contractNet(contrato));
+  const pagado = sumaPagos(lista);
+  const saldo = Math.max(total - pagado, 0);
+  const estadoPago = estadoPagoDe(total, pagado);
+  const label = entityLabel(contrato as HubEntity);
+
+  // Si los abonos completan el total, el estado de cobro pasa a "pagado" solo
+  // (con la fecha del pago que lo completó): es lo que alimenta las comisiones
+  // del mes, y dejarlo a mano era justo el olvido que este panel viene a
+  // matar. Solo hacia adelante: borrar un pago después NO lo desmarca —
+  // deshacer gestión es decisión humana y se hace en la ficha, como siempre.
+  let cobroActualizado = false;
+  const estadoCobroActual = String((contrato.cobro as Rec | undefined)?.estado ?? "");
+  if (total > 0 && pagado >= total && estadoCobroActual !== "pagado") {
+    let tableroOcupado = false;
+    for (let intento = 0; intento < 3; intento++) {
+      tableroOcupado = false;
+      const fresco = await resolveBoard();
+      if (!fresco) break;
+      const lista2 = Array.isArray(fresco.data.contracts) ? (fresco.data.contracts as Rec[]) : [];
+      const idx = lista2.findIndex((c) => String(c?.id ?? "") === contractId);
+      if (idx === -1) break;
+      const previo = lista2[idx].cobro && typeof lista2[idx].cobro === "object"
+        ? (lista2[idx].cobro as Rec)
+        : {};
+      // Releído el tablero: si un pago simultáneo ya lo marcó "pagado", aquí
+      // no se escribe nada — y sobre todo, no se le pisa la fecha (de esa
+      // fecha cuelgan las comisiones del mes).
+      if (String(previo.estado ?? "") === "pagado") break;
+      // Y contra la base, de nuevo: un borrado simultáneo pudo descompletar
+      // el total entre el cálculo de arriba y esta escritura.
+      const alDia = await db
+        .select()
+        .from(contractPayments)
+        .where(eq(contractPayments.contractRef, contractId));
+      if (sumaPagos(alDia) < total) break;
+      // La fecha de "pagado" es la del ÚLTIMO abono: el día en que la plata
+      // quedó completa de verdad, gane quien gane la carrera de requests.
+      const fechaCierre = alDia.reduce(
+        (max, p) => (String(p.fecha ?? "") > max ? String(p.fecha ?? "") : max),
+        parsed.data.fecha,
+      );
+      const next = [...lista2];
+      next[idx] = {
+        ...lista2[idx],
+        cobro: {
+          estado: "pagado",
+          factura: String(previo.factura ?? ""),
+          fechaPago: fechaCierre,
+          nota: String(previo.nota ?? ""),
+          updatedAt: Date.now(),
+          by: me.name || me.email,
+        },
+        updatedAt: Date.now(),
+      };
+      const guardado = await saveBoardSiVersion(
+        fresco.boardUserId,
+        { ...fresco.data, contracts: next },
+        fresco.version,
+      ).catch(() => null);
+      if (!guardado) { tableroOcupado = true; continue; } // otro guardado se cruzó: releer y reintentar
+      cobroActualizado = true;
+      recordActivity({
+        actorId: me.id,
+        entityType: "contract",
+        entityId: contractId,
+        entityLabel: label,
+        action: "status_change",
+        detail: { cobranza: true, from: estadoCobroActual || null, to: "pagado", auto: true },
+      });
+      break;
+    }
+    // Solo es un problema si el tablero estuvo ocupado las tres veces; que
+    // otro request lo haya marcado primero es el resultado correcto.
+    if (!cobroActualizado && tableroOcupado) {
+      console.error(`[cobros] pago del contrato ${contractId} guardado, pero no se pudo marcar "pagado" (tablero ocupado); se puede marcar a mano en la ficha`);
+    }
+  }
+
+  recordActivity({
+    actorId: me.id,
+    entityType: "contract",
+    entityId: contractId,
+    entityLabel: `Pago registrado: ${label}`,
+    action: "created",
+    detail: { pago: true },
+  });
+  // La cobranza es movimiento sensible: dirección se entera, sin montos. Si
+  // el pago completó el total ya va implícito en ese aviso; uno basta.
+  if (role !== "ceo") {
+    void notifyCeos({
+      title: cobroActualizado
+        ? `${label} quedó pagado al completo`
+        : `Pago registrado en ${label}`,
+      body: `${String(me.name || me.email || "Alguien").slice(0, 80)} anotó un pago recibido.`,
+      link: "/hub",
+    });
+  }
+
+  res.status(201).json({
+    ok: true,
+    pago: { id: pago.id, fecha: pago.fecha, monto: pago.monto, nota: pago.nota, createdById: pago.createdById },
+    pagado,
+    saldo,
+    estadoPago,
+    cobroActualizado,
+  });
+});
+
+router.delete("/hub/cobros/pagos/:pagoId", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  const role = normalizeRole(me.teamRole, me.role === "superadmin");
+  if (!canSeeMoney(role)) {
+    res.status(403).json({ error: "Tu rol no puede gestionar la cobranza" });
+    return;
+  }
+
+  const pagoId = Number(req.params.pagoId);
+  if (!Number.isInteger(pagoId) || pagoId <= 0) {
+    res.status(400).json({ error: "Id no válido" });
+    return;
+  }
+
+  const [fila] = await db.select().from(contractPayments)
+    .where(eq(contractPayments.id, pagoId)).limit(1);
+  if (!fila) { res.status(404).json({ error: "Ese pago ya no existe" }); return; }
+
+  // Quien lo anotó, o la dirección — la misma regla de los adjuntos: que
+  // cualquiera pueda borrar pagos ajenos deja la caja sin memoria.
+  if (fila.createdById !== me.id && role !== "ceo") {
+    res.status(403).json({ error: "Solo quien anotó el pago (o la dirección) puede quitarlo" });
+    return;
+  }
+
+  await db.delete(contractPayments).where(eq(contractPayments.id, pagoId));
+
+  // La foto que queda, para que el panel se refresque sin recargar. Ojo: si
+  // el contrato estaba marcado "pagado", quitar un pago NO lo desmarca —
+  // deshacer gestión es decisión humana y se hace en la ficha.
+  const restantes = await db.select().from(contractPayments)
+    .where(eq(contractPayments.contractRef, fila.contractRef));
+  const board = await resolveBoard();
+  const contracts = board && Array.isArray(board.data.contracts)
+    ? (board.data.contracts as Rec[])
+    : [];
+  const contrato = contracts.find((c) => String(c?.id ?? "") === fila.contractRef) ?? null;
+  const total = contrato ? totalConIva(contractNet(contrato)) : 0;
+  const pagado = sumaPagos(restantes);
+  const label = contrato ? entityLabel(contrato as HubEntity) : fila.contractRef;
+
+  recordActivity({
+    actorId: me.id,
+    entityType: "contract",
+    entityId: fila.contractRef,
+    entityLabel: `Pago eliminado: ${label}`,
+    action: "deleted",
+    detail: { pago: true },
+  });
+  if (role !== "ceo") {
+    void notifyCeos({
+      title: `Pago eliminado en ${label}`,
+      body: `${String(me.name || me.email || "Alguien").slice(0, 80)} quitó un pago del registro.`,
+      link: "/hub",
+    });
+  }
+
+  res.json({
+    ok: true,
+    pagado,
+    saldo: Math.max(total - pagado, 0),
+    estadoPago: estadoPagoDe(total, pagado),
   });
 });
 

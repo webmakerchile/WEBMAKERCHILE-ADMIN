@@ -34,11 +34,23 @@ import {
 } from "../../lib/adjuntos";
 import { resolveBoard } from "../../lib/hub-board";
 import { normalizarRaices, type RaicesDrive } from "../../lib/raices-drive";
+import { normalizeRole } from "@workspace/roles";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES } });
 
 type AuthUser = { id: number; role?: string; teamRole?: string };
+
+/**
+ * Los papeles de la empresa (e-RUT, escritura, certificados) son material de
+ * cobranza: los ven dirección, ventas y contador. No son secreto de estado,
+ * pero tampoco tienen por qué pasearse por todo el equipo.
+ */
+function puedeVerEmpresa(u: AuthUser | undefined): boolean {
+  if (!u) return false;
+  const r = normalizeRole(u.teamRole ?? null, u.role === "superadmin");
+  return r === "ceo" || r === "ventas" || r === "contador";
+}
 
 function driveDe(user: unknown) {
   const auth = clienteGoogleDe(user as UsuarioConGoogle);
@@ -67,6 +79,10 @@ async function carpetaDestino(tipo: string, entidadId: string): Promise<string |
 /** GET /adjuntos?tipo=project&id=abc — los archivos de una entidad. */
 router.get("/adjuntos", async (req: Request, res: Response) => {
   const tipo = tipoValido(req.query.tipo);
+  if (tipo === "empresa" && !puedeVerEmpresa(req.user as AuthUser | undefined)) {
+    res.status(403).json({ error: "Los documentos de la empresa son de dirección y ventas" });
+    return;
+  }
   const entidadId = idValido(req.query.id);
   if (!tipo || !entidadId) {
     res.status(400).json({ error: "Faltan 'tipo' y 'id' válidos" });
@@ -87,6 +103,10 @@ router.post("/adjuntos", upload.single("file"), async (req: Request, res: Respon
 
   const cuerpo = req.body as { tipo?: string; id?: string };
   const tipo = tipoValido(cuerpo.tipo);
+  if (tipo === "empresa" && !puedeVerEmpresa(usuario)) {
+    res.status(403).json({ error: "Los documentos de la empresa son de dirección y ventas" });
+    return;
+  }
   const entidadId = idValido(cuerpo.id);
   if (!tipo || !entidadId) {
     res.status(400).json({ error: "Falta indicar a qué se adjunta ('tipo' e 'id')" });
@@ -176,6 +196,14 @@ router.delete("/adjuntos/:id", async (req: Request, res: Response) => {
   const esDireccion = usuario.role === "superadmin" || usuario.teamRole === "ceo";
   if (!esSuyo && !esDireccion) {
     res.status(403).json({ error: "Solo quien lo subió (o la dirección) puede quitarlo" });
+    return;
+  }
+
+  // Los papeles de la empresa exigen además seguir siendo del círculo que los
+  // ve: quien subió un contrato siendo de ventas y ya cambió de rol, ya no
+  // decide sobre la bóveda.
+  if (fila.entityType === "empresa" && !puedeVerEmpresa(usuario)) {
+    res.status(403).json({ error: "Los documentos de la empresa solo los gestiona dirección, ventas o contabilidad" });
     return;
   }
 

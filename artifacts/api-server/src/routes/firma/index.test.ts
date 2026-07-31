@@ -58,6 +58,13 @@ vi.mock("../../lib/hub-board", () => ({
 }));
 vi.mock("../cotizaciones/template", () => ({ logoDataUri: () => "data:image/png;base64,LOGO" }));
 
+/* La activación del contrato se prueba a fondo en activar-contrato.test.ts;
+   aquí solo importa CUÁNDO se dispara: tras una firma que valió, nunca antes. */
+const { activarMock } = vi.hoisted(() => ({
+  activarMock: vi.fn(async () => "activado" as const),
+}));
+vi.mock("../../lib/activar-contrato", () => ({ activarContratoFirmado: activarMock }));
+
 const { enviarCorreoMock } = vi.hoisted(() => ({ enviarCorreoMock: vi.fn() }));
 vi.mock("../../lib/correo", () => ({
   CORREO_EQUIPO: "webmakerventas@gmail.com",
@@ -313,6 +320,25 @@ describe("POST /firma/:token/aceptar — la firma y sus correos", () => {
     expect((await llamar("POST", `/firma/${TOKEN}/aceptar`, { json: { nombre: "Ana Pérez", firma: { kind: "voz", data: "x" } } })).status).toBe(400);
     // Nada de esto llegó a escribir
     expect(actualizaciones).toHaveLength(0);
+  });
+
+  it("al firmar, el contrato pasa a activo; un enlace ya usado no lo re-activa", async () => {
+    filas = [enlacePendiente()];
+    boardData = { contracts: [contratoCompleto()] };
+    activarMock.mockClear();
+
+    const r = await llamar("POST", `/firma/${TOKEN}/aceptar`, { json: { nombre: "Rita Prueba" } });
+    expect(r.status).toBe(200);
+    expect(activarMock).toHaveBeenCalledTimes(1);
+    expect(activarMock).toHaveBeenCalledWith(expect.objectContaining({ contractId: "c1" }));
+
+    // Segunda visita al mismo enlace: la fila ya está firmada → ni se firma
+    // ni se vuelve a activar nada.
+    activarMock.mockClear();
+    filasDespues = [{ ...enlacePendiente(), estado: "firmado", signedAt: new Date(), signerName: "Rita Prueba" }];
+    const r2 = await llamar("POST", `/firma/${TOKEN}/aceptar`, { json: { nombre: "Rita Prueba" } });
+    expect(r2.status).not.toBe(500);
+    expect(activarMock).not.toHaveBeenCalled();
   });
 
   it("una imagen desmedida se rechaza con un mensaje humano", async () => {
