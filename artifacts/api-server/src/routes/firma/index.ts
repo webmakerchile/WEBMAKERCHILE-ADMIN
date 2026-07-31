@@ -1,18 +1,23 @@
-// Página pública de aceptación de una cotización o contrato.
+// Página pública de aceptación y FIRMA de una cotización o contrato.
 //
 // La abre el CLIENTE, que no tiene cuenta en el panel, así que va montada
 // FUERA del `requireAuth` — igual que el enlace temporal de video de Instagram.
 // Todo lo que se muestra aquí sale del token: no hay forma de listar, buscar ni
 // enumerar documentos desde esta ruta.
 //
-// Se sirve HTML desde el servidor en vez de una ruta del panel a propósito:
-// quien la abre no debería tener que cargar la aplicación entera para pulsar un
-// botón, y así el enlace sigue funcionando aunque el panel se esté desplegando.
+// Se sirve HTML desde el servidor a propósito: quien la abre no debería cargar
+// la aplicación entera para leer un contrato, y el enlace sigue funcionando
+// aunque el panel se esté desplegando.
+//
+// Al firmar se guarda la firma (dibujo, imagen o texto), la constancia (IP,
+// fecha, navegador) y se mandan los correos de confirmación. El resultado de
+// los correos se guarda en la misma fila: si el envío falla, el panel lo dice
+// — nunca en silencio.
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { contractSignatures } from "@workspace/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import {
   motivoNoFirmable,
   TEXTO_RECHAZO,
@@ -20,46 +25,19 @@ import {
   ipDeLaPeticion,
   limpiarNombreFirmante,
   nombreFirmanteValido,
+  validarFirma,
+  type FirmaCapturada,
 } from "../../lib/firma-contrato";
+import { enviarCorreo, CORREO_EQUIPO, type ResultadoCorreo } from "../../lib/correo";
+import { correoParaCliente, correoParaEquipo, type DatosCorreoFirma } from "../../lib/correo-firma";
+import { paginaMensaje, paginaContrato, CLP, type DocumentoFirma } from "./plantilla";
+import { logoDataUri } from "../cotizaciones/template";
 
 const router: IRouter = Router();
 
 const esc = (s: unknown): string =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-/** Envoltura mínima, sin dependencias externas: tiene que abrir en cualquier sitio. */
-function pagina(titulo: string, cuerpo: string, estado = 200): { html: string; estado: number } {
-  return {
-    estado,
-    html: `<!doctype html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>${esc(titulo)}</title>
-<style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
-background:#141210;color:#F3F4F6;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
-.caja{width:100%;max-width:560px;background:#1C1917;border:1px solid #2E2A26;border-radius:16px;padding:28px}
-h1{margin:0 0 4px;font-size:20px}
-.sub{color:#A8A29E;font-size:13px;margin:0 0 20px}
-.fila{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid #2E2A26;font-size:14px}
-.fila:last-of-type{border-bottom:0}
-.fila span:first-child{color:#A8A29E}
-.total{font-weight:700;font-size:16px;color:#FB923C}
-label{display:block;font-size:13px;color:#A8A29E;margin:16px 0 6px}
-input{width:100%;padding:11px 13px;border-radius:10px;border:1px solid #3F3A35;background:#141210;color:#F3F4F6;font-size:15px}
-input:focus{outline:none;border-color:#FB923C}
-button{width:100%;margin-top:18px;padding:13px;border:0;border-radius:10px;background:#FB923C;color:#141210;
-font-size:15px;font-weight:700;cursor:pointer}
-button:disabled{opacity:.5;cursor:default}
-.nota{margin-top:14px;font-size:11.5px;color:#78716C}
-.ok{color:#34D399;font-weight:600}
-.err{color:#F87171;font-weight:600}
-</style></head><body><div class="caja">${cuerpo}</div></body></html>`,
-  };
-}
 
 function responder(res: Response, p: { html: string; estado: number }): void {
   res.status(p.estado).type("html").send(p.html);
@@ -71,16 +49,18 @@ async function buscarEnlace(token: string) {
   return fila ?? null;
 }
 
-const CLP = (n: unknown) => {
-  const v = Number(n);
-  return Number.isFinite(v) && v > 0 ? "$" + Math.round(v).toLocaleString("es-CL") : null;
+const fechaLargaCL = (iso: string): string => {
+  const d = new Date(iso + "T12:00:00");
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "long", year: "numeric" });
 };
 
-/** GET /api/firma/:token — el cliente ve el documento y puede aceptarlo. */
+/** GET /api/firma/:token — el cliente lee el contrato completo y firma. */
 router.get("/firma/:token", async (req: Request, res: Response) => {
   const token = String(req.params.token ?? "");
   if (!tokenValido(token)) {
-    responder(res, pagina("Enlace no válido", `<h1>Enlace no válido</h1><p class="sub">${esc(TEXTO_RECHAZO.no_existe)}</p>`, 404));
+    responder(res, paginaMensaje("Enlace no válido", `<h1>Enlace no válido</h1><p class="sub">${esc(TEXTO_RECHAZO.no_existe)}</p>`, 404));
     return;
   }
   try {
@@ -97,7 +77,7 @@ router.get("/firma/:token", async (req: Request, res: Response) => {
     if (motivo === "ya_firmado" && enlace?.signedAt) {
       // Ya aceptado NO es un error: se le confirma, con la fecha, para que no
       // se quede con la duda de si su "sí" llegó.
-      responder(res, pagina("Documento aceptado", `
+      responder(res, paginaMensaje("Documento aceptado", `
         <h1 class="ok">Ya está aceptado</h1>
         <p class="sub">Lo aceptó ${esc(enlace.signerName || "el cliente")} el
         ${esc(enlace.signedAt.toLocaleDateString("es-CL", { timeZone: "America/Santiago" }))}.
@@ -105,44 +85,48 @@ router.get("/firma/:token", async (req: Request, res: Response) => {
       return;
     }
     if (motivo) {
-      responder(res, pagina("Enlace no disponible", `<h1>No se puede continuar</h1><p class="sub">${esc(TEXTO_RECHAZO[motivo])}</p>`, motivo === "no_existe" ? 404 : 410));
+      responder(res, paginaMensaje("Enlace no disponible", `<h1>No se puede continuar</h1><p class="sub">${esc(TEXTO_RECHAZO[motivo])}</p>`, motivo === "no_existe" ? 404 : 410));
       return;
     }
 
-    const doc = await documentoDe(enlace!.contractId);
-    const total = CLP(doc?.total);
-    responder(res, pagina("Aceptar propuesta", `
-      <h1>${esc(doc?.titulo || "Propuesta de trabajo")}</h1>
-      <p class="sub">WebMakerLatam · para ${esc(doc?.cliente || "tu empresa")}</p>
-      ${(doc?.modulos ?? []).map((m) => `<div class="fila"><span>${esc(m.nombre)}</span><span>${esc(CLP(m.precio) ?? "")}</span></div>`).join("")}
-      ${total ? `<div class="fila"><span>Total</span><span class="total">${esc(total)}</span></div>` : ""}
-      <form method="POST" action="/api/firma/${esc(token)}/aceptar">
-        <label for="nombre">Tu nombre y apellido</label>
-        <input id="nombre" name="nombre" required minlength="3" maxlength="120" autocomplete="name">
-        <label for="email">Tu correo (opcional)</label>
-        <input id="email" name="email" type="email" maxlength="160" autocomplete="email">
-        <button type="submit">Aceptar la propuesta</button>
-      </form>
-      <p class="nota">Al aceptar se registra tu nombre, la fecha y la dirección desde la que
-      lo haces, como constancia de la aceptación.</p>`));
+    const doc = await documentoDe(enlace!.contractId, enlace!.expiresAt);
+    res.status(200).type("html").send(paginaContrato({
+      token,
+      logo: logoDataUri(),
+      doc,
+      anio: String(new Date().getFullYear()),
+    }));
   } catch (err) {
     console.error("[firma GET]", err);
-    responder(res, pagina("Error", `<h1 class="err">Algo falló</h1><p class="sub">Vuelve a intentarlo en unos minutos o escríbele al equipo de WebMakerLatam.</p>`, 500));
+    responder(res, paginaMensaje("Error", `<h1 class="err">Algo falló</h1><p class="sub">Vuelve a intentarlo en unos minutos o escríbele al equipo de WebMaker Latam.</p>`, 500));
   }
 });
 
-/** POST /api/firma/:token/aceptar — registra la aceptación. */
+/** POST /api/firma/:token/aceptar — registra aceptación + firma y manda los correos. */
 router.post("/firma/:token/aceptar", async (req: Request, res: Response) => {
   const token = String(req.params.token ?? "");
-  if (!tokenValido(token)) {
-    responder(res, pagina("Enlace no válido", `<h1>Enlace no válido</h1><p class="sub">${esc(TEXTO_RECHAZO.no_existe)}</p>`, 404));
-    return;
-  }
-  const nombre = limpiarNombreFirmante((req.body ?? {}).nombre);
+  const esJson = Boolean(req.is("application/json"));
+  const rechazo = (estado: number, error: string): void => {
+    if (esJson) { res.status(estado).json({ error }); return; }
+    responder(res, paginaMensaje("No se pudo firmar", `<h1>No se pudo firmar</h1><p class="sub">${esc(error)}</p>`, estado));
+  };
+
+  if (!tokenValido(token)) { rechazo(404, TEXTO_RECHAZO.no_existe); return; }
+
+  const cuerpo = (req.body ?? {}) as Record<string, unknown>;
+  const nombre = limpiarNombreFirmante(cuerpo.nombre);
   if (!nombreFirmanteValido(nombre)) {
-    responder(res, pagina("Falta tu nombre", `<h1>Falta tu nombre</h1><p class="sub">Necesitamos saber quién acepta la propuesta. Vuelve atrás y escríbelo.</p>`, 400));
+    rechazo(400, "Necesitamos tu nombre y apellido: son parte de la constancia de aceptación.");
     return;
   }
+
+  // La firma: dibujo/imagen/texto. Un POST sin firma (el formulario viejo que
+  // alguien dejó abierto) cuenta como firma escrita con el nombre — que es
+  // exactamente lo que ese formulario significaba.
+  const firmaCruda = (cuerpo.firma ?? {}) as Record<string, unknown>;
+  const validada = validarFirma(firmaCruda.kind ?? "texto", firmaCruda.data ?? nombre);
+  if (!validada.ok) { rechazo(400, validada.error); return; }
+  const firma: FirmaCapturada = validada.firma;
 
   try {
     const enlace = await buscarEnlace(token);
@@ -155,74 +139,246 @@ router.post("/firma/:token/aceptar", async (req: Request, res: Response) => {
       },
     );
     if (motivo) {
-      responder(res, pagina("Enlace no disponible", `<h1>No se puede continuar</h1><p class="sub">${esc(TEXTO_RECHAZO[motivo])}</p>`, motivo === "no_existe" ? 404 : 410));
+      rechazo(motivo === "no_existe" ? 404 : 410, TEXTO_RECHAZO[motivo]);
       return;
     }
 
-    // La condición `signed_at IS NULL` va en el UPDATE, no solo en la
-    // comprobación de arriba: dos pulsaciones a la vez pasarían las dos
-    // comprobaciones y se registrarían dos aceptaciones del mismo documento.
+    const email = String(cuerpo.email ?? "").trim().slice(0, 160) || null;
+    const ahora = new Date();
+
+    // TODAS las condiciones de elegibilidad van en el UPDATE, no solo en la
+    // comprobación de arriba: entre la lectura y la escritura otra pestaña
+    // puede firmar, alguien puede anular el enlace o puede caducar. Si el
+    // UPDATE no encuentra fila que cumpla, aquí no se firma nada.
     const actualizadas = await db.update(contractSignatures)
       .set({
         estado: "firmado",
-        signedAt: new Date(),
+        signedAt: ahora,
         signerName: nombre,
-        signerEmail: String((req.body ?? {}).email ?? "").trim().slice(0, 160) || null,
+        signerEmail: email,
         signerIp: ipDeLaPeticion(req.headers as Record<string, unknown>, req.ip) || null,
         userAgent: String(req.headers["user-agent"] ?? "").slice(0, 400) || null,
+        signatureKind: firma.kind,
+        signatureData: firma.data,
       })
-      .where(and(eq(contractSignatures.token, token), isNull(contractSignatures.signedAt)))
+      .where(and(
+        eq(contractSignatures.token, token),
+        eq(contractSignatures.estado, "pendiente"),
+        isNull(contractSignatures.signedAt),
+        or(isNull(contractSignatures.expiresAt), gt(contractSignatures.expiresAt, ahora)),
+      ))
       .returning({ id: contractSignatures.id });
 
     if (actualizadas.length === 0) {
-      responder(res, pagina("Ya aceptado", `<h1 class="ok">Ya está aceptado</h1><p class="sub">${esc(TEXTO_RECHAZO.ya_firmado)}</p>`));
+      // El enlace cambió entre la lectura y la escritura. La fila manda:
+      // se vuelve a mirar para contestar la verdad (firmado, anulado o caducado).
+      const despues = await buscarEnlace(token);
+      const porQue = motivoNoFirmable(
+        despues && {
+          token: despues.token,
+          estado: despues.estado as "pendiente" | "firmado" | "anulado",
+          expiresAt: despues.expiresAt ? despues.expiresAt.toISOString() : null,
+          signedAt: despues.signedAt ? despues.signedAt.toISOString() : null,
+        },
+      );
+      if (porQue && porQue !== "ya_firmado") {
+        rechazo(porQue === "no_existe" ? 404 : 410, TEXTO_RECHAZO[porQue]);
+        return;
+      }
+      if (esJson) { res.status(200).json({ ok: true, yaFirmado: true, correoCliente: "sin_correo" }); return; }
+      responder(res, paginaMensaje("Ya aceptado", `<h1 class="ok">Ya está aceptado</h1><p class="sub">${esc(TEXTO_RECHAZO.ya_firmado)}</p>`));
       return;
     }
 
-    console.log(`[firma] contrato ${enlace!.contractId} aceptado por "${nombre}"`);
-    responder(res, pagina("Propuesta aceptada", `
+    console.log(`[firma] contrato ${enlace!.contractId} firmado por "${nombre}" (${firma.kind})`);
+
+    // ---- Correos de confirmación (el resultado SIEMPRE queda en la fila) ----
+    const correos = await mandarCorreos({
+      contractId: enlace!.contractId,
+      expiresAt: enlace!.expiresAt,
+      nombre, email, firma, ahora,
+      ip: ipDeLaPeticion(req.headers as Record<string, unknown>, req.ip) || null,
+      userAgent: String(req.headers["user-agent"] ?? "").slice(0, 200) || null,
+      base: basePanelConfiable(),
+    });
+    // La firma ya está guardada; anotar el resultado de los correos no puede
+    // deshacerla — pero tampoco puede perderse en silencio: es lo que el panel
+    // enseña. Se reintenta una vez y, si aun así falla, queda a gritos en el log.
+    const estadoCorreos = {
+      emailClienteEstado: correos.cliente,
+      emailEquipoEstado: correos.equipo,
+      emailDetalle: correos.detalle,
+    };
+    for (let intento = 1; intento <= 2; intento++) {
+      try {
+        await db.update(contractSignatures).set(estadoCorreos).where(eq(contractSignatures.token, token));
+        break;
+      } catch (err) {
+        if (intento === 2) {
+          console.error(`[firma] IMPOSIBLE anotar el estado de los correos del contrato ${enlace!.contractId} (la firma sí quedó). Estados: ${JSON.stringify(estadoCorreos)}`, err);
+        } else {
+          await new Promise((r) => setTimeout(r, 250));
+        }
+      }
+    }
+
+    if (esJson) {
+      res.status(200).json({ ok: true, correoCliente: correos.cliente });
+      return;
+    }
+    responder(res, paginaMensaje("Propuesta aceptada", `
       <h1 class="ok">¡Listo, ${esc(nombre.split(" ")[0])}!</h1>
-      <p class="sub">Quedó registrada tu aceptación. El equipo de WebMakerLatam se pondrá en
+      <p class="sub">Tu aceptación y tu firma quedaron registradas. El equipo de WebMaker Latam se pondrá en
       contacto contigo para los siguientes pasos.</p>`));
   } catch (err) {
     console.error("[firma POST]", err);
-    responder(res, pagina("Error", `<h1 class="err">No se pudo registrar</h1><p class="sub">Vuelve a intentarlo en unos minutos o escríbele al equipo de WebMakerLatam.</p>`, 500));
+    rechazo(500, "No se pudo registrar. Vuelve a intentarlo en unos minutos o escríbele al equipo de WebMaker Latam.");
   }
 });
 
-/* ==================== Datos del documento =============================== */
+/* ==================== Correos =========================================== */
 
-interface DocumentoFirma {
-  titulo: string;
-  cliente: string;
-  total: number | null;
-  modulos: Array<{ nombre: string; precio: number | null }>;
+interface ParaCorreos {
+  contractId: string;
+  expiresAt: Date | null;
+  nombre: string;
+  email: string | null;
+  firma: FirmaCapturada;
+  ahora: Date;
+  ip: string | null;
+  userAgent: string | null;
+  base: string;
+}
+
+type EstadoCorreo = "enviado" | "fallido" | "sin_correo" | "sin_configurar";
+
+const estadoDe = (r: ResultadoCorreo): EstadoCorreo => (r.ok ? "enviado" : r.motivo);
+
+/**
+ * Manda la confirmación al cliente (si dejó correo) y el aviso al buzón del
+ * equipo. Nunca lanza: devuelve los estados para guardarlos en la fila.
+ */
+async function mandarCorreos(p: ParaCorreos): Promise<{ cliente: EstadoCorreo; equipo: EstadoCorreo; detalle: string | null }> {
+  const doc = await documentoDe(p.contractId, p.expiresAt).catch(() => null);
+  const totalTexto = doc?.totalConIva ? `${CLP(doc.totalConIva)} · IVA incluido`
+    : doc?.valorFicha ? `${doc.valorFicha} · IVA incluido` : null;
+
+  const esImagen = p.firma.kind !== "texto";
+  const datos: DatosCorreoFirma = {
+    titulo: doc?.titulo || "Propuesta de trabajo",
+    cliente: doc?.cliente || "",
+    firmante: p.nombre,
+    correoFirmante: p.email,
+    fechaFirma: p.ahora,
+    metodo: p.firma.kind,
+    ip: p.ip,
+    userAgent: p.userAgent,
+    totalTexto,
+    urlPanel: p.base ? `${p.base}/ejecutivo` : null,
+    firmaAdjunta: esImagen,
+  };
+  // La firma viaja adjunta (no incrustada): Gmail descarta las imágenes en
+  // data URI y el correo llegaría "firmado" pero sin firma visible.
+  const adjuntos = esImagen
+    ? [{
+        filename: `firma-${p.nombre.replace(/[^\p{L}\p{N}]+/gu, "-").toLowerCase() || "cliente"}.${p.firma.data.startsWith("data:image/jpeg") ? "jpg" : "png"}`,
+        content: p.firma.data.split(",")[1] ?? "",
+      }]
+    : undefined;
+
+  const detalles: string[] = [];
+  let cliente: EstadoCorreo = "sin_correo";
+  if (p.email) {
+    const c = correoParaCliente(datos);
+    const r = await enviarCorreo({ to: p.email, subject: c.subject, html: c.html, text: c.text, attachments: adjuntos });
+    cliente = estadoDe(r);
+    if (!r.ok) detalles.push(`cliente: ${r.detalle}`);
+  }
+  const e = correoParaEquipo(datos);
+  const re = await enviarCorreo({ to: CORREO_EQUIPO, subject: e.subject, html: e.html, text: e.text, attachments: adjuntos });
+  const equipo = estadoDe(re);
+  if (!re.ok) detalles.push(`equipo: ${re.detalle}`);
+
+  return { cliente, equipo, detalle: detalles.length ? detalles.join(" · ").slice(0, 500) : null };
 }
 
 /**
- * Lo que se le enseña al cliente del contrato que va a aceptar.
+ * Base del panel para el botón "Ver en el panel" del correo al equipo.
  *
- * Deliberadamente escueto: título, cliente, módulos y total. Los contratos
- * viven en un blob sin esquema y volcarlo entero en una página pública sería
- * exponer notas internas sin saberlo.
+ * SOLO de configuración (PUBLIC_BASE_URL) o de la plataforma (REPLIT_DOMAINS),
+ * nunca de cabeceras de la petición: esta ruta es pública, quien firma
+ * controla esas cabeceras, y el enlace del correo acabaría apuntando adonde
+ * un desconocido quisiera.
  */
-async function documentoDe(contractId: string): Promise<DocumentoFirma | null> {
+function basePanelConfiable(): string {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, "");
+  const dominio = (process.env.REPLIT_DOMAINS ?? "").split(",")[0]?.trim();
+  return dominio ? `https://${dominio}` : "";
+}
+
+/* ==================== Datos del documento =============================== */
+
+/**
+ * Lo que se le enseña al cliente del contrato que va a firmar.
+ *
+ * El `doc` del contrato es el estado del wizard (client/project/modules con
+ * price = NETO), pero contratos viejos guardaron otras claves (modulos/neto) y
+ * los subidos a mano no tienen doc: cada campo cae en cascada hasta algo que
+ * exista. Deliberadamente NO se vuelca el blob entero: notas internas del
+ * contrato viven fuera de `doc` y no son para la página pública.
+ */
+async function documentoDe(contractId: string, vence: Date | null): Promise<DocumentoFirma> {
   const { resolveBoard } = await import("../../lib/hub-board");
   const board = await resolveBoard();
   const contratos = board && Array.isArray(board.data.contracts) ? (board.data.contracts as Array<Record<string, unknown>>) : [];
-  const c = contratos.find((x) => String(x.id ?? "") === contractId);
-  if (!c) return null;
+  const c = contratos.find((x) => String(x.id ?? "") === contractId) ?? {};
 
   const doc = (c.doc ?? {}) as Record<string, unknown>;
-  const modulos = Array.isArray(doc.modulos) ? (doc.modulos as Array<Record<string, unknown>>) : [];
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
+
+  const crudos = Array.isArray(doc.modules) ? doc.modules : Array.isArray(doc.modulos) ? doc.modulos : [];
+  const modulos = (crudos as Array<Record<string, unknown>>).slice(0, 12)
+    .map((m) => ({
+      nombre: str(m.name ?? m.nombre),
+      desc: str(m.desc ?? m.descripcion),
+      neto: num(m.price ?? m.neto ?? m.precio),
+    }))
+    .filter((m) => m.nombre);
+
+  const totalNeto = modulos.reduce((a, m) => a + (m.neto ?? 0), 0) || null;
+  const iva = totalNeto ? Math.round(totalNeto * 0.19) : null;
+
+  // "$1.234.567" guardado en la ficha → total con IVA para contratos sin
+  // precios por módulo. Si no parsea, se muestra tal cual venía.
+  const valorFicha = str(c.value);
+
+  const fechaDoc = str(doc.date) || str(c.signedAt);
+  const validezDias = num(doc.validityDays);
+  let validaHasta = "";
+  if (vence) validaHasta = vence.toLocaleDateString("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "long", year: "numeric" });
+  else if (str(c.expiresAt)) validaHasta = fechaLargaCL(str(c.expiresAt));
+  else if (fechaDoc && validezDias) {
+    const d = new Date(fechaDoc + "T12:00:00");
+    if (!Number.isNaN(d.getTime())) { d.setDate(d.getDate() + validezDias); validaHasta = d.toLocaleDateString("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "long", year: "numeric" }); }
+  }
+
   return {
-    titulo: String(c.title ?? doc.titulo ?? "Propuesta de trabajo"),
-    cliente: String(c.client ?? ""),
-    total: Number(c.value ?? doc.total ?? 0) || null,
-    modulos: modulos.slice(0, 12).map((m) => ({
-      nombre: String(m.name ?? m.nombre ?? ""),
-      precio: Number(m.price ?? m.neto ?? 0) || null,
-    })).filter((m) => m.nombre),
+    titulo: str(c.title) || str(doc.project) || "Propuesta de trabajo",
+    cliente: str(c.client) || str(doc.client),
+    fecha: fechaDoc ? fechaLargaCL(fechaDoc) : "",
+    asesor: str(doc.advisor),
+    alcance: str(doc.scope),
+    notas: str(doc.notes),
+    modulos,
+    totalNeto,
+    iva,
+    totalConIva: totalNeto && iva ? totalNeto + iva : null,
+    downPct: typeof doc.downPct === "number" && Number.isFinite(doc.downPct) ? doc.downPct : null,
+    monthly: str(doc.monthly),
+    monthlyPrice: num(doc.monthlyPrice),
+    valorFicha,
+    validaHasta,
   };
 }
 

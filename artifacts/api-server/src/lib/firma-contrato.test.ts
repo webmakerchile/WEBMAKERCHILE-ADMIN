@@ -15,6 +15,8 @@ import {
   limpiarNombreFirmante,
   nombreFirmanteValido,
   urlDeFirma,
+  validarFirma,
+  MAX_FIRMA_DATA,
   type EnlaceFirma,
 } from "./firma-contrato.js";
 
@@ -149,5 +151,44 @@ describe("url del enlace", () => {
   it("no duplica la barra de la base", () => {
     expect(urlDeFirma("https://admin.webmakerlatam.com/", "tok")).toBe("https://admin.webmakerlatam.com/api/firma/tok");
     expect(urlDeFirma("https://admin.webmakerlatam.com", "tok")).toBe("https://admin.webmakerlatam.com/api/firma/tok");
+  });
+});
+
+describe("la firma que mandó el navegador", () => {
+  const png = (n: number) => "data:image/png;base64," + "A".repeat(n);
+
+  it("acepta las tres formas reales de firmar", () => {
+    expect(validarFirma("dibujo", png(400))).toMatchObject({ ok: true, firma: { kind: "dibujo" } });
+    expect(validarFirma("imagen", "data:image/jpeg;base64," + "B".repeat(300))).toMatchObject({ ok: true });
+    expect(validarFirma("texto", "  María   José Soto ")).toEqual({
+      ok: true,
+      firma: { kind: "texto", data: "María José Soto" }, // normalizada, como el nombre
+    });
+  });
+
+  it("una firma escrita de una letra no es una firma", () => {
+    expect(validarFirma("texto", "M").ok).toBe(false);
+    expect(validarFirma("texto", "   ").ok).toBe(false);
+    expect(validarFirma("texto", "x".repeat(121)).ok).toBe(false);
+  });
+
+  it("dibujo/imagen: solo PNG o JPEG en data URI, y con contenido de verdad", () => {
+    // Un canvas vacío o un data URI mínimo no prueban que alguien firmó.
+    expect(validarFirma("dibujo", "data:image/png;base64,AAAA").ok).toBe(false);
+    expect(validarFirma("imagen", "data:image/gif;base64," + "A".repeat(400)).ok).toBe(false);
+    expect(validarFirma("imagen", "https://otro-sitio.com/firma.png").ok).toBe(false);
+    expect(validarFirma("dibujo", null).ok).toBe(false);
+  });
+
+  it("corta las imágenes desmedidas antes de mirarles el formato", () => {
+    const r = validarFirma("imagen", png(MAX_FIRMA_DATA + 10));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("pesa demasiado");
+  });
+
+  it("un método inventado se rechaza con las opciones reales", () => {
+    const r = validarFirma("huella", "algo");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("dibujarla");
   });
 });

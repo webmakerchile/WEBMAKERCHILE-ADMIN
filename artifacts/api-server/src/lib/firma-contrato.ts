@@ -106,3 +106,71 @@ export function urlDeFirma(base: string, token: string): string {
   const limpia = base.replace(/\/+$/, "");
   return `${limpia}/api/firma/${token}`;
 }
+
+/* ==================== Firma digital ==================================== */
+
+export const METODOS_FIRMA = ["dibujo", "imagen", "texto"] as const;
+export type MetodoFirma = (typeof METODOS_FIRMA)[number];
+
+export const METODO_FIRMA_LABEL: Record<MetodoFirma, string> = {
+  dibujo: "Dibujada a mano",
+  imagen: "Imagen subida",
+  texto: "Escrita a máquina",
+};
+
+/**
+ * Tope del data URI de la firma (~1,5 MB de imagen real).
+ *
+ * La página ya reduce la imagen antes de mandarla, así que llegar aquí con más
+ * es señal de que alguien saltó el formulario — no un cliente con mala suerte.
+ */
+export const MAX_FIRMA_DATA = 2_000_000;
+
+/**
+ * PNG o JPEG en data URI, con un cuerpo mínimo: un canvas vacío exportado pesa
+ * menos que esto, y una "firma" en blanco no es una firma.
+ */
+const FIRMA_DATA_URI_RE = /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]{200,}$/;
+
+export interface FirmaCapturada {
+  kind: MetodoFirma;
+  /** Data URI (dibujo/imagen) o el texto tecleado (texto). */
+  data: string;
+}
+
+/**
+ * Valida la firma tal como llegó del navegador, antes de guardarla.
+ *
+ * Devuelve error en texto para el CLIENTE: quien firma no tiene panel ni
+ * consola, lo único que puede hacer con "payload inválido" es rendirse.
+ */
+export function validarFirma(
+  kind: unknown,
+  data: unknown,
+): { ok: true; firma: FirmaCapturada } | { ok: false; error: string } {
+  if (kind === "texto") {
+    const t = String(data ?? "").replace(/\s+/g, " ").trim();
+    if (t.length < 2 || t.length > 120) {
+      return { ok: false, error: "Escribe tu firma: al menos 2 letras." };
+    }
+    return { ok: true, firma: { kind, data: t } };
+  }
+  if (kind === "dibujo" || kind === "imagen") {
+    const d = typeof data === "string" ? data : "";
+    // El largo se mira antes que el formato: no tiene sentido pasarle una
+    // expresión regular a algo que de entrada no cabe.
+    if (d.length > MAX_FIRMA_DATA) {
+      return { ok: false, error: "La imagen de la firma pesa demasiado. Prueba con una más liviana." };
+    }
+    if (!FIRMA_DATA_URI_RE.test(d)) {
+      return {
+        ok: false,
+        error: kind === "dibujo"
+          ? "El dibujo llegó vacío. Dibuja tu firma en el recuadro y vuelve a confirmar."
+          : "La imagen no es válida. Sube tu firma en PNG o JPG.",
+      };
+    }
+    return { ok: true, firma: { kind, data: d } };
+  }
+  return { ok: false, error: "Elige cómo firmar: dibujarla, subir una imagen o escribirla." };
+}

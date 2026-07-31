@@ -250,6 +250,14 @@ router.get("/hub/contracts/:id/firma", async (req: Request, res: Response) => {
         signerEmail: f.signerEmail,
         // La IP es parte de la constancia: sin ella el registro dice mucho menos.
         signerIp: f.signerIp,
+        // La firma capturada y cómo se capturó, para enseñarla en la ficha.
+        signatureKind: f.signatureKind,
+        signatureData: f.signatureData,
+        userAgent: f.userAgent,
+        // Estado de los correos de confirmación: si fallaron, se dice AQUÍ.
+        emailClienteEstado: f.emailClienteEstado,
+        emailEquipoEstado: f.emailEquipoEstado,
+        emailDetalle: f.emailDetalle,
       })),
     });
   } catch (err) {
