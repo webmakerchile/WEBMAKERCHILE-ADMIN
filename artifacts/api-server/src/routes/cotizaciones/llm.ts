@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { CotizacionSchema, validarPreciosEntregados, type Cotizacion } from "./schema";
-import { MMODA_EXAMPLE } from "./example-mmoda";
+import { EJEMPLO_ESTILO } from "./example-estilo";
 
 /**
  * Generación del CONTENIDO de la cotización vía LLM.
@@ -82,7 +82,12 @@ function buildUserMessage(input: GenerarCotizacionInput, hoy: Date): string {
   const mesAnio = `${meses[hoy.getMonth()]} ${hoy.getFullYear()}`;
   const parts: string[] = [
     SCHEMA_HINT,
-    `\nEJEMPLO DE REFERENCIA (caso real M&M Moda — este es el estándar de calidad de redacción que debes igualar):\n${JSON.stringify(MMODA_EXAMPLE, null, 2)}`,
+    // Cliente inventado a propósito: antes aquí iba la cotización real de una
+    // clienta —con su nombre, sus volúmenes de venta y su dominio— y se mandaba
+    // entera a un servicio externo en cada generación, con la instrucción de
+    // imitarla. El modelo copiaba sus cifras y su rubro a la cotización de
+    // cualquier otro cliente.
+    `\nEJEMPLO DE REFERENCIA (caso ficticio — es el estándar de REDACCIÓN que debes igualar, no un contenido a copiar: usa el rubro, las cifras y las situaciones del cliente real de abajo):\n${JSON.stringify(EJEMPLO_ESTILO, null, 2)}`,
     `\nFecha actual: usa "mes_anio": "${mesAnio}" y "anio": "${hoy.getFullYear()}".`,
     `\nCONTEXTO DEL CLIENTE:\n${input.contexto_cliente}`,
   ];

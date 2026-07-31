@@ -4,9 +4,15 @@ import type { Cotizacion } from "./schema";
 import { calcularFinanzas, clp, type FinanzasCotizacion } from "./finance";
 
 /**
- * Plantilla HTML/CSS FIJA de la cotización (réplica píxel a píxel del PDF
- * de referencia M&M Moda). El LLM jamás toca esto: solo se inyectan textos
- * ya validados y montos calculados por el servidor.
+ * Plantilla HTML/CSS FIJA de la cotización. El LLM jamás toca esto: solo se
+ * inyectan textos ya validados y montos calculados por el servidor.
+ *
+ * La maqueta nació calcando el PDF de una clienta, y el comentario que había
+ * aquí seguía diciéndolo. La marca —logo, nombre, contacto— ya era la de la
+ * agencia; lo que faltaba era el naranja: el PDF usaba un tono propio y el
+ * panel otro, así que el documento que recibe el cliente no era del mismo
+ * color que la herramienta con la que se hizo. Ahora `--accent` es exactamente
+ * el `--primary` del panel.
  */
 
 const esc = (s: string) =>
@@ -44,8 +50,9 @@ const CSS = `
   --surface: #141414;
   --surface-2: #1B1B1B;
   --border: #262626;
-  --accent: #E87B3C;
-  --accent-border: rgba(232, 123, 60, 0.35);
+  /* Mismo naranja que el panel (--primary: hsl(24 95% 53%)). */
+  --accent: #F97015;
+  --accent-border: rgba(249, 112, 21, 0.35);
   --accent-glow: #24150E;
   --text: #F2F2F0;
   --text-muted: #A3A3A0;

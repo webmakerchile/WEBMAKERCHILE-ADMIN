@@ -5,7 +5,7 @@ import { renderCotizacionHTML, logoDataUri } from "./template";
 import { buscarChromium, SIN_CHROMIUM } from "./chromium";
 import { htmlToPdf, SinChromiumError } from "./pdf";
 import { generarContenidoCotizacion } from "./llm";
-import { MMODA_EXAMPLE } from "./example-mmoda";
+import { EJEMPLO_ESTILO } from "./example-estilo";
 
 const router: IRouter = Router();
 
@@ -143,10 +143,10 @@ router.get("/diagnostico", (_req: Request, res: Response) => {
 
 /**
  * GET /cotizaciones/ejemplo
- * Fixture M&M Moda (para probar la plantilla y como base editable).
+ * Fixture de cliente ficticio (para probar la plantilla y como base editable).
  */
 router.get("/ejemplo", (_req: Request, res: Response) => {
-  res.json({ cotizacion: MMODA_EXAMPLE });
+  res.json({ cotizacion: EJEMPLO_ESTILO });
 });
 
 export default router;

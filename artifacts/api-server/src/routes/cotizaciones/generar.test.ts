@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
-import { MMODA_EXAMPLE } from "./example-mmoda";
+import { EJEMPLO_ESTILO } from "./example-estilo";
 import type { Cotizacion } from "./schema";
 
 const openaiCreate = vi.fn();
@@ -15,7 +15,7 @@ vi.mock("./pdf", () => ({
 }));
 
 function cotConNetos(netos: number[], mensualidadNeto?: number): Cotizacion {
-  const base = JSON.parse(JSON.stringify(MMODA_EXAMPLE)) as Cotizacion;
+  const base = JSON.parse(JSON.stringify(EJEMPLO_ESTILO)) as Cotizacion;
   base.modulos = base.modulos.slice(0, netos.length).map((m, i) => ({ ...m, neto: netos[i] }));
   if (mensualidadNeto !== undefined && base.mensualidad) base.mensualidad.neto = mensualidadNeto;
   return base;
@@ -187,6 +187,31 @@ describe("generarContenidoCotizacion — estimación automática de precios", ()
     expect(data.modulos[1].neto).toBe(380000);
     const reintento = openaiCreate.mock.calls[1][0] as { messages: Array<{ role: string; content: string }> };
     expect(reintento.messages[reintento.messages.length - 1].content).toContain("PRECIOS PENDIENTES");
+  });
+
+  // El few-shot era la cotización real de una clienta: su nombre, sus
+  // volúmenes de venta y su dominio viajaban a un servicio externo dentro de la
+  // cotización de cualquier otro cliente, con la instrucción de imitarla. No da
+  // error: sale un documento impecable con los datos de otra persona dentro.
+  it("no manda datos de ningún cliente real en el ejemplo", async () => {
+    const { generarContenidoCotizacion } = await import("./llm");
+    openaiCreate.mockResolvedValueOnce(llmResponse(cotConNetos([900000, 550000])));
+
+    await generarContenidoCotizacion({ contexto_cliente: CONTEXTO });
+
+    const primera = openaiCreate.mock.calls[0][0] as { messages: Array<{ role: string; content: string }> };
+    const prompt = primera.messages.map((m) => m.content).join("\n");
+    for (const rastro of ["M&M", "Magaly", "mmoda.cl", "Moda"]) {
+      expect(prompt, `el prompt no debe llevar "${rastro}"`).not.toContain(rastro);
+    }
+  });
+
+  it("el ejemplo sigue siendo concreto: un texto vago genera copy vago", async () => {
+    // La calidad del few-shot viene de que dice cifras y situaciones. Si alguien
+    // lo "limpia" hasta dejarlo genérico, deja de servir para lo que está.
+    expect(EJEMPLO_ESTILO.contexto.parrafos.join(" ").length).toBeGreaterThan(300);
+    expect(EJEMPLO_ESTILO.contexto.stats).toHaveLength(3);
+    expect(EJEMPLO_ESTILO.modulos.every((m) => m.descripcion.length >= 100)).toBe(true);
   });
 
   it("el prompt dice a qué módulo va cada precio", async () => {
