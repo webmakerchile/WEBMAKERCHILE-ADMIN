@@ -285,7 +285,7 @@ export default function DescripcionesPage() {
           rol: slide.rol,
           titulo: slide.titulo,
           subtitulo: slide.subtitulo,
-          formato: resultado.tipo_publicacion === "carrusel" ? "4:5" : "1:1",
+          formato: "1:1",
           texto_en_imagen: resultado.texto_en_imagen,
           estilo_titular: resultado.estilo_titular ?? undefined,
           // El set del carrusel original: sin esto la slide regenerada salía
@@ -398,7 +398,7 @@ export default function DescripcionesPage() {
     }
   };
 
-  const aspecto = resultado?.tipo_publicacion === "carrusel" ? "4 / 5" : "1 / 1";
+  const aspecto = "1 / 1";
   const slidesRender: SlideImagen[] = resultado?.imagenes || [];
   const slideShown = slidesRender[slideActual];
 
@@ -414,7 +414,7 @@ export default function DescripcionesPage() {
           <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1 flex items-center gap-2">
             Generador de Publicaciones
             <HelpHint
-              text="La IA crea imagen(es) y descripciones por red social a partir de un tema. 'Sorpréndeme' propone un tema o lo ajusta al contexto que ya escribiste. Si eliges Carrusel, recibirás varias slides 4:5 listas para Instagram."
+              text="La IA crea imagen(es) y descripciones por red social a partir de un tema. 'Sorpréndeme' propone un tema o lo ajusta al contexto que ya escribiste. Si eliges Carrusel, recibirás varias slides 1:1 (1080×1080) listas para Instagram."
               side="bottom"
             />
           </h1>
@@ -532,7 +532,7 @@ export default function DescripcionesPage() {
               >
                 <div className="text-2xl mb-1">🎠</div>
                 <div className="font-semibold text-foreground">Carrusel</div>
-                <div className="text-xs text-muted-foreground mt-1">3-10 slides 4:5 (1080×1350) — IG</div>
+                <div className="text-xs text-muted-foreground mt-1">3-10 slides 1:1 (1080×1080) — IG</div>
               </button>
             </div>
           </div>
@@ -707,7 +707,7 @@ export default function DescripcionesPage() {
                 <div
                   key={i}
                   className="rounded-xl bg-foreground/5 border border-foreground/10 animate-pulse flex items-center justify-center text-muted-foreground/40"
-                  style={{ aspectRatio: tipoPublicacion === "carrusel" ? "4/5" : "1/1" }}
+                  style={{ aspectRatio: "1/1" }}
                 >
                   <ImageIcon className="w-8 h-8" />
                 </div>
@@ -956,7 +956,7 @@ export default function DescripcionesPage() {
                       className={`relative rounded-lg overflow-hidden border-2 transition ${
                         i === slideActual ? "border-primary" : "border-foreground/10 hover:border-foreground/25"
                       }`}
-                      style={{ width: 64, aspectRatio: "4/5" }}
+                      style={{ width: 64, aspectRatio: "1/1" }}
                     >
                       {slide.imagen ? (
                         <img src={slide.imagen} alt="" className={`w-full h-full object-cover transition ${reintentando[slide.numero_slide] ? "opacity-30 blur-sm" : ""}`} />

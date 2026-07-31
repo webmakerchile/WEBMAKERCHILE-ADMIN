@@ -2049,7 +2049,7 @@ router.post("/community/descripciones/generar", async (req, res) => {
     const cantidad = body.tipo_publicacion === "carrusel"
       ? Math.max(3, Math.min(10, body.cantidad_slides))
       : 1;
-    const formato: "1:1" | "4:5" = body.tipo_publicacion === "carrusel" ? "4:5" : "1:1";
+    const formato: "1:1" | "4:5" = "1:1"; // carrusel y única: siempre 1080×1080
 
     // La idea en bruto es contexto, no el tema: dice qué quiere mostrar y con
     // qué emoción. Sin ella el guion solo tenía el titular para trabajar.
@@ -2233,7 +2233,7 @@ const ReintentarSlideBody = z.object({
   titulo: z.string().max(120),
   subtitulo: z.string().max(200),
   prompt_visual: z.string().max(300).optional(),
-  formato: z.enum(["1:1", "4:5"]).default("4:5"),
+  formato: z.enum(["1:1", "4:5"]).default("1:1"),
   // Por defecto SÍ: componer el texto con el motor de tipografía es el
   // estándar de la marca. El default en false hacía que cualquier llamada que
   // omitiera el campo devolviera la imagen limpia, sin el estilo nuevo.

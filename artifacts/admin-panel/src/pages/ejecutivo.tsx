@@ -19,8 +19,9 @@ import { ActivityFeed } from "@/components/activity-feed";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun,
 } from "lucide-react";
+import { JornadaCard } from "@/components/jornada-card";
 import VentasPanel from "@/components/ventas-panel";
 import TorrePanel from "@/components/torre-panel";
 import "./ejecutivo.css";
@@ -66,7 +67,7 @@ interface TeamMember {
   approvalStatus: string | null;
 }
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "svc" | "drive" | "team" | "att";
+type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "svc" | "drive" | "team" | "att" | "midia";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project {
@@ -188,6 +189,7 @@ const NOTE_CAT_COLORS: Record<NoteCat, string> = { proyecto: "#6aa0c0", cliente:
 const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
 const PRIO_W: Record<string, number> = { crítica: -1, alta: 0, media: 1, baja: 2 };
 const TAB_TITLES: Record<Tab, [string, string]> = {
+  midia: ["Mi día", "Tu jornada · iniciar, pausar y terminar"],
   team: ["Equipo hoy", "Centro de comando · cargas · semáforo · actividad"],
   att: ["Asistencia", "Pase de lista · horas trabajadas · registro diario"],
   dash: ["Dashboard", "Resumen ejecutivo en vivo"],
@@ -5316,7 +5318,7 @@ function AttendanceView() {
   });
 
   // Marcar la entrada de OTRA persona: respaldo manual cuando el bot de
-  // Discord no la detectó (o la persona no está en voz). Mismo gate de rol
+  // Discord no la detecto (o la persona no esta en voz). Mismo gate de rol
   // en el servidor que las pausas.
   const startMut = useMutation({
     mutationFn: async (userId: number) => {
@@ -5715,6 +5717,7 @@ function AttendanceView() {
 }
 
 const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
+  midia: Sun,
   team: Users2,
   att: Clock3,
   dash: LayoutDashboard,
@@ -5732,6 +5735,7 @@ const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
 const HUB_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 const TabIcons: Record<Tab, React.ReactNode> = {
+  midia: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
   team: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><path d="M16 3.13a4 4 0 010 7.75"/><path d="M21 21v-2a4 4 0 00-3-3.87"/></svg>,
   att: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
@@ -5758,6 +5762,9 @@ export default function EjecutivoPage() {
   const isCeo = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
   // La pestaña Servicios/Playbooks la ven admins y quienes pueden gestionarla (ceo/ventas).
   const canSeeSvc = isAdmin || canManageSvc;
+  // Asistencia (pase de lista del equipo): mismo criterio que canOversee en el backend
+  // (dirección, ventas y RRHH). El resto tiene su propia jornada en "Mi día".
+  const canSeeAtt = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo" || authUser?.teamRole === "rrhh";
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const storageKey = hubStorageKey(authUser?.id);
@@ -5884,7 +5891,9 @@ export default function EjecutivoPage() {
   const [tab, setTabRaw] = useState<Tab>(() => {
     // Si volvemos del OAuth de Calendar (?calendar=...), aterrizar en Reuniones.
     try { if (new URLSearchParams(window.location.search).has("calendar")) return "meet"; } catch { /* ignore */ }
-    try { const s = localStorage.getItem(LS_TAB); if (s && ["dash","proj","clients","meet","notes","contracts","svc","drive","team"].includes(s)) return s as Tab; } catch { /* ignore */ }
+    // Enlace directo (?tab=...): lo usa el bot de Discord para llevar a "Mi día".
+    try { const q = new URLSearchParams(window.location.search).get("tab"); if (q && ["midia","dash","proj","clients","meet","notes","contracts","svc","drive","team","att"].includes(q)) return q as Tab; } catch { /* ignore */ }
+    try { const s = localStorage.getItem(LS_TAB); if (s && ["midia","dash","proj","clients","meet","notes","contracts","svc","drive","team"].includes(s)) return s as Tab; } catch { /* ignore */ }
     return "dash";
   });
 
@@ -5894,11 +5903,22 @@ export default function EjecutivoPage() {
     };
     const scope = tabScope[tab];
     // La pestaña guardada puede no corresponder al rol (o al alcance del tablero).
-    if ((tab === "svc" && !canSeeSvc) || (tab === "ventas" && !canManageSvc) || (tab === "torre" && !isCeo) || (scope && !scopes.includes(scope))) {
+    if ((tab === "svc" && !canSeeSvc) || (tab === "ventas" && !canManageSvc) || (tab === "torre" && !isCeo) || (tab === "att" && !canSeeAtt) || (scope && !scopes.includes(scope))) {
       setTabRaw("dash");
       try { localStorage.setItem(LS_TAB, "dash"); } catch { /* ignore */ }
     }
-  }, [tab, canSeeSvc, scopes]);
+  }, [tab, canSeeSvc, canManageSvc, isCeo, canSeeAtt, scopes]);
+  // El ?tab= del enlace del bot se consume una sola vez: si se queda en la URL,
+  // un recargue devolvería a la persona a esa pestaña aunque haya cambiado.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("tab")) {
+        url.searchParams.delete("tab");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
+    } catch { /* ignore */ }
+  }, []);
   const setTab = useCallback((t: Tab) => { setTabRaw(t); try { localStorage.setItem(LS_TAB, t); } catch { /* ignore */ } }, []);
   const navigate = useCallback((t: Tab) => { setTab(t); window.scrollTo(0, 0); }, [setTab]);
 
@@ -5999,8 +6019,10 @@ export default function EjecutivoPage() {
     proj: "projects", clients: "clients", meet: "meetings", notes: "notes", contracts: "contracts",
   };
   const TABS: { id: Tab; cnt?: number }[] = ([
+    { id: "midia" as Tab },
     { id: "team" as Tab },
-    { id: "att" as Tab },
+    // Pase de lista del equipo: solo supervisores (dirección, ventas, RRHH).
+    ...(canSeeAtt ? [{ id: "att" as Tab }] : []),
     { id: "dash" as Tab },
     // Torre de control: solo dirección.
     ...(isCeo ? [{ id: "torre" as Tab }] : []),
@@ -6017,7 +6039,7 @@ export default function EjecutivoPage() {
     const scope = TAB_SCOPE[t.id];
     return !scope || scopes.includes(scope);
   });
-  const TAB_LABELS: Record<Tab, string> = { team: "Equipo", att: "Asistencia", dash: "Dashboard", torre: "Torre CEO", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", svc: "Servicios", drive: "Drive" };
+  const TAB_LABELS: Record<Tab, string> = { midia: "Mi día", team: "Equipo", att: "Asistencia", dash: "Dashboard", torre: "Torre CEO", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", svc: "Servicios", drive: "Drive" };
 
   return (
     <>
@@ -6160,7 +6182,12 @@ export default function EjecutivoPage() {
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
             {tab === "drive" && <HubDriveView />}
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
-            {tab === "att" && <AttendanceView />}
+            {tab === "att" && canSeeAtt && <AttendanceView />}
+            {tab === "midia" && (
+              <div className="p-4 md:p-6 max-w-3xl mx-auto w-full">
+                <JornadaCard />
+              </div>
+            )}
             {tab === "svc" && canSeeSvc && <SvcView canManage={canManageSvc} showToast={showToast} />}
             {tab === "ventas" && canManageSvc && <VentasPanel showToast={showToast} />}
             {tab === "torre" && isCeo && <TorrePanel showToast={showToast} />}

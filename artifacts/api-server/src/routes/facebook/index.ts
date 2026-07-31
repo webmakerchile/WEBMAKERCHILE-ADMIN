@@ -357,6 +357,43 @@ router.post("/facebook/disconnect", async (req: Request, res: Response) => {
 });
 
 /**
+ * Cambia el token configurado por el token DE LA PÁGINA antes de publicar.
+ *
+ * El secreto FACEBOOK_PAGE_ACCESS_TOKEN es un token de usuario de sistema de
+ * Meta Business: tiene pages_manage_posts y pages_read_engagement concedidos,
+ * pero los endpoints de publicación (/feed, /photos, /videos) exigen el token
+ * de la página. Publicar con el de usuario devuelve el error #200 «necesita
+ * pages_read_engagement y pages_manage_posts…» aunque los permisos existan —
+ * ese mensaje de Meta es engañoso. GET /{page-id}?fields=access_token entrega
+ * el token correcto (y si el configurado YA es de página, devuelve el mismo),
+ * así que esta resolución es segura para ambos casos.
+ */
+const pageTokenCache = new Map<string, { token: string; ts: number }>();
+const PAGE_TOKEN_TTL_MS = 50 * 60 * 1000;
+
+async function resolvePageToken(pageId: string, configuredToken: string): Promise<string> {
+  const cacheKey = `${pageId}:${crypto.createHash("sha256").update(configuredToken).digest("hex")}`;
+  const hit = pageTokenCache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < PAGE_TOKEN_TTL_MS) return hit.token;
+  try {
+    const r = await fetch(
+      `${FB_GRAPH_BASE}/${pageId}?fields=access_token&access_token=${encodeURIComponent(configuredToken)}`,
+    );
+    const data: any = await r.json();
+    if (r.ok && data?.access_token) {
+      pageTokenCache.set(cacheKey, { token: data.access_token, ts: Date.now() });
+      return data.access_token;
+    }
+    // Sin acceso al campo (p. ej. el token ya es de página sin permiso MANAGE):
+    // se publica con el configurado y que el error real salga a la superficie.
+    console.warn("[Facebook] no se pudo derivar token de página:", data?.error?.message || `HTTP ${r.status}`);
+  } catch (err: any) {
+    console.warn("[Facebook] derivación de token de página falló:", err.message);
+  }
+  return configuredToken;
+}
+
+/**
  * Publishes a photo to a Facebook Page using multipart/form-data:
  *   POST /{page-id}/photos with `source` (binary), `caption`, `access_token`.
  */
@@ -475,11 +512,14 @@ export async function publishToFacebook(
   // Prefer server-side System User tokens; fall back to user OAuth tokens
   const { pageId: serverPageId, pageToken: serverPageToken } = await getFbServerCreds();
   const pageId = serverPageId || user.facebookPageId;
-  const pageToken = serverPageToken || user.facebookPageAccessToken;
+  const configuredToken = serverPageToken || user.facebookPageAccessToken;
 
-  if (!pageId || !pageToken) {
+  if (!pageId || !configuredToken) {
     return { success: false, error: "Facebook no conectado" };
   }
+  // El secreto del servidor puede ser un token de usuario de sistema: para
+  // publicar hace falta el de la página (ver resolvePageToken).
+  const pageToken = await resolvePageToken(pageId, configuredToken);
 
   const caption = video.facebookDescription || video.description || video.title;
   if (!caption || !caption.trim()) {

@@ -69,10 +69,17 @@ describe("publishToFacebook (text-post path: no videoFileDriveId)", () => {
     expect(r.postId).toBe("page-123_555");
     // Env-captured SERVER_FB_PAGE_ID may override the user-fallback page id,
     // so just assert the call hit the page feed graph endpoint.
+    //
+    // Se busca la llamada de PUBLICACIÓN, no `calls[0]`: antes de publicar,
+    // `resolvePageToken` pide el token de la página con un GET, así que el POST
+    // al feed ya no es la primera llamada. Fijar el índice hacía que el test
+    // fallara por un cambio deliberado del código, que es la forma más rápida
+    // de que el equipo aprenda a ignorar los tests en rojo.
     const calls = fetchSpy.mock.calls as unknown as Array<[string, { body?: string }]>;
-    const url = String(calls[0][0]);
-    expect(url).toMatch(/graph\.facebook\.com\/v\d+\.\d+\/[^/]+\/feed$/);
-    const body = String(calls[0][1]?.body ?? "");
+    const publicacion = calls.find(([u]) => /\/feed$/.test(String(u)));
+    expect(publicacion, "no se llamó al endpoint de publicación").toBeDefined();
+    expect(String(publicacion![0])).toMatch(/graph\.facebook\.com\/v\d+\.\d+\/[^/]+\/feed$/);
+    const body = String(publicacion![1]?.body ?? "");
     expect(body).toContain("message=Hola+Facebook");
   });
 

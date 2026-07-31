@@ -52,7 +52,7 @@ export function buildRedactarIdeaPostPrompt(
   const pieza = esHistoria
     ? "una HISTORIA vertical 9:16 para Instagram/TikTok (se ve a pantalla completa unos segundos)"
     : esCarrusel
-      ? "un CARRUSEL de Instagram (varias slides 4:5 que se recorren deslizando)"
+      ? "un CARRUSEL de Instagram (varias slides 1:1 cuadradas que se recorren deslizando)"
       : "una PUBLICACIÓN ÚNICA cuadrada para redes";
 
   return `Eres el redactor creativo de WebMaker (agencia digital para pymes y emprendedores de LATAM). Un compañero escribió a lo bruto la idea para ${pieza}${opts?.tipoContenido ? ` del tipo "${opts.tipoContenido}"` : ""}.
