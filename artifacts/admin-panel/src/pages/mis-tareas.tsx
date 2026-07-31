@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { fmtDate, daysUntil, type HubProject, type HubContract } from "@/lib/hub-owner";
-import { misProyectos, tieneAsignados, carpetaDe, urlDeCarpeta } from "@/lib/proyecto-asignacion";
+import { misProyectos, tieneAsignados, carpetaDe } from "@/lib/proyecto-asignacion";
 import { useHubBoard, useHubPatch, replaceEntity } from "@/lib/hub-write";
 import { useTareasHub, type TareaVista } from "@/lib/tareas-hub";
 import { useAuth } from "@/App";
@@ -13,6 +13,7 @@ import { TicketsInline } from "@/components/tickets-inline";
 import { MetasInline } from "@/components/metas-inline";
 import { ConfigRecordatorios, useReglasRecordatorio } from "@/components/config-recordatorios";
 import { ResumenServicios } from "@/components/resumen-servicios";
+import { CarpetaProyecto, SinCarpetaProyecto } from "@/components/carpeta-proyecto";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
   ChevronDown, ChevronLeft, ChevronRight, Plus, Flame, X, Check, Timer,
@@ -518,16 +519,7 @@ export default function MisTareasPage() {
                                 Entrega {fmtDate(p.due)}
                               </span>
                             )}
-                            {carpetaDe(p) && (
-                              <a
-                                href={urlDeCarpeta(carpetaDe(p)!)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-primary hover:underline"
-                              >
-                                Carpeta del proyecto <ExternalLink className="w-2.5 h-2.5" />
-                              </a>
-                            )}
+
                             {puedeEditarProyectos && prog.total === 0 && (
                               // Sin tareas no hay avance calculable: se informa a mano
                               // para que el proyecto no se vea muerto en el panel.
@@ -545,6 +537,13 @@ export default function MisTareasPage() {
                               </label>
                             )}
                           </div>
+
+                          {/* Los archivos, aquí mismo. Era un enlace que abría
+                              Drive en otra pestaña: para ver si el cliente
+                              subió el logo había que salir del tablero. */}
+                          {carpetaDe(p)
+                            ? <CarpetaProyecto carpetaId={carpetaDe(p)!} nombre={p.name} />
+                            : <SinCarpetaProyecto />}
                         </li>
                       );
                     })}

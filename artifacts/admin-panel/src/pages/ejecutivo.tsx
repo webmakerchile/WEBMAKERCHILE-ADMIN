@@ -3,7 +3,7 @@ import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { EnlaceFirma } from "@/components/enlace-firma";
 import { AsignarProyecto } from "@/components/asignar-proyecto";
 import { ElegirDelCatalogo } from "@/components/elegir-del-catalogo";
-import { asignadosDe, idDeCarpeta } from "@/lib/proyecto-asignacion";
+import { asignadosDe, idDeCarpeta, nombreDeCarpeta } from "@/lib/proyecto-asignacion";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
@@ -73,6 +73,16 @@ interface Project {
   id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus;
   owner: string; prog: number; notes: string; link: string; due?: string; contractId?: string;
   createdAt: number; updatedAt: number; stageSince?: number; stageTime?: Record<string, number>;
+  /**
+   * Id de la carpeta de Drive, ya extraído del enlace.
+   *
+   * `link` es texto libre dentro de un blob sin esquema: a veces guarda la URL
+   * de la carpeta, a veces una compartida ajena y a veces cualquier cosa. Este
+   * campo es el que se puede usar sin volver a adivinar.
+   */
+  driveFolderId?: string;
+  /** A quién le toca, por id real de usuario. Vacío = de todo el equipo. */
+  assigneeIds?: number[];
   /**
    * true = el área de marketing trabaja en este proyecto.
    *
@@ -1318,8 +1328,8 @@ function FolderPickerPanel({ onSelect }: { onSelect: (id: string, name: string, 
   );
 }
 
-function DriveFolderSelector({ value, onChange, projectName, onToast }: {
-  value: string; onChange: (link: string) => void; projectName: string; onToast: (msg: string) => void;
+function DriveFolderSelector({ value, onChange, projectName, clientName, onToast }: {
+  value: string; onChange: (link: string) => void; projectName: string; clientName?: string; onToast: (msg: string) => void;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1332,12 +1342,16 @@ function DriveFolderSelector({ value, onChange, projectName, onToast }: {
   const folderId = extractDriveFolderId(value);
 
   const handleCreate = async () => {
-    const name = projectName.trim() || "Proyecto";
+    // El nombre lleva el cliente porque dos clientes piden "Landing" el mismo
+    // mes, y en la lista de Drive dos carpetas iguales no se distinguen.
+    const name = nombreDeCarpeta(projectName, clientName);
     setCreating(true);
     try {
       const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        credentials: "include", body: JSON.stringify({ name }),
+        // Sin parentId la carpeta se creaba suelta en "Mi unidad" de quien la
+        // creó, no dentro de la raíz de clientes: nadie más volvía a verla.
+        credentials: "include", body: JSON.stringify({ name, parentId: "hub" }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Error desconocido" }));
@@ -2147,7 +2161,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       </div>
       <div className="field"><label>Fecha límite (opcional)</label><input type="date" ref={R("due")} defaultValue={pf.due || ""} /></div>
       <div className="field"><label>Carpeta de Drive</label>
-        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} onToast={onToast} />
+        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={projNameDraft} clientName={V("cli")} onToast={onToast} />
       </div>
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={4} defaultValue={pf.notes || ""} /></div>
       {(playbooksData?.playbooks?.filter(pb => !pb.archived).length ?? 0) > 0 && (
@@ -2179,7 +2193,40 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           return;
         }
         const newProjId = uid();
-        onSave({ ...state, projects: [...state.projects, { id: newProjId, name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, contractId: fromCid, createdAt: now, updatedAt: now }] });
+        const cliente = V("cli").trim();
+        onSave({ ...state, projects: [...state.projects, { id: newProjId, name, client: cliente, type: V("ty").trim(), prio: V("prio") as Prio, status: V("st") as ProjStatus, owner: V("ow").trim(), due: V("due"), prog: 0, notes: V("no"), link: driveFolderLink, driveFolderId: idDeCarpeta(driveFolderLink) ?? undefined, contractId: fromCid, createdAt: now, updatedAt: now }] });
+
+        // Carpeta automática: si nadie eligió ni creó una, se crea sola. Era un
+        // botón que había que acordarse de pulsar, así que la mitad de los
+        // proyectos acababa sin carpeta y el trabajo se repartía por chats.
+        //
+        // Va DESPUÉS de guardar el proyecto y sin bloquear: si Drive falla, el
+        // proyecto ya existe. Al revés, un fallo de Drive impediría crear el
+        // proyecto por algo que no tiene nada que ver con él.
+        if (!driveFolderLink) {
+          void (async () => {
+            try {
+              const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
+                method: "POST", credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: nombreDeCarpeta(name, cliente), parentId: "hub" }),
+              });
+              if (!res.ok) {
+                const e = await res.json().catch(() => ({})) as { error?: string };
+                throw new Error(e.error || `El servidor respondió ${res.status}`);
+              }
+              const d = await res.json() as { id?: string; webViewLink?: string };
+              const link = d.webViewLink || (d.id ? `https://drive.google.com/drive/folders/${d.id}` : "");
+              if (!link) return;
+              onSave({ ...state, projects: state.projects.map(p => p.id !== newProjId ? p : { ...p, link, driveFolderId: d.id, updatedAt: Date.now() }) });
+              onToast(`Carpeta de Drive creada para "${name}"`);
+            } catch (e: unknown) {
+              // Se dice. Un fallo callado deja el proyecto sin carpeta y nadie
+              // se entera hasta que va a buscar los archivos.
+              onToast(`El proyecto se creó, pero no se pudo crear su carpeta: ${e instanceof Error ? e.message : "error desconocido"}`);
+            }
+          })();
+        }
         if (playbookId) {
           // Genera las tareas estándar del playbook para el proyecto recién creado.
           fetch(`${DRIVE_API_BASE}/hub/playbooks/${playbookId}/apply`, {
