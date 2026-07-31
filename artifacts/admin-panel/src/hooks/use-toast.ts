@@ -155,8 +155,12 @@ function toast({ ...props }: Toast) {
       ...props,
       id,
       open: true,
+      // Se respeta el onOpenChange del que llama (además del dismiss interno):
+      // hay toasts que necesitan reaccionar al cierre, p. ej. marcar leída la
+      // notificación que representan.
       onOpenChange: (open) => {
         if (!open) dismiss()
+        props.onOpenChange?.(open)
       },
     },
   })

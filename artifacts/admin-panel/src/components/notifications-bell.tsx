@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/App";
 import {
   getCurrentSubscription,
   isPushSupported,
@@ -82,6 +83,7 @@ export function NotificationsBell() {
   const [pushBusy, setPushBusy] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const user = useAuth();
 
   const { data: items = [] } = useQuery<Notification[]>({
     queryKey: ["notifications"],
@@ -92,31 +94,6 @@ export function NotificationsBell() {
     },
     refetchInterval: 60 * 1000,
   });
-
-  // Toast on newly arrived publish/connection notifications. We track the
-  // highest id we've already toasted in sessionStorage so a refresh doesn't
-  // re-fire the same toasts. Persisted notifications still appear in the bell.
-  const TOAST_TYPES = new Set([
-    "publish_success", "publish_partial", "publish_error",
-    "connection_expiring", "connection_expired", "connection_revoked",
-  ]);
-  useEffect(() => {
-    if (!items.length) return;
-    const KEY = "notifications:lastToastedId";
-    const lastSeen = Number(sessionStorage.getItem(KEY) || "0");
-    let highest = lastSeen;
-    const fresh = items
-      .filter((n) => n.id > lastSeen && TOAST_TYPES.has(n.type))
-      .sort((a, b) => a.id - b.id);
-    for (const n of fresh) {
-      const variant = n.type === "publish_error" || n.type === "connection_revoked" || n.type === "connection_expired"
-        ? "destructive" as const
-        : undefined;
-      toast({ title: n.title, description: n.body || undefined, variant });
-      if (n.id > highest) highest = n.id;
-    }
-    if (highest > lastSeen) sessionStorage.setItem(KEY, String(highest));
-  }, [items, toast]);
 
   const { data: unread } = useQuery<{ count: number }>({
     queryKey: ["notifications", "unread"],
@@ -183,6 +160,60 @@ export function NotificationsBell() {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
+
+  // Toast solo para lo que llega "en vivo". El cursor vivía en sessionStorage
+  // y se borraba al cerrar la pestaña: cada sesión nueva re-mostraba como
+  // toast todas las no leídas (el mismo "Publicación parcial" cada mañana).
+  // Ahora va en localStorage por usuario, el primer uso ancla el cursor al
+  // presente para no repetir historial, y solo se tostea lo no leído con
+  // menos de 10 minutos de antigüedad. El error de fondo sigue visible donde
+  // corresponde: en la campana y en el detalle del video, no como toast eterno.
+  const TOAST_TYPES = new Set([
+    "publish_success", "publish_partial", "publish_error",
+    "connection_expiring", "connection_expired", "connection_revoked",
+  ]);
+  useEffect(() => {
+    const KEY = `notifications:lastToastedId:${user?.id ?? "anon"}`;
+    const stored = localStorage.getItem(KEY);
+    // maxId = 0 cuando aún no hay notificaciones: el ancla queda en 0 y la
+    // primera que llegue en vivo sí se tostea (id > 0).
+    const maxId = items.reduce((m, n) => Math.max(m, n.id), 0);
+    if (stored === null) {
+      // Primer uso (o navegador nuevo): anclar sin tostear nada del pasado.
+      localStorage.setItem(KEY, String(maxId));
+      return;
+    }
+    if (!items.length) return;
+    const lastSeen = Number(stored) || 0;
+    const fresh = items
+      .filter(
+        (n) =>
+          n.id > lastSeen &&
+          TOAST_TYPES.has(n.type) &&
+          !n.readAt &&
+          Date.now() - new Date(n.createdAt).getTime() < 10 * 60_000,
+      )
+      .sort((a, b) => a.id - b.id);
+    for (const n of fresh) {
+      const variant = n.type === "publish_error" || n.type === "connection_revoked" || n.type === "connection_expired"
+        ? "destructive" as const
+        : undefined;
+      toast({
+        title: n.title,
+        description: n.body || undefined,
+        variant,
+        // Cerrar el toast (a mano o cuando expira solo) cuenta como visto:
+        // se marca leída para que no quede además como "nueva" en la campana.
+        onOpenChange: (abierto) => {
+          if (!abierto) markRead.mutate(n.id);
+        },
+      });
+    }
+    // El cursor avanza hasta lo más nuevo aunque no se haya tosteado (viejas
+    // o leídas): quedan en el historial de la campana, no vuelven como toast.
+    if (maxId > lastSeen) localStorage.setItem(KEY, String(maxId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- markRead.mutate es estable
+  }, [items, toast, user?.id]);
 
   const handleTogglePush = async () => {
     if (pushBusy) return;

@@ -182,8 +182,10 @@ type VideoData = {
   tiktokError?: string | null;
   instagramMediaId?: string | null;
   instagramStatus?: string | null;
+  instagramError?: string | null;
   youtubeVideoId?: string | null;
   youtubeStatus?: string | null;
+  youtubeError?: string | null;
   linkedinPostId?: string | null;
   linkedinStatus?: string | null;
   linkedinError?: string | null;
@@ -4901,6 +4903,22 @@ function StepLinkedInX({
   );
 }
 
+/**
+ * Traduce el error crudo de una red a "qué hacer ahora", en palabras. El
+ * orden importa: los mensajes de Meta con (#200) también dicen "OAuth", y los
+ * de cuota también mencionan el token — primero lo específico, después lo
+ * genérico.
+ */
+function accionSugerida(error: string | null | undefined, t: ReturnType<typeof useLang>["t"]): string {
+  const e = (error || "").toLowerCase();
+  if (/unaudited|sandbox|audit/.test(e)) return t.reviewActionSandbox;
+  if (/quota|usage.?cap|cap exceeded|\b429\b|too many|rate.?limit|credit/.test(e)) return t.reviewActionQuota;
+  if (/\(#200\)|#200|permission|permiso|not authorized|pages_manage|pages_read/.test(e)) return t.reviewActionPermission;
+  if (/\b401\b|unauthor|invalid_grant|invalid_token|revoked|expired|oauth/.test(e)) return t.reviewActionReconnect;
+  if (/timeout|network|fetch failed|unavailable|\b5\d{2}\b|econnreset|socket/.test(e)) return t.reviewActionTransient;
+  return t.reviewActionDefault;
+}
+
 function StepReview({
   video,
   onSchedule,
@@ -4930,6 +4948,49 @@ function StepReview({
   const [showIgDrivePicker, setShowIgDrivePicker] = useState(false);
   const [includeFacebook, setIncludeFacebook] = useState(!!video.facebookDescription);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [reintentando, setReintentando] = useState<string | null>(null);
+  // La prop `video` es la foto tomada al abrir el wizard; tras un reintento
+  // se pide la fila fresca para que "Resultado por red" muestre lo real.
+  const [videoFresco, setVideoFresco] = useState<Record<string, any> | null>(null);
+
+  // Reintento por red desde el detalle: el mismo endpoint que usa el tablero.
+  // Al terminar se refrescan las listas para que el panel muestre el estado
+  // real y no una foto vieja.
+  async function reintentarRed(red: string, etiqueta: string) {
+    setReintentando(red);
+    try {
+      const r = await fetch(`${API_BASE}/content/videos/${video.id}/retry/${red}`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const ct = r.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await r.json() : null;
+      if (r.ok && data?.success) {
+        toast({ title: t.reviewRetryOk(etiqueta) });
+      } else {
+        toast({
+          title: t.reviewRetryFail(etiqueta),
+          description: data?.error || `Error ${r.status}`,
+          variant: "destructive",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["videos"] });
+      queryClient.invalidateQueries({ queryKey: ["recent-activity"] });
+    } catch (e: any) {
+      toast({ title: t.reviewRetryFail(etiqueta), description: e?.message, variant: "destructive" });
+    } finally {
+      // Refrescar el estado por red pase lo que pase: un fallo transitorio
+      // deja la red en "reintento pendiente" y eso también hay que verlo.
+      try {
+        const rf = await fetch(`${API_BASE}/content/videos/${video.id}`, { credentials: "include" });
+        if (rf.ok) setVideoFresco(await rf.json());
+      } catch {
+        // Sin frescura no se rompe nada: queda la foto anterior.
+      }
+      setReintentando(null);
+    }
+  }
 
   const hasVideoFile = !!video.videoFileDriveId;
 
@@ -5345,6 +5406,10 @@ function StepReview({
 
   const isScheduled = video.status === "scheduled" || video.status === "published";
 
+  // Para estado y error por red manda la fila fresca (si la hay); el resto
+  // del paso sigue leyendo la prop original.
+  const v = videoFresco ? { ...video, ...videoFresco } : video;
+
   const platforms = [
     {
       name: "TikTok",
@@ -5353,7 +5418,9 @@ function StepReview({
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9a6.33 6.33 0 00-.79-.05A6.34 6.34 0 003.15 15.3a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.37a8.16 8.16 0 004.76 1.52V7.45a4.85 4.85 0 01-1-.76z"/></svg>
         </span>
       ),
-      status: video.tiktokStatus,
+      key: "tiktok",
+      status: v.tiktokStatus,
+      error: v.tiktokError,
       content: video.tiktokDescription,
       ready: !!video.tiktokDescription,
     },
@@ -5364,7 +5431,9 @@ function StepReview({
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
         </span>
       ),
-      status: video.instagramStatus,
+      key: "instagram",
+      status: v.instagramStatus,
+      error: v.instagramError,
       content: video.instagramDescription,
       ready: !!video.instagramDescription,
     },
@@ -5375,7 +5444,9 @@ function StepReview({
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
         </span>
       ),
-      status: video.youtubeStatus,
+      key: "youtube",
+      status: v.youtubeStatus,
+      error: v.youtubeError,
       content: video.youtubeTitle ? `${video.youtubeTitle}\n\n${video.youtubeDescription || ""}` : "",
       ready: !!video.youtubeTitle && !!video.youtubeDescription,
     },
@@ -5386,7 +5457,9 @@ function StepReview({
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M19 0h-14c-2.76 0-5 2.24-5 5v14c0 2.76 2.24 5 5 5h14c2.76 0 5-2.24 5-5v-14c0-2.76-2.24-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.27c-.97 0-1.75-.79-1.75-1.76s.78-1.76 1.75-1.76 1.75.79 1.75 1.76-.78 1.76-1.75 1.76zm13.5 12.27h-3v-5.6c0-3.37-4-3.11-4 0v5.6h-3v-11h3v1.76c1.4-2.59 7-2.78 7 2.48v6.76z"/></svg>
         </span>
       ),
-      status: video.linkedinStatus,
+      key: "linkedin",
+      status: v.linkedinStatus,
+      error: v.linkedinError,
       content: video.linkedinDescription || "",
       ready: !!video.linkedinDescription,
     },
@@ -5397,7 +5470,9 @@ function StepReview({
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
         </span>
       ),
-      status: video.xStatus,
+      key: "x",
+      status: v.xStatus,
+      error: v.xError,
       content: video.xDescription || "",
       ready: !!video.xDescription,
     },
@@ -5408,7 +5483,9 @@ function StepReview({
           <svg viewBox="0 0 24 24" className="w-5 h-5 fill-white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
         </span>
       ),
-      status: video.facebookStatus,
+      key: "facebook",
+      status: v.facebookStatus,
+      error: v.facebookError,
       content: video.facebookDescription || "",
       ready: !!video.facebookDescription,
       optional: true,
@@ -5539,39 +5616,103 @@ function StepReview({
             </div>
           )}
 
-          {(video.tiktokError || video.linkedinError || video.xError || video.tiktokStatus === "error" || video.status === "partial" || video.status === "error") && (
-            <div className={`rounded-xl p-4 space-y-2 border ${
-              video.status === "partial"
-                ? "bg-amber-500/10 border-amber-500/30"
-                : "bg-rose-500/10 border-rose-500/30"
-            }`}>
-              <div className="flex items-start gap-2">
-                <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${video.status === "partial" ? "text-amber-400" : "text-rose-400"}`} />
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold ${video.status === "partial" ? "text-amber-300" : "text-rose-300"}`}>
-                    {video.status === "partial" ? t.reviewPartiallyPublished : t.reviewPublishErrors}
-                  </p>
-                  <div className="mt-2 space-y-1">
-                    {(video.tiktokError || video.tiktokStatus === "error") && (
-                      <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
-                        <span className="font-semibold">TikTok:</span> {video.tiktokError || t.reviewPublishErrors}
+          {(() => {
+            // Resultado por red: aparece en cuanto hubo un intento real de
+            // publicación. El error vive aquí — motivo corto + qué hacer —
+            // y no en un toast que se repite; la campana guarda el aviso y
+            // este panel muestra el estado verificable de cada red.
+            // "uploaded" es el estado de éxito que persisten YouTube y TikTok
+            // (el resto usa "published"): ambos cuentan como publicado.
+            const intentadas = platforms.filter((p) =>
+              ["published", "uploaded", "error", "retrying", "skipped"].includes(p.status || ""),
+            );
+            if (intentadas.length === 0) return null;
+            const hayProblema = intentadas.some((p) => p.status === "error" || p.status === "retrying");
+            return (
+              <div
+                className={`rounded-xl border p-4 space-y-3 ${
+                  hayProblema ? "bg-amber-500/5 border-amber-500/25" : "bg-emerald-500/5 border-emerald-500/20"
+                }`}
+                data-testid="panel-resultado-redes"
+              >
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  {hayProblema ? (
+                    <AlertCircle className="w-4 h-4 text-amber-400" />
+                  ) : (
+                    <Check className="w-4 h-4 text-emerald-400" />
+                  )}
+                  {t.reviewResultTitle}
+                </p>
+                <div className="space-y-2">
+                  {intentadas.map((p) => (
+                    <div
+                      key={p.key}
+                      className="flex items-start gap-3 rounded-lg border border-foreground/10 bg-background/40 px-3 py-2.5"
+                      data-testid={`resultado-red-${p.key}`}
+                    >
+                      <div className="flex-shrink-0 mt-0.5">{p.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{p.name}</span>
+                          {(p.status === "published" || p.status === "uploaded") && (
+                            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[10px]">
+                              <Check className="w-3 h-3 mr-1" />
+                              {t.reviewResultPublished}
+                            </Badge>
+                          )}
+                          {p.status === "error" && (
+                            <Badge className="bg-rose-500/10 text-rose-400 border-rose-500/20 text-[10px]">
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              {t.reviewResultFailed}
+                            </Badge>
+                          )}
+                          {p.status === "retrying" && (
+                            <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">
+                              <Clock className="w-3 h-3 mr-1" />
+                              {t.reviewResultRetrying}
+                            </Badge>
+                          )}
+                          {p.status === "skipped" && (
+                            <Badge variant="outline" className="border-foreground/15 text-muted-foreground text-[10px]">
+                              {t.reviewResultSkipped}
+                            </Badge>
+                          )}
+                        </div>
+                        {(p.status === "error" || p.status === "retrying") && (
+                          <>
+                            {p.error && (
+                              <p className="text-xs text-muted-foreground mt-1 break-words">
+                                {p.error.length > 180 ? `${p.error.slice(0, 180)}…` : p.error}
+                              </p>
+                            )}
+                            <p className="text-xs mt-1 font-medium text-foreground/85">
+                              → {accionSugerida(p.error, t)}
+                            </p>
+                          </>
+                        )}
                       </div>
-                    )}
-                    {video.linkedinError && (
-                      <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
-                        <span className="font-semibold">LinkedIn:</span> {video.linkedinError}
-                      </div>
-                    )}
-                    {video.xError && (
-                      <div className="text-xs px-2 py-1.5 rounded bg-destructive/10 text-destructive border border-destructive/30">
-                        <span className="font-semibold">X:</span> {video.xError}
-                      </div>
-                    )}
-                  </div>
+                      {p.status === "error" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-shrink-0 border-foreground/15"
+                          disabled={reintentando !== null}
+                          onClick={() => reintentarRed(p.key, p.name)}
+                          data-testid={`button-retry-${p.key}`}
+                        >
+                          {reintentando === p.key ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            t.reviewRetryBtn
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {isScheduled && (
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-3">
