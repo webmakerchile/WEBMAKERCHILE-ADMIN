@@ -1,4 +1,5 @@
 import { AsistenteRedaccion } from "@/components/asistente-redaccion";
+import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
 import { useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -109,6 +110,8 @@ export default function MisTareasPage() {
     if (soloSemana && semanaKey) list = list.filter(t => t.sprintWeek === semanaKey);
     return list;
   }, [tasks, projectId, soloSemana, semanaKey]);
+
+  const navTablero = useBoardNav();
 
   const byStage = useMemo(() => {
     const map = new Map<string, TareaVista[]>(STAGES.map(s => [s.id, []]));
@@ -421,12 +424,18 @@ export default function MisTareasPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="overflow-x-auto pb-2">
-                <div className="flex gap-3 min-w-max">
+              <>
+                <BoardNav
+                  nav={navTablero}
+                  stages={STAGES.map(s => ({ id: s.id, label: s.label, count: (byStage.get(s.id) ?? []).length, color: s.color }))}
+                />
+                <BoardScroller nav={navTablero}>
+                <div className="overflow-x-auto pb-2 bnav-scroll" ref={navTablero.ref}>
+                  <div className="flex gap-3 min-w-max">
                   {STAGES.map(stage => {
                     const list = byStage.get(stage.id) ?? [];
                     return (
-                      <div key={stage.id} className="w-72 flex-shrink-0">
+                      <div key={stage.id} className="w-72 flex-shrink-0" data-bnav-col>
                         <div className="flex items-center gap-2 mb-2 px-1">
                           <span className="w-2 h-2 rounded-full" style={{ background: stage.color }} />
                           <span className="text-xs font-semibold">{stage.label}</span>
@@ -455,8 +464,10 @@ export default function MisTareasPage() {
                       </div>
                     );
                   })}
+                  </div>
                 </div>
-              </div>
+                </BoardScroller>
+              </>
             )}
 
             {contracts.length > 0 && (

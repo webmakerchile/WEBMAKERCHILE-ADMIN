@@ -24,3 +24,4 @@
 - [Cobros y pagos](cobros-pagos.md) — ledger en tabla real (no en el blob); estadoPago siempre calculado; auto-marca "pagado" one-way con re-chequeo fresco (fechaPago = último abono, de ahí salen comisiones); anti doble-clic server-side.
 - [Sprint semanal y generación única](sprint-semanal-generacion.md) — cierre foto→arrastre idempotente sin tx; generar 1×/semana = LLM fuera + advisory xact lock + re-chequeo + pares en una sola tx.
 - [Estados de publicación por red](redes-publish-status.md) — éxito = published O uploaded (YouTube/TikTok); filtrar solo por published esconde redes exitosas; e2e real en dev solo Facebook.
+- [Tableros horizontales](tableros-horizontales.md) — reusar el módulo board-nav (chips/flechas/fades/snap); flechas por posición (no índice: clamp con overflow chico); snap off durante drag.

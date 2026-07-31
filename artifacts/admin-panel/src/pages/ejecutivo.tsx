@@ -1,6 +1,7 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
+import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
 import { EnlaceFirma } from "@/components/enlace-firma";
 import { ReunionesOportunidad } from "@/components/reuniones-oportunidad";
 import { AsignarProyecto } from "@/components/asignar-proyecto";
@@ -3453,6 +3454,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
     }
     setDragId(null); setDragOver(null);
   };
+  const scrumNav = useBoardNav();
   return (
     <div className="wrap">
       <div className="toolbar">
@@ -3504,12 +3506,30 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
         </div>
       )}
       {projView === "scrum" && (
-        <div className="board scrum3">
+        <>
+          <BoardNav
+            nav={scrumNav}
+            stages={TASK_STAGES.map(s => ({ id: s.id, label: s.label, count: ft.filter(t => t.stage === s.id).length, color: s.color }))}
+          />
+          <BoardScroller nav={scrumNav}>
+          <div
+            className="board scrum6 bnav-scroll"
+            ref={scrumNav.ref}
+            data-dragging={dragId ? "true" : undefined}
+            onDragOver={e => {
+              // Auto-scroll horizontal al arrastrar cerca de los bordes, para
+              // poder soltar la tarjeta en columnas fuera de pantalla.
+              const el = e.currentTarget as HTMLDivElement;
+              const r = el.getBoundingClientRect();
+              if (e.clientX > r.right - 70) el.scrollLeft += 16;
+              else if (e.clientX < r.left + 70) el.scrollLeft -= 16;
+            }}
+          >
           {!state.projects.length && !apiTasks.length && <div className="col-empty" style={{ gridColumn: "1/-1" }}>Crea un proyecto primero, luego añade tareas con <strong>+ Nuevo</strong>.</div>}
           {TASK_STAGES.map(s => {
             const items = ft.filter(t => t.stage === s.id).sort((a, b) => (prioW(a.priority) - prioW(b.priority)) || (a.orderIndex - b.orderIndex));
             return (
-              <div key={s.id} className={`col ${dragOver === s.id ? "dragover" : ""}`}
+              <div key={s.id} className={`col ${dragOver === s.id ? "dragover" : ""}`} data-bnav-col
                 onDragOver={e => { e.preventDefault(); setDragOver(s.id); }}
                 onDragLeave={() => setDragOver(null)}
                 onDrop={() => void dropTask(s.id)}>
@@ -3518,7 +3538,9 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
               </div>
             );
           })}
-        </div>
+          </div>
+          </BoardScroller>
+        </>
       )}
     </div>
   );

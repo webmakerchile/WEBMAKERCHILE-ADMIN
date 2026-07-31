@@ -149,6 +149,9 @@
 /* scrumban */
 .hub-root .board.scrum6{grid-template-columns:repeat(6,minmax(160px,1fr));overflow-x:auto;padding-bottom:6px;}
 .hub-root .board.scrum6 .col{min-width:160px;}
+/* con la fila de chips arriba (board-nav), el tablero no necesita tanto margen */
+.hub-root .bnav-rail{margin-top:14px;}
+.hub-root .bnav-wrap .board.scrum6{margin-top:8px;}
 .hub-root .tcard{position:relative;}
 .hub-root .tcard .stage-timer,.hub-root .pcard .stage-timer{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--dim);background:var(--card3);border:1px solid var(--line);border-radius:20px;padding:2px 9px;}
 .hub-root .stage-timer .clk{opacity:.7;font-size:11px;}
