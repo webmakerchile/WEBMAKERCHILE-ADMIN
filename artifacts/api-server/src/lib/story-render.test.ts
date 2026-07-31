@@ -90,6 +90,24 @@ async function cajaDeTinta(svg: Buffer): Promise<{ x0: number; y0: number; x1: n
   return x1 < 0 ? null : { x0, y0, x1, y1 };
 }
 
+/**
+ * Margen alrededor del lienzo al rasterizar en los tests.
+ *
+ * Sin él, el rasterizador recorta lo que se sale y la caja de tinta cae siempre
+ * dentro: el test pasaría con el titular medio fuera. Con margen, el desborde
+ * se dibuja y se puede medir.
+ */
+const MARGEN_TEST = 400;
+
+/** Mete la composición en un lienzo con margen, desplazada al centro. */
+function conMargen(svg: string, lienzo: { width: number; height: number }): string {
+  const interior = svg.replace(/^[\s\S]*?<svg[^>]*>/, "").replace(/<\/svg>\s*$/, "");
+  const w = lienzo.width + MARGEN_TEST * 2;
+  const h = lienzo.height + MARGEN_TEST * 2;
+  return `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">` +
+    `<g transform="translate(${MARGEN_TEST},${MARGEN_TEST})">${interior}</g></svg>`;
+}
+
 /** Los scrims son degradados a sangre por diseño: no cuentan como texto. */
 function sinScrims(svg: string): string {
   return svg.replace(/<rect[^>]*fill="url\(#(?:top|bot)fade\)"\s*\/>/g, "");
@@ -197,6 +215,61 @@ describe("bloques secundarios: nunca se salen ni se pisan", () => {
         }
       }
     });
+  }
+
+  /* ---------------- Lienzos de feed ----------------
+
+     El fallo que esto cubre: los formatos interactivos del feed se componían
+     enteros a 9:16 y DESPUÉS se recortaban al aspecto real, así que el recorte
+     se llevaba el 30 % del alto en 4:5 y el 44 % en 1:1 — con el titular ya
+     dibujado dentro. Los tests solo rasterizaban 1080x1920, que es justo el
+     único caso donde no pasaba, y por eso "en Historias funciona y en el feed
+     no" nunca lo detectó nada. */
+
+  for (const [nombre, lienzo] of [
+    ["4:5", { width: 1080, height: 1350 }],
+    ["1:1", { width: 1080, height: 1080 }],
+  ] as const) {
+    it(`el titular cabe también en ${nombre}, rasterizado`, async () => {
+      for (const layout of LAYOUTS_HISTORIA) {
+        const comp = componerHistoria(
+          frameDe("El horno seguía prendido y el teléfono en silencio"),
+          layout,
+          { estiloTitularId: "titan", lienzo },
+        );
+        // Se rasteriza sobre un lienzo MÁS GRANDE, con la composición desplazada
+        // al centro. Rasterizar al tamaño exacto no sirve para esto: lo que se
+        // salga queda recortado por el propio rasterizador y la caja de tinta
+        // siempre sale dentro — el test pasaría aunque el titular se fuera medio
+        // metro fuera. Con margen, lo que desborda se ve y se mide.
+        const png = await sharp(Buffer.from(conMargen(sinScrims(comp.svg), lienzo)))
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+
+        const { data, info } = png;
+        const canales = info.channels;
+        let y0 = info.height, y1 = -1, x0 = info.width, x1 = -1;
+        for (let y = 0; y < info.height; y++) {
+          for (let x = 0; x < info.width; x++) {
+            if (data[(y * info.width + x) * canales + (canales - 1)]! > 12) {
+              if (y < y0) y0 = y;
+              if (y > y1) y1 = y;
+              if (x < x0) x0 = x;
+              if (x > x1) x1 = x;
+            }
+          }
+        }
+        if (y1 < 0) continue; // layout sin tinta visible: nada que comprobar
+        // Se mide en coordenadas del diseño, descontando el margen del test.
+        const top = y0 - MARGEN_TEST, bottom = y1 - MARGEN_TEST;
+        const left = x0 - MARGEN_TEST, right = x1 - MARGEN_TEST;
+        expect(top, `${layout.id} en ${nombre}: se sale por arriba`).toBeGreaterThanOrEqual(0);
+        expect(bottom, `${layout.id} en ${nombre}: se sale por abajo`).toBeLessThanOrEqual(lienzo.height - 1);
+        expect(left, `${layout.id} en ${nombre}: se sale por la izquierda`).toBeGreaterThanOrEqual(0);
+        expect(right, `${layout.id} en ${nombre}: se sale por la derecha`).toBeLessThanOrEqual(lienzo.width - 1);
+      }
+    }, 60_000);
   }
 
   it("el frame de cierre entero cabe en el lienzo, rasterizado", async () => {

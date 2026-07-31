@@ -22,6 +22,7 @@ import {
 } from "./title-style.js";
 import { FONT_METRICS } from "./font-metrics.generated.js";
 import { HIST_HEIGHT, HIST_WIDTH, type LayoutHistoria } from "./story-formats.js";
+import { escalarLayout, LIENZO_HISTORIA, type Lienzo } from "./escalar-layout.js";
 import type { FrameGuion } from "./story-script.js";
 
 export interface PaletaComposicion {
@@ -189,6 +190,16 @@ export interface OpcionesRenderHistoria {
   estiloTitularId?: string;
   /** Paleta de la dirección de arte activa: acento y color del scrim. */
   paleta?: PaletaComposicion;
+  /**
+   * Lienzo sobre el que se compone. Por defecto 9:16 (1080x1920).
+   *
+   * Existe porque los formatos interactivos del FEED se componían enteros a
+   * 9:16 y luego se recortaban al aspecto real: el segundo recorte se llevaba
+   * el 30 % del alto en 4:5 y el 44 % en 1:1, con el titular ya dibujado
+   * dentro. Componer directamente sobre el lienzo bueno hace que no haya
+   * segundo recorte que dé nada que cortar.
+   */
+  lienzo?: Lienzo;
 }
 
 /** Geometría resuelta de un frame: lo que el test verifica sin rasterizar. */
@@ -206,11 +217,15 @@ export interface ComposicionHistoria {
  */
 export function componerHistoria(
   frame: FrameGuion,
-  layout: LayoutHistoria,
+  layoutOriginal: LayoutHistoria,
   opts?: OpcionesRenderHistoria,
 ): ComposicionHistoria {
-  const w = HIST_WIDTH;
-  const h = HIST_HEIGHT;
+  const lienzo = opts?.lienzo ?? LIENZO_HISTORIA;
+  // Las coordenadas de los layouts son píxeles absolutos de 1080x1920. En 9:16
+  // `escalarLayout` devuelve el mismo objeto, así que Historias no cambia.
+  const layout = escalarLayout(layoutOriginal, lienzo);
+  const w = lienzo.width;
+  const h = lienzo.height;
   const sidePadding = 80;
   const innerWidth = w - sidePadding * 2;
 
@@ -378,7 +393,7 @@ export function componerHistoria(
 
   // Scrims: solo donde el layout pone texto, para no ensuciar la ilustración.
   const despejadaSuperior = layout.zonasDespejadas.find(z => z.desde === 0);
-  const despejadaInferior = layout.zonasDespejadas.find(z => z.hasta >= HIST_HEIGHT);
+  const despejadaInferior = layout.zonasDespejadas.find(z => z.hasta >= h);
   const scrimTop =
     (layout.scrim === "superior" || layout.scrim === "ambos") && despejadaSuperior
       ? `<rect x="0" y="0" width="${w}" height="${Math.round(despejadaSuperior.hasta + 60)}" fill="url(#topfade)"/>`
@@ -449,10 +464,11 @@ export async function renderTextoEnHistoria(
   layout: LayoutHistoria,
   opts?: OpcionesRenderHistoria,
 ): Promise<string> {
-  // Forzar 9:16 (1080x1920): el modelo suele devolver tamaños menores y las
-  // zonas del layout están en píxeles absolutos de ese lienzo.
+  // Se ajusta al lienzo pedido (9:16 por defecto): el modelo suele devolver
+  // tamaños menores, y las zonas del layout se escalan a este mismo lienzo.
+  const lienzo = opts?.lienzo ?? LIENZO_HISTORIA;
   const imgBuffer = await sharp(Buffer.from(imagenBase64, "base64"))
-    .resize(HIST_WIDTH, HIST_HEIGHT, { fit: "cover", position: "center" })
+    .resize(lienzo.width, lienzo.height, { fit: "cover", position: "center" })
     .png()
     .toBuffer();
 
