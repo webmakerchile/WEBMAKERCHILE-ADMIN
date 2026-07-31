@@ -37,6 +37,7 @@ import hubPlaybooksRouter from "./hub/playbooks";
 import hubVentasRouter from "./hub/ventas";
 import hubTorreRouter from "./hub/torre";
 import hubRecordatoriosRouter from "./hub/recordatorios";
+import adjuntosRouter from "./adjuntos";
 import jornadaRouter from "./jornada";
 import redactarRouter from "./redactar";
 import marketingRouter from "./marketing";
@@ -106,6 +107,10 @@ router.use(hrSelfRouter);
 // Bitácora de actividad: la propia para todos; la global gateada por rol
 // dentro del router (dirección/ventas/rrhh) — mismo patrón que jornada.
 router.use(activityRouter);
+
+// Adjuntos: transversal a proyectos, tareas, tickets y contratos, que son de
+// areas distintas. El router se guarda solo (autenticacion + dueño al borrar).
+router.use(adjuntosRouter);
 
 // Hub routes: ejecutivo area only
 // hubTasksRouter/hubServicesRouter must be before hubRouter so /hub/tasks/* y

@@ -401,28 +401,6 @@ export const ListDriveFoldersResponseItem = zod.object({
 export const ListDriveFoldersResponse = zod.array(ListDriveFoldersResponseItem);
 
 /**
- * @summary Upload a file to Google Drive
- */
-export const UploadToDriveBody = zod.object({
-  name: zod.string(),
-  folderId: zod.string(),
-  base64Data: zod.string(),
-  mimeType: zod.string(),
-});
-
-export const UploadToDriveResponse = zod.object({
-  id: zod.string(),
-  name: zod.string(),
-  mimeType: zod.string(),
-  size: zod.string().optional(),
-  createdTime: zod.string().optional(),
-  modifiedTime: zod.string().optional(),
-  webViewLink: zod.string().optional(),
-  thumbnailLink: zod.string().optional(),
-  parents: zod.array(zod.string()).optional(),
-});
-
-/**
  * @summary List all video content entries
  */
 export const ListVideosResponseItem = zod.object({

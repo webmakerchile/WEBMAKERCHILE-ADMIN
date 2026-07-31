@@ -28,7 +28,6 @@ import type {
   CreateVideoBody,
   DriveFile,
   DriveFileList,
-  DriveUploadBody,
   GeminiConversation,
   GeminiConversationWithMessages,
   GeminiError,
@@ -1856,92 +1855,6 @@ export function useListDriveFolders<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-/**
- * @summary Upload a file to Google Drive
- */
-export const getUploadToDriveUrl = () => {
-  return `/api/drive/upload`;
-};
-
-export const uploadToDrive = async (
-  driveUploadBody: DriveUploadBody,
-  options?: RequestInit,
-): Promise<DriveFile> => {
-  return customFetch<DriveFile>(getUploadToDriveUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(driveUploadBody),
-  });
-};
-
-export const getUploadToDriveMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof uploadToDrive>>,
-    TError,
-    { data: BodyType<DriveUploadBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof uploadToDrive>>,
-  TError,
-  { data: BodyType<DriveUploadBody> },
-  TContext
-> => {
-  const mutationKey = ["uploadToDrive"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof uploadToDrive>>,
-    { data: BodyType<DriveUploadBody> }
-  > = (props) => {
-    const { data } = props ?? {};
-
-    return uploadToDrive(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type UploadToDriveMutationResult = NonNullable<
-  Awaited<ReturnType<typeof uploadToDrive>>
->;
-export type UploadToDriveMutationBody = BodyType<DriveUploadBody>;
-export type UploadToDriveMutationError = ErrorType<unknown>;
-
-/**
- * @summary Upload a file to Google Drive
- */
-export const useUploadToDrive = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof uploadToDrive>>,
-    TError,
-    { data: BodyType<DriveUploadBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof uploadToDrive>>,
-  TError,
-  { data: BodyType<DriveUploadBody> },
-  TContext
-> => {
-  return useMutation(getUploadToDriveMutationOptions(options));
-};
 
 /**
  * @summary List all video content entries

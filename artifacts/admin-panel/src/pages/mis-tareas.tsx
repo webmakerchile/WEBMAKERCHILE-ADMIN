@@ -14,6 +14,7 @@ import { MetasInline } from "@/components/metas-inline";
 import { ConfigRecordatorios, useReglasRecordatorio } from "@/components/config-recordatorios";
 import { ResumenServicios } from "@/components/resumen-servicios";
 import { CarpetaProyecto, SinCarpetaProyecto } from "@/components/carpeta-proyecto";
+import { Adjuntos } from "@/components/adjuntos";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
   ChevronDown, ChevronLeft, ChevronRight, Plus, Flame, X, Check, Timer,
@@ -544,6 +545,7 @@ export default function MisTareasPage() {
                           {carpetaDe(p)
                             ? <CarpetaProyecto carpetaId={carpetaDe(p)!} nombre={p.name} />
                             : <SinCarpetaProyecto />}
+                          <Adjuntos tipo="project" id={p.id} titulo="Adjuntos del proyecto" />
                         </li>
                       );
                     })}
@@ -660,6 +662,10 @@ function TarjetaTarea({
               </button>
             ))}
           </div>
+
+          {/* La captura, el archivo fuente, lo que haga falta para trabajarla.
+              Antes no había dónde ponerlo y acababa en un chat. */}
+          <Adjuntos tipo="task" id={String(tarea.id)} titulo="Archivos de la tarea" />
         </div>
       )}
     </div>
