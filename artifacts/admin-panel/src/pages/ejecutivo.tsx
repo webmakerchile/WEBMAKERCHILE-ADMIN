@@ -2,6 +2,7 @@ import { JornadaChip } from "@/components/jornada-card";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { EnlaceFirma } from "@/components/enlace-firma";
 import { AsignarProyecto } from "@/components/asignar-proyecto";
+import { ElegirDelCatalogo } from "@/components/elegir-del-catalogo";
 import { asignadosDe, idDeCarpeta } from "@/lib/proyecto-asignacion";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -3164,7 +3165,17 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 
             <div className="wiz-mod-header-row">
               <span className="wiz-mod-title">Módulos (opcional — si no los defines, la IA los propone con precios estimados)</span>
-              <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
+              <span style={{ display: "inline-flex", gap: 6 }}>
+                {/* El catálogo ya tiene los precios cargados: sin este botón
+                    había que copiarlos a mano o dejar que la IA los estimara. */}
+                <ElegirDelCatalogo onElegir={m => setWiz(w => {
+                  const primero = w.modules[0];
+                  const vacio = w.modules.length === 1 && !primero.name.trim() && !primero.desc.trim() && !primero.price;
+                  const nuevo = { id: newModId(), ...m };
+                  return { ...w, modules: vacio ? [nuevo] : [...w.modules, nuevo] };
+                })} />
+                <button className="wiz-add-mod-btn" onClick={() => setWiz(w => ({ ...w, modules: [...w.modules, { id: newModId(), name: "", desc: "", price: 0 }] }))}>+ Módulo</button>
+              </span>
             </div>
             {wiz.modules.map((m, i) => {
               const mIva = Math.round(m.price * 0.19), mTotal = m.price + mIva;
@@ -3238,8 +3249,16 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               ].filter(Boolean).join("\n");
               const body: Record<string, unknown> = { contexto_cliente: contexto };
               if (validMods.length > 0) body.modulos_sugeridos = validMods.map(m => m.desc ? `${m.name}: ${m.desc}` : m.name).join("; ");
-              const conPrecios = validMods.length > 0 && validMods.length <= 4 && validMods.every(m => m.price > 0);
-              if (conPrecios) body.precios_netos = validMods.map(m => Math.round(m.price));
+              // Un precio por módulo, en orden; null = "estímalo tú". Antes se
+              // exigía que TODOS lo tuvieran: quien sabía el precio de tres de
+              // cuatro veía cómo la IA se inventaba también esos tres.
+              const cabenPrecios = validMods.length > 0 && validMods.length <= 4;
+              if (cabenPrecios && validMods.some(m => m.price > 0)) {
+                body.precios_netos = validMods.map(m => (m.price > 0 ? Math.round(m.price) : null));
+              }
+              // "Estimado" si la IA puso aunque sea un precio: basta uno inventado
+              // para que el total no sea el que la agencia cobra.
+              const algoEstimado = !cabenPrecios || validMods.some(m => !(m.price > 0));
               const mensualidadNeto = Math.round(Number(wiz.monthlyPrice) || 0);
               if (mensualidadNeto > 0) body.mensualidad_neto = mensualidadNeto;
               const pct = Math.round(wiz.downPct);
@@ -3258,7 +3277,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 onToast(data.error || `Error generando la cotización (${res.status})`);
                 return;
               }
-              setCotEstimated(!conPrecios);
+              setCotEstimated(algoEstimado);
               setCotJson(JSON.stringify(data.cotizacion, null, 2));
               setCotHtml(data.html || null);
               setCotError(data.htmlError || null);

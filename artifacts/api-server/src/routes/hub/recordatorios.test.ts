@@ -87,6 +87,15 @@ async function servidor(teamRole: string, role = "admin", datosTablero: Record<s
   };
 }
 
+interface Cuerpo {
+  reglas: Record<string, unknown>;
+  porDefecto: Record<string, unknown>;
+  maxPorPersona: number;
+  puedeEditar: boolean;
+  error?: string;
+}
+const leerJson = (r: { json(): Promise<unknown> }) => r.json() as Promise<Cuerpo>;
+
 describe("/api/hub/recordatorios", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,7 +107,7 @@ describe("/api/hub/recordatorios", () => {
     const { leer } = await servidor("dev");
     const r = await leer();
     expect(r.status).toBe(200);
-    const body = await r.json();
+    const body = await leerJson(r);
     expect(body.reglas.diasTareaEstancada).toBe(3);
     expect(body.reglas.prioridadMinima).toBe("media");
     expect(body.maxPorPersona).toBeGreaterThan(0);
@@ -123,7 +132,7 @@ describe("/api/hub/recordatorios", () => {
       const { guardar } = await servidor(rol, role);
       const r = await guardar({ diasTareaEstancada: 5 });
       expect(r.status, `${rol} debería poder guardar`).toBe(200);
-      expect((await r.json()).reglas.diasTareaEstancada).toBe(5);
+      expect((await leerJson(r)).reglas.diasTareaEstancada).toBe(5);
     }
   });
 
@@ -139,8 +148,8 @@ describe("/api/hub/recordatorios", () => {
   });
 
   it("la lectura dice si se puede editar", async () => {
-    expect((await (await servidor("dev")).leer().then((r) => r.json())).puedeEditar).toBe(true);
-    expect((await (await servidor("edicion")).leer().then((r) => r.json())).puedeEditar).toBe(false);
+    expect((await (await servidor("dev")).leer().then(leerJson)).puedeEditar).toBe(true);
+    expect((await (await servidor("edicion")).leer().then(leerJson)).puedeEditar).toBe(false);
   });
 
   it("guarda las reglas en el tablero sin tocar el resto", async () => {
@@ -170,7 +179,7 @@ describe("/api/hub/recordatorios", () => {
     const { guardar } = await servidor("dev");
     const r = await guardar({ diasTareaEstancada: 0 });
     expect(r.status).toBe(400);
-    expect((await r.json()).error).toContain("1 a 365");
+    expect((await leerJson(r)).error).toContain("1 a 365");
     expect(guardado).toBeNull();
   });
 
@@ -184,12 +193,12 @@ describe("/api/hub/recordatorios", () => {
   it("normaliza la prioridad al guardarla", async () => {
     const { guardar } = await servidor("dev");
     const r = await guardar({ prioridadMinima: "critica" });
-    expect((await r.json()).reglas.prioridadMinima).toBe("crítica");
+    expect((await leerJson(r)).reglas.prioridadMinima).toBe("crítica");
   });
 
   it("una prioridad inventada no se guarda tal cual", async () => {
     const { guardar } = await servidor("dev");
     const r = await guardar({ prioridadMinima: "urgentísimo" });
-    expect((await r.json()).reglas.prioridadMinima).toBe("media");
+    expect((await leerJson(r)).reglas.prioridadMinima).toBe("media");
   });
 });

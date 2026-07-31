@@ -12,7 +12,14 @@ const router: IRouter = Router();
 const GenerarBody = z.object({
   contexto_cliente: z.string().min(20, "Describe el contexto del cliente (mínimo 20 caracteres)"),
   modulos_sugeridos: z.string().optional(),
-  precios_netos: z.array(z.number().int().positive()).max(4).optional(),
+  /**
+   * Un precio por módulo, en orden. `null` = "estímalo tú".
+   *
+   * Antes solo aceptaba números, así que el panel mandaba los precios unicamente
+   * cuando TODOS los módulos tenían uno: quien sabía el precio de tres de
+   * cuatro veía cómo la IA se inventaba también esos tres.
+   */
+  precios_netos: z.array(z.number().int().positive().nullable()).max(4).optional(),
   mensualidad_neto: z.number().int().positive().optional(),
   esquema_pago: z
     .array(z.object({ porcentaje: z.number().int().positive(), momento: z.string().min(3).max(25) }))
