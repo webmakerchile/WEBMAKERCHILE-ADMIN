@@ -15,7 +15,7 @@ import { calcularFinanzas, clp, type FinanzasCotizacion } from "./finance";
  * el `--primary` del panel.
  */
 
-const esc = (s: string) =>
+export const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 let logoCache: string | null = null;

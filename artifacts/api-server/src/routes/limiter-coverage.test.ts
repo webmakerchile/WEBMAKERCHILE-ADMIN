@@ -70,6 +70,8 @@ const MUST_UPLOAD = [
   "/api/content/videos/123/link-drive-video",
   "/api/transcriber/transcribe",
   "/api/cotizaciones/pdf",
+  "/api/hub/contracts/docs/pdf",
+  "/api/hub/contracts/docs/regenerar",
 ];
 
 /**
@@ -110,5 +112,8 @@ describe("Rate-limit regex coverage in app.ts", () => {
     expect(aiRegex.test("/api/community/historias")).toBe(false);
     expect(aiRegex.test("/api/community/descripciones")).toBe(false);
     expect(aiRegex.test("/api/hub")).toBe(false);
+    // Los PDFs de contrato son Puppeteer (uploadLimiter), no IA.
+    expect(aiRegex.test("/api/hub/contracts/docs/pdf")).toBe(false);
+    expect(aiRegex.test("/api/hub/contracts/docs/regenerar")).toBe(false);
   });
 });

@@ -29,13 +29,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 
  * token, API key or refresh handler callback is set", que llegaba tal cual a la
  * pantalla a mitad de crear un contrato.
  */
-function driveDe(user: unknown) {
+export function driveDe(user: unknown) {
   const auth = clienteGoogleDe(user as UsuarioConGoogle);
   return auth ? google.drive({ version: "v3", auth }) : null;
 }
 
 /** Responde 409 con el motivo si no hay Google conectado. */
-function sinGoogle(res: Response): void {
+export function sinGoogle(res: Response): void {
   res.status(409).json({
     error: MENSAJE_SIN_GOOGLE,
     code: "google_no_conectado",
@@ -125,7 +125,7 @@ router.put("/drive/raices", async (req, res) => {
  * quien sabe la respuesta: el servidor, que es donde vive la configuración.
  * Un id de verdad sigue funcionando igual.
  */
-async function resolverCarpeta(valor: string | undefined): Promise<string | undefined> {
+export async function resolverCarpeta(valor: string | undefined): Promise<string | undefined> {
   if (valor !== "hub" && valor !== "equipo") return valor;
   const board = await resolveBoard().catch(() => null);
   return normalizarRaices((board?.data?.driveRaices ?? null) as Partial<RaicesDrive> | null)[valor];

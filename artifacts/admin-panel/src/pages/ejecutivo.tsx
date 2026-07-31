@@ -1,5 +1,6 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
+import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
 import { EnlaceFirma } from "@/components/enlace-firma";
 import { ReunionesOportunidad } from "@/components/reuniones-oportunidad";
 import { AsignarProyecto } from "@/components/asignar-proyecto";
@@ -151,6 +152,9 @@ interface Contract { id: string; title: string; client: string; value: string; s
   motivoPerdida?: string;
   /** Versión técnica del contrato: los requerimientos sin un solo monto. */
   brief?: ContractBrief; briefUrl?: string; briefTitle?: string; briefUploadedAt?: number;
+  /** Huella del contenido con que se generó cada PDF. "Desactualizado" es
+   *  comparar esto contra el contenido actual — no una bandera pegajosa. */
+  docHash?: string; briefHash?: string;
   /** Lo marca el servidor cuando censuró los montos para este rol. */
   moneyRedacted?: boolean;
   /** Pipeline de ventas (solo borradores = oportunidades). Ver torre de Ventas. */
@@ -888,438 +892,88 @@ async function fetchContractBrief(doc: WizData, contract?: Partial<Contract>): P
   }
 }
 
-async function buildBriefPdf(brief: ContractBrief, doc: WizData): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
-  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const W = 210, H = 297, ml = 14, mr = W - 14;
-  let y = 0;
+/* ------------------------------------------------------------------
+   PDFs del contrato — los dibuja el SERVIDOR con la plantilla WebMaker
+   (la misma línea gráfica que la cotización original). Aquí solo se pide,
+   se descarga o se manda a Drive. Nada de jspdf ni de matemática de
+   dinero en el navegador.
+   ------------------------------------------------------------------ */
 
-  const dark = () => pdf.setTextColor(13, 23, 46);
-  const orange = () => pdf.setTextColor(234, 88, 12);
-  const dim = () => pdf.setTextColor(110, 110, 110);
-
-  const pageBreak = (need: number) => {
-    if (y + need < H - 20) return;
-    pdf.addPage();
-    y = 20;
-  };
-
-  const heading = (text: string) => {
-    pageBreak(16);
-    y += 6;
-    orange();
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(8);
-    pdf.text(text.toUpperCase(), ml, y);
-    y += 2;
-    pdf.setDrawColor(234, 88, 12);
-    pdf.setLineWidth(0.3);
-    pdf.line(ml, y, mr, y);
-    y += 5;
-  };
-
-  const paragraph = (text: string, size = 9) => {
-    if (!text) return;
-    dark();
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(size);
-    const lines = pdf.splitTextToSize(text, mr - ml);
-    for (const line of lines) {
-      pageBreak(6);
-      pdf.text(line, ml, y);
-      y += size * 0.52;
-    }
-    y += 2;
-  };
-
-  const bullets = (items: string[]) => {
-    dark();
-    pdf.setFont("helvetica", "normal");
-    pdf.setFontSize(8.5);
-    for (const item of items.filter(Boolean)) {
-      const lines = pdf.splitTextToSize(item, mr - ml - 6);
-      lines.forEach((line: string, i: number) => {
-        pageBreak(6);
-        if (i === 0) { orange(); pdf.text("•", ml + 1, y); dark(); }
-        pdf.text(line, ml + 6, y);
-        y += 4.6;
-      });
-    }
-    y += 2;
-  };
-
-  // Portada compacta
-  pdf.setFillColor(13, 23, 46);
-  pdf.rect(0, 0, W, 46, "F");
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(7.5);
-  pdf.text("WEBMAKER LATAM · DOCUMENTO INTERNO", ml, 12);
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(15);
-  pdf.text(pdf.splitTextToSize((doc.project || "Proyecto").toUpperCase(), mr - ml).slice(0, 2), ml, 24);
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(8.5);
-  pdf.text(`Cliente: ${doc.client || "—"}${doc.date ? `  ·  Emisión: ${doc.date}` : ""}`, ml, 38);
-  y = 56;
-
-  dim();
-  pdf.setFont("helvetica", "italic");
-  pdf.setFontSize(7.5);
-  pdf.text("Brief técnico — describe qué se debe construir. No contiene información comercial ni montos.", ml, y);
-  y += 6;
-
-  if (brief.objetivo) { heading("Objetivo"); paragraph(brief.objetivo); }
-  if (brief.contexto) { heading("Contexto"); paragraph(brief.contexto); }
-
-  if (brief.alcance.length) {
-    heading("Alcance por módulo");
-    for (const mod of brief.alcance) {
-      pageBreak(20);
-      dark();
-      pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(9.5);
-      pdf.text(mod.modulo || "Módulo", ml, y);
-      y += 5;
-      paragraph(mod.descripcion, 8.5);
-      if (mod.entregables.length) {
-        dim(); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
-        pageBreak(6); pdf.text("Entregables", ml, y); y += 4;
-        bullets(mod.entregables);
-      }
-      if (mod.requisitos.length) {
-        dim(); pdf.setFont("helvetica", "bold"); pdf.setFontSize(7.5);
-        pageBreak(6); pdf.text("Requisitos", ml, y); y += 4;
-        bullets(mod.requisitos);
-      }
-      y += 2;
-    }
-  }
-
-  if (brief.criteriosAceptacion.length) { heading("Criterios de aceptación"); bullets(brief.criteriosAceptacion); }
-  if (brief.fueraDeAlcance.length) { heading("Fuera de alcance"); bullets(brief.fueraDeAlcance); }
-  if (brief.stackSugerido.length) { heading("Stack sugerido"); bullets(brief.stackSugerido); }
-  if (brief.hitos.length) {
-    heading("Hitos");
-    bullets(brief.hitos.map(h => `${h.nombre}${h.detalle ? ` — ${h.detalle}` : ""}`));
-  }
-
-  const pages = pdf.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) {
-    pdf.setPage(i);
-    pdf.setFontSize(6.5);
-    dim();
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`WEBMAKER LATAM · BRIEF TÉCNICO · ${(doc.client || "CLIENTE").toUpperCase()}`, ml, H - 8);
-    pdf.text(`${i} / ${pages}`, mr, H - 8, { align: "right" });
-  }
-
-  return pdf.output("blob");
-}
-
-/** Sube un PDF a la carpeta del Hub en Drive. Devuelve null si Drive no responde. */
-async function uploadPdfToDrive(blob: Blob, filename: string): Promise<{ url: string; title: string; uploadedAt: number } | null> {
-  try {
-    const fd = new FormData();
-    fd.append("file", new File([blob], filename, { type: "application/pdf" }));
-    fd.append("parentId", HUB_DRIVE_ROOT);
-    const res = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
-    if (!res.ok) return null;
-    const up = await res.json() as { webViewLink: string; name: string; uploadedAt: number };
-    return { url: up.webViewLink, title: up.name, uploadedAt: up.uploadedAt };
-  } catch { return null; }
+function descargarBlob(blob: Blob, nombre: string) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
 
 /**
- * Genera la versión técnica completa (brief + PDF en Drive) para un documento.
- * Es best-effort: si la IA o Drive fallan, el contrato se guarda igual sin brief.
+ * Descarga un PDF del contrato renderizado por el servidor.
+ * Devuelve null si salió bien; si no, el motivo para mostrarlo.
  */
-async function buildTechnicalVersion(doc: WizData, contract?: Partial<Contract>) {
-  const brief = await fetchContractBrief(doc, contract);
-  if (!brief) return null;
+async function descargarDocPdf(
+  tipo: "cliente" | "tecnico",
+  payload: { doc?: WizData | null; brief?: ContractBrief | null },
+): Promise<string | null> {
   try {
-    const blob = await buildBriefPdf(brief, doc);
-    const name = `Brief-Tecnico-${(doc.client || "cliente").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`;
-    const uploaded = await uploadPdfToDrive(blob, name);
-    // Si Drive falla, el PDF ya está hecho: descargarlo es infinitamente mejor
-    // que tirarlo. La cotización ya lo hacía; el brief se perdía en silencio y
-    // había que volver a generarlo entero (con otra llamada a la IA).
-    if (!uploaded) {
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    }
-    return { brief, briefUrl: uploaded?.url, briefTitle: uploaded?.title, briefUploadedAt: uploaded?.uploadedAt };
-  } catch {
-    return { brief, briefUrl: undefined, briefTitle: undefined, briefUploadedAt: undefined };
-  }
-}
-
-async function buildContractPdf(wiz: WizData): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const W = 210, H = 297, ml = 14, mr = W - 14;
-  const IVA = 0.19;
-
-  const clrDark = () => doc.setTextColor(13, 23, 46);
-  const clrOrange = () => doc.setTextColor(234, 88, 12);
-  const clrWhite = () => doc.setTextColor(255, 255, 255);
-  const clrDim = () => doc.setTextColor(120, 120, 120);
-  const clrFaint = () => doc.setTextColor(200, 200, 200);
-
-  const validMods = wiz.modules.filter(m => m.name.trim() !== "");
-
-  function pageFooter(n: number, total: number) {
-    doc.setFillColor(13, 23, 46);
-    doc.rect(0, H - 18, W, 18, "F");
-    clrWhite();
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6.5);
-    doc.text(`WEBMAKER LATAM · COTIZACIÓN · ${(wiz.client || "CLIENTE").toUpperCase()}`, ml, H - 9);
-    clrFaint();
-    doc.setFont("helvetica", "normal");
-    doc.text(`${n} / ${total}`, mr, H - 9, { align: "right" });
-  }
-
-  // ===== COVER =====
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 78, "F");
-  clrWhite();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.text("Diseño y desarrollo de plataformas", ml, 11);
-  doc.setFont("helvetica", "bold");
-  doc.text("COTIZACIÓN COMERCIAL", mr, 11, { align: "right" });
-  doc.setFont("helvetica", "normal");
-  const monthYear = wiz.date
-    ? new Date(wiz.date + "T12:00:00").toLocaleDateString("es-CL", { month: "long", year: "numeric" }).toUpperCase()
-    : new Date().toLocaleDateString("es-CL", { month: "long", year: "numeric" }).toUpperCase();
-  doc.text(monthYear, mr, 19, { align: "right" });
-  doc.setDrawColor(234, 88, 12);
-  doc.setLineWidth(0.4);
-  doc.line(ml, 27, mr, 27);
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text(`COTIZACIÓN · ${(wiz.client || "CLIENTE").toUpperCase()}`, ml, 37);
-  clrWhite();
-  doc.setFontSize(17);
-  const titleLines = doc.splitTextToSize((wiz.project || "Sin título").toUpperCase(), mr - ml - 5);
-  doc.text(titleLines.slice(0, 3), ml, 49);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  const scopeShort = doc.splitTextToSize(wiz.scope || "", mr - ml - 5);
-  const titleBottom = 49 + Math.min(titleLines.length, 3) * 7;
-  if (titleBottom < 74 && wiz.scope) doc.text(scopeShort.slice(0, 2), ml, Math.min(titleBottom + 3, 70));
-
-  // Grid cards
-  const gridY = 90;
-  doc.setFillColor(245, 247, 250);
-  doc.roundedRect(ml, gridY, (mr - ml) / 2 - 4, 48, 2, 2, "F");
-  doc.roundedRect(ml + (mr - ml) / 2 + 4, gridY, (mr - ml) / 2 - 4, 48, 2, 2, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text("PREPARADO PARA", ml + 5, gridY + 8);
-  doc.text("ALCANCE DE LA COTIZACIÓN", ml + (mr - ml) / 2 + 9, gridY + 8);
-  clrDark();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.text(wiz.client || "—", ml + 5, gridY + 18);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text(wiz.advisor || "WebMaker Latam", ml + 5, gridY + 27);
-  clrDark();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text(`${validMods.length} módulo${validMods.length !== 1 ? "s" : ""}`, ml + (mr - ml) / 2 + 9, gridY + 18);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  const alcLines = doc.splitTextToSize(validMods.map(m => m.name).join(", ") || wiz.scope.slice(0, 80) || "—", (mr - ml) / 2 - 18);
-  doc.text(alcLines.slice(0, 3), ml + (mr - ml) / 2 + 9, gridY + 27);
-
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, H - 18, W, 18, "F");
-  clrWhite();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.text("WEBMAKER LATAM · WEBMAKERLATAM.COM", ml, H - 9);
-  clrFaint();
-  doc.setFont("helvetica", "normal");
-  doc.text("1 / 4", mr, H - 9, { align: "right" });
-  clrDim();
-  doc.text("agencia@webmakerlatam.com", mr, H - 15, { align: "right" });
-
-  // ===== PAGE 2: QUÉ SE COTIZA =====
-  doc.addPage();
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 14, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("01 · QUÉ SE COTIZA", ml, 10);
-  clrFaint();
-  doc.setFontSize(72);
-  doc.text("01", mr + 2, 72, { align: "right" });
-  clrDark();
-  doc.setFontSize(13);
-  doc.setFont("helvetica", "bold");
-  doc.text(wiz.project || "Proyecto", ml, 28);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  const scopeLines2 = doc.splitTextToSize(wiz.scope || "Descripción del servicio.", mr - ml - 5);
-  doc.text(scopeLines2.slice(0, 7), ml, 37);
-  let y2 = 37 + Math.min(scopeLines2.length, 7) * 4.5 + 10;
-  validMods.forEach((m, i) => {
-    if (y2 > H - 30) { doc.addPage(); y2 = 22; }
-    doc.setFillColor(234, 88, 12);
-    doc.circle(ml + 1.5, y2 - 1, 1.5, "F");
-    clrDark();
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text(`${i + 1} · ${m.name}`, ml + 6, y2);
-    y2 += 6;
-    if (m.desc) {
-      clrDim();
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      const dl = doc.splitTextToSize(m.desc, mr - ml - 10);
-      doc.text(dl.slice(0, 2), ml + 6, y2);
-      y2 += Math.min(dl.length, 2) * 4.5 + 3;
-    } else { y2 += 2; }
-  });
-  pageFooter(2, 4);
-
-  // ===== PAGE 3: INVERSIÓN =====
-  doc.addPage();
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 14, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("02 · INVERSIÓN", ml, 10);
-  clrFaint();
-  doc.setFontSize(72);
-  doc.text("02", mr + 2, 72, { align: "right" });
-  clrDark();
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text("Inversión por módulo.", ml, 26);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text("Valores en pesos chilenos (CLP), IVA incluido y desglosado:", ml, 33);
-
-  let iy = 40;
-  const priceMods = validMods.filter(m => m.price > 0);
-  if (priceMods.length === 0) {
-    clrDim(); doc.setFontSize(8.5);
-    doc.text("Los valores se coordinarán según el alcance definido.", ml, iy + 8);
-    iy += 20;
-  } else {
-    priceMods.forEach((m, i) => {
-      if (iy > H - 60) { doc.addPage(); iy = 22; }
-      const neto = m.price, iva = Math.round(neto * IVA), total = neto + iva;
-      doc.setFillColor(255, 247, 237);
-      doc.roundedRect(ml, iy, mr - ml, 30, 2, 2, "F");
-      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-      doc.text(`${i + 1} · ${m.name}`, ml + 4, iy + 7);
-      if (m.desc) {
-        clrDim(); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
-        doc.text(m.desc.slice(0, 90), ml + 4, iy + 13);
-      }
-      const c1 = ml + 4, c2 = ml + (mr - ml) / 3, c3 = ml + (mr - ml) * 2 / 3;
-      clrOrange(); doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
-      doc.text("NETO", c1, iy + 20); doc.text("IVA 19%", c2, iy + 20); doc.text("TOTAL", c3, iy + 20);
-      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
-      doc.text(fmtCLP(neto), c1, iy + 27); doc.text(fmtCLP(iva), c2, iy + 27); doc.text(fmtCLP(total), c3, iy + 27);
-      iy += 36;
+    const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/docs/pdf`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipo, doc: payload.doc ?? undefined, brief: payload.brief ?? undefined }),
     });
-    if (iy > H - 50) { doc.addPage(); iy = 22; }
-    const tNeto = priceMods.reduce((a, m) => a + m.price, 0), tIva = Math.round(tNeto * IVA), tTotal = tNeto + tIva;
-    doc.setFillColor(13, 23, 46);
-    doc.roundedRect(ml, iy, mr - ml, 30, 2, 2, "F");
-    clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-    doc.text("TOTAL PROYECTO (IVA INCLUIDO)", ml + 4, iy + 7);
-    const c1 = ml + 4, c2 = ml + (mr - ml) / 3, c3 = ml + (mr - ml) * 2 / 3;
-    doc.setFontSize(6.5);
-    doc.text("NETO", c1, iy + 16); doc.text("IVA 19%", c2, iy + 16); doc.text("TOTAL", c3, iy + 16);
-    doc.setFontSize(10);
-    doc.text(fmtCLP(tNeto), c1, iy + 25); doc.text(fmtCLP(tIva), c2, iy + 25); doc.text(fmtCLP(tTotal), c3, iy + 25);
-  }
-  pageFooter(3, 4);
-
-  // ===== PAGE 4: PAGO =====
-  doc.addPage();
-  doc.setFillColor(13, 23, 46);
-  doc.rect(0, 0, W, 14, "F");
-  clrOrange();
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("03 · FORMA DE PAGO Y MENSUALIDAD", ml, 10);
-  clrFaint();
-  doc.setFontSize(72);
-  doc.text("03", mr + 2, 72, { align: "right" });
-  clrDark();
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "bold");
-  doc.text(`Pago ${wiz.downPct}% / ${100 - wiz.downPct}%.`, ml, 26);
-  clrDim();
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.text("Simple y directo, sin sorpresas:", ml, 33);
-
-  const priceMods2 = validMods.filter(m => m.price > 0);
-  const tNeto2 = priceMods2.reduce((a, m) => a + m.price, 0);
-  const tTotal2 = tNeto2 + Math.round(tNeto2 * IVA);
-  const initAmt = Math.round(tTotal2 * wiz.downPct / 100);
-  const delivAmt = tTotal2 - initAmt;
-  const bxY = 40, bxW = (mr - ml) / 2 - 5;
-
-  doc.setFillColor(234, 88, 12);
-  doc.roundedRect(ml, bxY, bxW, 44, 3, 3, "F");
-  clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(22);
-  doc.text(`${wiz.downPct}%`, ml + bxW / 2, bxY + 18, { align: "center" });
-  doc.setFontSize(8); doc.text("AL INICIAR", ml + bxW / 2, bxY + 27, { align: "center" });
-  if (tTotal2 > 0) { doc.setFontSize(10); doc.text(fmtCLP(initAmt), ml + bxW / 2, bxY + 37, { align: "center" }); }
-
-  doc.setFillColor(13, 23, 46);
-  doc.roundedRect(mr - bxW, bxY, bxW, 44, 3, 3, "F");
-  clrWhite(); doc.setFont("helvetica", "bold"); doc.setFontSize(22);
-  doc.text(`${100 - wiz.downPct}%`, mr - bxW / 2, bxY + 18, { align: "center" });
-  doc.setFontSize(8); doc.text("A LA ENTREGA", mr - bxW / 2, bxY + 27, { align: "center" });
-  if (tTotal2 > 0) { doc.setFontSize(10); doc.text(fmtCLP(delivAmt), mr - bxW / 2, bxY + 37, { align: "center" }); }
-
-  let py4 = bxY + 54;
-  if (wiz.monthly) {
-    clrOrange(); doc.setFont("helvetica", "bold"); doc.setFontSize(8);
-    doc.text("MENSUALIDAD (OPCIONAL)", ml, py4 + 6); py4 += 12;
-    if (wiz.monthlyPrice) {
-      clrDark(); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
-      doc.text(fmtCLP(Number(wiz.monthlyPrice)), ml, py4 + 6); py4 += 10;
+    if (!res.ok) {
+      const e = (await res.json().catch(() => null)) as { error?: string } | null;
+      return e?.error || `El servidor respondió ${res.status}`;
     }
-    clrDim(); doc.setFont("helvetica", "normal"); doc.setFontSize(8);
-    const ml2 = doc.splitTextToSize(wiz.monthly, mr - ml - 10);
-    doc.text(ml2.slice(0, 3), ml, py4 + 6); py4 += Math.min(ml2.length, 3) * 4.5 + 8;
+    const nombre = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1]
+      || (tipo === "cliente" ? "Cotizacion.pdf" : "Documento-Tecnico.pdf");
+    descargarBlob(await res.blob(), nombre);
+    return null;
+  } catch {
+    return "No se pudo contactar al servidor";
   }
-  if (wiz.notes) {
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(ml, py4, mr - ml, 20, 2, 2, "F");
-    clrDim(); doc.setFont("helvetica", "italic"); doc.setFontSize(7.5);
-    const nl = doc.splitTextToSize(wiz.notes, mr - ml - 10);
-    doc.text(nl.slice(0, 3), ml + 5, py4 + 8);
-  }
-  clrDim(); doc.setFont("helvetica", "italic"); doc.setFontSize(9);
-  doc.text("Esta cotización queda abierta a los ajustes que definamos juntos.", W / 2, H - 38, { align: "center" });
-  doc.text("Quedamos atentos para cuando quieras ponerla en marcha.", W / 2, H - 31, { align: "center" });
-  pageFooter(4, 4);
-
-  return doc.output("blob");
 }
+
+interface DocsRegenerados {
+  ok: boolean;
+  code?: string;
+  error?: string;
+  pdf?: { url: string; title: string; uploadedAt: number };
+  brief?: { url: string; title: string; uploadedAt: number };
+  docHash?: string;
+  briefHash?: string;
+}
+
+/**
+ * Regenera los documentos en el servidor y los sube a Drive (carpeta del Hub).
+ * Con `ok: false` puede venir igual lo que alcanzó a subir (fallo parcial).
+ */
+async function regenerarDocsServidor(payload: {
+  doc?: WizData;
+  brief?: ContractBrief;
+  meta?: { client?: string; project?: string; date?: string };
+}): Promise<DocsRegenerados> {
+  try {
+    const res = await fetch(`${DRIVE_API_BASE}/hub/contracts/docs/regenerar`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const cuerpo = (await res.json().catch(() => null)) as
+      | (DocsRegenerados & { parcial?: Partial<DocsRegenerados> })
+      | null;
+    if (res.ok && cuerpo) return { ...cuerpo, ok: true };
+    return {
+      ok: false,
+      code: cuerpo?.code || `http_${res.status}`,
+      error: cuerpo?.error || `El servidor respondió ${res.status}`,
+      ...(cuerpo?.parcial || {}),
+    };
+  } catch {
+    return { ok: false, code: "red", error: "No se pudo contactar al servidor" };
+  }
+}
+
 
 /* ============================================================
    DRIVE FOLDER PICKER (for project sheets)
@@ -1850,6 +1504,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const [aiExtracting, setAiExtracting] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [cotJson, setCotJson] = useState("");
+  // Si la persona editó el JSON a mano, el PDF que sube ya no es fiel reflejo
+  // del documento estructurado (wiz): en ese caso NO se guarda huella de
+  // frescura y el panel dirá "desactualizado" hasta regenerar. Honesto.
+  const [cotEdited, setCotEdited] = useState(false);
   const [cotHtml, setCotHtml] = useState<string | null>(null);
   const [cotError, setCotError] = useState<string | null>(null);
   const [cotLoading, setCotLoading] = useState(false);
@@ -1901,7 +1559,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const lastScrumProjIdRef = useRef<string | null>(null);
   // Documento (cotización) del contrato abierto: borrador editable por el chat IA.
   const [docDraft, setDocDraft] = useState<WizData | null>(null);
-  const [docDirty, setDocDirty] = useState(false);
+  const [faltaDriveDocs, setFaltaDriveDocs] = useState(false);
+  const [descargandoDoc, setDescargandoDoc] = useState<"cliente" | "tecnico" | null>(null);
   const [regeneratingDoc, setRegeneratingDoc] = useState(false);
   const [generatingBrief, setGeneratingBrief] = useState(false);
   const lastContractSheetIdRef = useRef<string | null>(null);
@@ -1945,7 +1604,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         setChatHistory([]); setChatInput(""); setExtractingProject(false);
         setDuplicateProjectWarning(null);
         setDocDraft(c?.doc ? normalizeDoc(c.doc) : null);
-        setDocDirty(false); setRegeneratingDoc(false);
+        setFaltaDriveDocs(false); setDescargandoDoc(null); setRegeneratingDoc(false);
       }
     } else {
       lastContractSheetIdRef.current = null;
@@ -1967,7 +1626,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   }, [sheet, state.projects, state.contracts, state.notes]);
 
   useEffect(() => {
-    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); setCotJson(""); setCotHtml(null); setCotError(null); setCotLoading(false); setCotShowJson(false); }
+    if (sheet?.kind === "new-contract-wizard") { setWizStep(1); setWiz(emptyWiz()); setGeneratingPdf(false); setMeetingNotes(""); setMeetingExtracting(false); setCotJson(""); setCotHtml(null); setCotError(null); setCotLoading(false); setCotShowJson(false); setCotEdited(false); }
   }, [sheet?.kind]);
 
   // Sincroniza el checklist local al abrir una tarea (o resetear en tarea nueva).
@@ -2005,41 +1664,25 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   const regenerateContractDoc = async (c: Contract, d: WizData) => {
     setRegeneratingDoc(true);
     try {
-      const blob = await buildContractPdf(d);
-      const stamp = new Date();
-      const cliente = (d.client || c.client || "cliente").replace(/\s+/g, "-");
-      const fname = `Cotizacion-${cliente}-${stamp.toISOString().slice(0, 10)}-${stamp.getTime().toString().slice(-5)}.pdf`;
-      const fd = new FormData();
-      fd.append("file", new File([blob], fname, { type: "application/pdf" }));
-      fd.append("parentId", HUB_DRIVE_ROOT);
+      // 1) Brief nuevo desde el documento actual. Si la IA falla se conserva
+      //    el anterior (y se dice), pero la cotización no se detiene por eso.
+      const briefNuevo = await fetchContractBrief(d, { title: c.title, client: c.client, notes: c.notes });
 
-      let nextPdf: PdfData | null = pdfData;
-      const upRes = await fetch(`${DRIVE_API_BASE}/drive/upload-pdf`, { method: "POST", credentials: "include", body: fd });
-      if (upRes.ok) {
-        const up = await upRes.json() as { webViewLink: string; name: string; uploadedAt: number };
-        nextPdf = { url: up.webViewLink, title: up.name, uploadedAt: up.uploadedAt };
-        setPdfData(nextPdf);
-      } else {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob); a.download = fname; a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-        onToast("PDF regenerado y descargado (Drive no disponible)");
-      }
+      // 2) El servidor dibuja los PDFs con la plantilla WebMaker y los sube a
+      //    Drive. Si el brief no se pudo rehacer, NO se re-sube el viejo (ya no
+      //    describe este documento): el técnico queda marcado desactualizado.
+      const r = await regenerarDocsServidor(briefNuevo ? { doc: d, brief: briefNuevo } : { doc: d });
 
-      // Si cambia el documento, el brief técnico deja de ser válido: se rehace
-      // en la misma operación para que ambas versiones digan lo mismo.
-      const tech = await buildTechnicalVersion(d, { title: c.title, client: c.client, notes: c.notes });
-
+      // La ficha siempre queda alineada con el documento. Los hashes SOLO se
+      // actualizan si su PDF de verdad llegó a Drive: si no subió, el PDF
+      // viejo sigue allá afuera y el panel debe seguir diciendo "desactualizado".
       const totals = docTotals(d);
       const exp = docExpiry(d);
+      if (r.pdf) setPdfData({ url: r.pdf.url, title: r.pdf.title, uploadedAt: r.pdf.uploadedAt });
       onSave({
         ...state,
         contracts: state.contracts.map(x => x.id !== c.id ? x : {
           ...x,
-          brief: tech?.brief ?? x.brief,
-          briefUrl: tech?.briefUrl ?? x.briefUrl,
-          briefTitle: tech?.briefTitle ?? x.briefTitle,
-          briefUploadedAt: tech?.briefUploadedAt ?? x.briefUploadedAt,
           title: (V("ti").trim() || d.project || x.title),
           client: d.client || V("cl"),
           value: totals.total > 0 ? fmtCLP(totals.total) : V("va"),
@@ -2048,14 +1691,27 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           expiresAt: exp || V("ex"),
           notes: V("no") || d.scope,
           doc: d,
-          pdfUrl: nextPdf?.url, pdfTitle: nextPdf?.title, pdfUploadedAt: nextPdf?.uploadedAt,
+          brief: briefNuevo ?? x.brief,
+          ...(r.pdf ? { pdfUrl: r.pdf.url, pdfTitle: r.pdf.title, pdfUploadedAt: r.pdf.uploadedAt, docHash: r.docHash } : {}),
+          ...(r.brief ? { briefUrl: r.brief.url, briefTitle: r.brief.title, briefUploadedAt: r.brief.uploadedAt, briefHash: r.briefHash } : {}),
+          // Sin brief nuevo, la huella del técnico se borra: su PDF describe un
+          // documento que ya no existe y debe verse "desactualizado".
+          ...(briefNuevo ? {} : { briefHash: undefined }),
           updatedAt: Date.now(),
         }),
       });
-      setDocDirty(false);
-      if (upRes.ok) onToast(tech?.brief ? "Cotización y brief técnico regenerados ✓" : "Documento regenerado con los cambios ✓");
-    } catch (e: unknown) {
-      onToast("Error regenerando el PDF: " + (e instanceof Error ? e.message : "desconocido"));
+
+      if (r.ok) {
+        setFaltaDriveDocs(false);
+        onToast(briefNuevo
+          ? "Documentos regenerados y subidos a Drive ✓"
+          : `Cotización regenerada y subida a Drive ✓ — el brief no se pudo rehacer${ultimoErrorBrief ? ` (${ultimoErrorBrief})` : ""} y quedó marcado desactualizado.`);
+      } else if (r.code === "google_no_conectado") {
+        setFaltaDriveDocs(true);
+        onToast("Cambios guardados, pero falta conectar Google Drive: mientras tanto puedes descargar los PDFs desde las tarjetas.");
+      } else {
+        onToast(`Cambios guardados, pero Drive falló al subir (${r.error || "error desconocido"}). Descarga los PDFs desde las tarjetas.`);
+      }
     } finally {
       setRegeneratingDoc(false);
     }
@@ -2072,23 +1728,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const source = docDraft ?? c.doc ?? docFromContract(c);
     setGeneratingBrief(true);
     try {
-      const tech = await buildTechnicalVersion(source, { title: c.title, client: c.client, notes: c.notes });
-      if (!tech) { onToast("No se pudo generar el brief técnico"); return; }
+      const brief = await fetchContractBrief(source, { title: c.title, client: c.client, notes: c.notes });
+      if (!brief) { onToast(`No se pudo generar el brief técnico${ultimoErrorBrief ? ` (${ultimoErrorBrief})` : ""}`); return; }
+      // Solo el técnico: sin `doc` no lleva montos y no exige permisos de dinero.
+      const r = await regenerarDocsServidor({ brief, meta: { client: source.client, project: source.project, date: source.date } });
       onSave({
         ...state,
         contracts: state.contracts.map(x => x.id !== c.id ? x : {
           ...x,
           doc: x.doc ?? source,
-          brief: tech.brief,
-          briefUrl: tech.briefUrl ?? x.briefUrl,
-          briefTitle: tech.briefTitle ?? x.briefTitle,
-          briefUploadedAt: tech.briefUploadedAt ?? x.briefUploadedAt,
+          brief,
+          ...(r.brief ? { briefUrl: r.brief.url, briefTitle: r.brief.title, briefUploadedAt: r.brief.uploadedAt, briefHash: r.briefHash } : {}),
           updatedAt: Date.now(),
         }),
       });
-      onToast(tech.briefUrl ? "Brief técnico generado y subido a Drive ✓" : "Brief técnico generado");
-    } catch (e: unknown) {
-      onToast("Error generando el brief: " + (e instanceof Error ? e.message : "desconocido"));
+      if (r.ok) { setFaltaDriveDocs(false); onToast("Brief técnico generado y subido a Drive ✓"); }
+      else if (r.code === "google_no_conectado") { setFaltaDriveDocs(true); onToast("Brief generado. Falta conectar Google Drive para subirlo: descárgalo desde la tarjeta."); }
+      else onToast(`Brief generado, pero Drive falló al subir (${r.error || "error desconocido"}). Descárgalo desde la tarjeta.`);
     } finally {
       setGeneratingBrief(false);
     }
@@ -2932,78 +2588,197 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
         )}
       </div>
-      {!readOnlyContract && <button className="save" disabled={regeneratingDoc} onClick={async () => {
-        // Si el documento tiene cambios pendientes (chat IA / edición), guardar
-        // implica regenerar el PDF para que el documento refleje la ficha.
-        if (docDirty && docDraft) { await regenerateContractDoc(c, docDraft); onClose(); return; }
+      {!readOnlyContract && <button className="save" disabled={regeneratingDoc} onClick={() => {
+        // Guardar es guardar, nada más. Si el documento quedó desactualizado
+        // respecto del PDF, la sección Documentos lo dice sola (comparando
+        // contenido) y ahí vive el botón para regenerar.
         onSave({ ...state, contracts: state.contracts.map(x => x.id !== c.id ? x : { ...x, title: V("ti").trim() || x.title, client: V("cl"), value: V("va"), status: V("st") as ContractStatus, motivoPerdida: V("mp") || x.motivoPerdida, signedAt: V("si"), expiresAt: V("ex"), notes: V("no"), doc: docDraft ?? x.doc, pdfUrl: pdfData?.url, pdfTitle: pdfData?.title, pdfUploadedAt: pdfData?.uploadedAt, updatedAt: Date.now() }) });
         onClose(); onToast("Contrato actualizado");
-      }}>{docDirty ? (regeneratingDoc ? "⏳ Regenerando documento…" : "Guardar y regenerar documento") : "Guardar cambios"}</button>}
+      }}>Guardar cambios</button>}
 
-      {/* ---- Documento de la cotización (fuente del PDF) ---- */}
+      {/* ---- Documentos del contrato: cotización cliente + versión técnica ---- */}
       <div style={{ marginTop: 18, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: "1em" }}>📄</span>
-          <strong style={{ fontSize: "0.92em" }}>Documento</strong>
-          {docDirty && (
-            <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(255,180,0,0.15)", color: "#e0a52a" }}>
-              cambios sin aplicar al PDF
-            </span>
-          )}
+          <strong style={{ fontSize: "0.92em" }}>Documentos</strong>
         </div>
 
-        {docDraft ? (() => {
-          const totals = docTotals(docDraft);
-          const mods = docDraft.modules.filter(m => (m.name || "").trim() !== "");
-          const abono = Math.round(totals.total * docDraft.downPct / 100);
-          return (
-            <>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-                {mods.length === 0 && <div style={{ fontSize: "0.78em", color: "var(--muted)" }}>Sin módulos definidos.</div>}
-                {mods.map(m => (
-                  <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 11px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: "0.83em", fontWeight: 600 }}>{m.name}</div>
-                      {m.desc && <div style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 2 }}>{m.desc}</div>}
-                    </div>
-                    <div style={{ fontSize: "0.8em", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtCLP(m.price)}</div>
+        {(() => {
+          const sinMontos = !!c.moneyRedacted;
+          const totals = docDraft ? docTotals(docDraft) : null;
+          const abono = docDraft && totals ? Math.round(totals.total * docDraft.downPct / 100) : 0;
+          const mods = docDraft ? docDraft.modules.filter(m => (m.name || "").trim() !== "") : [];
+          // Frescura REAL: se compara el contenido actual contra la huella con
+          // la que se generó cada PDF. Editar con la IA sin cambiar nada NO
+          // desactualiza; cambiar un precio sí. Contratos de antes (sin huella)
+          // se asumen desactualizados una vez y se sanan al regenerar.
+          const docStale = !!docDraft && !!c.pdfUrl && (c.docHash ? hashDocContrato(docDraft) !== c.docHash : true);
+          const briefStale = !!c.brief && (c.briefUrl ? (docStale || (c.briefHash ? hashBriefContrato(c.brief) !== c.briefHash : true)) : true);
+          const clienteEstado: "ok" | "viejo" | "sin" = !docDraft || !c.pdfUrl ? "sin" : docStale ? "viejo" : "ok";
+          const tecnicoEstado: "ok" | "viejo" | "sin" = !c.brief ? "sin" : briefStale ? "viejo" : "ok";
+          const hayQueRegenerar = !!docDraft && mods.length > 0 && (clienteEstado !== "ok" || briefStale);
+          const fmtDia = (ts?: number) => ts ? new Date(ts).toLocaleDateString("es-CL", { day: "numeric", month: "short", year: "numeric" }) : "—";
+          const descargarDoc = async (tipo: "cliente" | "tecnico") => {
+            setDescargandoDoc(tipo);
+            const err = await descargarDocPdf(tipo, tipo === "cliente" ? { doc: docDraft } : { brief: c.brief, doc: docDraft ?? c.doc ?? null });
+            setDescargandoDoc(null);
+            if (err) onToast(`No se pudo descargar: ${err}`);
+          };
+          const badge = (estado: "ok" | "viejo" | "sin") =>
+            estado === "ok" ? <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(0,200,120,0.12)", color: "#1db87b" }}>Al día ✓</span>
+            : estado === "viejo" ? <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(255,180,0,0.15)", color: "#e0a52a" }}>Desactualizado</span>
+            : <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "2px 8px", borderRadius: 10, background: "rgba(255,255,255,0.07)", color: "var(--muted)" }}>Sin generar</span>;
+          const btnMini: React.CSSProperties = { padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.74em", fontWeight: 600, cursor: "pointer" };
+
+          return (<>
+            {/* Resumen compacto: lo esencial de un vistazo, sin muro de texto */}
+            {docDraft && totals && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px", marginBottom: 10, fontSize: "0.78em", padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                <div><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Cliente</div><div style={{ fontWeight: 600 }}>{docDraft.client || "—"}</div></div>
+                <div><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Proyecto</div><div style={{ fontWeight: 600 }}>{docDraft.project || "—"}</div></div>
+                <div><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Alcance</div><div>{mods.length} módulo{mods.length !== 1 ? "s" : ""}</div></div>
+                <div><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Vigencia</div><div>{docDraft.validityDays > 0 ? `${docDraft.validityDays} días${docExpiry(docDraft) ? ` · hasta ${docExpiry(docDraft)}` : ""}` : "—"}</div></div>
+                {!sinMontos && <div><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Inversión</div><div>Neto {fmtCLP(totals.neto)} · IVA {fmtCLP(totals.iva)} · <strong>Total {fmtCLP(totals.total)}</strong></div></div>}
+                {!sinMontos && <div><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Pago</div><div>{docDraft.downPct}% inicio ({fmtCLP(abono)}) · {100 - docDraft.downPct}% entrega</div></div>}
+                {!sinMontos && docDraft.monthly && <div style={{ gridColumn: "1 / -1" }}><div style={{ fontSize: "0.85em", color: "var(--muted)" }}>Mensualidad</div><div>{docDraft.monthly}{docDraft.monthlyPrice ? ` · ${fmtCLP(Number(docDraft.monthlyPrice) || 0)} neto/mes` : ""}</div></div>}
+              </div>
+            )}
+
+            {/* Dos documentos, cada uno con su estado y acciones */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {!sinMontos && (
+                <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: "0.82em" }}>Cotización para el cliente</strong>
+                    {badge(clienteEstado)}
                   </div>
-                ))}
+                  <div style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 3 }}>
+                    {clienteEstado === "sin"
+                      ? (docDraft ? "Todavía no hay PDF en Drive con este contenido." : "Necesita el documento estructurado — créalo aquí abajo.")
+                      : clienteEstado === "viejo"
+                        ? `El PDF en Drive es del ${fmtDia(c.pdfUploadedAt)} y el contenido cambió después.`
+                        : `PDF en Drive al día (${fmtDia(c.pdfUploadedAt)}).`}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                    {docDraft && mods.length > 0 && (
+                      <button style={btnMini} disabled={descargandoDoc !== null} onClick={() => void descargarDoc("cliente")}>
+                        {descargandoDoc === "cliente" ? "⏳ Generando…" : "⬇ Descargar PDF"}
+                      </button>
+                    )}
+                    {c.pdfUrl && <a href={c.pdfUrl} target="_blank" rel="noopener noreferrer" style={{ ...btnMini, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Abrir en Drive ↗</a>}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <strong style={{ fontSize: "0.82em" }}>Documento técnico (interno, sin montos)</strong>
+                  {badge(tecnicoEstado)}
+                </div>
+                <div style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 3 }}>
+                  {tecnicoEstado === "sin"
+                    ? "El equipo aún no tiene la versión técnica de este contrato."
+                    : tecnicoEstado === "viejo"
+                      ? (c.briefUrl ? `El PDF en Drive quedó atrás (${fmtDia(c.briefUploadedAt)}).` : "El brief existe pero su PDF nunca llegó a Drive.")
+                      : `PDF en Drive al día (${fmtDia(c.briefUploadedAt)}).`}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                  {c.brief && (
+                    <button style={btnMini} disabled={descargandoDoc !== null} onClick={() => void descargarDoc("tecnico")}>
+                      {descargandoDoc === "tecnico" ? "⏳ Generando…" : "⬇ Descargar PDF"}
+                    </button>
+                  )}
+                  {c.briefUrl && <a href={c.briefUrl} target="_blank" rel="noopener noreferrer" style={{ ...btnMini, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Abrir en Drive ↗</a>}
+                  {!c.brief && !readOnlyContract && (
+                    <button style={{ ...btnMini, color: "var(--accent, #ff7800)", borderColor: "rgba(255,120,0,0.4)" }} disabled={generatingBrief} onClick={() => void generateBriefFor(c)}>
+                      {generatingBrief ? "⏳ Redactando con IA…" : "🛠️ Generar brief técnico"}
+                    </button>
+                  )}
+                </div>
               </div>
-              <div style={{ fontSize: "0.76em", color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>
-                <span>Neto {fmtCLP(totals.neto)} · IVA {fmtCLP(totals.iva)} · <strong style={{ color: "var(--fg)" }}>Total {fmtCLP(totals.total)}</strong></span>
-                <span>Pago: {docDraft.downPct}% al iniciar ({fmtCLP(abono)}) · {100 - docDraft.downPct}% a la entrega</span>
-                {docDraft.monthly && <span>Mensualidad: {docDraft.monthly} {docDraft.monthlyPrice ? `· ${fmtCLP(Number(docDraft.monthlyPrice) || 0)} neto/mes` : ""}</span>}
-                {docDraft.validityDays > 0 && <span>Vigencia: {docDraft.validityDays} días{docExpiry(docDraft) ? ` (hasta ${docExpiry(docDraft)})` : ""}</span>}
+            </div>
+
+            {/* Un contrato ACTIVO sin brief deja a desarrollo con tareas genéricas */}
+            {!c.brief && c.status === "activo" && (
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.35)", borderRadius: 10, padding: "8px 10px", marginTop: 8 }}>
+                <span style={{ flexShrink: 0 }}>⚠️</span>
+                <div style={{ fontSize: "0.76em", lineHeight: 1.45 }}>
+                  <strong>Este contrato ya está activo y no tiene versión técnica.</strong>{" "}
+                  Las tareas que recibió desarrollo son las genéricas de arranque, no el alcance real.
+                  Genera el brief y reparte las tareas desde ahí.
+                </div>
               </div>
-              <button
-                disabled={regeneratingDoc}
-                onClick={() => regenerateContractDoc(c, docDraft)}
-                style={{
-                  width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)",
-                  background: docDirty ? "rgba(255,120,0,0.14)" : "var(--card-bg)",
-                  color: docDirty ? "var(--accent, #ff7800)" : "var(--fg)",
-                  fontWeight: 600, fontSize: "0.86em", cursor: regeneratingDoc ? "not-allowed" : "pointer",
-                }}
-              >{regeneratingDoc ? "⏳ Generando cotización y brief…" : "🔄 Regenerar documentos (cliente + técnico)"}</button>
-              <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 5 }}>
-                Genera las dos versiones: la cotización para el cliente y el brief técnico para el equipo,
-                y ambas se suben a Drive.
-              </p>
-            </>
-          );
-        })() : (
-          <>
-            <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>
-              Este contrato no tiene un documento estructurado (se creó a mano o el PDF se subió desde fuera),
-              así que la IA sólo puede editar la ficha. Crea uno para que el chat pueda modificar el PDF.
-            </p>
-            <button
-              onClick={() => { setDocDraft(docFromContract(c)); setDocDirty(true); onToast("Documento creado desde la ficha — ajústalo con el chat"); }}
-              style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--fg)", fontWeight: 600, fontSize: "0.86em", cursor: "pointer" }}
-            >📄 Crear documento desde la ficha</button>
-          </>
-        )}
+            )}
+
+            {faltaDriveDocs && <ConectarDrive volverA="ejecutivo" motivo="Por eso los PDFs no se pudieron subir a Drive." />}
+
+            {/* Regenerar solo cuando hay algo desactualizado — nada de botón eterno */}
+            {!readOnlyContract && !sinMontos && docDraft && hayQueRegenerar && (
+              <>
+                <button
+                  disabled={regeneratingDoc}
+                  onClick={() => void regenerateContractDoc(c, docDraft)}
+                  style={{
+                    width: "100%", marginTop: 10, padding: "10px 0", borderRadius: 8,
+                    border: "1px solid rgba(255,120,0,0.4)", background: "rgba(255,120,0,0.14)",
+                    color: "var(--accent, #ff7800)", fontWeight: 600, fontSize: "0.86em",
+                    cursor: regeneratingDoc ? "not-allowed" : "pointer",
+                  }}
+                >{regeneratingDoc ? "⏳ Regenerando con el diseño WebMaker…" : "🔄 Regenerar documentos"}</button>
+                <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 5 }}>
+                  Rehace la cotización del cliente y el brief técnico con la plantilla WebMaker y los sube a Drive.
+                </p>
+              </>
+            )}
+            {!readOnlyContract && !sinMontos && docDraft && mods.length > 0 && !hayQueRegenerar && (
+              <p style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 8 }}>Los PDFs reflejan el contenido actual — no hay nada que regenerar.</p>
+            )}
+
+            {/* Contratos sin documento estructurado: crearlo desde la ficha */}
+            {!docDraft && !readOnlyContract && (
+              <>
+                <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "10px 0" }}>
+                  Este contrato no tiene un documento estructurado (se creó a mano o el PDF se subió desde fuera),
+                  así que la IA sólo puede editar la ficha. Crea uno para que el chat pueda modificar la cotización.
+                </p>
+                <button
+                  onClick={() => { setDocDraft(docFromContract(c)); onToast("Documento creado desde la ficha — ajústalo con el chat y regenera los PDFs"); }}
+                  style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-bg)", color: "var(--fg)", fontWeight: 600, fontSize: "0.86em", cursor: "pointer" }}
+                >📄 Crear documento desde la ficha</button>
+              </>
+            )}
+
+            {/* Texto completo, plegado: módulos al detalle + brief íntegro */}
+            {(mods.length > 0 || c.brief) && (
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.78em", color: "var(--muted)" }}>Ver texto completo (módulos y versión técnica)</summary>
+                {mods.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                    {mods.map(m => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 11px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: "0.83em", fontWeight: 600 }}>{m.name}</div>
+                          {m.desc && <div style={{ fontSize: "0.72em", color: "var(--muted)", marginTop: 2 }}>{m.desc}</div>}
+                        </div>
+                        {!sinMontos && <div style={{ fontSize: "0.8em", fontWeight: 600, whiteSpace: "nowrap" }}>{fmtCLP(m.price)}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {c.brief && (
+                  <BriefView
+                    brief={c.brief}
+                    briefUrl={c.briefUrl}
+                    doc={c.doc}
+                    estadoContrato={c.status}
+                    onGenerate={readOnlyContract ? undefined : () => void generateBriefFor(c)}
+                    generating={generatingBrief}
+                  />
+                )}
+              </details>
+            )}
+          </>);
+        })()}
       </div>
 
       {/* ---- Proyectos vinculados ---- */}
@@ -3124,16 +2899,6 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         </button>
       </div>
 
-      {/* ---- Versión técnica (brief) ---- */}
-      <BriefView
-        brief={c.brief}
-        briefUrl={c.briefUrl}
-        doc={c.doc}
-        estadoContrato={c.status}
-        onGenerate={readOnlyContract ? undefined : () => void generateBriefFor(c)}
-        generating={generatingBrief}
-      />
-
       {/* ---- Chat IA para modificar el contrato ---- */}
       <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -3216,7 +2981,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 let docUpdated = false;
                 if (payload.doc && docDraft) {
                   const nd = normalizeDoc(docDraft, payload.doc);
-                  setDocDraft(nd); setDocDirty(true); docUpdated = true;
+                  setDocDraft(nd); docUpdated = true;
                   const totals = docTotals(nd);
                   if (r.current["ti"] && nd.project) r.current["ti"].value = nd.project;
                   if (r.current["cl"] && nd.client) r.current["cl"].value = nd.client;
@@ -3228,7 +2993,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
 
                 const summary = payload.summary ? `✓ ${payload.summary}` : "✓ Cambios aplicados.";
                 setChatHistory(h => [...h, { role: "ai", text: docUpdated
-                  ? `${summary} Revisa el documento más arriba y pulsa "Regenerar PDF" para actualizarlo en Drive.`
+                  ? `${summary} Si el documento quedó desactualizado, la sección Documentos lo marca y ahí puedes regenerarlo.`
                   : `${summary} Revisa los campos arriba y guarda cuando estés listo.` }]);
               } catch { setChatHistory(h => [...h, { role: "ai", text: "Error de conexión" }]); }
               finally { setChatLoading(false); }
@@ -3440,6 +3205,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               }
               setCotEstimated(algoEstimado);
               setCotJson(JSON.stringify(data.cotizacion, null, 2));
+              setCotEdited(false);
               setCotHtml(data.html || null);
               setCotError(data.htmlError || null);
               setCotShowJson(!!data.htmlError);
@@ -3473,7 +3239,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </button>
           {cotShowJson && (
             <div className="field" style={{ marginTop: 8 }}>
-              <textarea rows={14} value={cotJson} onChange={e => { setCotJson(e.target.value); setCotHtml(null); setCotError("Contenido editado — actualiza la vista previa para continuar"); }} style={{ fontFamily: "monospace", fontSize: "0.75em" }} spellCheck={false} />
+              <textarea rows={14} value={cotJson} onChange={e => { setCotJson(e.target.value); setCotEdited(true); setCotHtml(null); setCotError("Contenido editado — actualiza la vista previa para continuar"); }} style={{ fontFamily: "monospace", fontSize: "0.75em" }} spellCheck={false} />
               <button className="save" style={{ marginTop: 6 }} disabled={cotLoading} onClick={async () => {
                 setCotLoading(true); setCotError(null);
                 try {
@@ -3543,14 +3309,35 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const contractTitle = wiz.project.trim() || parsed.portada?.alcance_titulo || `Cotización ${wiz.client}`;
                 // Versión técnica: se genera sola, en la misma pasada. Quien
                 // programa no debería esperar a que alguien le escriba el brief.
-                const tech = await buildTechnicalVersion(wiz, { title: contractTitle, client: wiz.client, notes: wiz.scope });
-                onSave({ ...state, contracts: [...state.contracts, { id: uid(), title: contractTitle, client: wiz.client, value: totalConIva > 0 ? fmtCLP(totalConIva) : (tTotal > 0 ? fmtCLP(tTotal) : ""), status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope, doc: wiz, pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt, brief: tech?.brief, briefUrl: tech?.briefUrl, briefTitle: tech?.briefTitle, briefUploadedAt: tech?.briefUploadedAt, createdAt: now, updatedAt: now }] });
+                // El PDF lo dibuja el servidor con la plantilla WebMaker.
+                const brief = await fetchContractBrief(wiz, { title: contractTitle, client: wiz.client, notes: wiz.scope });
+                let briefSubido: { url: string; title: string; uploadedAt: number } | undefined;
+                let briefHashNuevo: string | undefined;
+                if (brief) {
+                  const rTec = await regenerarDocsServidor({ brief, meta: { client: wiz.client, project: contractTitle, date: issuedAt } });
+                  if (rTec.brief) { briefSubido = rTec.brief; briefHashNuevo = rTec.briefHash; }
+                }
+                onSave({ ...state, contracts: [...state.contracts, {
+                  id: uid(), title: contractTitle, client: wiz.client,
+                  value: totalConIva > 0 ? fmtCLP(totalConIva) : (tTotal > 0 ? fmtCLP(tTotal) : ""),
+                  status: "borrador" as ContractStatus, signedAt: issuedAt, expiresAt, notes: wiz.scope,
+                  doc: wiz,
+                  pdfUrl, pdfTitle: pdfTitleOut, pdfUploadedAt,
+                  // La huella solo cuenta si el PDF de verdad quedó en Drive Y
+                  // refleja el documento estructurado: si el JSON fue editado a
+                  // mano o sus montos difieren de la ficha, no hay huella y el
+                  // panel dirá "desactualizado" hasta regenerar. Honesto.
+                  ...(pdfUrl && !cotEdited && sumNetos === docTotals(wiz).neto ? { docHash: hashDocContrato(wiz) } : {}),
+                  brief: brief ?? undefined,
+                  briefUrl: briefSubido?.url, briefTitle: briefSubido?.title, briefUploadedAt: briefSubido?.uploadedAt,
+                  ...(briefSubido ? { briefHash: briefHashNuevo } : {}),
+                  createdAt: now, updatedAt: now }] });
                 onClose(); onNavigate("contracts");
                 // El brief que falta se dice con todas las letras: sin él,
                 // al cerrar la venta el equipo recibe tareas genéricas.
                 onToast(
-                  tech?.brief
-                    ? (tech.briefUrl ? "Contrato creado: cotización y brief técnico en Drive ✓" : "Contrato creado con brief técnico ✓")
+                  brief
+                    ? (briefSubido ? "Contrato creado: cotización y brief técnico en Drive ✓" : "Contrato creado ✓ El brief no se pudo subir a Drive: descárgalo desde la ficha del contrato.")
                     : `⚠️ Contrato creado SIN brief técnico${ultimoErrorBrief ? ` (${ultimoErrorBrief})` : ""}. Genéralo desde la ficha antes de cerrar la venta.`,
                 );
               } catch (e: unknown) {

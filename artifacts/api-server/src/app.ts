@@ -81,7 +81,7 @@ import { aiLimiter, publishLimiter, uploadLimiter, firmaLimiter } from "./lib/ra
 // keyGenerator switches to user id automatically.
 app.use(/^\/api\/(library\/templates\/ai-fill|content\/videos\/[^/]+\/(generate-descriptions|generate-cover)|content\/videos\/bulk-generate-descriptions|analytics\/insights|content\/hashtag-suggestions|gemini\/conversations\/[^/]+\/messages|gemini\/generate-image|gemini\/generate-cover|gemini\/generate-youtube-cover|gemini\/adjust-cover|gemini\/improve-adjust-instruction|gemini\/improve-cover-idea|studio\/ideas\/(generate|[^/]+\/generate-cover)|community\/(sorprendeme|historias\/(generar|detectar-formato|reintentar)|descripciones\/(generar|calcular-slides|reintentar-slide|redactar-idea)|redactar-idea|interactivo\/generar)|hub\/contracts\/(extract-pdf|extract-from-meeting|ai-chat|brief|ai-extract-project)|hub\/projects\/ai-extract-tasks|cotizaciones\/generar|redactar(\/reparto)?)/, aiLimiter);
 app.use(/^\/api\/(youtube|tiktok|instagram|linkedin|x|facebook)\/(upload|publish|upload-from-drive)/, publishLimiter);
-app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-upload)|content\/videos\/import-csv|content\/videos\/[^/]+\/(upload-video|link-drive-video)|transcriber\/transcribe|cotizaciones\/pdf)/, uploadLimiter);
+app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-upload)|content\/videos\/import-csv|content\/videos\/[^/]+\/(upload-video|link-drive-video)|transcriber\/transcribe|cotizaciones\/pdf|hub\/contracts\/docs\/(pdf|regenerar))/, uploadLimiter);
 
 // requireApproved runs after requireAuth so pending/rejected accounts only keep
 // access to /api/auth/* (mounted above) and public health checks.

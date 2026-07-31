@@ -19,4 +19,6 @@ description: Non-obvious constraints of the server-side cotizaciones PDF generat
   **Why:** prompt-only compliance drifts; the loop guarantees the user's numbers.
   **How to apply:** when adding a new "entregado" field, add its check to `validarPreciosEntregados` — and note that test fixtures mocking the LLM must return values matching the requested field or the route 502s after retries.
 
+- **Footer huérfano en plantillas HTML→PDF:** el pie (firmas + footer) debe ir envuelto en UN solo contenedor `.no-break` (break-inside: avoid); si firmas y footer son hermanos sueltos, el salto de página deja un footer huérfano solo al final. Con overflow, el contenedor único crea una "página de firmas" correcta.
+
 - **Price estimation mode:** when no prices are given, the prompt's GUÍA DE PRECIOS makes the LLM estimate netos; a post-validation nudge retries on `neto: -1`, but the LAST attempt accepts -1 (pending, blocks preview) instead of failing the whole generation. Keep that asymmetry: hard-fail only on contradicting user-given numbers, soft-degrade on missing estimates.
