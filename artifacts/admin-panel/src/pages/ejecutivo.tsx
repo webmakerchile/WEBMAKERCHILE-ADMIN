@@ -538,13 +538,17 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
   const [history, setHistory] = useState<{ id: string; name: string }[]>([{ id: folderId, name: rootName }]);
   const [expanded, setExpanded] = useState(false);
 
-  const { data: filesData, isLoading: filesLoading } = useListDriveFiles({ folderId: currentId });
-  const { data: foldersData, isLoading: foldersLoading } = useListDriveFolders({ parentId: currentId });
+  const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentId });
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentId });
 
   const isLoading = filesLoading || foldersLoading;
+  // Un fallo NO es una carpeta vacía. Este era el tercer explorador que los
+  // pintaba igual: sin permiso de Drive, o con la raíz mal apuntada, decía
+  // "La carpeta está vacía" y no había forma de enterarse.
+  const fallo = filesError || foldersError;
   const folders = foldersData || [];
   const files = filesData?.files || [];
-  const empty = !isLoading && folders.length === 0 && files.length === 0;
+  const empty = !isLoading && !fallo && folders.length === 0 && files.length === 0;
 
   const goInto = (id: string, name: string) => {
     setHistory(prev => [...prev, { id, name }]);
@@ -593,6 +597,15 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
           <div style={{ maxHeight: 300, overflowY: "auto", padding: "8px 0" }}>
             {isLoading && (
               <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--faint)" }}>Cargando…</div>
+            )}
+            {fallo && (
+              <div style={{ padding: "16px 14px", fontSize: 12 }}>
+                <div style={{ color: "#f87171", fontWeight: 600 }}>No se pudo leer esta carpeta.</div>
+                <div style={{ marginTop: 4, color: "var(--faint)" }}>
+                  {(fallo as Error).message || "El servidor devolvió un error."} Si es de otra persona,
+                  pídele que la comparta con tu cuenta.
+                </div>
+              </div>
             )}
             {empty && (
               <div style={{ padding: "16px 14px", fontSize: 12, color: "var(--faint)" }}>La carpeta está vacía.</div>
@@ -4620,8 +4633,15 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
  * /drive—, así que los dos exploradores miraban carpetas diferentes y quien no
  * tuviera acceso a ese id concreto lo veía todo vacío sin ninguna pista.
  */
-const HUB_DRIVE_ROOT =
-  import.meta.env.VITE_HUB_DRIVE_ROOT_ID || "15cBDWdrC2IIN6OlD4rP0fBCImGOh39--";
+/**
+ * Alias de la carpeta del Hub.
+ *
+ * Ya no es un id: lo resuelve el servidor, que es donde vive la configuración.
+ * Antes era una constante escrita a fuego —distinta de la de /drive— usada en
+ * cinco sitios de este archivo, y quien no tuviera acceso a ESE id veía el
+ * explorador vacío sin ninguna pista.
+ */
+const HUB_DRIVE_ROOT = "hub";
 
 function HubDriveView() {
   const [currentFolderId, setCurrentFolderId] = useState<string>(HUB_DRIVE_ROOT);

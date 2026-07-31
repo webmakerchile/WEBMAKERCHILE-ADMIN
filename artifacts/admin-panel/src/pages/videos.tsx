@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, type ReactNode } from "react";
 import { getListVideosQueryKey } from "@workspace/api-client-react";
+import { useRaicesDrive } from "@/lib/raices-drive";
 import { useLang } from "@/lib/lang";
 import { Link } from "wouter";
 import { Virtuoso } from "react-virtuoso";
@@ -3278,7 +3279,6 @@ function VideoWizard({
   );
 }
 
-const DEFAULT_DRIVE_ROOT = "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
 
 function DriveVideoPicker({
   onSelect,
@@ -3288,10 +3288,19 @@ function DriveVideoPicker({
   onClose: () => void;
 }) {
   const { t } = useLang();
-  const [folderId, setFolderId] = useState(DEFAULT_DRIVE_ROOT);
-  const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([
-    { id: DEFAULT_DRIVE_ROOT, name: "WebMaker Latam" },
-  ]);
+  // La raíz la decide el servidor (configurable desde el panel): estaba escrita
+  // a fuego aquí, y si esa carpeta no era tuya el selector salía vacío.
+  const { data: configDrive } = useRaicesDrive();
+  const raizEquipo = configDrive?.raices.equipo ?? "";
+  const [folderId, setFolderId] = useState("");
+  const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([]);
+
+  // Sin id no se pide nada: la consulta traería la unidad entera de quien mire.
+  useEffect(() => {
+    if (!raizEquipo || folderId) return;
+    setFolderId(raizEquipo);
+    setFolderHistory([{ id: raizEquipo, name: "WebMaker Latam" }]);
+  }, [raizEquipo, folderId]);
 
   const { data: filesData, isLoading: filesLoading, error: filesError } = useQuery({
     queryKey: ["drive-files", folderId],

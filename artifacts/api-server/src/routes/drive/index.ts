@@ -9,6 +9,14 @@ import {
 } from "../../lib/google-auth";
 import multer from "multer";
 import { Readable } from "stream";
+import { normalizeRole } from "@workspace/roles";
+import { resolveBoard, saveBoard } from "../../lib/hub-board";
+import {
+  normalizarRaices,
+  idDeRaiz,
+  RAICES_POR_DEFECTO,
+  type RaicesDrive,
+} from "../../lib/raices-drive";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -56,8 +64,75 @@ router.get("/drive/estado", (req, res) => {
   res.json({ conectado, conectar: RUTA_CONECTAR_DRIVE, mensaje: conectado ? null : MENSAJE_SIN_GOOGLE });
 });
 
+/* ---------------- Carpetas raíz configurables ----------------
+
+   Estaban escritas a fuego en tres archivos, y dos de ellas ni coincidían. Ver
+   lib/raices-drive.ts. Leerlas puede cualquiera: el explorador las necesita
+   para abrir. Cambiarlas, solo dirección o Programación — apuntar la raíz a
+   otra carpeta le cambia la pantalla a todo el equipo. */
+
+function puedeConfigurarRaices(req: { user?: unknown }): boolean {
+  const u = req.user as { role?: string; teamRole?: string } | undefined;
+  if (!u) return false;
+  if (u.role === "superadmin") return true;
+  const rol = normalizeRole(u.teamRole);
+  return rol === "ceo" || rol === "dev";
+}
+
+router.get("/drive/raices", async (req, res) => {
+  const board = await resolveBoard().catch(() => null);
+  res.json({
+    raices: normalizarRaices((board?.data?.driveRaices ?? null) as Partial<RaicesDrive> | null),
+    porDefecto: RAICES_POR_DEFECTO,
+    puedeEditar: puedeConfigurarRaices(req),
+  });
+});
+
+router.put("/drive/raices", async (req, res) => {
+  if (!puedeConfigurarRaices(req)) {
+    res.status(403).json({ error: "Solo la dirección o Programación pueden cambiar las carpetas raíz" });
+    return;
+  }
+  const cuerpo = req.body as Partial<RaicesDrive> | undefined;
+  // Se valida CADA campo que venga: un id que no lo es dejaría el explorador
+  // apuntando a nada, y eso se ve exactamente igual que una carpeta vacía.
+  for (const clave of ["equipo", "hub"] as const) {
+    if (cuerpo?.[clave] !== undefined && idDeRaiz(cuerpo[clave]) === null) {
+      res.status(400).json({
+        error: `La carpeta "${clave}" no parece un id ni un enlace de Drive. Copia la URL de la carpeta desde el navegador.`,
+      });
+      return;
+    }
+  }
+
+  const board = await resolveBoard();
+  if (!board) {
+    res.status(409).json({ error: "Todavía no hay un tablero de dirección donde guardarlas" });
+    return;
+  }
+  // Se parte de lo guardado: un PUT con una sola raíz no puede resetear la otra.
+  const guardadas = normalizarRaices((board.data?.driveRaices ?? null) as Partial<RaicesDrive> | null);
+  const raices = normalizarRaices({ ...guardadas, ...(cuerpo ?? {}) });
+  await saveBoard(board.boardUserId, { ...board.data, driveRaices: raices });
+  res.json({ raices });
+});
+
+/**
+ * Resuelve un `parentId` que puede ser un alias.
+ *
+ * El panel mandaba el id de la carpeta del Hub escrito a fuego en cuatro
+ * sitios distintos. Ahora manda el alias "hub" (o "equipo") y lo resuelve
+ * quien sabe la respuesta: el servidor, que es donde vive la configuración.
+ * Un id de verdad sigue funcionando igual.
+ */
+async function resolverCarpeta(valor: string | undefined): Promise<string | undefined> {
+  if (valor !== "hub" && valor !== "equipo") return valor;
+  const board = await resolveBoard().catch(() => null);
+  return normalizarRaices((board?.data?.driveRaices ?? null) as Partial<RaicesDrive> | null)[valor];
+}
+
 router.get("/drive/files", async (req, res) => {
-  const folderId = (req.query.folderId as string) || undefined;
+  const folderId = await resolverCarpeta((req.query.folderId as string) || undefined);
   const pageToken = (req.query.pageToken as string) || undefined;
 
   try {
@@ -88,7 +163,7 @@ router.get("/drive/files", async (req, res) => {
 });
 
 router.get("/drive/folders", async (req, res) => {
-  const parentId = (req.query.parentId as string) || undefined;
+  const parentId = await resolverCarpeta((req.query.parentId as string) || undefined);
 
   try {
     const drive = driveDe(req.user);
@@ -140,7 +215,7 @@ router.post("/drive/upload-pdf", upload.single("file"), async (req, res) => {
   if (!req.file) { res.status(400).json({ error: "No file provided" }); return; }
   if (req.file.mimetype !== "application/pdf") { res.status(400).json({ error: "Solo se aceptan archivos PDF" }); return; }
 
-  const { parentId } = req.body as { parentId?: string };
+  const parentId = await resolverCarpeta((req.body as { parentId?: string }).parentId);
 
   try {
     const drive = driveDe(req.user);
@@ -175,7 +250,8 @@ router.post("/drive/upload-pdf", upload.single("file"), async (req, res) => {
 });
 
 router.post("/drive/mkdir", async (req, res) => {
-  const { name, parentId } = req.body as { name?: string; parentId?: string };
+  const { name } = req.body as { name?: string; parentId?: string };
+  const parentId = await resolverCarpeta((req.body as { parentId?: string }).parentId);
   if (!name || !name.trim()) {
     res.status(400).json({ error: "name is required" });
     return;

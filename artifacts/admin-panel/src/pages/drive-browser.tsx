@@ -1,25 +1,30 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRaicesDrive } from "@/lib/raices-drive";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
+import { ConfigRaicesDrive } from "@/components/config-raices-drive";
 import { Layout } from "@/components/layout";
 import { 
   Folder, File, HardDrive, ArrowLeft, Loader2, ExternalLink
 } from "lucide-react";
 import { motion } from "framer-motion";
 
-/**
- * Carpeta raíz del explorador.
- *
- * Configurable: estaba escrita a fuego aquí y OTRA distinta en el panel
- * ejecutivo, así que cada explorador miraba un sitio diferente y quien no
- * tuviera acceso a ese id concreto veía todo vacío sin saber por qué.
- */
-const DEFAULT_ROOT_ID =
-  import.meta.env.VITE_DRIVE_ROOT_ID || "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
-
 export default function DriveBrowserPage() {
-  const [currentFolderId, setCurrentFolderId] = useState<string>(DEFAULT_ROOT_ID);
-  const [folderHistory, setFolderHistory] = useState<{id: string, name: string}[]>([{ id: DEFAULT_ROOT_ID, name: "Raíz" }]);
+  // La raíz la decide el servidor y se configura desde el panel: era una
+  // constante escrita a fuego, distinta de la del Hub, y quien no tuviera
+  // acceso a ESE id lo veía todo vacío sin saber por qué.
+  const { data: config } = useRaicesDrive();
+  const raiz = config?.raices.equipo ?? "";
+  const [currentFolderId, setCurrentFolderId] = useState<string>("");
+  const [folderHistory, setFolderHistory] = useState<{id: string, name: string}[]>([]);
+
+  // Al llegar la configuración se abre la raíz. No se puede pedir nada antes:
+  // sin id, la consulta traería la unidad entera de quien mire.
+  useEffect(() => {
+    if (!raiz || currentFolderId) return;
+    setCurrentFolderId(raiz);
+    setFolderHistory([{ id: raiz, name: "Raíz" }]);
+  }, [raiz, currentFolderId]);
 
   const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentFolderId });
   const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentFolderId });
@@ -162,6 +167,11 @@ export default function DriveBrowserPage() {
                       <>
                         <img src={`${import.meta.env.BASE_URL}images/empty-state.png`} alt="" className="w-32 h-32 mb-6 opacity-50 mix-blend-screen" />
                         <p>Esta carpeta está vacía.</p>
+                        {/* Una raíz mal apuntada se ve EXACTAMENTE igual que una
+                            carpeta sin archivos. Desde aquí se puede comprobar. */}
+                        <div className="mt-4 w-full max-w-md text-left">
+                          <ConfigRaicesDrive />
+                        </div>
                       </>
                     )}
                   </div>
