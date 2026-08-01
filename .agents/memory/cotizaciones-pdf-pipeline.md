@@ -19,6 +19,12 @@ description: Non-obvious constraints of the server-side cotizaciones PDF generat
   **Why:** prompt-only compliance drifts; the loop guarantees the user's numbers.
   **How to apply:** when adding a new "entregado" field, add its check to `validarPreciosEntregados` — and note that test fixtures mocking the LLM must return values matching the requested field or the route 502s after retries.
 
-- **Footer huérfano en plantillas HTML→PDF:** el pie (firmas + footer) debe ir envuelto en UN solo contenedor `.no-break` (break-inside: avoid); si firmas y footer son hermanos sueltos, el salto de página deja un footer huérfano solo al final. Con overflow, el contenedor único crea una "página de firmas" correcta.
+- **Footer huérfano en plantillas HTML→PDF:** envolver en `.no-break` SOLO bloques chicos y firmes (firmas + footer del doc cliente). Jamás envolver "última sección + pie" completos: si la sección crece, salta entera y deja páginas a medias. Para el pie del doc técnico basta `break-inside: avoid + break-before: avoid` en el propio pie.
+
+- **Paginación Chromium print (aprendido con el doc técnico "bugeado"):** nada de `break-inside: avoid` a nivel de sección o tarjeta grande — el bloque salta entero y deja media página vacía. Receta: (1) título de sección en wrapper con `break-inside: avoid + break-after: avoid` (nunca huérfano, degrada con gracia); (2) indivisibles solo las unidades chicas (li, hitos, chips); (3) tarjetas grandes fragmentables con `box-decoration-break: clone` (+ prefijo -webkit-) para que cada fragmento cierre borde y fondo.
+  **Why:** con secciones-bloque, cualquier contenido futuro más largo reproduce el bug de páginas a medias; con unidades chicas el flujo llena páginas sea cual sea el tamaño.
+
+- **Fondo oscuro vs margen de @page:** Chromium NUNCA pinta fondos dentro del margen de `@page` (full-bleed imposible); el fondo del body termina exacto en el borde del margen. Sin `padding` lateral en el body, los glifos redondos (C, Ó, 0) al inicio de línea tocan la frontera blanco/oscuro y se ven "cortados". Receta: `body { padding: 0 10pt }`.
+  **How to apply:** cualquier plantilla PDF oscura nueva necesita ese aire lateral; diagnosticar midiendo x0 de texto vs x0 del rect de fondo (PyMuPDF), no a ojo con crops.
 
 - **Price estimation mode:** when no prices are given, the prompt's GUÍA DE PRECIOS makes the LLM estimate netos; a post-validation nudge retries on `neto: -1`, but the LAST attempt accepts -1 (pending, blocks preview) instead of failing the whole generation. Keep that asymmetry: hard-fail only on contradicting user-given numbers, soft-degrade on missing estimates.

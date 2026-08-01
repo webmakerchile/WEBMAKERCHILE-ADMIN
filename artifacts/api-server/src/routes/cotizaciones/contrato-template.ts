@@ -145,10 +145,17 @@ const CT_CSS = `
 * { margin: 0; padding: 0; box-sizing: border-box; }
 @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
 html { background: var(--bg); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; font-size: 10pt; line-height: 1.5; }
+/* El padding lateral es OBLIGATORIO: Chromium pinta el fondo del body justo
+   hasta el borde del margen de @page, y sin aire los glifos redondos (C, O, 0)
+   quedan tocando la frontera blanco/negro y se ven "cortados". */
+body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; font-size: 10pt; line-height: 1.5; padding: 0 10pt; }
+p, li { orphans: 2; widows: 2; }
 .mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.12em; text-transform: uppercase; }
 .hl { color: var(--accent); }
 .no-break { break-inside: avoid; page-break-inside: avoid; }
+/* Etiqueta + título de sección viajan juntos y pegados a su primer contenido:
+   un título jamás queda huérfano al pie de una página. */
+.sec-head { break-inside: avoid; page-break-inside: avoid; break-after: avoid; page-break-after: avoid; }
 
 .ct-brand { display: flex; justify-content: space-between; align-items: flex-start; }
 .ct-brand-left { display: flex; align-items: center; gap: 10px; }
@@ -166,12 +173,12 @@ body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', 
 .ct-sec-title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 16pt; line-height: 1.25; text-transform: uppercase; letter-spacing: 0.02em; margin-bottom: 10px; }
 .ct-rule { border: 0; border-top: 1px solid var(--border); margin: 14px 0; }
 
-.ct-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.ct-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .ct-muted { color: var(--text-muted); }
 .ct-dim { color: var(--text-dim); }
 .ct-small { font-size: 8.5pt; }
 
-.ct-foot { margin-top: 30px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 7.5pt; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; }
+.ct-foot { margin-top: 30px; padding-top: 10px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 7.5pt; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; break-inside: avoid; page-break-inside: avoid; break-before: avoid; page-break-before: avoid; }
 `;
 
 /** CSS propio del documento cliente. */
@@ -225,24 +232,26 @@ const TECNICO_CSS = `
 .th-aviso { margin-top: 12px; border: 1px solid var(--accent-border); border-radius: 10px; padding: 9px 13px; font-size: 8.5pt; color: var(--text-muted); background: rgba(249, 112, 21, 0.05); }
 .th-aviso b { color: var(--accent); }
 
-.tmod { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; }
-.tmod .name { font-weight: 700; font-size: 11pt; }
+/* La tarjeta de módulo SÍ puede partirse entre páginas (si no, un módulo largo
+   salta entero y deja media página vacía); cada fragmento clona borde y fondo. */
+.tmod { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.tmod .name { font-weight: 700; font-size: 11pt; break-after: avoid; page-break-after: avoid; }
 .tmod .desc { color: var(--text-muted); font-size: 9pt; margin: 4px 0 10px; line-height: 1.55; }
 .tmod-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.tmod-cols .h { font-family: 'IBM Plex Mono', monospace; font-size: 7pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
-.tmod-cols li { list-style: none; padding-left: 13px; position: relative; margin-bottom: 5px; font-size: 8.5pt; color: var(--text); line-height: 1.45; }
+.tmod-cols .h { font-family: 'IBM Plex Mono', monospace; font-size: 7pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; break-after: avoid; page-break-after: avoid; }
+.tmod-cols li { list-style: none; padding-left: 13px; position: relative; margin-bottom: 5px; font-size: 8.5pt; color: var(--text); line-height: 1.45; break-inside: avoid; page-break-inside: avoid; }
 .tmod-cols li::before { content: ''; position: absolute; left: 0; top: 6px; width: 5px; height: 5px; border-radius: 999px; background: var(--accent); }
 
-.chk li { list-style: none; padding-left: 22px; position: relative; margin-bottom: 8px; font-size: 9.5pt; }
+.chk li { list-style: none; padding-left: 22px; position: relative; margin-bottom: 8px; font-size: 9.5pt; break-inside: avoid; page-break-inside: avoid; }
 .chk li::before { content: ''; position: absolute; left: 0; top: 3px; width: 11px; height: 11px; border: 1.5px solid var(--accent); border-radius: 3px; }
 
-.fuera li { list-style: none; padding-left: 16px; position: relative; margin-bottom: 6px; color: var(--text-dim); font-size: 9pt; }
+.fuera li { list-style: none; padding-left: 16px; position: relative; margin-bottom: 6px; color: var(--text-dim); font-size: 9pt; break-inside: avoid; page-break-inside: avoid; }
 .fuera li::before { content: '×'; position: absolute; left: 0; top: 0; color: var(--text-dim); font-weight: 700; }
 
-.chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.chips { display: flex; flex-wrap: wrap; gap: 7px; break-inside: avoid; page-break-inside: avoid; }
 .chip { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 4px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 8pt; letter-spacing: 0.06em; }
 
-.hito { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.hito { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); break-inside: avoid; page-break-inside: avoid; }
 .hito:last-child { border-bottom: 0; }
 .hito .n { font-family: 'IBM Plex Mono', monospace; color: var(--accent); font-size: 9pt; min-width: 22px; padding-top: 1px; }
 .hito .name { font-weight: 700; font-size: 10pt; }
@@ -285,8 +294,8 @@ function ctFoot(centro: string): string {
 }
 
 function secHead(num: string, label: string, titulo: string): string {
-  return `<div class="ct-sec-label"><span class="num">${num}</span> · ${esc(label)}</div>
-  <div class="ct-sec-title">${tituloResaltado(titulo)}</div>`;
+  return `<div class="sec-head"><div class="ct-sec-label"><span class="num">${num}</span> · ${esc(label)}</div>
+  <div class="ct-sec-title">${tituloResaltado(titulo)}</div></div>`;
 }
 
 /* ------------------------------------------------------------------
@@ -458,7 +467,7 @@ export function renderContratoTecnicoHTML(brief: BriefContrato, doc?: Partial<Do
       ${alcance.map((a) => {
         const entregables = (a.entregables || []).map(sm).filter(Boolean);
         const requisitos = (a.requisitos || []).map(sm).filter(Boolean);
-        return `<div class="tmod no-break">
+        return `<div class="tmod">
           <div class="name">${esc(sm(a.modulo) || "Módulo")}</div>
           ${sm(a.descripcion) ? `<div class="desc">${esc(sm(a.descripcion))}</div>` : ""}
           ${entregables.length || requisitos.length ? `<div class="tmod-cols">
@@ -472,7 +481,7 @@ export function renderContratoTecnicoHTML(brief: BriefContrato, doc?: Partial<Do
 
   const criterios = (brief.criteriosAceptacion || []).map(sm).filter(Boolean);
   if (criterios.length) {
-    partes.push(`<div class="ct-sec no-break">
+    partes.push(`<div class="ct-sec">
       ${secHead(num(), "Aceptación", "Criterios para dar por cumplido")}
       <ul class="chk">${criterios.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
     </div>`);
@@ -480,7 +489,7 @@ export function renderContratoTecnicoHTML(brief: BriefContrato, doc?: Partial<Do
 
   const fuera = (brief.fueraDeAlcance || []).map(sm).filter(Boolean);
   if (fuera.length) {
-    partes.push(`<div class="ct-sec no-break">
+    partes.push(`<div class="ct-sec">
       ${secHead(num(), "Límites", "Fuera de alcance")}
       <ul class="fuera">${fuera.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
     </div>`);
@@ -488,7 +497,7 @@ export function renderContratoTecnicoHTML(brief: BriefContrato, doc?: Partial<Do
 
   const stack = (brief.stackSugerido || []).map(sm).filter(Boolean);
   if (stack.length) {
-    partes.push(`<div class="ct-sec no-break">
+    partes.push(`<div class="ct-sec">
       ${secHead(num(), "Stack", "Tecnologías sugeridas")}
       <div class="chips">${stack.map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>
     </div>`);
@@ -496,7 +505,7 @@ export function renderContratoTecnicoHTML(brief: BriefContrato, doc?: Partial<Do
 
   const hitos = (brief.hitos || []).filter((h) => sm(h?.nombre) || sm(h?.detalle));
   if (hitos.length) {
-    partes.push(`<div class="ct-sec no-break">
+    partes.push(`<div class="ct-sec">
       ${secHead(num(), "Hitos", "Cómo avanza el proyecto")}
       <div class="ct-card">${hitos.map((h, i) => `<div class="hito">
         <span class="n">${String(i + 1).padStart(2, "0")}</span>
@@ -508,14 +517,10 @@ export function renderContratoTecnicoHTML(brief: BriefContrato, doc?: Partial<Do
     </div>`);
   }
 
-  // El pie va pegado a la última sección en un bloque indivisible: así jamás
-  // queda huérfano en una página final vacía.
-  const foot = ctFoot("Documento interno · versión técnica");
-  if (partes.length > 0) {
-    partes[partes.length - 1] = `<div class="no-break">${partes[partes.length - 1]}${foot}</div>`;
-  } else {
-    partes.push(foot);
-  }
+  // El pie se ancla por CSS (.ct-foot con break-before: avoid): viaja con la
+  // última línea de contenido sin obligar a que TODA la sección final sea un
+  // bloque indivisible (eso saltaba secciones enteras y dejaba páginas a medias).
+  partes.push(ctFoot("Documento interno · versión técnica"));
 
   return docHtml(`Documento técnico · ${proyecto}`, TECNICO_CSS, partes.join("\n"));
 }
