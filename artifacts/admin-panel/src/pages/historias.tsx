@@ -1135,7 +1135,7 @@ export default function HistoriasPage() {
         )}
 
         {toast && (
-          <div className="fixed bottom-6 right-6 bg-emerald-500 text-white font-semibold px-4 py-3 rounded-xl shadow-2xl z-50">
+          <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-6 right-4 lg:right-6 bg-emerald-500 text-white font-semibold px-4 py-3 rounded-xl shadow-2xl z-50">
             {toast}
           </div>
         )}

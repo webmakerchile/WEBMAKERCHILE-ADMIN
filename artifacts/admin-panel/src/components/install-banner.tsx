@@ -120,7 +120,7 @@ export function InstallBanner() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
           transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-          className="lg:hidden fixed bottom-20 left-3 right-3 z-50 bg-card border border-foreground/10 rounded-2xl shadow-2xl p-4 backdrop-blur-xl"
+          className="lg:hidden fixed bottom-[calc(9.5rem+env(safe-area-inset-bottom,0px))] left-3 right-3 z-50 bg-card border border-foreground/10 rounded-2xl shadow-2xl p-4 backdrop-blur-xl"
           style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0))" }}
         >
           <div className="flex items-start gap-3">

@@ -1492,7 +1492,7 @@ export default function VideosPage() {
             <h1 className="text-2xl sm:text-4xl font-display font-bold text-gradient mb-1">{t.headerGestorVideos}</h1>
             <p className="text-muted-foreground text-xs sm:text-lg">{t.headerGestorDesc}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               onClick={() => setImportOpen(true)}
@@ -1945,7 +1945,7 @@ export default function VideosPage() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
             transition={{ type: "spring", stiffness: 380, damping: 30 }}
-            className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl"
+            className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-2xl"
           >
             <div className="bg-card/95 backdrop-blur-xl border border-foreground/15 shadow-2xl rounded-2xl px-4 py-3 space-y-2.5">
               <div className="flex items-center gap-2">

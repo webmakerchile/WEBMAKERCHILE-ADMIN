@@ -1054,7 +1054,7 @@ export default function SchedulePage() {
 
         <Link
           to="/videos"
-          className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 px-5 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-2xl shadow-primary/40 hover:bg-orange-400 hover:scale-105 transition"
+          className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-6 right-4 lg:right-6 z-40 inline-flex items-center gap-2 px-5 py-3 rounded-full bg-primary text-primary-foreground font-medium shadow-2xl shadow-primary/40 hover:bg-orange-400 hover:scale-105 transition"
           title="Crear nueva publicación"
         >
           <Plus className="w-5 h-5" />

@@ -28,3 +28,4 @@
 - [Kit visual del Hub](hub-kit-rediseno.md) — reusar hub-kit (.hk-*, importable fuera del Hub); tras rediseños "solo presentación": auditar drift funcional + selectores CSS borrados aún referenciados.
 - [Puertos huérfanos](puertos-huerfanos.md) — si un workflow no abre su puerto: proceso viejo en loop de bind lo captura al liberarse; matar por PID (no solo el socket) y un restart con timeout amplio.
 - [Ciclos de variables CSS](css-vars-ciclo.md) — jamás `--card: hsl(var(--card))` en un scope: ciclo → inválida → fondos transparentes; diagnosticar con getComputedStyle, no con capturas (el blur engaña).
+- [Auditoría móvil del panel](movil-auditoria.md) — auditar SIEMPRE en español (ES desborda donde EN pasa); sonda scrollW/offenders por ruta; fixed bottom-* libra la tab bar con calc(4.75rem+safe-area)+lg:; 1 tester a la vez.

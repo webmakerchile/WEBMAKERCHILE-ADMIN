@@ -1259,7 +1259,7 @@ export default function CoverGeneratorPage() {
         )}
 
         {toast && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background/90 border border-primary/30 text-foreground text-sm font-medium px-4 py-2.5 rounded-xl shadow-xl backdrop-blur">
+          <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-background/90 border border-primary/30 text-foreground text-sm font-medium px-4 py-2.5 rounded-xl shadow-xl backdrop-blur">
             {toast}
           </div>
         )}

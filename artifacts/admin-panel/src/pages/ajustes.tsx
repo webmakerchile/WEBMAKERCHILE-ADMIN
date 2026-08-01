@@ -660,7 +660,7 @@ export default function AjustesPage() {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl text-sm font-medium border ${
+        <div className={`fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] lg:bottom-6 right-4 lg:right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-xl text-sm font-medium border ${
           toast.type === "ok"
             ? "bg-emerald-950 text-emerald-300 border-emerald-700"
             : "bg-rose-950 text-rose-300 border-rose-700"
