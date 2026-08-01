@@ -610,11 +610,11 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
       </button>
 
       {expanded && (
-        <div style={{ background: "var(--card)" }}>
+        <div style={{ background: "var(--card1)" }}>
           {/* Breadcrumb */}
           {history.length > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: "1px solid var(--line)", background: "var(--card2)" }}>
-              <button onClick={goBack} style={{ padding: "3px 8px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, color: "var(--dim)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <button onClick={goBack} style={{ padding: "3px 8px", background: "var(--card1)", border: "1px solid var(--line)", borderRadius: 6, fontSize: 11, color: "var(--dim)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} width={12} height={12}><path d="M15 18l-6-6 6-6"/></svg>
                 Atrás
               </button>
@@ -997,7 +997,7 @@ function FolderPickerPanel({ onSelect }: { onSelect: (id: string, name: string, 
   const cur = history[history.length - 1];
 
   const rowBtn: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, width: "100%", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", color: "var(--text)", padding: "9px 12px", textAlign: "left", cursor: "pointer", fontSize: 13 };
-  const miniBtn: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", color: "var(--dim)", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" };
+  const miniBtn: React.CSSProperties = { background: "var(--card1)", border: "1px solid var(--line)", color: "var(--dim)", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer" };
   const selBtn: React.CSSProperties = { background: "var(--orange)", border: "none", color: "hsl(var(--primary-foreground))", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" };
 
   return (
@@ -1069,7 +1069,7 @@ function DriveFolderSelector({ value, onChange, projectName, clientName, onToast
   };
 
   const wrapBox: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 9, padding: "10px 13px", background: "var(--card2)", fontSize: 13 };
-  const btnSec: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--line)", color: "var(--dim)", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" };
+  const btnSec: React.CSSProperties = { background: "var(--card1)", border: "1px solid var(--line)", color: "var(--dim)", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" };
   const btnPrimary: React.CSSProperties = { background: "var(--orange)", border: "none", color: "hsl(var(--primary-foreground))", borderRadius: 8, padding: "8px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
 
   const shortName = projectName.length > 22 ? projectName.slice(0, 22) + "…" : projectName;
@@ -1109,7 +1109,7 @@ function DriveFolderSelector({ value, onChange, projectName, clientName, onToast
             value={linkDraft}
             onChange={e => setLinkDraft(e.target.value)}
             placeholder="https://drive.google.com/drive/folders/..."
-            style={{ flex: 1, minWidth: 220, background: "var(--card)", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5 }}
+            style={{ flex: 1, minWidth: 220, background: "var(--card1)", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5 }}
           />
           <button
             style={btnPrimary}
@@ -1976,7 +1976,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         if (!c) return null;
         const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888", perdido: "#8a6a6a" };
         return (
-          <div style={{ margin: "0 0 16px", padding: "12px", borderRadius: 10, background: "var(--card-bg, var(--card))", border: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ margin: "0 0 16px", padding: "12px", borderRadius: 10, background: "var(--card-bg, var(--card1))", border: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
             <FileText className="w-5 h-5" style={{ color: "var(--orange2)" }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "10px", letterSpacing: "1px", textTransform: "uppercase", color: "var(--faint)", marginBottom: 4 }}>Contrato origen</div>
@@ -2072,14 +2072,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <span style={{ fontSize: "12px", color: "var(--dim)", fontFamily: "'IBM Plex Mono', monospace" }}>{scrumProposed.filter(t => t.selected).length} / {scrumProposed.length} seleccionadas</span>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: true })))} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>Todas</button>
-                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: false })))} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>Ninguna</button>
-                <button onClick={() => setScrumProposed([])} aria-label="Descartar propuestas" title="Descartar propuestas" style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>✕</button>
+                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: true })))} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card1)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>Todas</button>
+                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: false })))} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card1)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>Ninguna</button>
+                <button onClick={() => setScrumProposed([])} aria-label="Descartar propuestas" title="Descartar propuestas" style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card1)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>✕</button>
               </div>
             </div>
             <div style={{ maxHeight: 360, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
               {scrumProposed.map((t, i) => (
-                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", borderRadius: 10, border: `1px solid ${t.selected ? "var(--orange-line)" : "var(--line)"}`, background: t.selected ? "var(--orange-soft)" : "var(--card)", cursor: "pointer", userSelect: "none", transition: "border-color 0.2s, background 0.2s" }}>
+                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", borderRadius: 10, border: `1px solid ${t.selected ? "var(--orange-line)" : "var(--line)"}`, background: t.selected ? "var(--orange-soft)" : "var(--card1)", cursor: "pointer", userSelect: "none", transition: "border-color 0.2s, background 0.2s" }}>
                   <input type="checkbox" checked={t.selected} onChange={() => setScrumProposed(ts => ts.map((x, j) => j === i ? { ...x, selected: !x.selected } : x))} style={{ marginTop: 2, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
@@ -2192,7 +2192,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           <SectionHeader title="Proyectos vinculados" count={projs.length} />
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
             {projs.map(p => (
-              <div key={p.id} style={{ padding: "12px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div key={p.id} style={{ padding: "12px", background: "var(--card1)", border: "1px solid var(--line)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: "14.5px", color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4 }}>{p.name}</div>
                   <StatusChip label={statusOf(p.status).label} color={statusOf(p.status).color} />
@@ -2245,7 +2245,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       <SheetHeader title="Reunión" subtitle={m.client || "Sin cliente asignado"} icon={<Headphones className="w-5 h-5" />} onClose={onClose} />
       
       {m.contractId && (
-        <div style={{ marginBottom: 24, padding: "14px", background: "var(--card)", border: "1px solid var(--orange-line)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ marginBottom: 24, padding: "14px", background: "var(--card1)", border: "1px solid var(--orange-line)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", fontFamily: "'Oswald', sans-serif" }}>Oportunidad de Venta</span>
             <StatusChip label={m.tipo ? TIPO_REUNION_LABEL[m.tipo] || m.tipo : "reunión"} color="var(--disc)" />
@@ -4640,11 +4640,11 @@ function HubDriveView() {
   return (
     <div className="wrap">
       <div className="subhead"><FolderTree className="w-3.5 h-3.5" />Drive del Hub {!isLoading && <span className="n">{itemCount} elemento{itemCount !== 1 ? "s" : ""}</span>}</div>
-      <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
+      <div style={{ background: "var(--card1)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", overflow: "hidden" }}>
         {/* Breadcrumbs & back */}
         <div style={{ padding: "12px 16px", background: "var(--card2)", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={navigateBack} disabled={folderHistory.length <= 1}
-            style={{ padding: "6px 10px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, color: "var(--dim)", cursor: folderHistory.length <= 1 ? "not-allowed" : "pointer", opacity: folderHistory.length <= 1 ? 0.35 : 1, display: "flex", alignItems: "center" }}>
+            style={{ padding: "6px 10px", background: "var(--card1)", border: "1px solid var(--line)", borderRadius: 8, color: "var(--dim)", cursor: folderHistory.length <= 1 ? "not-allowed" : "pointer", opacity: folderHistory.length <= 1 ? 0.35 : 1, display: "flex", alignItems: "center" }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} width={16} height={16}><path d="M15 18l-6-6 6-6"/></svg>
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, overflowX: "auto", whiteSpace: "nowrap" }}>
@@ -4683,7 +4683,7 @@ function HubDriveView() {
                   </div>
                   {file.webViewLink && (
                     <a href={file.webViewLink} target="_blank" rel="noopener noreferrer"
-                      style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 0", background: "var(--card)", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "var(--dim)", textDecoration: "none", border: "1px solid var(--line)", transition: "color .15s" }}>
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "6px 0", background: "var(--card1)", borderRadius: 7, fontSize: 11, fontWeight: 600, color: "var(--dim)", textDecoration: "none", border: "1px solid var(--line)", transition: "color .15s" }}>
                       Abrir en Drive ↗
                     </a>
                   )}
@@ -6026,13 +6026,13 @@ export default function EjecutivoPage() {
               <>
                 <motion.div
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+                  className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[96]"
                   onClick={() => setMobileMenuOpen(false)}
                 />
                 <motion.div
                   initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
                   transition={{ type: "spring", bounce: 0, duration: 0.3 }}
-                  className="lg:hidden fixed top-0 right-0 bottom-0 w-72 bg-card border-l border-foreground/10 z-50 flex flex-col"
+                  className="lg:hidden fixed top-0 right-0 bottom-0 w-72 bg-card border-l border-foreground/10 z-[97] flex flex-col shadow-2xl"
                 >
                   <div className="h-14 flex items-center justify-between px-4 border-b border-foreground/10">
                     <span className="font-bold text-lg">Hub Ejecutivo</span>

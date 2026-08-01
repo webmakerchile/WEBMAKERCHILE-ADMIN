@@ -71,7 +71,7 @@ export function ConfigRaicesDrive() {
                 placeholder="Pega aquí el enlace de la carpeta"
                 style={{
                   width: "100%", height: 34, padding: "0 10px", fontSize: "0.8em",
-                  border: "1px solid var(--line)", borderRadius: 8, background: "var(--card)",
+                  border: "1px solid var(--line)", borderRadius: 8, background: "hsl(var(--card))",
                   color: "var(--text)", opacity: data.puedeEditar ? 1 : 0.6,
                 }}
               />

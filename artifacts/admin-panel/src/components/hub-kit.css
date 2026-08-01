@@ -9,7 +9,7 @@
 .hk-sheet-head-close { width: 32px; height: 32px; border-radius: 10px; background: var(--card2, hsl(var(--card))); border: 1px solid var(--line, hsl(var(--border))); color: var(--dim, hsl(var(--muted-foreground))); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; flex: none; }
 .hk-sheet-head-close:hover { background: var(--bg2, hsl(var(--background))); color: var(--text, hsl(var(--foreground))); border-color: var(--line-soft, hsl(var(--border) / 0.55)); }
 
-.hk-opt-card { display: flex; flex-direction: column; padding: 18px; background: var(--card, hsl(var(--card))); border: 1px solid var(--line, hsl(var(--border))); border-radius: 14px; cursor: pointer; text-align: left; width: 100%; transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden; }
+.hk-opt-card { display: flex; flex-direction: column; padding: 18px; background: var(--card1, hsl(var(--card))); border: 1px solid var(--line, hsl(var(--border))); border-radius: 14px; cursor: pointer; text-align: left; width: 100%; transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden; }
 .hk-opt-card:hover { border-color: var(--orange-line, hsl(var(--primary) / 0.35)); background: var(--card2, hsl(var(--card))); transform: translateY(-2px); box-shadow: 0 12px 24px -8px hsl(var(--primary)/0.15); }
 .hk-opt-card:active { transform: translateY(0); }
 .hk-opt-card:focus-visible { outline: 2px solid var(--orange, hsl(var(--primary))); outline-offset: 2px; }
@@ -35,10 +35,10 @@
 .hk-empty-hint { font-size: 13.5px; color: var(--dim, hsl(var(--muted-foreground))); line-height: 1.5; max-width: 320px; margin: 0; font-family: var(--font-sans, sans-serif); font-weight: 300; }
 .hk-empty-action { margin-top: 20px; }
 
-.hk-chip { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--line, hsl(var(--border))); color: var(--text, hsl(var(--foreground))); background: var(--card, hsl(var(--card))); white-space: nowrap; line-height: 1.4; }
+.hk-chip { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--line, hsl(var(--border))); color: var(--text, hsl(var(--foreground))); background: var(--card1, hsl(var(--card))); white-space: nowrap; line-height: 1.4; }
 .hk-chip-dot { width: 6px; height: 6px; border-radius: 50%; }
 
-.hk-shimmer { background: linear-gradient(90deg, var(--card, hsl(var(--card))) 25%, var(--card2, hsl(var(--background))) 50%, var(--card, hsl(var(--card))) 75%); background-size: 200% 100%; animation: hkShimmer 2s infinite linear; border-radius: var(--r-sm, var(--radius)); }
+.hk-shimmer { background: linear-gradient(90deg, var(--card1, hsl(var(--card))) 25%, var(--card2, hsl(var(--background))) 50%, var(--card1, hsl(var(--card))) 75%); background-size: 200% 100%; animation: hkShimmer 2s infinite linear; border-radius: var(--r-sm, var(--radius)); }
 @keyframes hkShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 
 @media (max-width: 480px) {
