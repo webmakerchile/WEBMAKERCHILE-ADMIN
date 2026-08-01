@@ -15,6 +15,7 @@ import { MetasInline } from "@/components/metas-inline";
 import { ConfigRecordatorios, useReglasRecordatorio } from "@/components/config-recordatorios";
 import { ResumenServicios } from "@/components/resumen-servicios";
 import { CarpetaProyecto, SinCarpetaProyecto } from "@/components/carpeta-proyecto";
+import { EmptyState } from "@/components/hub-kit";
 import { Adjuntos } from "@/components/adjuntos";
 import {
   Loader2, ListChecks, AlertTriangle, ExternalLink, FolderKanban, FileCode2,
@@ -267,7 +268,7 @@ export default function MisTareasPage() {
                         />
                       </div>
                       {miSemana.data.progreso.total === 0 && (
-                        <p className="text-[11px] text-muted-foreground mt-1">Sin tareas comprometidas: saca algo del backlog.</p>
+                        <div className="mt-4"><EmptyState title="Sin tareas" hint="No tienes tareas comprometidas. Saca algo del backlog." icon={<ListChecks />} /></div>
                       )}
                     </>
                   ) : (
@@ -317,7 +318,7 @@ export default function MisTareasPage() {
                     Tu semana está completa 🎉 Estas tareas de otras áreas siguen abiertas: toma una libre o avísale al responsable que puedes echar una mano.
                   </p>
                   {miSemana.data.sugerencias.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No hay tareas abiertas de otras áreas ahora mismo.</p>
+                    <EmptyState title="Todo en orden" hint="No hay tareas abiertas de otras áreas ahora mismo." icon={<Check />} />
                   ) : (
                     <ul className="space-y-1.5">
                       {miSemana.data.sugerencias.map(s => (
@@ -642,9 +643,7 @@ export default function MisTareasPage() {
                   )}
                 </div>
                 {visibles.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-6 text-center">
-                    {activos.length > 0 && soloMios ? "No tienes proyectos asignados." : "No hay proyectos activos."}
-                  </p>
+                  <div className="py-6"><EmptyState title={activos.length > 0 && soloMios ? "Sin proyectos asignados" : "Sin proyectos activos"} hint={activos.length > 0 && soloMios ? "No tienes proyectos bajo tu responsabilidad." : "No hay proyectos activos en este momento."} icon={<FolderKanban />} /></div>
                 ) : (
                   <ul className="space-y-3">
                     {visibles.map(p => {

@@ -28,6 +28,7 @@ import { JornadaCard } from "@/components/jornada-card";
 import VentasPanel from "@/components/ventas-panel";
 import CobrosPanel from "@/components/cobros-panel";
 import TorrePanel from "@/components/torre-panel";
+import { SheetHeader, OptionCard, SectionHeader, EmptyState, StatusChip, SkeletonShimmer } from "@/components/hub-kit";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -1952,8 +1953,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   if (sheet.kind === "proj") {
     const p = state.projects.find(x => x.id === sheet.id); if (!p) return null;
     return (<>
-      <div className="sheet-head"><h2>Proyecto</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="detail-meta"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span></div>
+      <SheetHeader title="Proyecto" subtitle={p.name} icon={<FolderTree className="w-5 h-5" />} onClose={onClose} />
+      
+      <div className="detail-meta" style={{ marginBottom: "20px" }}>
+        <StatusChip label={p.prio} color={CRIT_COLOR[p.prio] || "var(--faint)"} />
+        <StatusChip label={statusOf(p.status).label} color={statusOf(p.status).color} />
+      </div>
+
+      <SectionHeader title="Datos principales" />
       <div className="field"><label>Nombre</label><input type="text" ref={R("n")} value={projNameDraft} onChange={e => setProjNameDraft(e.target.value)} /></div>
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cli")} defaultValue={p.client} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Tipo</label><input type="text" ref={R("ty")} defaultValue={p.type} /></div></div>
       <div className="three field">
@@ -1963,46 +1970,53 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       </div>
       <AsignarProyecto asignados={asignados} soloLectura={!canWrite("projects")} onChange={setAsignados} />
       <div className="field"><label>Fecha límite</label><input type="date" ref={R("due")} defaultValue={p.due || ""} /></div>
+      
       {p.contractId && (() => {
         const c = state.contracts.find(x => x.id === p.contractId);
         if (!c) return null;
         const statusColor: Record<ContractStatus, string> = { borrador: "#6aa0c0", activo: "#1db87b", vencido: "#e0795a", cancelado: "#888", perdido: "#8a6a6a" };
         return (
-          <div style={{ margin: "0 0 12px", padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: "1em" }}>📄</span>
+          <div style={{ margin: "0 0 16px", padding: "12px", borderRadius: 10, background: "var(--card-bg, var(--card))", border: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 12 }}>
+            <FileText className="w-5 h-5" style={{ color: "var(--orange2)" }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "0.7em", color: "var(--muted)", marginBottom: 2 }}>Contrato origen</div>
-              <div style={{ fontSize: "0.85em", fontWeight: 600, color: "var(--fg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.title}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
-                <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 7px", borderRadius: 10, background: `${statusColor[c.status]}22`, color: statusColor[c.status] }}>{c.status}</span>
-                {c.value && <span style={{ fontSize: "0.72em", color: "var(--muted)" }}>{c.value}</span>}
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "10px", letterSpacing: "1px", textTransform: "uppercase", color: "var(--faint)", marginBottom: 4 }}>Contrato origen</div>
+              <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: "15px", fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.title}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <StatusChip label={c.status} color={statusColor[c.status]} />
+                {c.value && <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "11px", color: "var(--dim)" }}>{c.value}</span>}
               </div>
             </div>
-            <button onClick={() => onOpenSheet({ kind: "contract", id: c.id })} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.78em", cursor: "pointer", whiteSpace: "nowrap" }}>Ver →</button>
+            <button onClick={() => onOpenSheet({ kind: "contract", id: c.id })} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg2)", color: "var(--text)", fontSize: "12px", fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap", transition: "border-color 0.2s" }}>Ver detalle →</button>
           </div>
         );
       })()}
+      
       {(() => {
         const { done, total, pct } = projProg(p.id, apiTasks);
         return (
-          <div className="field">
-            <label>Avance {total > 0 ? <b>{done}/{total} tareas completadas ({pct}%)</b> : <span style={{ color: "var(--muted)", fontWeight: 400 }}>Sin tareas asignadas</span>}</label>
-            <div className="rangewrap" style={{ pointerEvents: "none", opacity: 0.7 }}>
-              <div style={{ height: 6, borderRadius: 3, background: "var(--border)", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: pct + "%", background: pct === 100 ? "#1db87b" : "var(--accent, #ff7800)", borderRadius: 3, transition: "width .3s" }} />
+          <div className="field" style={{ marginBottom: 20 }}>
+            <label style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <span>Avance</span>
+              {total > 0 ? <span style={{ color: "var(--text)" }}>{done}/{total} completadas ({pct}%)</span> : <span style={{ color: "var(--faint)", fontWeight: 400 }}>Sin tareas</span>}
+            </label>
+            <div className="rangewrap" style={{ pointerEvents: "none" }}>
+              <div style={{ height: 6, borderRadius: 3, background: "var(--line)", overflow: "hidden", width: "100%" }}>
+                <div style={{ height: "100%", width: pct + "%", background: pct === 100 ? "#1db87b" : "var(--orange)", borderRadius: 3, transition: "width .3s" }} />
               </div>
             </div>
           </div>
         );
       })()}
+      
+      <SectionHeader title="Detalles operativos" />
       <div className="field"><label>Notas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} defaultValue={p.notes || ""} /></div>
       <div className="field">
         <label>Áreas involucradas</label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85em", cursor: "pointer" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "13px", cursor: "pointer", color: "var(--text)" }}>
           <input type="checkbox" checked={marketingOn} onChange={(e) => setMarketingOn(e.target.checked)} />
           <span>Marketing trabaja en este proyecto</span>
         </label>
-        <p style={{ fontSize: "0.75em", color: "var(--muted)", margin: "4px 0 0" }}>
+        <p style={{ fontSize: "11.5px", color: "var(--dim)", margin: "6px 0 0", lineHeight: 1.4 }}>
           Programación recibe todos los proyectos. Marketing solo los que marques aquí, porque no todos los clientes contratan publicidad.
         </p>
       </div>
@@ -2023,12 +2037,9 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       }}>Guardar cambios</button>
 
       {/* ---- Generar tareas Scrum con IA ---- */}
-      <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontSize: "1em" }}>🤖</span>
-          <strong style={{ fontSize: "0.9em" }}>Generar tareas Scrum con IA</strong>
-        </div>
-        <p style={{ fontSize: "0.78em", color: "var(--muted)", margin: "0 0 10px" }}>La IA analiza los requerimientos del proyecto y propone tareas listas para agregar al Backlog.</p>
+      <SectionHeader title="Asistente de tareas" icon={<Sun className="w-4 h-4" />} />
+      <div style={{ marginBottom: 16 }}>
+        <p style={{ fontSize: "12.5px", color: "var(--dim)", margin: "0 0 14px", lineHeight: 1.5 }}>La IA analiza los requerimientos del proyecto y propone tareas listas para agregar al Backlog.</p>
 
         {scrumProposed.length === 0 && (
           <button
@@ -2049,32 +2060,33 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               } catch { onToast("Error de conexión"); }
               finally { setScrumLoading(false); }
             }}
-            style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid var(--border)", background: scrumLoading ? "var(--card-bg)" : "rgba(0,200,120,0.09)", color: scrumLoading ? "var(--muted)" : "#1db87b", fontWeight: 600, fontSize: "0.88em", cursor: scrumLoading ? "not-allowed" : "pointer" }}
+            className="ai-extract-btn"
+            style={{ margin: 0, justifyContent: "center" }}
           >
-            {scrumLoading ? "⏳ Generando tareas Scrum…" : "✨ Generar tareas Scrum"}
+            {scrumLoading ? <><Clock3 className="w-4 h-4" /> Generando tareas Scrum…</> : <><Sun className="w-4 h-4" /> Generar tareas Scrum</>}
           </button>
         )}
 
         {scrumProposed.length > 0 && (
           <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <span style={{ fontSize: "0.8em", color: "var(--muted)" }}>{scrumProposed.filter(t => t.selected).length} de {scrumProposed.length} tareas seleccionadas</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <span style={{ fontSize: "12px", color: "var(--dim)", fontFamily: "'IBM Plex Mono', monospace" }}>{scrumProposed.filter(t => t.selected).length} / {scrumProposed.length} seleccionadas</span>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: true })))} style={{ fontSize: "0.72em", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "none", color: "var(--muted)", cursor: "pointer" }}>Todas</button>
-                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: false })))} style={{ fontSize: "0.72em", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "none", color: "var(--muted)", cursor: "pointer" }}>Ninguna</button>
-                <button onClick={() => setScrumProposed([])} style={{ fontSize: "0.72em", padding: "2px 8px", borderRadius: 5, border: "1px solid var(--border)", background: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button>
+                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: true })))} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>Todas</button>
+                <button onClick={() => setScrumProposed(ts => ts.map(t => ({ ...t, selected: false })))} style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>Ninguna</button>
+                <button onClick={() => setScrumProposed([])} aria-label="Descartar propuestas" title="Descartar propuestas" style={{ fontSize: "11px", padding: "4px 10px", borderRadius: 6, border: "1px solid var(--line)", background: "var(--card)", color: "var(--dim)", cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace" }}>✕</button>
               </div>
             </div>
-            <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+            <div style={{ maxHeight: 360, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
               {scrumProposed.map((t, i) => (
-                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 12px", borderRadius: 8, border: `1px solid ${t.selected ? "var(--accent, #ff7800)" : "var(--border)"}`, background: t.selected ? "rgba(255,120,0,0.05)" : "var(--card-bg, rgba(255,255,255,0.03))", cursor: "pointer", userSelect: "none" }}>
+                <label key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px", borderRadius: 10, border: `1px solid ${t.selected ? "var(--orange-line)" : "var(--line)"}`, background: t.selected ? "var(--orange-soft)" : "var(--card)", cursor: "pointer", userSelect: "none", transition: "border-color 0.2s, background 0.2s" }}>
                   <input type="checkbox" checked={t.selected} onChange={() => setScrumProposed(ts => ts.map((x, j) => j === i ? { ...x, selected: !x.selected } : x))} style={{ marginTop: 2, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "0.85em", fontWeight: 600, color: "var(--fg)" }}>{t.title}</span>
-                      <span style={{ fontSize: "0.68em", fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: t.crit === "crítica" ? "rgba(204,34,34,0.15)" : t.crit === "alta" ? "rgba(224,121,90,0.18)" : t.crit === "media" ? "rgba(201,164,74,0.18)" : "rgba(106,160,192,0.18)", color: CRIT_COLOR[t.crit] || "var(--muted)" }}>{t.crit}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                      <span style={{ fontFamily: "'Oswald', sans-serif", fontSize: "14.5px", fontWeight: 500, color: "var(--text)" }}>{t.title}</span>
+                      <StatusChip label={t.crit} color={CRIT_COLOR[t.crit] || "var(--faint)"} />
                     </div>
-                    {t.notes && <p style={{ margin: "3px 0 0", fontSize: "0.75em", color: "var(--muted)", lineHeight: 1.4 }}>{t.notes}</p>}
+                    {t.notes && <p style={{ margin: "0", fontSize: "12px", color: "var(--dim)", lineHeight: 1.5 }}>{t.notes}</p>}
                   </div>
                 </label>
               ))}
@@ -2093,7 +2105,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                   onToast(`${selected.length} tarea${selected.length !== 1 ? "s" : ""} agregada${selected.length !== 1 ? "s" : ""} al Backlog ✓`);
                 } catch { onToast("Error de conexión"); }
               }}
-              style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "1px solid #1db87b", background: "rgba(0,200,120,0.1)", color: "#1db87b", fontWeight: 700, fontSize: "0.9em", cursor: scrumProposed.filter(t => t.selected).length === 0 ? "not-allowed" : "pointer", opacity: scrumProposed.filter(t => t.selected).length === 0 ? 0.5 : 1 }}
+              style={{ width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #1db87b", background: "rgba(0,200,120,0.1)", color: "#1db87b", fontWeight: 600, fontFamily: "'Oswald', sans-serif", fontSize: "14px", letterSpacing: "0.5px", textTransform: "uppercase", cursor: scrumProposed.filter(t => t.selected).length === 0 ? "not-allowed" : "pointer", opacity: scrumProposed.filter(t => t.selected).length === 0 ? 0.5 : 1, transition: "opacity 0.2s" }}
             >
               ✓ Agregar {scrumProposed.filter(t => t.selected).length} tarea{scrumProposed.filter(t => t.selected).length !== 1 ? "s" : ""} al Backlog
             </button>
@@ -2111,14 +2123,14 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 setScrumProposed((data.tasks || []).slice(0, 15).map(t => ({ ...t, selected: true })));
               } catch { onToast("Error de conexión"); }
               finally { setScrumLoading(false); }
-            }} style={{ marginTop: 6, width: "100%", padding: "7px 0", borderRadius: 8, border: "1px solid var(--border)", background: "none", color: "var(--muted)", fontSize: "0.8em", cursor: "pointer" }}>
-              🔄 Regenerar tareas
+            }} style={{ marginTop: 8, width: "100%", padding: "8px 0", borderRadius: 8, border: "0", background: "none", color: "var(--dim)", fontSize: "12.5px", cursor: "pointer", transition: "color 0.2s" }} onMouseOver={e => e.currentTarget.style.color = "var(--text)"} onMouseOut={e => e.currentTarget.style.color = "var(--dim)"}>
+              ↻ Regenerar propuestas
             </button>
           </>
         )}
       </div>
 
-      <button className="del-link" style={{ marginTop: 16 }} onClick={() => {
+      <button className="del-link" onClick={() => {
         const snap = [...state.projects];
         const doDelete = () => {
           onSave({ ...state, projects: state.projects.filter(x => x.id !== p.id) });
@@ -2134,7 +2146,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   /* ---- Nuevo cliente ---- */
   if (sheet.kind === "new-client") {
     return (<>
-      <div className="sheet-head"><h2>Nuevo cliente</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <SheetHeader title="Nuevo cliente" icon={<Users2 className="w-5 h-5" />} onClose={onClose} />
       <div className="field"><label>Nombre / Empresa</label><input type="text" ref={R("n")} /></div>
       <div className="two field"><div><label>Contacto</label><input type="text" ref={R("ct")} placeholder="Nombre de quien decide" /></div><div><label>Segmento</label><input type="text" ref={R("sg")} /></div></div>
       <div className="two field"><div><label>WhatsApp</label><input type="tel" ref={R("wa")} placeholder="+56 9 1234 5678" /></div><div><label>Correo</label><input type="email" ref={R("em")} /></div></div>
@@ -2152,19 +2164,20 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const c = state.clients.find(x => x.id === sheet.id); if (!c) return null;
     const projs = state.projects.filter(p => p.client === c.name);
     return (<>
-      <div className="sheet-head"><h2>Cliente</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <SheetHeader title="Cliente" subtitle={c.name} icon={<Users2 className="w-5 h-5" />} onClose={onClose} />
+      
+      <SectionHeader title="Datos de contacto" />
       <div className="field"><label>Nombre / Empresa</label><input type="text" ref={R("n")} defaultValue={c.name} /></div>
       <div className="two field"><div><label>Contacto</label><input type="text" ref={R("ct")} defaultValue={c.contact || ""} placeholder="Nombre de quien decide" /></div><div><label>Segmento</label><input type="text" ref={R("sg")} defaultValue={c.segment || ""} /></div></div>
       <div className="two field">
         <div>
-          <label>WhatsApp</label>
+          <label style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>WhatsApp</span>
+            {linkWhatsapp(c.whatsapp) && (
+              <a href={linkWhatsapp(c.whatsapp)!} target="_blank" rel="noopener noreferrer" style={{ color: "var(--orange2)", textDecoration: "none", textTransform: "none", letterSpacing: "normal", fontSize: "11px", fontWeight: 500 }}>↗ Abrir chat</a>
+            )}
+          </label>
           <input type="tel" ref={R("wa")} defaultValue={c.whatsapp || ""} placeholder="+56 9 1234 5678" />
-          {linkWhatsapp(c.whatsapp) && (
-            <a href={linkWhatsapp(c.whatsapp)!} target="_blank" rel="noopener noreferrer"
-               style={{ fontSize: "0.75em", color: "var(--orange2)", textDecoration: "none" }}>
-              ↗ Abrir chat
-            </a>
-          )}
         </div>
         <div><label>Correo</label><input type="email" ref={R("em")} defaultValue={c.email || ""} /></div>
       </div>
@@ -2173,6 +2186,24 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         onSave({ ...state, clients: state.clients.map(x => x.id !== c.id ? x : { ...x, name: V("n").trim() || x.name, contact: V("ct").trim(), segment: V("sg").trim(), whatsapp: V("wa").trim(), email: V("em").trim(), notes: V("no") }) });
         onClose(); onToast("Cliente actualizado");
       }}>Guardar cambios</button>
+
+      {projs.length > 0 && (
+        <>
+          <SectionHeader title="Proyectos vinculados" count={projs.length} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+            {projs.map(p => (
+              <div key={p.id} style={{ padding: "12px", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Oswald', sans-serif", fontSize: "14.5px", color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 4 }}>{p.name}</div>
+                  <StatusChip label={statusOf(p.status).label} color={statusOf(p.status).color} />
+                </div>
+                <button onClick={() => onOpenSheet({ kind: "proj", id: p.id })} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg2)", color: "var(--text)", fontSize: "12px", fontWeight: 500, cursor: "pointer", transition: "border-color 0.2s" }}>Ver →</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <button className="del-link" onClick={() => {
         const snap = [...state.clients];
         const doDelete = () => {
@@ -2189,14 +2220,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           onConfirm(`"${c.name}" tiene ${partes} vinculado${nProjs + nMeets !== 1 ? "s" : ""}. No se eliminarán, pero quedarán sin cliente en la cartera. ¿Eliminar de todas formas?`, doDelete);
         } else doDelete();
       }}>Eliminar cliente</button>
-      {projs.length > 0 && <div className="detail-block" style={{ marginTop: 20 }}><h4>Proyectos vinculados</h4><p>{projs.map(p => p.name + " — " + statusOf(p.status).label).join("\n")}</p></div>}
     </>);
   }
 
   /* ---- Nueva reunión ---- */
   if (sheet.kind === "new-meet") {
     return (<>
-      <div className="sheet-head"><h2>Nueva reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <SheetHeader title="Nueva reunión" icon={<Headphones className="w-5 h-5" />} onClose={onClose} />
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} /></div></div>
       <div className="field"><label>Resumen</label><textarea ref={R("sm") as React.Ref<HTMLTextAreaElement>} rows={3} /></div>
       <div className="field"><label>Notas completas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={6} /></div>
@@ -2212,18 +2242,24 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   if (sheet.kind === "meet") {
     const m = state.meetings.find(x => x.id === sheet.id); if (!m) return null;
     return (<>
-      <div className="sheet-head"><h2>Reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <SheetHeader title="Reunión" subtitle={m.client || "Sin cliente asignado"} icon={<Headphones className="w-5 h-5" />} onClose={onClose} />
+      
       {m.contractId && (
-        <div className="field" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span className="badge">Venta · {m.tipo ? TIPO_REUNION_LABEL[m.tipo] || m.tipo : "reunión"}</span>
-          {m.desenlace && <span className="badge">{DESENLACE_REUNION_LABEL[m.desenlace] || m.desenlace}</span>}
+        <div style={{ marginBottom: 24, padding: "14px", background: "var(--card)", border: "1px solid var(--orange-line)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", fontFamily: "'Oswald', sans-serif" }}>Oportunidad de Venta</span>
+            <StatusChip label={m.tipo ? TIPO_REUNION_LABEL[m.tipo] || m.tipo : "reunión"} color="var(--disc)" />
+            {m.desenlace && <StatusChip label={DESENLACE_REUNION_LABEL[m.desenlace] || m.desenlace} color={m.desenlace === "perdido" ? "#8a6a6a" : "var(--orange2)"} />}
+          </div>
           {state.contracts.some(x => x.id === m.contractId) && (
-            <button type="button" className="add-btn" style={{ width: "auto", padding: "4px 10px", fontSize: "0.75em" }} onClick={() => onOpenSheet({ kind: "contract", id: m.contractId! })}>
-              Ver oportunidad →
+            <button type="button" onClick={() => onOpenSheet({ kind: "contract", id: m.contractId! })} style={{ alignSelf: "flex-start", padding: "8px 14px", background: "var(--bg2)", border: "1px solid var(--line)", borderRadius: 8, color: "var(--text)", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", transition: "border-color 0.2s" }}>
+              Ver oportunidad en Ventas →
             </button>
           )}
         </div>
       )}
+      
+      <SectionHeader title="Datos de la reunión" />
       <div className="two field"><div><label>Cliente</label><input type="text" ref={R("cl")} defaultValue={m.client || ""} list="hub-client-options" /><ClientOptions clients={state.clients} /></div><div><label>Fecha</label><input type="date" ref={R("dt")} defaultValue={m.date || ""} /></div></div>
       <div className="field"><label>Resumen</label><textarea ref={R("sm") as React.Ref<HTMLTextAreaElement>} rows={3} defaultValue={m.summary || ""} /></div>
       <div className="field"><label>Notas completas</label><textarea ref={R("no") as React.Ref<HTMLTextAreaElement>} rows={7} defaultValue={m.notes || ""} /></div>
@@ -2329,33 +2365,29 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   /* ---- Selector modo contrato ---- */
   if (sheet.kind === "new-contract-mode") {
     return (<>
-      <div className="sheet-head"><h2>Nuevo contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
-      <div className="cms-selector">
-        <p className="cms-hint">¿Qué tipo de contrato quieres agregar?</p>
-        <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract-wizard" })}>
-          <span className="cms-icon">✨</span>
-          <div className="cms-text">
-            <strong>Contrato nuevo</strong>
-            <small>Crea la cotización desde cero y genera el PDF con el diseño de WebMaker Latam</small>
-          </div>
-          <span className="cms-arr">→</span>
-        </button>
-        <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract-meeting" })}>
-          <span className="cms-icon">🎙️</span>
-          <div className="cms-text">
-            <strong>Desde reunión</strong>
-            <small>Pega las notas de tu reunión y la IA rellena el contrato automáticamente</small>
-          </div>
-          <span className="cms-arr">→</span>
-        </button>
-        <button className="cms-opt" onClick={() => onOpenSheet({ kind: "new-contract" })}>
-          <span className="cms-icon">📁</span>
-          <div className="cms-text">
-            <strong>Contrato existente</strong>
-            <small>Sube el PDF que ya tienes — extrae los datos automáticamente con IA</small>
-          </div>
-          <span className="cms-arr">→</span>
-        </button>
+      <SheetHeader title="Nuevo contrato" subtitle="¿Qué tipo de contrato quieres agregar?" icon={<FileCheck2 className="w-5 h-5" />} onClose={onClose} />
+      <div className="cms-selector" style={{ display: "flex", flexDirection: "column", gap: "12px", paddingBottom: "16px" }}>
+        <OptionCard
+          icon={<FileCheck2 className="w-6 h-6 text-orange-500" />}
+          title="Contrato nuevo"
+          desc="Crea la cotización desde cero y genera el PDF con el diseño de WebMaker Latam."
+          previewCue="→ 100% personalizable"
+          onClick={() => onOpenSheet({ kind: "new-contract-wizard" })}
+        />
+        <OptionCard
+          icon={<Headphones className="w-6 h-6 text-blue-500" />}
+          title="Desde reunión"
+          desc="Pega las notas de tu reunión y la IA rellena el contrato automáticamente."
+          previewCue="→ Ahorra 15 minutos de redacción"
+          onClick={() => onOpenSheet({ kind: "new-contract-meeting" })}
+        />
+        <OptionCard
+          icon={<Package className="w-6 h-6 text-green-500" />}
+          title="Contrato existente"
+          desc="Sube el PDF que ya tienes — extrae los datos automáticamente con IA."
+          previewCue="→ Solo subir y listo"
+          onClick={() => onOpenSheet({ kind: "new-contract" })}
+        />
       </div>
     </>);
   }
@@ -2364,8 +2396,9 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   if (sheet.kind === "new-contract-meeting") {
     const existingMeetings = [...state.meetings].sort((a, b) => b.createdAt - a.createdAt).slice(0, 10);
     return (<>
-      <div className="sheet-head"><h2>Contrato desde reunión</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <SheetHeader title="Contrato desde reunión" subtitle="Sintetiza acuerdos y fechas" icon={<Headphones className="w-5 h-5" />} onClose={onClose} />
 
+      <SectionHeader title="Fuente de información" />
       <div className="field">
         <label>Notas de la reunión</label>
         {existingMeetings.length > 0 && (
@@ -2390,9 +2423,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         if (r.current["ex"] && data.expiresAt) r.current["ex"].value = data.expiresAt;
         if (r.current["no"] && data.notes) (r.current["no"] as HTMLTextAreaElement).value = data.notes;
       })}>
-        {meetingExtracting ? "⏳ Analizando reunión con IA…" : "✨ Completar formulario con IA"}
+        {meetingExtracting ? <><Clock3 className="w-4 h-4" /> Analizando reunión con IA…</> : <><Sun className="w-4 h-4" /> Completar formulario con IA</>}
       </button>
 
+      <SectionHeader title="Datos extraídos" />
       <div className="field"><label>Título / Descripción</label><input type="text" ref={R("ti")} placeholder="Ej: Servicio de Marketing Digital" /></div>
       <div className="field"><label>Cliente</label><input type="text" ref={R("cl")} placeholder="Nombre del cliente" /></div>
       <div className="field"><label>Valor</label><input type="text" ref={R("va")} placeholder="Ej: $290.000 / mes" /></div>
@@ -3022,7 +3056,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
     const newModId = () => Math.random().toString(36).slice(2);
 
     return (<>
-      <div className="sheet-head"><h2>Nuevo contrato</h2><button className="close-btn" onClick={onClose}>✕</button></div>
+      <SheetHeader title="Nuevo contrato" subtitle="Asistente guiado" icon={<FileCheck2 className="w-5 h-5" />} onClose={onClose} />
 
       {/* Stepper */}
       <div className="wiz-stepper">
@@ -3045,7 +3079,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           </div>
           <div className="field" style={{ marginTop: 12 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span>🎙️</span> Notas de reunión <span style={{ fontSize: "0.7em", fontWeight: 400, color: "var(--muted)" }}>(opcional — la IA las usa como contexto)</span>
+              <Headphones className="w-3.5 h-3.5" /> Notas de reunión <span style={{ fontSize: "0.7em", fontWeight: 400, color: "var(--muted)" }}>(opcional — la IA las usa como contexto)</span>
             </label>
             {state.meetings.length > 0 && (
               <select style={{ marginBottom: 6 }} defaultValue="" onChange={e => {
@@ -3069,7 +3103,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 scope: data.scope_detail || data.notes || w.scope,
               }));
             })}>
-              {meetingExtracting ? "⏳ Analizando reunión con IA…" : "✨ Completar campos con IA"}
+              {meetingExtracting ? <><Clock3 className="w-4 h-4" /> Analizando reunión con IA…</> : <><Sun className="w-4 h-4" /> Completar campos con IA</>}
             </button>
           )}
 
@@ -3129,9 +3163,19 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
             })}
             {tNeto > 0 && (
               <div className="wiz-grand-total">
-                <span>Neto: <strong>{fmtCLP(tNeto)}</strong></span>
-                <span>IVA: <strong>{fmtCLP(tIva)}</strong></span>
-                <span className="wiz-grand-v">Total: <strong>{fmtCLP(tTotal)}</strong></span>
+                <div className="wiz-grand-total-row net">
+                  <span>Subtotal Neto</span>
+                  <strong>{fmtCLP(tNeto)}</strong>
+                </div>
+                <div className="wiz-grand-total-row iva">
+                  <span>IVA (19%)</span>
+                  <strong>{fmtCLP(tIva)}</strong>
+                </div>
+                <div className="wiz-grand-total-divider" />
+                <div className="wiz-grand-total-row total">
+                  <span>Total a pagar</span>
+                  <span className="wiz-grand-v">{fmtCLP(tTotal)}</span>
+                </div>
               </div>
             )}
 
@@ -3214,7 +3258,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
             } catch (e: unknown) {
               onToast("Error generando la cotización: " + (e instanceof Error ? e.message : "desconocido"));
             } finally { setCotLoading(false); }
-          }}>{cotLoading ? "⏳ Generando cotización con IA…" : "✨ Generar cotización con IA"}</button>
+          }}>{cotLoading ? <span className="flex items-center gap-2 justify-center"><Clock3 className="w-4 h-4"/> Generando cotización con IA…</span> : <span className="flex items-center gap-2 justify-center"><Sun className="w-4 h-4"/> Generar cotización con IA</span>}</button>
         </div>
       )}
 
@@ -3230,13 +3274,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           )}
           {cotEstimated && cotHtml && (
             <div className="wiz-price-hint" style={{ marginTop: 8 }}>
-              <span>💡 Los precios fueron estimados por la IA — puedes ajustarlos en "Editar contenido (JSON)" y actualizar la vista.</span>
+              <span><AlertTriangle className="w-3 h-3 inline mr-1" /> Los precios fueron estimados por la IA — puedes ajustarlos en "Editar contenido (JSON)" y actualizar la vista.</span>
             </div>
           )}
           {cotError && <div style={{ color: "#dc2626", fontSize: "0.8em", marginTop: 8, whiteSpace: "pre-wrap" }}>{cotError}</div>}
 
           <button className="save" style={{ marginTop: 10 }} onClick={() => setCotShowJson(v => !v)}>
-            {cotShowJson ? "Ocultar contenido editable" : "✏️ Editar contenido (JSON)"}
+            {cotShowJson ? "Ocultar contenido editable" : <span className="flex items-center gap-2 justify-center"><FileText className="w-4 h-4"/> Editar contenido (JSON)</span>}
           </button>
           {cotShowJson && (
             <div className="field" style={{ marginTop: 8 }}>
@@ -3404,23 +3448,23 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
               <div className="pbarwrap"><div className="pbar"><i style={{ width: projProg(p.id, apiTasks).pct + "%" }} /></div></div>
               <div className="ppct">{projProg(p.id, apiTasks).pct}%</div>
             </div>
-          )) : <div className="col-empty">Sin proyectos aún</div>}
+          )) : <EmptyState title="Sin proyectos aún" hint="Comienza a registrar tu cartera." icon={<FolderTree />} />}
         </div>
         <div className="panel activity">
           <h2>Actividad Reciente</h2>
-          {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, apiTasks).pct}%</span></div>) : <div className="col-empty">Sin actividad reciente</div>}
+          {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, apiTasks).pct}%</span></div>) : <EmptyState title="Sin actividad reciente" hint="Tu historial aparecerá aquí." icon={<ActivityFeed />} />}
         </div>
       </div>
     </div>
   );
 }
 
-function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted }: {
+function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted, onNew }: {
   state: HubState; onSave: (n: HubState) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
   onToast: (m: string) => void; projView: ProjView; setProjView: (v: ProjView) => void;
   searchQ: string; setSearchQ: (v: string) => void; filterPrio: string; setFilterPrio: (v: string) => void;
   apiTasks: HubTask[]; onRefreshTasks: () => void;
-  canManage: boolean; onDeleteTask: (id: number) => void; onClearCompleted: () => void;
+  canManage: boolean; onDeleteTask: (id: number) => void; onClearCompleted: () => void; onNew: () => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -3479,7 +3523,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
       </div>
       {projView === "board" && (
         <div className="board">
-          {state.projects.length === 0 && <div className="empty-all" style={{ gridColumn: "1/-1" }}>Sin proyectos aún. <strong>+ Nuevo</strong> para comenzar.</div>}
+          {state.projects.length === 0 && <div style={{ gridColumn: "1/-1" }}><EmptyState title="Sin proyectos aún" hint="Crea un proyecto para organizar tu trabajo." icon={<FolderTree />} action={<button className="add-btn" style={{ width: "auto", padding: "8px 16px" }} onClick={onNew}>+ Nuevo</button>} /></div>}
           {STATUS.map(s => {
             const items = fp.filter(p => p.status === s.id).sort((a, b) => (prioW(a.prio) - prioW(b.prio)) || ((a.stageSince||0) - (b.stageSince||0)));
             return (
@@ -3496,6 +3540,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
       )}
       {projView === "list" && (
         <div className="cardlist">
+          {fp.length === 0 && searchQ && <div style={{ gridColumn: "1/-1" }}><EmptyState title="Sin resultados" hint="Nada coincide con tu búsqueda." icon={<FileCheck2 />} /></div>}
           {fp.map(p => (
             <div key={p.id} className="gcard" onClick={() => onOpenProject(p.id)}>
               <div className="gt">{p.name}</div><div className="gsub">{p.client} · {p.type}</div>
@@ -3525,7 +3570,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
               else if (e.clientX < r.left + 70) el.scrollLeft -= 16;
             }}
           >
-          {!state.projects.length && !apiTasks.length && <div className="col-empty" style={{ gridColumn: "1/-1" }}>Crea un proyecto primero, luego añade tareas con <strong>+ Nuevo</strong>.</div>}
+          {!state.projects.length && !apiTasks.length && <div style={{ gridColumn: "1/-1" }}><EmptyState title="Tablero Scrum vacío" hint="Crea un proyecto primero, luego añade tareas." icon={<LayoutDashboard />} action={<button className="add-btn" style={{ width: "auto", padding: "8px 16px" }} onClick={onNew}>+ Nuevo</button>} /></div>}
           {TASK_STAGES.map(s => {
             const items = ft.filter(t => t.stage === s.id).sort((a, b) => (prioW(a.priority) - prioW(b.priority)) || (a.orderIndex - b.orderIndex));
             return (
@@ -3551,7 +3596,7 @@ function ClientsView({ state, onOpen, searchQ, setSearchQ }: { state: HubState; 
   return (
     <div className="wrap">
       <div className="toolbar"><div className="tsearch"><span>🔍</span><input value={searchQ} onChange={e => setSearchQ(e.target.value.toLowerCase())} placeholder="Buscar cliente…" /></div></div>
-      {state.clients.length === 0 && <div className="empty-all">Sin clientes aún. <strong>+ Nuevo</strong> para comenzar.</div>}
+      {state.clients.length === 0 && <EmptyState title="Sin clientes aún" hint="Agrega tu primer cliente para comenzar." icon={<Users2 />} />}
       <div className="cardlist">
         {list.map(c => { const np = state.projects.filter(p => p.client === c.name).length; return (
           <div key={c.id} className="gcard" onClick={() => onOpen(c.id)}>
@@ -3816,7 +3861,7 @@ function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => 
       <GoogleCalendarSection />
       <div className="subhead"><FileText className="w-3.5 h-3.5" />Reuniones manuales <span className="n">{state.meetings.length || ""}</span></div>
       {state.meetings.length === 0 && (
-        <div className="empty-all"><span className="eicon">🗓️</span><span className="etitle">Sin reuniones aún</span><span>Registra resúmenes y acuerdos con <strong>+ Nuevo</strong>, o conecta Google Calendar arriba.</span></div>
+        <EmptyState title="Sin reuniones aún" hint="Registra resúmenes y acuerdos o conecta Google Calendar arriba." icon={<Headphones />} />
       )}
       {upcoming.length > 0 && (<>
         <div className="subhead"><CalendarClock className="w-3 h-3" />Próximas <span className="n">{upcoming.length}</span></div>
@@ -3878,13 +3923,9 @@ function NotesView({ state, onSave, onOpen, onToast, filterCat, setFilterCat, se
         </div>
       </div>
       {state.notes.length === 0 ? (
-        <div className="empty-all">
-          <span className="eicon">🗒️</span><span className="etitle">Sin notas aún</span>
-          <span>Captura ideas, acuerdos y visión con <strong>+ Nuevo</strong>.</span>
-          <span>Tip: usa <code>#</code> para títulos, <code>-</code> para viñetas y <code>[ ]</code> para checklists.</span>
-        </div>
+        <EmptyState title="Sin notas aún" hint="Captura ideas, acuerdos y visión. Tip: usa # para títulos y [ ] para checklists." icon={<FileText />} />
       ) : list.length === 0 ? (
-        <div className="empty-all"><span className="eicon">🔍</span><span className="etitle">Sin resultados</span><span>Nada coincide con tu búsqueda o filtro actual.</span></div>
+        <EmptyState title="Sin resultados" hint="Nada coincide con tu búsqueda o filtro actual." icon={<FileCheck2 />} />
       ) : (
         <>
           {pinned.length > 0 && (<>
@@ -3912,7 +3953,7 @@ const CONTRACT_STATUSES: Record<ContractStatus, { label: string; color: string }
   perdido:  { label: "Perdido",  color: "#8a6a6a" },
 };
 
-function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string) => void }) {
+function ContractsView({ state, onOpen, onNew }: { state: HubState; onOpen: (id: string) => void; onNew: () => void }) {
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("");
   // Rango de montos, como texto para poder dejarlo vacío sin que valga 0.
@@ -3994,12 +4035,9 @@ function ContractsView({ state, onOpen }: { state: HubState; onOpen: (id: string
         </div>
       )}
       {all.length === 0 ? (
-        <div className="empty-all">
-          <span className="eicon">📑</span><span className="etitle">Sin contratos aún</span>
-          <span>Con <strong>+ Nuevo</strong> puedes generar una cotización, extraer desde una reunión o subir un PDF existente.</span>
-        </div>
+        <EmptyState title="Sin contratos aún" hint="Con + Nuevo puedes generar una cotización, extraer desde una reunión o subir un PDF existente." icon={<FileText />} action={<button className="add-btn" style={{ width: "auto", padding: "8px 16px" }} onClick={onNew}>+ Nuevo</button>} />
       ) : list.length === 0 ? (
-        <div className="empty-all"><span className="eicon">🔍</span><span className="etitle">Sin resultados</span><span>Nada coincide con tu búsqueda o filtro actual.</span></div>
+        <EmptyState title="Sin resultados" hint="Nada coincide con tu búsqueda o filtro actual." icon={<FileCheck2 />} />
       ) : (
         <div className="cardlist">
           {list.map(c => {
@@ -4103,7 +4141,7 @@ function SlaManager({ canManage, showToast }: { canManage: boolean; showToast: (
           <b>SLA por etapa</b> — horas máximas esperadas en cada estado. Al pasarse, se avisa al responsable y a la dirección y se pide el motivo del atraso (0 = sin límite).
         </div>
       </div>
-      {rows === null && <div className="empty-all">Cargando SLAs…</div>}
+      {rows === null && <SkeletonShimmer style={{ height: 120, margin: "24px 0" }} />}
       {Array.from(byType.entries()).map(([type, policies]) => (
         <div key={type} className="svc">
           <div className="sh"><h3>{SLA_TYPE_LABELS[type] ?? type}</h3></div>
@@ -4191,8 +4229,8 @@ function PlaybooksManager({ canManage, showToast }: { canManage: boolean; showTo
         </div>
         {canManage && <button className="svc-new" onClick={() => setEditor({ id: null, name: "", workType: "", description: "", tasksText: "" })}>+ Nuevo playbook</button>}
       </div>
-      {rows === null && <div className="empty-all">Cargando playbooks…</div>}
-      {rows !== null && active.length === 0 && <div className="empty-all">No hay playbooks activos.</div>}
+      {rows === null && <SkeletonShimmer style={{ height: 120, margin: "24px 0" }} />}
+      {rows !== null && active.length === 0 && <EmptyState title="No hay playbooks activos" hint="Crea una plantilla de proceso para estandarizar tus tareas." icon={<FolderTree />} />}
       {active.map(pb => (
         <div key={pb.id} className="svc">
           <div className="sh">
@@ -4379,17 +4417,12 @@ function SvcView({ canManage, showToast }: { canManage: boolean; showToast: (msg
         {canManage && <button className="svc-new" onClick={openNew}>+ Nuevo servicio</button>}
       </div>
 
-      {services === null && !loadError && <div className="empty-all">Cargando catálogo…</div>}
+      {services === null && !loadError && <SkeletonShimmer style={{ height: 160, margin: "24px 0" }} />}
       {loadError && services === null && (
-        <div className="empty-all">
-          No se pudo cargar el catálogo de servicios.{" "}
-          <button className="svc-retry" onClick={load}>Reintentar</button>
-        </div>
+        <EmptyState title="Error de conexión" hint="No se pudo cargar el catálogo de servicios." icon={<AlertTriangle />} action={<button className="add-btn" style={{ width: "auto", padding: "8px 16px" }} onClick={load}>Reintentar</button>} />
       )}
       {services !== null && active.length === 0 && (
-        <div className="empty-all">
-          El catálogo está vacío.{canManage && <> Crea el primero con <strong>+ Nuevo servicio</strong>.</>}
-        </div>
+        <EmptyState title="Catálogo vacío" hint={canManage ? "Crea el primer servicio para definir el catálogo." : "No hay servicios definidos aún."} icon={<Package />} action={canManage ? <button className="add-btn" style={{ width: "auto", padding: "8px 16px" }} onClick={openNew}>+ Nuevo servicio</button> : undefined} />
       )}
 
       {grouped.map(g => (
@@ -6075,11 +6108,11 @@ export default function EjecutivoPage() {
             </div>
             <div style={{ padding: "10px 18px 0" }}><PushEnableBanner /></div>
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} apiTasks={apiTasks} />}
-            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} />}
+            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} onNew={handleNew} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onSave={setState} onOpen={id => openSheet({ kind: "note", id })} onToast={showToast} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
-            {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} />}
+            {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} onNew={handleNew} />}
             {tab === "drive" && <HubDriveView />}
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
             {tab === "att" && canSeeAtt && <AttendanceView />}

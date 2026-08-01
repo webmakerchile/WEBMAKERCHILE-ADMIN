@@ -1,0 +1,49 @@
+/* ============================================================
+   HUB VISUAL KIT (Reusable Components)
+   ============================================================ */
+.hk-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--line-soft, hsl(var(--border) / 0.55)); }
+.hk-sheet-head-icon { width: 42px; height: 42px; border-radius: 12px; background: linear-gradient(135deg, var(--orange-soft, hsl(var(--primary) / 0.12)) 0%, transparent 100%); border: 1px solid var(--orange-line, hsl(var(--primary) / 0.35)); display: flex; align-items: center; justify-content: center; color: var(--orange2, hsl(24 95% 62%)); flex: none; font-size: 18px; }
+.hk-sheet-head-text { flex: 1; min-width: 0; padding-top: 2px; }
+.hk-sheet-head-text h2 { font-family: 'Oswald', var(--font-display, sans-serif); font-weight: 600; font-size: 20px; letter-spacing: 0.5px; text-transform: uppercase; margin: 0 0 4px; color: var(--text, hsl(var(--foreground))); line-height: 1.1; }
+.hk-sheet-head-text p { margin: 0; font-size: 13px; color: var(--dim, hsl(var(--muted-foreground))); line-height: 1.4; }
+.hk-sheet-head-close { width: 32px; height: 32px; border-radius: 10px; background: var(--card2, hsl(var(--card))); border: 1px solid var(--line, hsl(var(--border))); color: var(--dim, hsl(var(--muted-foreground))); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; flex: none; }
+.hk-sheet-head-close:hover { background: var(--bg2, hsl(var(--background))); color: var(--text, hsl(var(--foreground))); border-color: var(--line-soft, hsl(var(--border) / 0.55)); }
+
+.hk-opt-card { display: flex; flex-direction: column; padding: 18px; background: var(--card, hsl(var(--card))); border: 1px solid var(--line, hsl(var(--border))); border-radius: 14px; cursor: pointer; text-align: left; width: 100%; transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s; position: relative; overflow: hidden; }
+.hk-opt-card:hover { border-color: var(--orange-line, hsl(var(--primary) / 0.35)); background: var(--card2, hsl(var(--card))); transform: translateY(-2px); box-shadow: 0 12px 24px -8px hsl(var(--primary)/0.15); }
+.hk-opt-card:active { transform: translateY(0); }
+.hk-opt-card:focus-visible { outline: 2px solid var(--orange, hsl(var(--primary))); outline-offset: 2px; }
+.hk-opt-card-top { display: flex; align-items: flex-start; gap: 14px; }
+.hk-opt-card-icon { font-size: 22px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; background: var(--bg2, hsl(var(--background))); border-radius: 12px; border: 1px solid var(--line-soft, hsl(var(--border) / 0.55)); flex: none; transition: border-color 0.2s, background 0.2s; }
+.hk-opt-card:hover .hk-opt-card-icon { background: var(--orange-soft, hsl(var(--primary) / 0.12)); border-color: var(--orange-line, hsl(var(--primary) / 0.35)); }
+.hk-opt-card-body { flex: 1; min-width: 0; }
+.hk-opt-card-title { font-family: 'Oswald', var(--font-display, sans-serif); font-size: 16px; font-weight: 600; letter-spacing: 0.5px; color: var(--text, hsl(var(--foreground))); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+.hk-opt-card-desc { font-size: 12.5px; color: var(--dim, hsl(var(--muted-foreground))); line-height: 1.5; margin-bottom: 0; font-family: var(--font-sans, sans-serif); font-weight: 300; }
+.hk-opt-card-arr { color: var(--orange2, hsl(24 95% 62%)); font-size: 16px; opacity: 0.5; transition: opacity 0.2s, transform 0.2s; }
+.hk-opt-card:hover .hk-opt-card-arr { opacity: 1; transform: translateX(3px); }
+.hk-opt-card-cue { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-soft, hsl(var(--border) / 0.55)); font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--orange2, hsl(24 95% 62%)); display: flex; align-items: center; gap: 6px; letter-spacing: 0.3px; }
+
+.hk-sec-head { display: flex; align-items: center; gap: 10px; margin: 28px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft, hsl(var(--border) / 0.55)); }
+.hk-sec-head-icon { color: var(--orange2, hsl(24 95% 62%)); display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; background: var(--orange-soft, hsl(var(--primary) / 0.12)); border-radius: 6px; font-size: 13px; }
+.hk-sec-head-title { font-family: 'Oswald', var(--font-display, sans-serif); font-weight: 600; font-size: 16px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text, hsl(var(--foreground))); margin: 0; }
+.hk-sec-head-n { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint, hsl(var(--muted-foreground) / 0.55)); font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+
+.hk-empty { padding: 48px 24px; text-align: center; background: var(--card2, hsl(var(--card))); border: 1px dashed var(--line, hsl(var(--border))); border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.hk-empty-ill { width: 80px; height: 80px; margin-bottom: 20px; border-radius: 20px; background: radial-gradient(circle at center, var(--orange-soft, hsl(var(--primary) / 0.12)) 0%, transparent 70%); display: flex; align-items: center; justify-content: center; font-size: 32px; border: 1px solid var(--orange-line, hsl(var(--primary) / 0.35)); box-shadow: inset 0 0 20px var(--bg, hsl(var(--background))); position: relative; color: var(--orange2, hsl(24 95% 62%)); }
+.hk-empty-ill::after { content: ''; position: absolute; inset: -1px; border-radius: inherit; border: 1px solid var(--orange, hsl(var(--primary))); opacity: 0.3; filter: blur(3px); pointer-events: none; }
+.hk-empty-title { font-family: 'Oswald', var(--font-display, sans-serif); font-weight: 600; font-size: 18px; color: var(--text, hsl(var(--foreground))); margin: 0 0 8px; letter-spacing: 0.5px; }
+.hk-empty-hint { font-size: 13.5px; color: var(--dim, hsl(var(--muted-foreground))); line-height: 1.5; max-width: 320px; margin: 0; font-family: var(--font-sans, sans-serif); font-weight: 300; }
+.hk-empty-action { margin-top: 20px; }
+
+.hk-chip { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500; letter-spacing: 0.8px; text-transform: uppercase; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--line, hsl(var(--border))); color: var(--text, hsl(var(--foreground))); background: var(--card, hsl(var(--card))); white-space: nowrap; line-height: 1.4; }
+.hk-chip-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+.hk-shimmer { background: linear-gradient(90deg, var(--card, hsl(var(--card))) 25%, var(--card2, hsl(var(--background))) 50%, var(--card, hsl(var(--card))) 75%); background-size: 200% 100%; animation: hkShimmer 2s infinite linear; border-radius: var(--r-sm, var(--radius)); }
+@keyframes hkShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+@media (max-width: 480px) {
+  .hk-opt-card { padding: 14px; }
+  .hk-opt-card-icon { width: 36px; height: 36px; font-size: 18px; }
+  .hk-opt-card-title { font-size: 15px; }
+  .hk-sheet-head-text h2 { font-size: 18px; }
+}

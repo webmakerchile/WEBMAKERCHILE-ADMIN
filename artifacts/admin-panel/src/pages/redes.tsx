@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { Layout } from "@/components/layout";
+import { EmptyState } from "@/components/hub-kit";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import {
 import {
   Loader2, AlertTriangle, CalendarClock, Users2, Sparkles, MessageSquareText,
   ArrowRight, Plus, Eye, Heart, UserPlus, Send, CircleAlert, CalendarPlus,
-  CalendarX, CheckCheck,
+  CalendarX, CheckCheck, Calendar,
 } from "lucide-react";
 
 /** `datetime-local` habla en hora local; la API en ISO. */
@@ -346,9 +347,7 @@ export default function RedesPage() {
                 <CardContent className="p-4">
                   <p className="text-sm font-semibold mb-3">Próximas publicaciones</p>
                   {proximas.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-6 text-center">
-                      No hay nada programado. <Link href="/schedule" className="text-primary hover:underline">Programar algo</Link>.
-                    </p>
+                    <div className="py-2"><EmptyState title="Sin próximas publicaciones" hint="No hay nada programado en la cola." icon={<Calendar />} action={<Link href="/schedule" className="inline-flex items-center justify-center px-4 py-2 text-sm font-semibold uppercase tracking-wider text-white bg-primary rounded-lg hover:bg-orange-600 transition">Programar algo</Link>} /></div>
                   ) : (
                     <ul className="space-y-2">
                       {proximas.map(v => <ProximaFila key={v.id} video={v} />)}

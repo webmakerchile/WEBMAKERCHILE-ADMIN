@@ -25,3 +25,5 @@
 - [Sprint semanal y generación única](sprint-semanal-generacion.md) — cierre foto→arrastre idempotente sin tx; generar 1×/semana = LLM fuera + advisory xact lock + re-chequeo + pares en una sola tx.
 - [Estados de publicación por red](redes-publish-status.md) — éxito = published O uploaded (YouTube/TikTok); filtrar solo por published esconde redes exitosas; e2e real en dev solo Facebook.
 - [Tableros horizontales](tableros-horizontales.md) — reusar el módulo board-nav (chips/flechas/fades/snap); flechas por posición (no índice: clamp con overflow chico); snap off durante drag.
+- [Kit visual del Hub](hub-kit-rediseno.md) — reusar hub-kit (.hk-*, importable fuera del Hub); tras rediseños "solo presentación": auditar drift funcional + selectores CSS borrados aún referenciados.
+- [Puertos huérfanos](puertos-huerfanos.md) — si un workflow no abre su puerto: proceso viejo en loop de bind lo captura al liberarse; matar por PID (no solo el socket) y un restart con timeout amplio.
