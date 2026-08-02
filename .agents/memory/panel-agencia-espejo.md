@@ -23,3 +23,11 @@ wouter v3 usa `regexparam`, NO path-to-regexp: `path="/seccion/:rest*"` (sintaxi
 
 ## Quirks del panel externo
 Booleanos 0/1 al leer (acepta true al escribir), CLP enteros, IVA 19% calculado allá, POST idempotentes con `creado:false`, `forzarNuevo` para regenerar contrato de un presupuesto, volúmenes chicos (~85 clientes → snapshot liviano).
+
+## Modos de acceso: equipo vs dirección
+- /agencia abre a TODO el equipo en modo "equipo" (saneado server-side); "completo" solo CEO/superadmin. El modo se resuelve SIEMPRE en el servidor leyendo el usuario fresco de DB — jamás confiar en el cliente.
+- Saneado = lista blanca de campos por recurso + depuración profunda de VALORES (plata/PII/tokens). **Decisión:** la lista blanca gana sobre la lista negra a nivel de campo (ej.: leads conservan `notes` porque es herramienta de venta); la depuración profunda igual corre sobre los valores. **Why:** un blocklist ciego rompía casos de uso legítimos del equipo.
+- La UI esconde plata por MODO (no por presencia de datos): así el "ver como" del CEO previsualiza fiel. Regla: todo componente de /agencia que muestre montos se gatea con el modo, y toda query a recursos de dirección lleva `enabled: esCompleto` (si no: 403 en consola).
+- Diagnóstico de sync (error crudo, cursor, detalle, motivo) NO va al equipo: el texto de error puede traer pedazos de respuestas del panel externo. Se reemplaza por un texto genérico apto para el banner.
+- Candado de clave del CEO: montado en "/api" PEGADO a la sesión (antes de todos los routers), eximiendo solo /auth/* — default-deny para mounts futuros. Para anónimos (healthchecks, links públicos de firma) es no-op porque solo aplica a la cuenta del CEO. Comparación con las mismas semánticas del mount (case-insensitive).
+- Los tests de router mockean la DB: NO detectan SQL inválido. Todo fragmento sql`` nuevo se valida con una corrida directa (tsx script contra la DB dev) o e2e antes de darlo por bueno.

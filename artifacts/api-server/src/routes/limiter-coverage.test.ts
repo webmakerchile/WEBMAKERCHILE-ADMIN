@@ -16,6 +16,7 @@ function extractRegexLine(prefix: string): RegExp {
 const aiRegex = extractRegexLine("ai");
 const publishRegex = extractRegexLine("publish");
 const uploadRegex = extractRegexLine("upload");
+const claveRegex = extractRegexLine("clave");
 
 const MUST_AI = [
   "/api/library/templates/ai-fill",
@@ -94,6 +95,13 @@ describe("Rate-limit regex coverage in app.ts", () => {
   it("el límite de firma no se aplica al resto del panel", () => {
     expect(firmaRegex.test("/api/hub/contracts/1/firma")).toBe(false);
     expect(firmaRegex.test("/api/content/videos")).toBe(false);
+  });
+
+  it("claveLimiter cubre el segundo candado del CEO y nada más de auth", () => {
+    expect(claveRegex.test("/api/auth/clave")).toBe(true);
+    expect(claveRegex.test("/api/auth/me")).toBe(false);
+    expect(claveRegex.test("/api/auth/logout")).toBe(false);
+    expect(claveRegex.test("/api/auth/google/callback")).toBe(false);
   });
 
   it.each(MUST_AI)("aiLimiter covers %s", (p) => {

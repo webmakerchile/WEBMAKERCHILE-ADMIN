@@ -478,6 +478,70 @@ router.post("/auth/test-login", async (req: Request, res: Response) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* Segundo candado del CEO: clave extra después del login con Google.   */
+/* Sin CEO_PANEL_SECRET configurada el candado queda APAGADO (nunca te  */
+/* deja fuera). Solo aplica a la cuenta de dirección.                   */
+/* ------------------------------------------------------------------ */
+
+const CLAVE_CEO_EMAIL = "webmakerchile@gmail.com";
+const CLAVE_TTL_MS = 12 * 60 * 60 * 1000; // 12 horas y se vuelve a pedir
+
+declare module "express-session" {
+  interface SessionData {
+    claveOkHasta?: number;
+  }
+}
+
+function claveCeoPendiente(req: Request): boolean {
+  if (!process.env.CEO_PANEL_SECRET) return false;
+  const user = req.user as { email?: string } | undefined;
+  if ((user?.email ?? "").toLowerCase() !== CLAVE_CEO_EMAIL) return false;
+  const hasta = req.session?.claveOkHasta;
+  return !(typeof hasta === "number" && hasta > Date.now());
+}
+
+router.post("/auth/clave", (req: Request, res: Response) => {
+  if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
+    res.status(401).json({ error: "No autenticado" });
+    return;
+  }
+  const secreto = process.env.CEO_PANEL_SECRET;
+  if (!secreto) {
+    res.json({ ok: true, activa: false });
+    return;
+  }
+  const user = req.user as { email?: string };
+  if ((user.email ?? "").toLowerCase() !== CLAVE_CEO_EMAIL) {
+    // A las demás cuentas el candado no les aplica: no hay nada que validar.
+    res.json({ ok: true });
+    return;
+  }
+  const cuerpo = (req.body ?? {}) as { clave?: unknown };
+  const clave = typeof cuerpo.clave === "string" ? cuerpo.clave : "";
+  // sha256 de ambos lados: mismo largo siempre → timingSafeEqual sin fugas.
+  const esperado = crypto.createHash("sha256").update(secreto).digest();
+  const recibido = crypto.createHash("sha256").update(clave).digest();
+  if (!crypto.timingSafeEqual(esperado, recibido)) {
+    res.status(401).json({ error: "clave_incorrecta" });
+    return;
+  }
+  req.session.claveOkHasta = Date.now() + CLAVE_TTL_MS;
+  res.json({ ok: true });
+});
+
+/**
+ * Mientras la clave esté pendiente corta TODO /api salvo /api/auth/* (que se
+ * monta antes): sin esto, el candado sería solo cosmética del frontend.
+ * Va después de requireApproved en la cadena de app.ts.
+ */
+export function requireClaveCeo(req: Request, res: Response, next: NextFunction) {
+  if (!claveCeoPendiente(req)) {
+    return next();
+  }
+  res.status(403).json({ error: "clave_requerida" });
+}
+
 router.get("/auth/me", (req: Request, res: Response) => {
   if (req.isAuthenticated && req.isAuthenticated() && req.user) {
     const user = req.user as any;
@@ -492,6 +556,8 @@ router.get("/auth/me", (req: Request, res: Response) => {
       teamRole: normalizeRole(user.teamRole, user.role === "superadmin"),
       approvalStatus: user.approvalStatus || "approved",
       hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
+      // El frontend muestra la pantalla de clave cuando esto viene true.
+      claveRequerida: claveCeoPendiente(req),
     });
   } else {
     res.status(401).json({ error: "No autenticado" });

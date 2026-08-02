@@ -16,6 +16,7 @@ import { areaCanAccessPage, toArea, AREA_HOME, type Area } from "@workspace/area
 // Eager: dashboard is the landing page; login pages are tiny and unauthed.
 import Dashboard from "./pages/dashboard";
 import LoginPage from "./pages/login";
+import PantallaClave from "./pages/clave";
 import PendingApprovalPage from "./pages/pending-approval";
 import TermsPage from "./pages/terms";
 import PrivacyPage from "./pages/privacy";
@@ -101,6 +102,8 @@ export type AuthUser = {
   role: string;
   teamRole?: TeamRole;
   approvalStatus?: string;
+  /** La cuenta de dirección debe validar su clave extra antes de usar el panel. */
+  claveRequerida?: boolean;
 };
 
 const AuthContext = createContext<AuthUser | null>(null);
@@ -323,6 +326,23 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 
   if (user.approvalStatus === "rejected") {
     return <AccessDeniedScreen user={user} />;
+  }
+
+  if (user.claveRequerida) {
+    return (
+      <PantallaClave
+        email={user.email}
+        alSalir={async () => {
+          try {
+            await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
+          } catch {
+            // Ignorar: igual redirigimos al login.
+          }
+          clearSessionHint();
+          window.location.href = "/";
+        }}
+      />
+    );
   }
 
   return (

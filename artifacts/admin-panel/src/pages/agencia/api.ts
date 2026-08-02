@@ -83,10 +83,11 @@ export interface Presupuesto extends Registro {
   clientId: string;
   status: string;
   tokenUrl?: string | null;
-  subtotal: number;
-  iva: number;
-  total: number;
-  hasIVA: number;
+  /** Plata: solo llega en modo dirección — al equipo el servidor no se la manda. */
+  subtotal?: number;
+  iva?: number;
+  total?: number;
+  hasIVA?: number;
   paymentModality?: string;
   installmentCount?: number | null;
   customPaymentTerms?: string | null;
@@ -105,7 +106,8 @@ export interface ItemPresupuesto extends Registro {
   name: string;
   description?: string | null;
   quantity: number;
-  unitPrice: number;
+  /** Solo en modo dirección. */
+  unitPrice?: number;
 }
 
 export interface Proyecto extends Registro {
@@ -149,8 +151,9 @@ export interface ContratoMantenimiento extends Registro {
   projectId?: string | null;
   clientId: string;
   serviceType: string;
-  monthlyPrice: number;
-  hasIVA: number;
+  /** Solo en modo dirección. */
+  monthlyPrice?: number;
+  hasIVA?: number;
   status: string;
   startDate?: string;
   endDate?: string | null;
@@ -173,13 +176,14 @@ export interface ResumenPanel {
   registros: Record<string, number>;
   negocio: {
     contratosMantenimientoActivos: number;
-    mrrNeto: number;
-    mrrConIva: number;
-    arrEstimadoNeto: number;
     proyectosActivos: number;
-    valorProyectosActivos: number;
     presupuestosAbiertos: number;
-    pipelineCotizado: number;
+    /** Plata: solo en modo dirección. */
+    mrrNeto?: number;
+    mrrConIva?: number;
+    arrEstimadoNeto?: number;
+    valorProyectosActivos?: number;
+    pipelineCotizado?: number;
   };
 }
 
@@ -191,17 +195,18 @@ export interface ResumenMantenimiento {
     activos: number;
     pausados: number;
     cancelados: number;
-    porTipo: Record<string, { contratos: number; mrrNeto: number }>;
+    porTipo: Record<string, { contratos: number; mrrNeto?: number }>;
   };
-  recurrencia: { mrrNeto: number; mrrConIva: number; ticketPromedio: number };
-  cobranza: { cuotasImpagas: number; montoImpago: number; cuotasVencidas: number; montoVencido: number };
+  /** Plata: solo en modo dirección. */
+  recurrencia?: { mrrNeto: number; mrrConIva: number; ticketPromedio: number };
+  cobranza?: { cuotasImpagas: number; montoImpago: number; cuotasVencidas: number; montoVencido: number };
   proximosVencimientos: Array<{
     pagoId: string;
     contratoId: string;
     cliente: string;
     tipoServicio: string;
     periodo: string;
-    monto: number;
+    monto?: number;
     vence: string;
     estado: string;
   }>;
@@ -251,6 +256,19 @@ export const agenciaApi = {
   mantenimiento: () => pedir<ResumenMantenimiento>("/panel/mantenimiento/resumen"),
   finanzas: (anio?: number) => pedir<ResumenFinanzas>(`/panel/finanzas/resumen${anio ? `?anio=${anio}` : ""}`),
   plantillas: () => pedir<{ ok: boolean; datos?: Registro[] } & Partial<Listado>>("/panel/plantillas-contrato"),
+
+  /* Compartir proyectos terminados con el equipo (solo dirección). */
+  compartidos: () => pedir<{ todos: boolean; ids: string[] }>("/panel/compartidos/proyectos"),
+  fijarCompartidoGlobal: (compartido: boolean) =>
+    pedir<{ ok: boolean; todos: boolean }>("/panel/compartidos/proyectos", {
+      method: "PUT",
+      body: JSON.stringify({ compartido }),
+    }),
+  fijarCompartido: (id: string, compartido: boolean) =>
+    pedir<{ ok: boolean; id: string; compartido: boolean }>(
+      `/panel/compartidos/proyectos/${encodeURIComponent(id)}`,
+      { method: "PUT", body: JSON.stringify({ compartido }) }
+    ),
 
   crearCliente: (b: Record<string, unknown>) =>
     pedir<{ ok: boolean; creado?: boolean; datos: Cliente }>("/panel/clientes", {

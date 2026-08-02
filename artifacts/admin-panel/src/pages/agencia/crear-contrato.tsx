@@ -14,6 +14,7 @@ import {
   type VistaPresupuesto,
 } from "./api";
 import { fmtCLP } from "./formato";
+import { useModoAgencia } from "./modo";
 import { Aviso, BotonCopiar, Campo, Cargando } from "./ui";
 
 /**
@@ -384,6 +385,7 @@ function PasoContrato({
   const [plantillaId, setPlantillaId] = useState("");
   const [forzar, setForzar] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const esCompleto = useModoAgencia() === "completo";
 
   const plantillas = useQuery({ queryKey: [CLAVE, "plantillas"], queryFn: agenciaApi.plantillas });
   const listaPlantillas: Registro[] = (plantillas.data?.datos as Registro[] | undefined) ?? [];
@@ -411,8 +413,8 @@ function PasoContrato({
   return (
     <div className="space-y-4 rounded-xl border border-border bg-card p-4">
       <div className="rounded-lg border border-border bg-background p-3 text-sm">
-        <p className="font-medium">Presupuesto listo · {fmtCLP(total)}</p>
-        {calculo && (
+        <p className="font-medium">Presupuesto listo{esCompleto ? ` · ${fmtCLP(total)}` : ""}</p>
+        {esCompleto && calculo && (
           <p className="text-xs text-muted-foreground">
             subtotal {fmtCLP(calculo.subtotal)}
             {calculo.descuento > 0 && ` · desc ${fmtCLP(calculo.descuento)}`}

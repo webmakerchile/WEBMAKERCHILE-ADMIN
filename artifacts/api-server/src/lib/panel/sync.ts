@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { panelSyncEstado } from "@workspace/db/schema";
 import { panelConfigurado, panelGet, type ListadoPanel } from "./cliente";
 import { estadoSyncFila, guardarRegistros, RECURSOS_PANEL } from "./espejo";
+import { retirarCompartidosDeTerminados } from "./equipo";
 import { limpiarCacheVistas } from "./cache-vistas";
 
 /** Cada cuánto se refresca el espejo (el manifiesto sugiere 5–15 min). */
@@ -87,6 +88,11 @@ export async function sincronizarPanel(modo: "auto" | "manual"): Promise<Resulta
       for (const [recurso, bloque] of Object.entries(respuesta.recursos ?? {})) {
         const datos = [...(bloque?.datos ?? []), ...(extras[recurso] ?? [])];
         if (!datos.length) continue;
+        if (recurso === "proyectos") {
+          // Antes de pisar la copia: si un proyecto PASÓ a terminado, retirar
+          // su compartido puntual (deja de verse para el equipo al terminar).
+          await retirarCompartidosDeTerminados(datos, tx);
+        }
         porRecurso[recurso] = await guardarRegistros(recurso, datos, tx);
       }
 

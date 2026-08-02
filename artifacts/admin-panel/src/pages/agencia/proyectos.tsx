@@ -1,18 +1,25 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, FolderOpen } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FolderOpen, Share2 } from "lucide-react";
 import { agenciaApi, CLAVE, type Cliente, type Proyecto, type Tarea } from "./api";
 import { estadoDe, fmtCLP, fmtFecha } from "./formato";
 import { Cargando, Chip, ErrorCarga, Vacio } from "./ui";
+import { useModoAgencia } from "./modo";
 
 const FILTROS = [
   { valor: "curso", etiqueta: "En curso" },
   { valor: "", etiqueta: "Todos" },
-  { valor: "listos", etiqueta: "Completados" },
+  { valor: "listos", etiqueta: "Terminados" },
 ];
+
+/** Mismos estados finales que usa el servidor para esconderle proyectos al equipo. */
+const ESTADOS_FINALES = ["COMPLETED", "CANCELLED", "DELIVERED", "ARCHIVED"];
+const esFinal = (status: unknown) => ESTADOS_FINALES.includes(String(status));
 
 export default function Proyectos() {
   const [filtro, setFiltro] = useState("curso");
+  const esCompleto = useModoAgencia() === "completo";
+  const qc = useQueryClient();
 
   const proyectos = useQuery({
     queryKey: [CLAVE, "espejo", "proyectos", "todos"],
@@ -26,6 +33,23 @@ export default function Proyectos() {
     queryKey: [CLAVE, "espejo", "clientes", ""],
     queryFn: () => agenciaApi.espejo<Cliente>("clientes", { limite: 300 }),
   });
+
+  // Toggles de visibilidad para el equipo (solo dirección los ve y los usa).
+  const compartidos = useQuery({
+    queryKey: [CLAVE, "compartidos"],
+    queryFn: agenciaApi.compartidos,
+    enabled: esCompleto,
+  });
+  const fijarGlobal = useMutation({
+    mutationFn: (compartido: boolean) => agenciaApi.fijarCompartidoGlobal(compartido),
+    onSettled: () => qc.invalidateQueries({ queryKey: [CLAVE, "compartidos"] }),
+  });
+  const fijarUno = useMutation({
+    mutationFn: (v: { id: string; compartido: boolean }) => agenciaApi.fijarCompartido(v.id, v.compartido),
+    onSettled: () => qc.invalidateQueries({ queryKey: [CLAVE, "compartidos"] }),
+  });
+  const compTodos = compartidos.data?.todos ?? false;
+  const compIds = useMemo(() => new Set(compartidos.data?.ids ?? []), [compartidos.data]);
 
   const nombreCliente = useMemo(() => {
     const m = new Map<string, string>();
@@ -47,9 +71,8 @@ export default function Proyectos() {
   }, [tareas.data]);
 
   const visibles = (proyectos.data?.datos ?? []).filter((p) => {
-    const completado = String(p.status) === "COMPLETED";
-    if (filtro === "curso") return !completado;
-    if (filtro === "listos") return completado;
+    if (filtro === "curso") return !esFinal(p.status);
+    if (filtro === "listos") return esFinal(p.status);
     return true;
   });
 
@@ -70,6 +93,30 @@ export default function Proyectos() {
           </button>
         ))}
       </div>
+
+      {esCompleto && filtro === "listos" && (
+        <div className="rounded-xl border border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Visibilidad para el equipo</p>
+              <p className="text-xs text-muted-foreground">
+                Los proyectos terminados no aparecen para el equipo, salvo los que compartas.
+              </p>
+            </div>
+            <button
+              onClick={() => fijarGlobal.mutate(!compTodos)}
+              disabled={fijarGlobal.isPending || compartidos.isLoading}
+              className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
+                compTodos
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background hover:bg-muted"
+              }`}
+            >
+              {compTodos ? "Compartiendo todos" : "Compartir todos"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {proyectos.isLoading ? (
         <Cargando />
@@ -92,7 +139,7 @@ export default function Proyectos() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{p.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {[nombreCliente(p.clientId), fmtCLP(p.totalValue)].filter(Boolean).join(" · ")}
+                      {[nombreCliente(p.clientId), esCompleto ? fmtCLP(p.totalValue) : ""].filter(Boolean).join(" · ")}
                       {entrega && ` · entrega ~ ${fmtFecha(entrega.toISOString())}`}
                     </p>
                   </div>
@@ -120,6 +167,23 @@ export default function Proyectos() {
                   </div>
                 ) : (
                   <p className="mt-2 text-xs text-muted-foreground">Sin tareas cargadas en el panel.</p>
+                )}
+                {esCompleto && esFinal(p.status) && (
+                  <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Share2 size={12} />
+                      {compTodos || compIds.has(p.id) ? "El equipo lo ve" : "Oculto para el equipo"}
+                    </span>
+                    {!compTodos && (
+                      <button
+                        onClick={() => fijarUno.mutate({ id: p.id, compartido: !compIds.has(p.id) })}
+                        disabled={fijarUno.isPending}
+                        className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-muted disabled:opacity-60"
+                      >
+                        {compIds.has(p.id) ? "Dejar de compartir" : "Compartir"}
+                      </button>
+                    )}
+                  </div>
                 )}
               </li>
             );

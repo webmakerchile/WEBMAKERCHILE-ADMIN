@@ -5,7 +5,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import path from "path";
 import router from "./routes";
-import authRouter, { passport, requireAuth, requireApproved } from "./routes/auth";
+import authRouter, { passport, requireAuth, requireApproved, requireClaveCeo } from "./routes/auth";
 import firmaRouter from "./routes/firma";
 
 const app: Express = express();
@@ -61,6 +61,20 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// El segundo candado del CEO cierra TODO /api salvo /api/auth/* (ahí viven el
+// login, el logout y la clave misma). Va pegado a la sesión y ANTES de todos
+// los routers, para que ningún mount futuro quede fuera del candado por
+// accidente. Para visitantes sin sesión (healthchecks, links públicos de
+// firma/temp-video) es un no-op: el candado solo aplica a la cuenta del CEO.
+app.use("/api", (req, res, next) => {
+  // req.path acá ya viene sin el prefijo /api (Express recorta el mount) y
+  // los mounts matchean sin distinguir mayúsculas: normalizamos igual.
+  if (req.path.toLowerCase().startsWith("/auth/")) return next();
+  return requireClaveCeo(req, res, next);
+});
+
+// El segundo candado del CEO es una clave fija: pocos intentos por ventana.
+app.use(/^\/api\/auth\/clave/, claveLimiter);
 app.use("/api", authRouter);
 
 import healthRouter from "./routes/health";
@@ -75,7 +89,7 @@ app.get("/api/instagram/temp-video/:token", serveTempVideo);
 app.use(/^\/api\/firma\//, firmaLimiter);
 app.use("/api", firmaRouter);
 
-import { aiLimiter, publishLimiter, uploadLimiter, firmaLimiter } from "./lib/rate-limit";
+import { aiLimiter, publishLimiter, uploadLimiter, firmaLimiter, claveLimiter } from "./lib/rate-limit";
 // Apply rate limits to high-cost endpoints. These run before requireAuth so
 // keying falls back to IP for unauth'd callers; once a session is loaded the
 // keyGenerator switches to user id automatically.
@@ -85,6 +99,7 @@ app.use(/^\/api\/(studio\/(upload-chunk|upload-video|temp-preview|finalize-uploa
 
 // requireApproved runs after requireAuth so pending/rejected accounts only keep
 // access to /api/auth/* (mounted above) and public health checks.
+// (El candado de clave del CEO ya corrió arriba, pegado a la sesión.)
 app.use("/api", requireAuth, requireApproved, router);
 
 import { Sentry, isSentryEnabled } from "./lib/sentry";

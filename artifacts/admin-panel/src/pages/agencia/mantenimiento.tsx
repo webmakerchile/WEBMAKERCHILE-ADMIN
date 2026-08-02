@@ -3,8 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { agenciaApi, CLAVE, type Cliente, type ContratoMantenimiento, type PagoMantenimiento } from "./api";
 import { estadoDe, fmtCLP, fmtFecha, tipoMant } from "./formato";
 import { Cargando, Chip, ErrorCarga, Ficha, Panel, Vacio } from "./ui";
+import { useModoAgencia } from "./modo";
 
 export default function Mantenimiento() {
+  const esCompleto = useModoAgencia() === "completo";
   const resumen = useQuery({ queryKey: [CLAVE, "mant-resumen"], queryFn: agenciaApi.mantenimiento });
   const contratos = useQuery({
     queryKey: [CLAVE, "espejo", "contratos-mantenimiento", "todos"],
@@ -13,6 +15,8 @@ export default function Mantenimiento() {
   const vencidas = useQuery({
     queryKey: [CLAVE, "espejo", "pagos-mantenimiento", "OVERDUE"],
     queryFn: () => agenciaApi.espejo<PagoMantenimiento>("pagos-mantenimiento", { status: "OVERDUE", limite: 200 }),
+    // Las cuotas son plata: ese recurso está vetado para el equipo (403).
+    enabled: esCompleto,
   });
   const clientes = useQuery({
     queryKey: [CLAVE, "espejo", "clientes", ""],
@@ -34,17 +38,26 @@ export default function Mantenimiento() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Ficha etiqueta="MRR neto" valor={fmtCLP(r.recurrencia.mrrNeto)} detalle={`${fmtCLP(r.recurrencia.mrrConIva)} con IVA`} />
-        <Ficha etiqueta="Ticket promedio" valor={fmtCLP(r.recurrencia.ticketPromedio)} />
-        <Ficha etiqueta="Contratos activos" valor={r.contratos.activos} detalle={`${r.contratos.pausados} pausados`} />
-        <Ficha
-          etiqueta="Cuotas vencidas"
-          valor={r.cobranza.cuotasVencidas}
-          detalle={fmtCLP(r.cobranza.montoVencido)}
-          tono={r.cobranza.cuotasVencidas > 0 ? "mal" : "bien"}
-        />
-      </div>
+      {esCompleto ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Ficha etiqueta="MRR neto" valor={fmtCLP(r.recurrencia?.mrrNeto)} detalle={`${fmtCLP(r.recurrencia?.mrrConIva)} con IVA`} />
+          <Ficha etiqueta="Ticket promedio" valor={fmtCLP(r.recurrencia?.ticketPromedio)} />
+          <Ficha etiqueta="Contratos activos" valor={r.contratos.activos} detalle={`${r.contratos.pausados} pausados`} />
+          <Ficha
+            etiqueta="Cuotas vencidas"
+            valor={r.cobranza?.cuotasVencidas ?? 0}
+            detalle={fmtCLP(r.cobranza?.montoVencido)}
+            tono={(r.cobranza?.cuotasVencidas ?? 0) > 0 ? "mal" : "bien"}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Ficha etiqueta="Contratos activos" valor={r.contratos.activos} />
+          <Ficha etiqueta="Pausados" valor={r.contratos.pausados} />
+          <Ficha etiqueta="Cancelados" valor={r.contratos.cancelados} />
+          <Ficha etiqueta="Próximos vencimientos" valor={r.proximosVencimientos.length} />
+        </div>
+      )}
 
       <Panel titulo="Por tipo de servicio">
         <div className="space-y-1.5 text-sm">
@@ -52,8 +65,13 @@ export default function Mantenimiento() {
             <div key={tipo} className="flex items-center justify-between gap-2">
               <span>{tipoMant(tipo)}</span>
               <span className="text-muted-foreground">
-                {info.contratos} contrato{info.contratos === 1 ? "" : "s"} ·{" "}
-                <span className="font-medium text-foreground">{fmtCLP(info.mrrNeto)}/mes</span>
+                {info.contratos} contrato{info.contratos === 1 ? "" : "s"}
+                {esCompleto && (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-foreground">{fmtCLP(info.mrrNeto)}/mes</span>
+                  </>
+                )}
               </span>
             </div>
           ))}
@@ -92,7 +110,7 @@ export default function Mantenimiento() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-sm font-semibold">{fmtCLP(v.monto)}</span>
+                  {esCompleto && <span className="text-sm font-semibold">{fmtCLP(v.monto)}</span>}
                   <Chip {...estadoDe(v.estado)} />
                 </div>
               </div>
@@ -115,7 +133,7 @@ export default function Mantenimiento() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className="text-sm font-semibold">{fmtCLP(m.monthlyPrice)}/mes</span>
+                  {esCompleto && <span className="text-sm font-semibold">{fmtCLP(m.monthlyPrice)}/mes</span>}
                   <Chip {...estadoDe(m.status)} />
                 </div>
               </div>

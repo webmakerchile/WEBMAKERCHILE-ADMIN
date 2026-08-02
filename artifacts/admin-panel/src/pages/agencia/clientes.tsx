@@ -14,6 +14,7 @@ import {
 } from "./api";
 import { estadoDe, fmtCLP, fmtFecha, tipoMant } from "./formato";
 import { BotonCopiar, Cargando, Chip, ErrorCarga, Lamina, Vacio } from "./ui";
+import { useModoAgencia } from "./modo";
 
 export default function Clientes({ idAbierto }: { idAbierto?: string }) {
   const [, navegar] = useLocation();
@@ -94,6 +95,7 @@ export default function Clientes({ idAbierto }: { idAbierto?: string }) {
 }
 
 function Detalle360({ id, precargado, alCerrar }: { id: string; precargado?: Cliente; alCerrar: () => void }) {
+  const esCompleto = useModoAgencia() === "completo";
   const registro = useQuery({
     queryKey: [CLAVE, "cliente", id],
     queryFn: () => agenciaApi.registro<Cliente>("clientes", id),
@@ -164,7 +166,7 @@ function Detalle360({ id, precargado, alCerrar }: { id: string; precargado?: Cli
               return (
                 <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{fmtCLP(p.total)}</p>
+                    <p className="text-sm font-medium">{esCompleto ? fmtCLP(p.total) : "Presupuesto"}</p>
                     <p className="text-xs text-muted-foreground">{fmtFecha(p.createdAt)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -184,7 +186,7 @@ function Detalle360({ id, precargado, alCerrar }: { id: string; precargado?: Cli
               <div key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">{fmtCLP(p.totalValue)}</p>
+                  {esCompleto && <p className="text-xs text-muted-foreground">{fmtCLP(p.totalValue)}</p>}
                 </div>
                 <Chip {...estadoDe(p.status)} />
               </div>
@@ -217,7 +219,7 @@ function Detalle360({ id, precargado, alCerrar }: { id: string; precargado?: Cli
               <div key={m.id} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="min-w-0">
                   <p className="text-sm font-medium">{tipoMant(m.serviceType)}</p>
-                  <p className="text-xs text-muted-foreground">{fmtCLP(m.monthlyPrice)}/mes</p>
+                  {esCompleto && <p className="text-xs text-muted-foreground">{fmtCLP(m.monthlyPrice)}/mes</p>}
                 </div>
                 <Chip {...estadoDe(m.status)} />
               </div>

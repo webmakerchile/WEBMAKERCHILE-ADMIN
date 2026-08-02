@@ -1,4 +1,4 @@
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
  * Espejo de solo lectura del panel autoadministrable de webmakerlatam.com.
@@ -26,6 +26,30 @@ export const panelEspejo = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.recurso, t.id] }),
     porRecursoFecha: index("panel_espejo_recurso_fecha_idx").on(t.recurso, t.actualizadoEn),
+  })
+);
+
+/**
+ * Qué comparte el CEO con el EQUIPO (modo sanitizado) más allá de lo abierto
+ * por defecto.
+ *
+ * Hoy aplica a "proyectos": los NO terminados se ven siempre; los terminados
+ * solo si el CEO los compartió — fila puntual (recurso, id del panel) o la
+ * fila global (recurso, '*'). Cuando el sync detecta que un proyecto PASÓ a
+ * terminado, borra su fila puntual: al terminar desaparece para el equipo
+ * hasta que el CEO lo vuelva a compartir a mano.
+ */
+export const panelVisibilidad = pgTable(
+  "panel_visibilidad",
+  {
+    recurso: text("recurso").notNull(),
+    /** Id del registro en el panel, o "*" = todos los de este recurso. */
+    panelId: text("panel_id").notNull(),
+    compartido: boolean("compartido").notNull().default(true),
+    actualizado: timestamp("actualizado", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.recurso, t.panelId] }),
   })
 );
 

@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { canSeeMoney } from "@workspace/roles";
+import { normalizeRole } from "@workspace/roles";
 import { PanelError, panelConfigurado, panelGet, panelPatch, panelPost } from "../../lib/panel/cliente";
 import {
   conteoPorRecurso,
@@ -13,44 +13,77 @@ import {
   leerEspejo,
   leerRegistro,
 } from "../../lib/panel/espejo";
+import {
+  RECURSOS_EQUIPO,
+  compartidosProyectos,
+  depurarProfundo,
+  esRecursoEquipo,
+  esVisibleParaEquipo,
+  fijarCompartidoProyecto,
+  mantenimientoParaEquipo,
+  plantillasParaEquipo,
+  resumenParaEquipo,
+  sanearListadoEquipo,
+  sanearRegistroEquipo,
+  type RecursoEquipo,
+} from "../../lib/panel/equipo";
 import { sincronizarPanel } from "../../lib/panel/sync";
 import { guardarVista, limpiarCacheVistas, vistaEnCache } from "../../lib/panel/cache-vistas";
 
 /**
  * Sección Agencia: espejo del panel autoadministrable de webmakerlatam.com.
  *
- * Lecturas: del espejo local (listados) o del panel en vivo con caché corta
- * (vistas y resúmenes, que ya vienen calculados — acá no se re-hace ninguna
- * matemática de plata). Escrituras: SIEMPRE delegadas al panel, que es la
- * única fuente de verdad; lo que devuelve se refleja al instante en el espejo.
+ * Dos modos, resueltos acá y NUNCA en el cliente:
+ *  - "completo": dirección (CEO / superadmin). Ve todo tal cual llega del panel.
+ *  - "equipo": todos los demás roles del equipo. El servidor sanea cada
+ *    respuesta (lista blanca + depuración profunda): sin plata, sin finanzas,
+ *    sin documentos de dirección; proyectos terminados solo si se compartieron.
+ *
+ * Lecturas: del espejo local (listados) o del panel en vivo con caché corta.
+ * La caché guarda SIEMPRE el payload crudo y se sanea después por request,
+ * así dirección y equipo comparten la misma entrada sin filtrarse nada.
+ * Escrituras: SIEMPRE delegadas al panel, que es la única fuente de verdad.
  */
 
 const router: IRouter = Router();
 
 /* ------------------------------------------------------------------ */
-/* Permisos: datos del negocio → solo roles que ven dinero.            */
-/* El rol se lee SIEMPRE de la base, nunca de la sesión (como el Hub). */
+/* Modo por usuario. El rol se lee SIEMPRE de la base, nunca de la      */
+/* sesión (como el Hub): un cambio de rol pega al siguiente request.    */
 /* ------------------------------------------------------------------ */
 
-async function puedeVerAgencia(req: Request): Promise<boolean> {
+type ModoAgencia = "completo" | "equipo";
+
+async function modoAgencia(req: Request): Promise<ModoAgencia | null> {
   const sessionUser = req.user as { id?: number } | undefined;
-  if (!sessionUser?.id) return false;
+  if (!sessionUser?.id) return null;
   const [me] = await db.select().from(users).where(eq(users.id, sessionUser.id)).limit(1);
-  if (!me) return false;
-  return canSeeMoney(me.teamRole, me.role === "superadmin");
+  if (!me) return null;
+  const esSuper = me.role === "superadmin";
+  return esSuper || normalizeRole(me.teamRole, esSuper) === "ceo" ? "completo" : "equipo";
 }
 
 router.use("/panel", (req: Request, res: Response, next: NextFunction) => {
-  puedeVerAgencia(req)
-    .then((ok) => {
-      if (!ok) {
-        res.status(403).json({ error: "Tu rol no tiene acceso a los datos del negocio" });
+  modoAgencia(req)
+    .then((modo) => {
+      if (!modo) {
+        res.status(403).json({ error: "Tu cuenta no tiene acceso a la sección Agencia" });
         return;
       }
+      res.locals.modoPanel = modo;
       next();
     })
     .catch(next);
 });
+
+const esEquipo = (res: Response): boolean => res.locals.modoPanel === "equipo";
+
+/** Corta con 403 lo que es solo de dirección (finanzas, contratos en vivo, compartir). */
+function soloDireccion(res: Response): boolean {
+  if (!esEquipo(res)) return false;
+  res.status(403).json({ error: "solo_direccion", mensaje: "Esta parte es solo para dirección." });
+  return true;
+}
 
 /** Envuelve una ruta: PanelError y Zod se traducen a respuestas honestas. */
 const conPanel =
@@ -73,35 +106,40 @@ const conPanel =
 
 /* ------------------------------------------------------------------ */
 /* Caché corta para vistas en vivo (el sync manual la limpia).          */
+/* Devuelve el payload CRUDO: sanear siempre después, por request.      */
 /* ------------------------------------------------------------------ */
 
-async function vistaCacheada(res: Response, clave: string, carga: () => Promise<unknown>): Promise<void> {
+async function cargarVista(clave: string, carga: () => Promise<unknown>): Promise<unknown> {
   const hit = vistaEnCache(clave);
-  if (hit !== undefined) {
-    res.json(hit);
-    return;
-  }
+  if (hit !== undefined) return hit;
   const datos = await carga();
   guardarVista(clave, datos);
-  res.json(datos);
+  return datos;
 }
 
 /* ------------------------------------------------------------------ */
-/* Estado del sync + sync manual                                        */
+/* Estado del sync + sync manual (ambos modos: el botón es del equipo)  */
 /* ------------------------------------------------------------------ */
 
 router.get(
   "/panel/estado",
   conPanel(async (_req, res) => {
     const [fila, porRecurso] = await Promise.all([estadoSyncFila(), conteoPorRecurso()]);
+    const equipo = esEquipo(res);
+    const conteos = equipo
+      ? Object.fromEntries(Object.entries(porRecurso).filter(([r]) => (RECURSOS_EQUIPO as readonly string[]).includes(r)))
+      : porRecurso;
+    // El cursor y el detalle son diagnóstico interno, y el texto crudo del
+    // error puede traer pedazos de la respuesta del panel externo. Al equipo
+    // solo le contamos QUE falló, con un texto apto para su banner.
     res.json({
       configurado: panelConfigurado(),
-      cursor: fila.cursor,
+      cursor: equipo ? null : fila.cursor,
       ultimaCorrida: fila.ultimaCorrida,
       ultimoExito: fila.ultimoExito,
-      ultimoError: fila.ultimoError,
-      detalle: fila.detalle,
-      porRecurso,
+      ultimoError: equipo ? (fila.ultimoError ? "reintentá en unos minutos" : null) : fila.ultimoError,
+      detalle: equipo ? null : fila.detalle,
+      porRecurso: conteos,
     });
   })
 );
@@ -111,6 +149,13 @@ router.post(
   conPanel(async (_req, res) => {
     const resultado = await sincronizarPanel("manual");
     limpiarCacheVistas();
+    // Mismo criterio que /panel/estado: el equipo puede apretar el botón de
+    // sync, pero el diagnóstico (motivo, cursor, conteos de recursos de
+    // dirección) no le corresponde.
+    if (esEquipo(res)) {
+      res.json({ aplicado: resultado.aplicado === true });
+      return;
+    }
     res.json(resultado);
   })
 );
@@ -127,10 +172,15 @@ router.get(
       res.status(404).json({ error: "recurso_desconocido", mensaje: `No existe el recurso "${recurso}".` });
       return;
     }
+    if (esEquipo(res) && !esRecursoEquipo(recurso)) {
+      soloDireccion(res);
+      return;
+    }
     const q = req.query as Record<string, string | undefined>;
     const num = (v: string | undefined) => (v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : undefined);
-    res.json(
-      await leerEspejo(recurso, {
+    const listado = await leerEspejo(
+      recurso,
+      {
         q: q.q,
         status: q.status,
         clientId: q.clientId,
@@ -138,8 +188,10 @@ router.get(
         contractId: q.contractId,
         limite: num(q.limite),
         offset: num(q.offset),
-      })
+      },
+      { soloEquipo: esEquipo(res) }
     );
+    res.json(esEquipo(res) ? sanearListadoEquipo(recurso as RecursoEquipo, listado) : listado);
   })
 );
 
@@ -151,9 +203,22 @@ router.get(
       res.status(404).json({ error: "recurso_desconocido", mensaje: `No existe el recurso "${recurso}".` });
       return;
     }
+    if (esEquipo(res) && !esRecursoEquipo(recurso)) {
+      soloDireccion(res);
+      return;
+    }
     const datos = await leerRegistro(recurso, String(req.params.id));
     if (!datos) {
       res.status(404).json({ error: "no_encontrado", mensaje: "Ese registro todavía no está en el espejo." });
+      return;
+    }
+    if (esEquipo(res)) {
+      // Mismo 404 que "no existe": no se confirma la existencia de lo no compartido.
+      if (!(await esVisibleParaEquipo(recurso, datos))) {
+        res.status(404).json({ error: "no_encontrado", mensaje: "Ese registro todavía no está en el espejo." });
+        return;
+      }
+      res.json({ datos: sanearRegistroEquipo(recurso as RecursoEquipo, datos) });
       return;
     }
     res.json({ datos });
@@ -167,38 +232,45 @@ router.get(
 router.get(
   "/panel/resumen",
   conPanel(async (_req, res) => {
-    await vistaCacheada(res, "resumen", () => panelGet("/resumen"));
+    const crudo = await cargarVista("resumen", () => panelGet("/resumen"));
+    res.json(esEquipo(res) ? resumenParaEquipo(crudo) : crudo);
   })
 );
 
 router.get(
   "/panel/mantenimiento/resumen",
   conPanel(async (_req, res) => {
-    await vistaCacheada(res, "mantenimiento", () => panelGet("/mantenimiento/resumen"));
+    const crudo = await cargarVista("mantenimiento", () => panelGet("/mantenimiento/resumen"));
+    res.json(esEquipo(res) ? mantenimientoParaEquipo(crudo) : crudo);
   })
 );
 
 router.get(
   "/panel/finanzas/resumen",
   conPanel(async (req, res) => {
+    if (soloDireccion(res)) return;
     const anio = String(req.query.anio ?? "");
-    await vistaCacheada(res, `finanzas:${anio}`, () => panelGet("/finanzas/resumen", { params: { anio: anio || undefined } }));
+    const crudo = await cargarVista(`finanzas:${anio}`, () => panelGet("/finanzas/resumen", { params: { anio: anio || undefined } }));
+    res.json(crudo);
   })
 );
 
 router.get(
   "/panel/contratos",
   conPanel(async (req, res) => {
+    if (soloDireccion(res)) return;
     const q = req.query as Record<string, string | undefined>;
     const params = { tipo: q.tipo, estado: q.estado, q: q.q, limite: q.limite, offset: q.offset };
-    await vistaCacheada(res, `contratos:${JSON.stringify(params)}`, () => panelGet("/contratos", { params }));
+    const crudo = await cargarVista(`contratos:${JSON.stringify(params)}`, () => panelGet("/contratos", { params }));
+    res.json(crudo);
   })
 );
 
 router.get(
   "/panel/plantillas-contrato",
   conPanel(async (_req, res) => {
-    await vistaCacheada(res, "plantillas", () => panelGet("/plantillas-contrato"));
+    const crudo = await cargarVista("plantillas", () => panelGet("/plantillas-contrato"));
+    res.json(esEquipo(res) ? plantillasParaEquipo(crudo) : crudo);
   })
 );
 
@@ -211,13 +283,83 @@ router.get(
       res.status(404).json({ error: "recurso_desconocido", mensaje: `No existe el recurso "${recurso}".` });
       return;
     }
+    if (esEquipo(res)) {
+      if (!esRecursoEquipo(recurso)) {
+        soloDireccion(res);
+        return;
+      }
+      // Visibilidad de proyectos terminados (y su cascada tareas/bitácora):
+      // si el espejo no lo tiene o no está compartido, para el equipo no existe.
+      if (recurso === "proyectos" || recurso === "tareas" || recurso === "bitacora") {
+        const registro = await leerRegistro(recurso, String(req.params.id));
+        if (!registro || !(await esVisibleParaEquipo(recurso, registro))) {
+          res.status(404).json({ error: "no_encontrado", mensaje: "Ese registro todavía no está en el espejo." });
+          return;
+        }
+      }
+    }
     const id = encodeURIComponent(String(req.params.id));
-    await vistaCacheada(res, `vista:${recurso}:${id}`, () => panelGet(`/${recurso}/${id}`));
+    const crudo = await cargarVista(`vista:${recurso}:${id}`, () => panelGet(`/${recurso}/${id}`));
+    if (esEquipo(res)) {
+      const comp = await compartidosProyectos();
+      res.json(depurarProfundo(crudo, comp));
+      return;
+    }
+    res.json(crudo);
+  })
+);
+
+/* ------------------------------------------------------------------ */
+/* Compartir proyectos terminados con el equipo (solo dirección)        */
+/* ------------------------------------------------------------------ */
+
+const esqCompartir = z.object({ compartido: z.boolean() }).strip();
+
+router.get(
+  "/panel/compartidos/proyectos",
+  conPanel(async (_req, res) => {
+    if (soloDireccion(res)) return;
+    const comp = await compartidosProyectos();
+    res.json({ todos: comp.todos, ids: [...comp.ids] });
+  })
+);
+
+/** Toggle global: compartir TODOS los proyectos terminados (fila '*'). */
+router.put(
+  "/panel/compartidos/proyectos",
+  conPanel(async (req, res) => {
+    if (soloDireccion(res)) return;
+    const { compartido } = esqCompartir.parse(req.body ?? {});
+    await fijarCompartidoProyecto("*", compartido);
+    res.json({ ok: true, todos: compartido });
+  })
+);
+
+router.put(
+  "/panel/compartidos/proyectos/:id",
+  conPanel(async (req, res) => {
+    if (soloDireccion(res)) return;
+    const { compartido } = esqCompartir.parse(req.body ?? {});
+    const id = String(req.params.id ?? "").trim();
+    if (!id || id === "*") {
+      res.status(400).json({ error: "datos_invalidos", mensaje: "Falta el proyecto." });
+      return;
+    }
+    // Solo proyectos que existen en el espejo: evita filas basura o forjadas
+    // en panel_visibilidad (defensa extra además del gate de dirección).
+    if (!(await leerRegistro("proyectos", id))) {
+      res.status(404).json({ error: "no_encontrado", mensaje: "Ese proyecto no está en el espejo." });
+      return;
+    }
+    await fijarCompartidoProyecto(id, compartido);
+    res.json({ ok: true, id, compartido });
   })
 );
 
 /* ------------------------------------------------------------------ */
 /* Escritura delegada: el panel genera todo (ids, links, PDFs, cascada) */
+/* Para el equipo, la RESPUESTA también sale saneada: pueden tipear     */
+/* precios al crear, pero nunca los vuelven a ver.                      */
 /* ------------------------------------------------------------------ */
 
 const esqCliente = z
@@ -239,6 +381,10 @@ router.post(
     const resp = await panelPost<{ ok: boolean; creado?: boolean; datos: Record<string, unknown> }>("/clientes", cuerpo);
     if (resp?.datos?.id) await guardarRegistros("clientes", [resp.datos]);
     limpiarCacheVistas();
+    if (esEquipo(res)) {
+      res.json({ ok: resp?.ok === true, creado: resp?.creado, datos: sanearRegistroEquipo("clientes", resp?.datos ?? {}) });
+      return;
+    }
     res.json(resp);
   })
 );
@@ -280,6 +426,11 @@ router.post(
     );
     if (resp?.datos?.id) await guardarRegistros("presupuestos", [resp.datos]);
     limpiarCacheVistas();
+    if (esEquipo(res)) {
+      // Sin calculo/items: el equipo tipea precios al crear, pero no los re-ve.
+      res.json({ ok: resp?.ok === true, datos: sanearRegistroEquipo("presupuestos", resp?.datos ?? {}) });
+      return;
+    }
     res.json(resp);
   })
 );
@@ -300,12 +451,19 @@ router.post(
   "/panel/contratos-servicio",
   conPanel(async (req, res) => {
     const cuerpo = esqContrato.parse(req.body ?? {});
+    // El equipo arma contratos desde plantilla; el texto libre es de dirección.
+    const enviado = esEquipo(res) ? { ...cuerpo, contenido: undefined } : cuerpo;
     const resp = await panelPost<{ ok: boolean; creado?: boolean; datos: Record<string, unknown> }>(
       "/contratos-servicio",
-      cuerpo
+      enviado
     );
     if (resp?.datos?.id) await guardarRegistros("contratos-servicio", [resp.datos]);
     limpiarCacheVistas();
+    if (esEquipo(res)) {
+      // sanearRegistroEquipo conserva _enlaces.contrato: el link de firma es su herramienta.
+      res.json({ ok: resp?.ok === true, creado: resp?.creado, datos: sanearRegistroEquipo("contratos-servicio", resp?.datos ?? {}) });
+      return;
+    }
     res.json(resp);
   })
 );
@@ -323,10 +481,16 @@ router.patch(
   "/panel/presupuestos/:id",
   conPanel(async (req, res) => {
     const cuerpo = esqPatchPresupuesto.parse(req.body ?? {});
+    // El equipo solo mueve estados; notas y vigencia son de dirección.
+    const enviado = esEquipo(res) ? { estado: cuerpo.estado } : cuerpo;
     const id = encodeURIComponent(String(req.params.id));
-    const resp = await panelPatch<{ ok: boolean; datos: Record<string, unknown> }>(`/presupuestos/${id}`, cuerpo);
+    const resp = await panelPatch<{ ok: boolean; datos: Record<string, unknown> }>(`/presupuestos/${id}`, enviado);
     if (resp?.datos?.id) await guardarRegistros("presupuestos", [resp.datos]);
     limpiarCacheVistas();
+    if (esEquipo(res)) {
+      res.json({ ok: resp?.ok === true, datos: sanearRegistroEquipo("presupuestos", resp?.datos ?? {}) });
+      return;
+    }
     res.json(resp);
   })
 );
@@ -342,10 +506,15 @@ router.patch(
   "/panel/contratos-servicio/:id",
   conPanel(async (req, res) => {
     const cuerpo = esqPatchContrato.parse(req.body ?? {});
+    const enviado = esEquipo(res) ? { estado: cuerpo.estado } : cuerpo;
     const id = encodeURIComponent(String(req.params.id));
-    const resp = await panelPatch<{ ok: boolean; datos: Record<string, unknown> }>(`/contratos-servicio/${id}`, cuerpo);
+    const resp = await panelPatch<{ ok: boolean; datos: Record<string, unknown> }>(`/contratos-servicio/${id}`, enviado);
     if (resp?.datos?.id) await guardarRegistros("contratos-servicio", [resp.datos]);
     limpiarCacheVistas();
+    if (esEquipo(res)) {
+      res.json({ ok: resp?.ok === true, datos: sanearRegistroEquipo("contratos-servicio", resp?.datos ?? {}) });
+      return;
+    }
     res.json(resp);
   })
 );
@@ -366,6 +535,10 @@ router.post(
     const cuerpo = esqLead.parse(req.body ?? {});
     const resp = await panelPost<{ ok: boolean; datos: Record<string, unknown> }>("/leads", cuerpo);
     if (resp?.datos?.id) await guardarRegistros("leads", [resp.datos]);
+    if (esEquipo(res)) {
+      res.json({ ok: resp?.ok === true, datos: sanearRegistroEquipo("leads", resp?.datos ?? {}) });
+      return;
+    }
     res.json(resp);
   })
 );

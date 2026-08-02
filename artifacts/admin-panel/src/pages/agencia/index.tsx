@@ -8,10 +8,12 @@ import Contratos from "./contratos";
 import Proyectos from "./proyectos";
 import Mantenimiento from "./mantenimiento";
 import Finanzas from "./finanzas";
+import { useModoAgencia } from "./modo";
 
 /** Sección Agencia: espejo del panel autoadministrable de webmakerlatam.com. */
 export default function AgenciaPage() {
   const [ubicacion] = useLocation();
+  const esCompleto = useModoAgencia() === "completo";
   const partes = ubicacion.replace(/^\/agencia\/?/, "").split("/").filter(Boolean);
   const seccion = partes[0] ?? "";
   const id = partes[1] ? decodeURIComponent(partes[1]) : undefined;
@@ -34,7 +36,8 @@ export default function AgenciaPage() {
       contenido = <Mantenimiento />;
       break;
     case "finanzas":
-      contenido = <Finanzas />;
+      // Finanzas es solo de dirección: al equipo se le muestra el resumen.
+      contenido = esCompleto ? <Finanzas /> : <Resumen />;
       break;
     default:
       contenido = <Resumen />;

@@ -62,3 +62,13 @@ export const firmaLimiter = buildLimiter({
   max: 20,
   tag: "firma",
 });
+
+/**
+ * Segundo candado del CEO (POST /api/auth/clave). Ventana larga y pocos
+ * intentos: es una clave fija, no un formulario que se equivoca seguido.
+ */
+export const claveLimiter = buildLimiter({
+  windowMs: 15 * 60_000,
+  max: 8,
+  tag: "clave",
+});

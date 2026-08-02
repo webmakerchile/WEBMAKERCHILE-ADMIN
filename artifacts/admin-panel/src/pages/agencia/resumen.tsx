@@ -4,6 +4,7 @@ import { ArrowRight, FilePlus2 } from "lucide-react";
 import { agenciaApi, CLAVE } from "./api";
 import { fmtCLP } from "./formato";
 import { Cargando, ErrorCarga, Ficha, Panel } from "./ui";
+import { useModoAgencia } from "./modo";
 
 const NOMBRES_ESPEJO: Record<string, string> = {
   clientes: "Clientes",
@@ -17,6 +18,7 @@ const NOMBRES_ESPEJO: Record<string, string> = {
 };
 
 export default function Resumen() {
+  const esCompleto = useModoAgencia() === "completo";
   const resumen = useQuery({ queryKey: [CLAVE, "resumen"], queryFn: agenciaApi.resumen });
   const mant = useQuery({ queryKey: [CLAVE, "mant-resumen"], queryFn: agenciaApi.mantenimiento });
 
@@ -28,27 +30,44 @@ export default function Resumen() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Ficha etiqueta="MRR neto" valor={fmtCLP(n.mrrNeto)} detalle={`${fmtCLP(n.mrrConIva)} con IVA`} />
-        <Ficha etiqueta="ARR estimado" valor={fmtCLP(n.arrEstimadoNeto)} detalle="neto anual" />
-        <Ficha
-          etiqueta="Proyectos activos"
-          valor={n.proyectosActivos}
-          detalle={`${fmtCLP(n.valorProyectosActivos)} en curso`}
-        />
-        <Ficha
-          etiqueta="Presupuestos abiertos"
-          valor={n.presupuestosAbiertos}
-          detalle={`${fmtCLP(n.pipelineCotizado)} cotizados`}
-        />
-      </div>
+      {esCompleto ? (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Ficha etiqueta="MRR neto" valor={fmtCLP(n.mrrNeto)} detalle={`${fmtCLP(n.mrrConIva)} con IVA`} />
+          <Ficha etiqueta="ARR estimado" valor={fmtCLP(n.arrEstimadoNeto)} detalle="neto anual" />
+          <Ficha
+            etiqueta="Proyectos activos"
+            valor={n.proyectosActivos}
+            detalle={`${fmtCLP(n.valorProyectosActivos)} en curso`}
+          />
+          <Ficha
+            etiqueta="Presupuestos abiertos"
+            valor={n.presupuestosAbiertos}
+            detalle={`${fmtCLP(n.pipelineCotizado)} cotizados`}
+          />
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Ficha etiqueta="Proyectos activos" valor={n.proyectosActivos} />
+          <Ficha etiqueta="Presupuestos abiertos" valor={n.presupuestosAbiertos} />
+          <Ficha etiqueta="Mantenciones activas" valor={n.contratosMantenimientoActivos} />
+          <Link href="/agencia/contratos/nuevo" className="block">
+            <div className="flex h-full flex-col justify-between rounded-xl border border-primary/40 bg-primary/5 p-4 transition-colors hover:bg-primary/10">
+              <FilePlus2 size={18} className="text-primary" />
+              <div>
+                <p className="text-sm font-semibold text-primary">Nuevo contrato</p>
+                <p className="text-xs text-muted-foreground">Cliente → presupuesto → firma</p>
+              </div>
+            </div>
+          </Link>
+        </div>
+      )}
 
-      {cobranza && (
+      {esCompleto && cobranza && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Ficha
             etiqueta="Mantenciones activas"
             valor={resumen.data!.negocio.contratosMantenimientoActivos}
-            detalle={mant.data ? `ticket promedio ${fmtCLP(mant.data.recurrencia.ticketPromedio)}` : undefined}
+            detalle={mant.data?.recurrencia ? `ticket promedio ${fmtCLP(mant.data.recurrencia.ticketPromedio)}` : undefined}
           />
           <Ficha etiqueta="Cuotas impagas" valor={cobranza.cuotasImpagas} detalle={fmtCLP(cobranza.montoImpago)} />
           <Ficha
@@ -74,7 +93,7 @@ export default function Resumen() {
           {[
             { ruta: "/agencia/presupuestos", titulo: "Presupuestos", detalle: "Estados, links de propuesta" },
             { ruta: "/agencia/contratos", titulo: "Contratos", detalle: "Links de firma y PDFs" },
-            { ruta: "/agencia/mantenimiento", titulo: "Mantención", detalle: "MRR y cobranza" },
+            { ruta: "/agencia/mantenimiento", titulo: "Mantención", detalle: esCompleto ? "MRR y cobranza" : "Contratos y vencimientos" },
           ].map((a) => (
             <Link
               key={a.ruta}

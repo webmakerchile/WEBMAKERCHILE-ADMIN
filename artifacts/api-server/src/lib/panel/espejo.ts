@@ -36,6 +36,13 @@ export type RecursoPanel = (typeof RECURSOS_PANEL)[number];
 export const esRecursoPanel = (v: string): v is RecursoPanel =>
   (RECURSOS_PANEL as readonly string[]).includes(v);
 
+/**
+ * Estados de proyecto que cuentan como "terminado" para el modo equipo.
+ * En los datos reales hoy aparecen QA/MOCKUP/DEVELOPMENT/DELIVERY/COMPLETED;
+ * se listan también los finales que el panel puede emitir a futuro.
+ */
+export const ESTADOS_PROYECTO_FINAL = ["COMPLETED", "CANCELLED", "DELIVERED", "ARCHIVED"] as const;
+
 /** La transacción de drizzle o la conexión normal: mismos métodos. */
 type Ejecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -103,14 +110,63 @@ function campoIgual(campo: "status" | "clientId" | "projectId" | "contractId", v
   return sql`${col} = ANY(${lista}::text[])`;
 }
 
+/**
+ * Visibilidad para el EQUIPO, resuelta en SQL para que paginación y totales
+ * sean honestos: proyectos terminados solo si el CEO los compartió (fila
+ * puntual o global '*' en panel_visibilidad); tareas y bitácora heredan la
+ * visibilidad de su proyecto padre. Los demás recursos no se filtran acá.
+ */
+function condicionSoloEquipo(recurso: RecursoPanel): SQL | null {
+  // OJO: drizzle expande un array JS en placeholders sueltos, por lo que
+  // `= ANY(${array}::text[])` genera SQL inválido en runtime (500). La lista
+  // de estados va como IN (...) con un placeholder por estado.
+  const listaFinales = () =>
+    sql.join(
+      [...ESTADOS_PROYECTO_FINAL].map((e) => sql`${e}`),
+      sql`, `,
+    );
+  if (recurso === "proyectos") {
+    return sql`(
+      ${panelEspejo.datos}->>'status' IS NULL
+      OR ${panelEspejo.datos}->>'status' NOT IN (${listaFinales()})
+      OR EXISTS (
+        SELECT 1 FROM panel_visibilidad pv
+        WHERE pv.recurso = 'proyectos' AND pv.compartido = true
+          AND (pv.panel_id = ${panelEspejo.id} OR pv.panel_id = '*')
+      )
+    )`;
+  }
+  if (recurso === "tareas" || recurso === "bitacora") {
+    return sql`EXISTS (
+      SELECT 1 FROM panel_espejo pe
+      WHERE pe.recurso = 'proyectos'
+        AND pe.id = ${panelEspejo.datos}->>'projectId'
+        AND (
+          pe.datos->>'status' IS NULL
+          OR pe.datos->>'status' NOT IN (${listaFinales()})
+          OR EXISTS (
+            SELECT 1 FROM panel_visibilidad pv
+            WHERE pv.recurso = 'proyectos' AND pv.compartido = true
+              AND (pv.panel_id = pe.id OR pv.panel_id = '*')
+          )
+        )
+    )`;
+  }
+  return null;
+}
+
 /** Listado desde el espejo con filtros básicos; devuelve los registros tal cual. */
-export async function leerEspejo(recurso: RecursoPanel, f: FiltrosEspejo) {
+export async function leerEspejo(recurso: RecursoPanel, f: FiltrosEspejo, opciones?: { soloEquipo?: boolean }) {
   const condiciones: SQL[] = [eq(panelEspejo.recurso, recurso)];
   if (f.status) condiciones.push(campoIgual("status", f.status));
   if (f.clientId) condiciones.push(campoIgual("clientId", f.clientId));
   if (f.projectId) condiciones.push(campoIgual("projectId", f.projectId));
   if (f.contractId) condiciones.push(campoIgual("contractId", f.contractId));
   if (f.q?.trim()) condiciones.push(sql`${panelEspejo.datos}::text ILIKE ${"%" + f.q.trim() + "%"}`);
+  if (opciones?.soloEquipo) {
+    const extra = condicionSoloEquipo(recurso);
+    if (extra) condiciones.push(extra);
+  }
   const donde = and(...condiciones);
 
   const limite = Math.min(Math.max(f.limite ?? 100, 1), 500);

@@ -13,6 +13,7 @@ import {
 } from "./api";
 import { estadoDe, fmtCLP, fmtFecha } from "./formato";
 import { Aviso, BotonCopiar, Cargando, Chip, ErrorCarga, Lamina, Vacio } from "./ui";
+import { useModoAgencia } from "./modo";
 
 const FILTROS = [
   { valor: "", etiqueta: "Todos" },
@@ -27,6 +28,7 @@ const FILTROS = [
 export default function Presupuestos({ idAbierto }: { idAbierto?: string }) {
   const [, navegar] = useLocation();
   const [estado, setEstado] = useState("");
+  const esCompleto = useModoAgencia() === "completo";
 
   const lista = useQuery({
     queryKey: [CLAVE, "espejo", "presupuestos", estado],
@@ -87,11 +89,11 @@ export default function Presupuestos({ idAbierto }: { idAbierto?: string }) {
                   <p className="truncate text-sm font-semibold">{nombreCliente(p.clientId)}</p>
                   <p className="text-xs text-muted-foreground">
                     {fmtFecha(p.createdAt)}
-                    {Number(p.monthlyMaintenance) > 0 && ` · mantención ${fmtCLP(p.monthlyMaintenance)}/mes`}
+                    {esCompleto && Number(p.monthlyMaintenance) > 0 && ` · mantención ${fmtCLP(p.monthlyMaintenance)}/mes`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2.5">
-                  <span className="text-sm font-semibold">{fmtCLP(p.total)}</span>
+                  {esCompleto && <span className="text-sm font-semibold">{fmtCLP(p.total)}</span>}
                   <Chip {...estadoDe(p.status)} />
                 </div>
               </button>
@@ -108,6 +110,7 @@ export default function Presupuestos({ idAbierto }: { idAbierto?: string }) {
 function DetallePresupuesto({ id, alCerrar }: { id: string; alCerrar: () => void }) {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const esCompleto = useModoAgencia() === "completo";
 
   const vista = useQuery({
     queryKey: [CLAVE, "vista", "presupuestos", id],
@@ -183,7 +186,7 @@ function DetallePresupuesto({ id, alCerrar }: { id: string; alCerrar: () => void
                   <div key={it.id} className="rounded-lg border border-border bg-card px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{it.name}</p>
-                      <p className="shrink-0 text-sm">{fmtCLP(it.unitPrice)}</p>
+                      {esCompleto && <p className="shrink-0 text-sm">{fmtCLP(it.unitPrice)}</p>}
                     </div>
                     <p className="text-xs text-muted-foreground">cantidad: {it.quantity}</p>
                   </div>
@@ -192,19 +195,21 @@ function DetallePresupuesto({ id, alCerrar }: { id: string; alCerrar: () => void
             </div>
           )}
 
-          <div className="rounded-xl border border-border bg-card p-3 text-sm">
-            <Linea etiqueta="Subtotal" valor={fmtCLP(p.subtotal)} />
-            {Number(p.discount) > 0 && <Linea etiqueta="Descuento" valor={`− ${fmtCLP(p.discount)}`} />}
-            {Number(p.hasIVA) === 1 && <Linea etiqueta="IVA 19%" valor={fmtCLP(p.iva)} />}
-            <div className="mt-1 border-t border-border pt-1">
-              <Linea etiqueta="Total" valor={fmtCLP(p.total)} fuerte />
+          {esCompleto && (
+            <div className="rounded-xl border border-border bg-card p-3 text-sm">
+              <Linea etiqueta="Subtotal" valor={fmtCLP(p.subtotal)} />
+              {Number(p.discount) > 0 && <Linea etiqueta="Descuento" valor={`− ${fmtCLP(p.discount)}`} />}
+              {Number(p.hasIVA) === 1 && <Linea etiqueta="IVA 19%" valor={fmtCLP(p.iva)} />}
+              <div className="mt-1 border-t border-border pt-1">
+                <Linea etiqueta="Total" valor={fmtCLP(p.total)} fuerte />
+              </div>
+              {Number(p.monthlyMaintenance) > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">+ mantención {fmtCLP(p.monthlyMaintenance)}/mes</p>
+              )}
             </div>
-            {Number(p.monthlyMaintenance) > 0 && (
-              <p className="mt-2 text-xs text-muted-foreground">+ mantención {fmtCLP(p.monthlyMaintenance)}/mes</p>
-            )}
-          </div>
+          )}
 
-          {p.notes && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{p.notes}</p>}
+          {esCompleto && p.notes && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{p.notes}</p>}
 
           <Link
             href={`/agencia/contratos/nuevo?presupuesto=${p.id}`}

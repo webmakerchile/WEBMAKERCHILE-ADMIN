@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agenciaApi, CLAVE } from "./api";
 import { haceCuanto } from "./formato";
 import { Aviso } from "./ui";
+import { useModoAgencia } from "./modo";
 
 const PESTANAS = [
   { ruta: "/agencia", etiqueta: "Resumen" },
@@ -19,6 +20,7 @@ const PESTANAS = [
 export default function AgenciaShell({ children }: { children: ReactNode }) {
   const [ubicacion] = useLocation();
   const qc = useQueryClient();
+  const esCompleto = useModoAgencia() === "completo";
 
   const estado = useQuery({
     queryKey: [CLAVE, "estado"],
@@ -81,7 +83,7 @@ export default function AgenciaShell({ children }: { children: ReactNode }) {
       )}
 
       <nav className="-mx-4 mt-2 flex gap-2 overflow-x-auto px-4 py-3 lg:mx-0 lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {PESTANAS.map((p) => (
+        {PESTANAS.filter((p) => esCompleto || p.ruta !== "/agencia/finanzas").map((p) => (
           <Link
             key={p.ruta}
             href={p.ruta}
