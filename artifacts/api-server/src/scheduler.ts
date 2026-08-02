@@ -9,6 +9,7 @@ import { writeFile, unlink, mkdir } from "fs/promises";
 import path from "path";
 import { registerTempFile, unregisterTempFile } from "./routes/instagram/temp-serve";
 import { checkCierreSemanal } from "./lib/sprint-semanal";
+import { checkPanelSync } from "./lib/panel/sync";
 import {
   prepararImagenInstagram,
   motivoNoPublicable,
@@ -1586,6 +1587,12 @@ async function tick() {
     await checkConnectionsForAdmin();
   } catch (err: any) {
     console.error("[Scheduler] checkConnectionsForAdmin failed:", err?.message || err);
+  }
+  // Espejo del panel de webmakerlatam.com: auto-debounced a 10 min adentro.
+  try {
+    await checkPanelSync();
+  } catch (err: any) {
+    console.error("[Scheduler] checkPanelSync failed:", err?.message || err);
   }
 }
 

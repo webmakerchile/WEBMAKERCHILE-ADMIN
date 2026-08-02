@@ -34,6 +34,7 @@ import {
   Megaphone,
   Target,
   TrendingUp,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
@@ -109,6 +110,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       label: t.navSectionAdmin,
       items: [
         { href: "/ejecutivo", icon: LayoutGrid, label: t.navHub, tour: "nav-ejecutivo" },
+        { href: "/agencia", icon: Landmark, label: t.navAgencia, tour: "nav-agencia" },
         { href: "/equipo", icon: UserCog, label: t.navTeam, tour: "nav-equipo" },
         { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
         { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },

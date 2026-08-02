@@ -1,4 +1,4 @@
-# Prompt para el agente de admin.webmakerlatam.com
+  # Prompt para el agente de admin.webmakerlatam.com
 
 > Copiá todo lo que está debajo de la línea y pegalo como primer mensaje en el
 > Replit de `admin.webmakerlatam.com`. Reemplazá `<<PEGAR_API_KEY_ACA>>` por la

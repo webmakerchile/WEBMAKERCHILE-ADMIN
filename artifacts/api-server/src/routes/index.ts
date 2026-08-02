@@ -47,6 +47,7 @@ import slaRouter from "./sla";
 import activityRouter from "./activity";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
+import panelRouter from "./panel";
 import { requireArea } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
 
@@ -57,6 +58,9 @@ router.use(healthRouter);
 // que va fuera de cualquier gate de área.
 router.use(redactarRouter);
 router.use(geminiRouter);
+// Espejo del panel de webmakerlatam.com (sección Agencia): gate propio por
+// rol (ver dinero), sin gate de área — no cuelga de /hub.
+router.use(panelRouter);
 router.use(driveRouter);
 router.use(contentRouter);
 

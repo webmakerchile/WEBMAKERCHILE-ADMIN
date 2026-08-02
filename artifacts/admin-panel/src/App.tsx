@@ -49,6 +49,7 @@ const RedesPage = lazy(() => import("./pages/redes"));
 const MarketingPage = lazy(() => import("./pages/marketing"));
 const MetasPage = lazy(() => import("./pages/metas"));
 const MiDiaPage = lazy(() => import("./pages/mi-dia"));
+const AgenciaPage = lazy(() => import("./pages/agencia"));
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
@@ -443,6 +444,12 @@ function Router() {
       </Route>
       <Route path="/proyecciones">
         <RouteShell name="proyecciones"><ProyeccionesPage /></RouteShell>
+      </Route>
+      <Route path="/agencia">
+        <RouteShell name="agencia"><AgenciaPage /></RouteShell>
+      </Route>
+      <Route path="/agencia/*">
+        <RouteShell name="agencia"><AgenciaPage /></RouteShell>
       </Route>
       <Route path="/mis-tareas">
         <RouteShell name="mis-tareas"><MisTareasPage /></RouteShell>

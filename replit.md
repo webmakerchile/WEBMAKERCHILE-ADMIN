@@ -217,6 +217,14 @@ Workspace ejecutivo autocontenido (`admin-panel/src/pages/ejecutivo.tsx` + `ejec
 
 **Chat IA del contrato** (`POST /api/hub/contracts/ai-chat`, gpt-4.1, aiLimiter): recibe `{ contract, doc, instruction }` y devuelve `{ contract, doc, summary }`. Cuando el contrato tiene `doc`, la IA edita el documento (agregar/quitar módulos, cambiar precios, alcance, % de abono, vigencia) y no sólo la ficha; el merge conserva los campos que la IA no devuelve y un `doc` inválido se descarta (`doc: null`) en vez de corromper el contrato. En el panel, los cambios marcan el documento como pendiente y el botón "Regenerar PDF" (o "Guardar y regenerar documento") reconstruye el PDF, lo sube a Drive y recalcula valor/vencimiento desde los módulos. Los contratos sin `doc` (PDF externo o creados a mano) ofrecen "Crear documento desde la ficha" para habilitar la regeneración. Tests: `artifacts/api-server/src/routes/hub/ai-chat.test.ts`.
 
+### Agencia (`/agencia`) — espejo del panel de webmakerlatam.com
+- Integra el panel autoadministrable de producción (`www.webmakerlatam.com/api/integration/v1`, Bearer `WEBMAKER_PANEL_API_KEY`, solo servidor). **Ese panel es la única fuente de verdad**: ids, matemática de plata (totales/IVA), contratos, links de firma y PDFs se generan allá; acá jamás se calculan ni se fabrican URLs públicas (solo `_enlaces` devueltos por el panel).
+- Espejo local de 20 recursos en `panel_espejo` (recurso+id, jsonb) + fila única `panel_sync_estado`; sync por cursor (`/sync/cambios?desde=`) con advisory lock + re-chequeo de cursor en tx, disparado por el scheduler (debounce 10 min) o botón manual. Snapshot completo la primera vez.
+- Lecturas: listados desde el espejo; resúmenes/vistas 360 en vivo con caché 60s por instancia (`lib/panel/cache-vistas.ts`), limpiada tras cada sync exitoso y cada escritura.
+- Escrituras delegadas (POST clientes/presupuestos/contratos-servicio/leads; PATCH estados) con zod que **excluye** transiciones exclusivas del panel (APPROVED/SIGNED); errores del panel pasan tal cual (409 `transicion_no_permitida`). Lo devuelto se upsertea al espejo al instante.
+- Acceso: solo roles que ven dinero (`canSeeMoney`, rol leído fresco de la DB); ruta fuera de los gates de área del Hub. Frontend en `artifacts/admin-panel/src/pages/agencia/` (fetch tipado propio + react-query, sin Orval), tabs internas sobre `useLocation`, montos es-CL.
+- Quirks del panel: booleanos 0/1 al leer, CLP enteros, POST idempotentes (`creado:false`), `forzarNuevo` para regenerar contrato.
+
 ### Integrations
 - **OpenAI**: Text (gpt-4.1/gpt-4.1-mini) and image generation (gpt-image-1) via Replit AI Integrations proxy. Shim in `lib/integrations-gemini-ai` preserves the Gemini API shape so routes work without rewriting call sites. Anthropic calls (community route) also replaced with OpenAI.
   - Reference image for covers: `artifacts/api-server/assets/reference-cover.jpg` (fox mascot, flat vector art style)
