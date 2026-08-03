@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FilePlus2, MessageCircle } from "lucide-react";
-import { agenciaApi, CLAVE, ErrorPanel, type ContratoServicio } from "./api";
-import { estadoDe, fmtFecha } from "./formato";
+import { Check, Copy, ExternalLink, FilePlus2, MessageCircle } from "lucide-react";
+import { agenciaApi, CLAVE, ErrorPanel, type ContratoServicio, type Presupuesto } from "./api";
+import { estadoDe, fmtCLP, fmtFecha } from "./formato";
+import { useModoAgencia } from "./modo";
 import { Aviso, BotonCopiar, Cargando, Chip, ErrorCarga, Lamina, Vacio } from "./ui";
 import CrearContrato from "./crear-contrato";
 
@@ -20,11 +21,28 @@ export default function Contratos({ accion }: { accion?: string }) {
   const [estado, setEstado] = useState("");
   const [abierto, setAbierto] = useState<ContratoServicio | null>(null);
 
+  const esCompleto = useModoAgencia() === "completo";
+
   const lista = useQuery({
     queryKey: [CLAVE, "espejo", "contratos-servicio", estado],
     queryFn: () =>
       agenciaApi.espejo<ContratoServicio>("contratos-servicio", { status: estado || undefined, limite: 300 }),
   });
+
+  // El monto de un contrato vive en su presupuesto (lo calcula el panel):
+  // proposalId → total. Solo dirección — al equipo el servidor no manda plata.
+  const presupuestos = useQuery({
+    queryKey: [CLAVE, "espejo", "presupuestos", "para-montos"],
+    queryFn: () => agenciaApi.espejo<Presupuesto>("presupuestos", { limite: 500 }),
+    enabled: esCompleto,
+  });
+  const montoPor = useMemo(() => {
+    const mapa = new Map<string, number>();
+    for (const p of presupuestos.data?.datos ?? []) {
+      if (typeof p.total === "number") mapa.set(p.id, p.total);
+    }
+    return mapa;
+  }, [presupuestos.data]);
 
   if (accion === "nuevo") return <CrearContrato />;
 
@@ -62,22 +80,40 @@ export default function Contratos({ accion }: { accion?: string }) {
         <Vacio>No hay contratos con ese filtro.</Vacio>
       ) : (
         <ul className="space-y-2">
-          {lista.data!.datos.map((c) => (
-            <li key={c.id}>
-              <button
-                onClick={() => setAbierto(c)}
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left hover:bg-muted"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{c.clientCompanyName || "Contrato"}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {c.signedAt ? `Firmado ${fmtFecha(c.signedAt)}${c.signedByName ? ` por ${c.signedByName}` : ""}` : `Creado ${fmtFecha(c.createdAt)}`}
-                  </p>
-                </div>
-                <Chip {...estadoDe(c.status)} />
-              </button>
-            </li>
-          ))}
+          {lista.data!.datos.map((c) => {
+            const monto = esCompleto ? montoPor.get(c.proposalId) : undefined;
+            const linkFirma = c._enlaces?.contrato;
+            const linkPdf = c._enlaces?.pdf;
+            return (
+              <li key={c.id} className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2.5 hover:bg-muted/60">
+                <button onClick={() => setAbierto(c)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{c.clientCompanyName || "Contrato"}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {c.signedAt ? `Firmado ${fmtFecha(c.signedAt)}${c.signedByName ? ` por ${c.signedByName}` : ""}` : `Creado ${fmtFecha(c.createdAt)}`}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <Chip {...estadoDe(c.status)} />
+                    {monto !== undefined && <p className="mt-1 text-xs font-medium">{fmtCLP(monto)}</p>}
+                  </div>
+                </button>
+                {c.status === "PENDING_SIGNATURE" && linkFirma && <CopiarMini texto={linkFirma} titulo="Copiar link de firma" />}
+                {linkPdf && (
+                  <a
+                    href={linkPdf}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+                    title="Abrir PDF"
+                    aria-label="Abrir PDF"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -89,6 +125,35 @@ export default function Contratos({ accion }: { accion?: string }) {
         />
       )}
     </div>
+  );
+}
+
+/** Botón chico de copiar para filas de lista (BotonCopiar es para tarjetas). */
+function CopiarMini({ texto, titulo }: { texto: string; titulo: string }) {
+  const [listo, setListo] = useState(false);
+  return (
+    <button
+      type="button"
+      title={titulo}
+      aria-label={titulo}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(texto);
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = texto;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+        }
+        setListo(true);
+        setTimeout(() => setListo(false), 1500);
+      }}
+      className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted"
+    >
+      {listo ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+    </button>
   );
 }
 
@@ -136,6 +201,20 @@ function DetalleContrato({
             <span className="text-xs text-muted-foreground">· firmado {fmtFecha(contrato.signedAt)}</span>
           )}
         </div>
+
+        {contrato.signedAt && (
+          <div className="rounded-lg border border-border bg-background p-3 text-xs">
+            <p className="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">Firma registrada</p>
+            <p className="text-sm">
+              {contrato.signedByName ?? "—"} · {fmtFecha(contrato.signedAt)}
+            </p>
+            {(contrato.signedByEmail || contrato.signedByIp) && (
+              <p className="mt-0.5 text-muted-foreground">
+                {[contrato.signedByEmail, contrato.signedByIp ? `IP ${contrato.signedByIp}` : null].filter(Boolean).join(" · ")}
+              </p>
+            )}
+          </div>
+        )}
 
         {error && <Aviso tono="error">{error}</Aviso>}
         {vista.isLoading && <p className="text-xs text-muted-foreground">Cargando links del panel…</p>}

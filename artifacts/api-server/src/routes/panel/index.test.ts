@@ -535,3 +535,127 @@ describe("escrituras delegadas", () => {
     expect(guardarMock).toHaveBeenCalledWith("clientes", [{ id: "c9", companyName: "ACME" }]);
   });
 });
+
+describe("redacción de contratos con IA", () => {
+  it("equipo → 403 en redactar y corregir (la redacción trae plata)", async () => {
+    comoEditora();
+    const r1 = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1" });
+    expect(r1.status).toBe(403);
+    expect(r1.cuerpo.error).toBe("solo_direccion");
+    const r2 = await llamar("POST", "/panel/contratos-servicio/corregir-ia", {
+      correccion: "más corto",
+      secciones: [{ titulo: "GARANTÍA", contenido: "1 mes" }],
+    });
+    expect(r2.status).toBe(403);
+    expect(panelPostMock).not.toHaveBeenCalled();
+  });
+
+  it("dirección: redactar delega al panel con timeout amplio y devuelve secciones sin guardar nada", async () => {
+    panelPostMock.mockResolvedValueOnce({
+      ok: true,
+      modelo: "gemini",
+      contexto: { cliente: "ACME", total: 119000, formaDePago: "50% y 50%" },
+      secciones: [{ titulo: "ALCANCE DEL PROYECTO", contenido: "**Sitio** a medida" }],
+    });
+    const r = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1", campoRaro: 1 });
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.secciones[0].titulo).toBe("ALCANCE DEL PROYECTO");
+    const [ruta, cuerpo, opciones] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>, { timeoutMs?: number }];
+    expect(ruta).toBe("/contratos-servicio/redactar-ia");
+    expect(cuerpo.campoRaro).toBeUndefined();
+    expect(opciones?.timeoutMs).toBe(120_000);
+    expect(guardarMock).not.toHaveBeenCalled();
+  });
+
+  it("redactar sin presupuesto ni (cliente + items) → 400 sin molestar al panel", async () => {
+    const r = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { paymentModality: "50% y 50%" });
+    expect(r.status).toBe(400);
+    expect(r.cuerpo.error).toBe("datos_invalidos");
+    expect(panelPostMock).not.toHaveBeenCalled();
+  });
+
+  it("panel sin su actualización publicada (SPA devuelve HTML 200) → 503 ia_no_disponible honesto", async () => {
+    const { PanelError } = await import("../../lib/panel/cliente");
+    panelPostMock.mockRejectedValueOnce(new PanelError(502, "respuesta_invalida", "no era JSON"));
+    const r1 = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1" });
+    expect(r1.status).toBe(503);
+    expect(r1.cuerpo.error).toBe("ia_no_disponible");
+  });
+
+  it("un 404 legítimo del panel (presupuesto inexistente) NO se disfraza de IA no disponible", async () => {
+    const { PanelError } = await import("../../lib/panel/cliente");
+    panelPostMock.mockRejectedValueOnce(new PanelError(404, "no_encontrado", "El presupuesto no existe."));
+    const r = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "fantasma" });
+    expect(r.status).toBe(404);
+    expect(r.cuerpo.error).toBe("no_encontrado");
+    expect(r.cuerpo.mensaje).toBe("El presupuesto no existe.");
+  });
+
+  it("equipo: la vista en vivo de un contrato no trae email ni IP del firmante", async () => {
+    comoEditora();
+    panelGetMock.mockResolvedValueOnce({
+      ok: true,
+      datos: {
+        id: "cs1",
+        status: "SIGNED",
+        signedAt: "2026-08-01T12:00:00Z",
+        signedByName: "Juan Pérez",
+        signedByEmail: "juan@acme.cl",
+        signedByIp: "200.1.2.3",
+        signedPdfUrl: "https://p/pdf",
+        contenido: "$$$",
+        _enlaces: { contrato: "https://f/abc", pdf: "https://p/pdf" },
+      },
+    });
+    const r = await llamar("GET", "/panel/vistas/contratos-servicio/cs1");
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.datos.signedByName).toBe("Juan Pérez");
+    expect(r.cuerpo.datos).not.toHaveProperty("signedByEmail");
+    expect(r.cuerpo.datos).not.toHaveProperty("signedByIp");
+    expect(r.cuerpo.datos).not.toHaveProperty("signedPdfUrl");
+    expect(r.cuerpo.datos).not.toHaveProperty("contenido");
+    expect(r.cuerpo.datos._enlaces).toEqual({ contrato: "https://f/abc" });
+  });
+
+  it("la IA apagada en el propio panel (503 ia_no_configurada) pasa tal cual", async () => {
+    const { PanelError } = await import("../../lib/panel/cliente");
+    panelPostMock.mockRejectedValueOnce(new PanelError(503, "ia_no_configurada", "El administrador debe configurar la API key."));
+    const r = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1" });
+    expect(r.status).toBe(503);
+    expect(r.cuerpo.error).toBe("ia_no_configurada");
+  });
+
+  it("corregir exige la instrucción y las secciones actuales", async () => {
+    const r = await llamar("POST", "/panel/contratos-servicio/corregir-ia", { correccion: "ok", secciones: [] });
+    expect(r.status).toBe(400);
+    expect(panelPostMock).not.toHaveBeenCalled();
+  });
+
+  it("crear contrato (dirección): las secciones redactadas viajan al panel y el formato confirmado vuelve", async () => {
+    panelPostMock.mockResolvedValueOnce({
+      ok: true,
+      creado: true,
+      formatoContenido: "secciones",
+      datos: { id: "cs2", proposalId: "p1", status: "DRAFT" },
+    });
+    const secciones = [{ titulo: "GARANTÍA", contenido: "1 mes de **garantía**\n\n- bugs\n- hosting" }];
+    const r = await llamar("POST", "/panel/contratos-servicio", { presupuestoId: "p1", secciones });
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.formatoContenido).toBe("secciones");
+    const [, cuerpo] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cuerpo.secciones).toEqual(secciones);
+    expect(cuerpo.plantillaId).toBeUndefined();
+  });
+
+  it("crear contrato (equipo): las secciones se descartan igual que el contenido libre", async () => {
+    comoEditora();
+    panelPostMock.mockResolvedValueOnce({ ok: true, creado: true, datos: { id: "cs3", proposalId: "p1", status: "DRAFT" } });
+    const r = await llamar("POST", "/panel/contratos-servicio", {
+      presupuestoId: "p1",
+      secciones: [{ titulo: "X", contenido: "no debe viajar" }],
+    });
+    expect(r.status).toBe(200);
+    const [, cuerpo] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cuerpo.secciones).toBeUndefined();
+  });
+});

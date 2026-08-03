@@ -88,6 +88,21 @@ async function runDataMigrations() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_ad_accounts_client_idx ON marketing_ad_accounts (client_name)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS marketing_ad_accounts_platform_idx ON marketing_ad_accounts (platform)`);
 
+  // Links guardados en el espejo del panel: el panel ahora emite SIEMPRE su
+  // dominio canónico https://www.webmakerlatam.com (antes salían con
+  // webmakerchile.com o sin www; los viejos redirigen 301, pero acá se guarda
+  // el canónico). Traducción explícita de esos DOS orígenes viejos y nada
+  // más — idempotente: tras el primer arranque el WHERE no matchea filas.
+  // El sync solo re-trae registros que cambian, por eso los estancados
+  // necesitan esta pasada.
+  for (const origenViejo of ["https://webmakerchile.com/", "https://webmakerlatam.com/"]) {
+    await db.execute(sql`
+      UPDATE panel_espejo
+      SET datos = replace(datos::text, ${origenViejo}, 'https://www.webmakerlatam.com/')::jsonb
+      WHERE datos::text LIKE ${"%" + origenViejo + "%"}
+    `);
+  }
+
   await migrateHubTasksFromBlob();
 }
 

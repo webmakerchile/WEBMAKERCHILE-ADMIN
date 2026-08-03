@@ -435,6 +435,18 @@ router.post(
   })
 );
 
+/**
+ * El contenido de un contrato NO es texto plano: la página pública de firma
+ * parsea un JSON con secciones (título + cuerpo con **negritas** y - viñetas).
+ * Acá se manda `secciones` y el panel serializa al formato exacto que la
+ * firma sabe renderizar; su respuesta confirma con formatoContenido:
+ * "secciones". Mandar texto suelto en `contenido` rompe la presentación.
+ */
+const esqSeccion = z.object({
+  titulo: z.string().trim().min(1, "Cada sección lleva título"),
+  contenido: z.string(),
+});
+
 const esqContrato = z
   .object({
     presupuestoId: z.string().trim().min(1, "Falta el presupuesto"),
@@ -442,6 +454,7 @@ const esqContrato = z
     clientRepresentativeRut: z.string().trim().optional(),
     plantillaId: z.string().trim().optional(),
     contenido: z.string().optional(),
+    secciones: z.array(esqSeccion).min(1).max(20).optional(),
     estado: z.enum(["DRAFT", "PENDING_SIGNATURE"]).optional(),
     forzarNuevo: z.boolean().optional(),
   })
@@ -451,8 +464,9 @@ router.post(
   "/panel/contratos-servicio",
   conPanel(async (req, res) => {
     const cuerpo = esqContrato.parse(req.body ?? {});
-    // El equipo arma contratos desde plantilla; el texto libre es de dirección.
-    const enviado = esEquipo(res) ? { ...cuerpo, contenido: undefined } : cuerpo;
+    // El equipo arma contratos desde plantilla; el texto libre (contenido o
+    // secciones redactadas) es de dirección.
+    const enviado = esEquipo(res) ? { ...cuerpo, contenido: undefined, secciones: undefined } : cuerpo;
     const resp = await panelPost<{ ok: boolean; creado?: boolean; datos: Record<string, unknown> }>(
       "/contratos-servicio",
       enviado
@@ -464,6 +478,84 @@ router.post(
       res.json({ ok: resp?.ok === true, creado: resp?.creado, datos: sanearRegistroEquipo("contratos-servicio", resp?.datos ?? {}) });
       return;
     }
+    res.json(resp);
+  })
+);
+
+/* ------------------------------------------------------------------ */
+/* Redacción de contratos con la IA del panel (solo dirección)          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * La redacción vive en el panel (mismo prompt y modelo que su proposal
+ * builder): acá NO se reimplementa ni se llama a un LLM propio. Estos proxys
+ * son de dirección porque la redacción trae plata (total, forma de pago).
+ *
+ * Si la versión publicada del panel todavía no trae estos endpoints, la
+ * request cae a su frontend SPA (HTML con 200 → respuesta_invalida): se
+ * traduce a un 503 honesto para que la UI ofrezca el editor manual sin
+ * romperse. SOLO ese síntoma: un 404 JSON legítimo (p. ej. presupuesto
+ * inexistente cuando el endpoint ya exista) pasa tal cual, y el 503
+ * ia_no_configurada del propio panel también.
+ */
+async function iaDelPanel<T>(llamada: () => Promise<T>): Promise<T> {
+  try {
+    return await llamada();
+  } catch (e) {
+    if (e instanceof PanelError && e.codigo === "respuesta_invalida") {
+      throw new PanelError(
+        503,
+        "ia_no_disponible",
+        "El panel de la agencia todavía no publica la redacción con IA — usá el editor manual o la plantilla mientras tanto."
+      );
+    }
+    throw e;
+  }
+}
+
+/** La IA tarda varios segundos (Gemini): timeout propio, generoso. */
+const TIMEOUT_IA_MS = 120_000;
+
+const esqRedactar = z
+  .object({
+    presupuestoId: z.string().trim().min(1).optional(),
+    clienteId: z.string().trim().min(1).optional(),
+    items: z.array(esqItem).min(1).optional(),
+    paymentModality: z.string().trim().optional(),
+  })
+  .strip()
+  .refine((v) => v.presupuestoId || (v.clienteId && (v.items?.length ?? 0) > 0), {
+    message: "Mandá el presupuesto, o un cliente con ítems",
+  });
+
+router.post(
+  "/panel/contratos-servicio/redactar-ia",
+  conPanel(async (req, res) => {
+    if (soloDireccion(res)) return;
+    const cuerpo = esqRedactar.parse(req.body ?? {});
+    // No guarda nada: las secciones vuelven a la UI para revisarse y editarse.
+    const resp = await iaDelPanel(() =>
+      panelPost<Record<string, unknown>>("/contratos-servicio/redactar-ia", cuerpo, { timeoutMs: TIMEOUT_IA_MS })
+    );
+    res.json(resp);
+  })
+);
+
+const esqCorregir = z
+  .object({
+    correccion: z.string().trim().min(3, "Contá qué querés ajustar"),
+    secciones: z.array(esqSeccion).min(1, "Faltan las secciones actuales"),
+  })
+  .strip();
+
+router.post(
+  "/panel/contratos-servicio/corregir-ia",
+  conPanel(async (req, res) => {
+    if (soloDireccion(res)) return;
+    const cuerpo = esqCorregir.parse(req.body ?? {});
+    const resp = await iaDelPanel(() =>
+      panelPost<Record<string, unknown>>("/contratos-servicio/corregir-ia", cuerpo, { timeoutMs: TIMEOUT_IA_MS })
+    );
     res.json(resp);
   })
 );

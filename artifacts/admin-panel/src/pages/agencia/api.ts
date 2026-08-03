@@ -141,10 +141,28 @@ export interface ContratoServicio extends Registro {
   clientRepresentativeName?: string;
   signedAt?: string | null;
   signedByName?: string | null;
+  /** Respaldo legal de la firma: solo llegan en modo dirección. */
+  signedByEmail?: string | null;
+  signedByIp?: string | null;
   signedPdfUrl?: string | null;
   validUntil?: string | null;
   createdAt?: string;
   _enlaces?: { contrato?: string; pdf?: string };
+}
+
+/** Una sección del contenido de un contrato (título + cuerpo con marcado). */
+export interface SeccionContrato {
+  titulo: string;
+  contenido: string;
+}
+
+/** Respuesta de la redacción/corrección con la IA del panel (no guarda nada). */
+export interface RedaccionIA {
+  ok: boolean;
+  modelo?: string;
+  contexto?: { cliente?: string; total?: number; formaDePago?: string };
+  secciones: SeccionContrato[];
+  porCampos?: Record<string, string>;
 }
 
 export interface ContratoMantenimiento extends Registro {
@@ -283,10 +301,23 @@ export const agenciaApi = {
       calculo?: { subtotal: number; descuento: number; iva: number; total: number };
     }>("/panel/presupuestos", { method: "POST", body: JSON.stringify(b) }),
   crearContrato: (b: Record<string, unknown>) =>
-    pedir<{ ok: boolean; creado?: boolean; datos: ContratoServicio }>("/panel/contratos-servicio", {
+    pedir<{
+      ok: boolean;
+      creado?: boolean;
+      /** "secciones" | "campos" | "texto_plano" — si dice texto_plano, algo anda mal. */
+      formatoContenido?: string;
+      advertencia?: string;
+      datos: ContratoServicio;
+    }>("/panel/contratos-servicio", {
       method: "POST",
       body: JSON.stringify(b),
     }),
+  /** Redacta las secciones con la IA del panel (mismo prompt que su proposal builder). */
+  redactarIA: (b: Record<string, unknown>) =>
+    pedir<RedaccionIA>("/panel/contratos-servicio/redactar-ia", { method: "POST", body: JSON.stringify(b) }),
+  /** Ajusta las secciones actuales con una instrucción en lenguaje natural. */
+  corregirIA: (b: { correccion: string; secciones: SeccionContrato[] }) =>
+    pedir<RedaccionIA>("/panel/contratos-servicio/corregir-ia", { method: "POST", body: JSON.stringify(b) }),
   patchPresupuesto: (id: string, b: Record<string, unknown>) =>
     pedir<{ ok: boolean; datos: Presupuesto }>(`/panel/presupuestos/${encodeURIComponent(id)}`, {
       method: "PATCH",

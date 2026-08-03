@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, ExternalLink, MessageCircle, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, MessageCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import {
   agenciaApi,
   CLAVE,
@@ -11,10 +11,12 @@ import {
   type ContratoServicio,
   type Presupuesto,
   type Registro,
+  type SeccionContrato,
   type VistaPresupuesto,
 } from "./api";
 import { fmtCLP } from "./formato";
 import { useModoAgencia } from "./modo";
+import { EditorSecciones, seccionesVacias } from "./secciones-contrato";
 import { Aviso, BotonCopiar, Campo, Cargando } from "./ui";
 
 /**
@@ -387,28 +389,87 @@ function PasoContrato({
   const [error, setError] = useState<string | null>(null);
   const esCompleto = useModoAgencia() === "completo";
 
+  // Redacción a medida (solo dirección): secciones editables + IA del panel.
+  const [fuente, setFuente] = useState<"plantilla" | "secciones">("plantilla");
+  const [secciones, setSecciones] = useState<SeccionContrato[] | null>(null);
+  const [vista, setVista] = useState<"editar" | "preview">("editar");
+  const [correccion, setCorreccion] = useState("");
+  const [avisoIA, setAvisoIA] = useState<string | null>(null);
+
   const plantillas = useQuery({ queryKey: [CLAVE, "plantillas"], queryFn: agenciaApi.plantillas });
   const listaPlantillas: Registro[] = (plantillas.data?.datos as Registro[] | undefined) ?? [];
 
   const enlaceProp = enlacePropuesta(presupuesto);
   const total = calculo?.total ?? presupuesto.total;
 
+  const usaSecciones = esCompleto && fuente === "secciones";
+  const seccionesConTexto = (secciones ?? []).filter((s) => s.contenido.trim().length > 0);
+
+  const redactar = useMutation({
+    mutationFn: () => agenciaApi.redactarIA({ presupuestoId: presupuesto.id }),
+    onSuccess: (r) => {
+      setAvisoIA(null);
+      setSecciones(r.secciones?.length ? r.secciones : seccionesVacias());
+      setVista("editar");
+    },
+    onError: (e) => {
+      if (e instanceof ErrorPanel && e.status === 503) {
+        // IA apagada o el panel aún no publica su actualización: editor manual.
+        setAvisoIA(e.message);
+        setSecciones((prev) => prev ?? seccionesVacias());
+      } else {
+        setError(e instanceof ErrorPanel ? e.message : "No se pudo redactar con IA.");
+      }
+    },
+  });
+
+  const corregir = useMutation({
+    mutationFn: () => agenciaApi.corregirIA({ correccion: correccion.trim(), secciones: secciones ?? [] }),
+    onSuccess: (r) => {
+      if (r.secciones?.length) setSecciones(r.secciones);
+      setCorreccion("");
+      setAvisoIA(null);
+    },
+    onError: (e) => {
+      if (e instanceof ErrorPanel && e.status === 503) setAvisoIA(e.message);
+      else setError(e instanceof ErrorPanel ? e.message : "No se pudo aplicar el ajuste.");
+    },
+  });
+
   const crear = useMutation({
     mutationFn: () =>
       agenciaApi.crearContrato({
         presupuestoId: presupuesto.id,
         clientRepresentativeName: representante.trim() || undefined,
-        plantillaId: plantillaId || undefined,
+        // Secciones y plantilla son alternativas: se manda una sola.
+        plantillaId: usaSecciones ? undefined : plantillaId || undefined,
+        secciones: usaSecciones ? seccionesConTexto : undefined,
         estado: "PENDING_SIGNATURE",
         forzarNuevo: forzar || undefined,
       }),
-    onSuccess: (r) =>
-      alCrear(
-        r.datos,
-        r.creado === false ? "Este presupuesto ya tenía un contrato vigente — te muestro el existente." : undefined
-      ),
+    onSuccess: (r) => {
+      const avisos: string[] = [];
+      if (r.creado === false) avisos.push("Este presupuesto ya tenía un contrato vigente — te muestro el existente.");
+      // El panel confirma el formato: si mandamos secciones y no volvió
+      // "secciones", el contrato pudo quedar como texto plano o con la
+      // plantilla por defecto (panel desactualizado) — se avisa, sin romper.
+      if (usaSecciones && r.creado !== false && r.formatoContenido !== "secciones") {
+        avisos.push(
+          r.advertencia ??
+            "Ojo: el panel no confirmó el formato por secciones — revisá el PDF antes de mandar el link de firma."
+        );
+      }
+      alCrear(r.datos, avisos.length ? avisos.join(" ") : undefined);
+    },
     onError: (e) => setError(e instanceof ErrorPanel ? e.message : "No se pudo crear el contrato."),
   });
+
+  const tabFuente = (activa: boolean) =>
+    `flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+      activa ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+    }`;
+  const tabVista = (activa: boolean) =>
+    `rounded-md px-2.5 py-1 text-xs font-medium ${activa ? "bg-card shadow-sm" : "text-muted-foreground hover:text-foreground"}`;
 
   return (
     <div className="space-y-4 rounded-xl border border-border bg-card p-4">
@@ -430,21 +491,113 @@ function PasoContrato({
 
       <Campo etiqueta="Representante que firma" valor={representante} onCambio={setRepresentante} placeholder="Nombre de quien firma por el cliente" />
 
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-muted-foreground">Plantilla</span>
-        <select
-          value={plantillaId}
-          onChange={(e) => setPlantillaId(e.target.value)}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-        >
-          <option value="">Plantilla por defecto del panel</option>
-          {listaPlantillas.map((p) => (
-            <option key={String(p.id)} value={String(p.id)}>
-              {String(p.nombre ?? p.name ?? p.titulo ?? p.id)}
-            </option>
-          ))}
-        </select>
-      </label>
+      {esCompleto && (
+        <div className="flex rounded-lg border border-border bg-background p-1">
+          <button type="button" onClick={() => setFuente("plantilla")} className={tabFuente(fuente === "plantilla")}>
+            Con plantilla
+          </button>
+          <button type="button" onClick={() => setFuente("secciones")} className={tabFuente(fuente === "secciones")}>
+            Redactar a medida
+          </button>
+        </div>
+      )}
+
+      {!usaSecciones && (
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-muted-foreground">Plantilla</span>
+          <select
+            value={plantillaId}
+            onChange={(e) => setPlantillaId(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+          >
+            <option value="">Plantilla por defecto del panel</option>
+            {listaPlantillas.map((p) => (
+              <option key={String(p.id)} value={String(p.id)}>
+                {String(p.nombre ?? p.name ?? p.titulo ?? p.id)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      {usaSecciones && !secciones && (
+        <div className="space-y-3 rounded-lg border border-dashed border-border p-4 text-center">
+          <p className="text-sm text-muted-foreground">
+            La IA del panel redacta las 7 secciones del contrato con los datos reales del presupuesto; después las revisás y editás a gusto.
+          </p>
+          {avisoIA && <Aviso tono="info">{avisoIA}</Aviso>}
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => redactar.mutate()}
+              disabled={redactar.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+            >
+              <Sparkles size={14} /> {redactar.isPending ? "Redactando… (unos segundos)" : "Redactar con IA"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSecciones(seccionesVacias())}
+              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Empezar en blanco
+            </button>
+          </div>
+        </div>
+      )}
+
+      {usaSecciones && secciones && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex rounded-lg border border-border bg-background p-0.5">
+              <button type="button" onClick={() => setVista("editar")} className={tabVista(vista === "editar")}>
+                Editar
+              </button>
+              <button type="button" onClick={() => setVista("preview")} className={tabVista(vista === "preview")}>
+                Vista previa
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => redactar.mutate()}
+              disabled={redactar.isPending}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline disabled:opacity-60"
+            >
+              <Sparkles size={12} /> {redactar.isPending ? "Redactando…" : "Redactar de nuevo con IA"}
+            </button>
+          </div>
+
+          {avisoIA && <Aviso tono="info">{avisoIA}</Aviso>}
+
+          <EditorSecciones
+            secciones={secciones}
+            vista={vista}
+            onCambiar={(i, contenido) =>
+              setSecciones((prev) => (prev ? prev.map((s, j) => (j === i ? { ...s, contenido } : s)) : prev))
+            }
+          />
+
+          <div className="rounded-lg border border-border bg-background p-3">
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">Pedile un ajuste a la IA</p>
+            <div className="flex gap-2">
+              <input
+                value={correccion}
+                onChange={(e) => setCorreccion(e.target.value)}
+                placeholder="Ej: cambiá el plazo a 45 días hábiles"
+                className="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+              <button
+                type="button"
+                onClick={() => corregir.mutate()}
+                disabled={corregir.isPending || correccion.trim().length < 3 || seccionesConTexto.length === 0}
+                className="shrink-0 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60"
+              >
+                {corregir.isPending ? "Ajustando…" : "Aplicar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <label className="flex items-start gap-2 text-xs text-muted-foreground">
         <input type="checkbox" checked={forzar} onChange={(e) => setForzar(e.target.checked)} className="mt-0.5 h-4 w-4" />
@@ -458,11 +611,14 @@ function PasoContrato({
           setError(null);
           crear.mutate();
         }}
-        disabled={crear.isPending}
+        disabled={crear.isPending || (usaSecciones && seccionesConTexto.length === 0)}
         className="w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
       >
         {crear.isPending ? "Generando contrato…" : "Generar contrato y link de firma"}
       </button>
+      {usaSecciones && seccionesConTexto.length === 0 && (
+        <p className="text-center text-[11px] text-muted-foreground">Redactá con IA o escribí al menos una sección para generar el contrato.</p>
+      )}
     </div>
   );
 }

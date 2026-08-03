@@ -40,6 +40,23 @@ describe("panel/cliente", () => {
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer llave-de-prueba");
   });
 
+  it("un 200 con cuerpo no-JSON es firme: respuesta_invalida (ruta que el panel aún no publica)", async () => {
+    // El frontend del panel atrapa rutas inexistentes y devuelve su HTML con 200.
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    } as unknown as Response);
+    const err = await panelPost("/contratos-servicio/redactar-ia", {}).catch((e) => e as PanelError);
+    expect(err).toBeInstanceOf(PanelError);
+    expect((err as PanelError).status).toBe(502);
+    expect((err as PanelError).codigo).toBe("respuesta_invalida");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // firme: sin reintentos
+  });
+
   it("reintenta en 5xx y termina bien si el panel se recupera", async () => {
     fetchMock
       .mockResolvedValueOnce(respuesta(500, null))

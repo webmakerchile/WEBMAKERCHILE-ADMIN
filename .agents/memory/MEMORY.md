@@ -31,3 +31,4 @@
 - [Auditoría móvil del panel](movil-auditoria.md) — auditar SIEMPRE en español (ES desborda donde EN pasa); sonda scrollW/offenders por ruta; fixed bottom-* libra la tab bar con calc(4.75rem+safe-area)+lg:; 1 tester a la vez.
 - [Espejo del panel webmakerlatam](panel-agencia-espejo.md) — panel externo = única verdad; modo equipo saneado server-side (allowlist gana, UI esconde por modo); candado de clave pegado a la sesión; DOS backends que reiniciar; wouter v3 comodín es `*`.
 - [Arrays en sql`` de drizzle](drizzle-sql-arrays.md) — `ANY(${arr}::text[])` genera SQL inválido (drizzle expande el array en placeholders sueltos); usar IN + sql.join; los tests con DB mockeada no lo detectan.
+- [Contratos: secciones e IA](contratos-secciones-ia.md) — contenido = 7 secciones JSON («garantía» con tilde); SPA 200-HTML ⇒ 503 solo con respuesta_invalida (jamás 404 en bloque); PII de firma va en AMBAS capas de saneo.

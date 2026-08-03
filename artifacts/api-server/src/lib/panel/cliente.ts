@@ -80,7 +80,20 @@ async function llamar<T>(
       continue;
     }
 
-    if (res.ok) return (await res.json()) as T;
+    if (res.ok) {
+      try {
+        return (await res.json()) as T;
+      } catch {
+        // 200 con cuerpo no-JSON: típico de una ruta que no existe en la
+        // versión publicada del panel (su frontend atrapa la URL y devuelve
+        // HTML). Reintentar no ayuda: se corta con un error firme y claro.
+        throw new PanelError(
+          502,
+          "respuesta_invalida",
+          "El panel devolvió una respuesta que no es JSON — probablemente esa función todavía no está publicada allá."
+        );
+      }
+    }
 
     const cuerpo = (await res.json().catch(() => null)) as { error?: string; mensaje?: string } | null;
     const err = new PanelError(
@@ -109,7 +122,8 @@ async function llamar<T>(
 export const panelGet = <T>(ruta: string, opciones?: { params?: Params; timeoutMs?: number }) =>
   llamar<T>("GET", ruta, opciones);
 
-export const panelPost = <T>(ruta: string, body: unknown) => llamar<T>("POST", ruta, { body });
+export const panelPost = <T>(ruta: string, body: unknown, opciones?: { timeoutMs?: number }) =>
+  llamar<T>("POST", ruta, { body, timeoutMs: opciones?.timeoutMs });
 
 export const panelPatch = <T>(ruta: string, body: unknown) => llamar<T>("PATCH", ruta, { body });
 

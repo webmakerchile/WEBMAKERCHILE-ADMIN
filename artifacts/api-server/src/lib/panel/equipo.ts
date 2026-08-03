@@ -166,6 +166,8 @@ const DROP_EXACTO = new Set([
   "signedPdfUrl",
   "contenido",
   "signedByRut",
+  "signedByEmail",
+  "signedByIp",
   "clientRepresentativeRut",
   "signatureData",
   "signatureImage",
