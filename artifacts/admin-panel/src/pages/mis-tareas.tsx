@@ -258,6 +258,13 @@ export default function MisTareasPage() {
 
         {!isLoading && !tareasHub.cargando && !tareasHub.error && (
           <>
+            {/* Qué se le vendió a este proyecto, primero: al elegir un proyecto
+                es lo primero que se quiere confirmar, antes que las estadísticas
+                personales de abajo (esas no cambian según el proyecto elegido). */}
+            {proyectoElegido && (
+              <ResumenServicios proyecto={proyectoElegido} contratos={contracts} tareas={tasks} />
+            )}
+
             {/* Dos señales que el tablero por sí solo no da: cuánto tengo abierto
                 a la vez y qué lleva días sin moverse. */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -377,12 +384,6 @@ export default function MisTareasPage() {
                   )}
                 </CardContent>
               </Card>
-            )}
-
-            {/* Qué se le vendió a este proyecto. Solo con uno elegido: en
-                "todos los proyectos" no hay un alcance que enseñar. */}
-            {proyectoElegido && (
-              <ResumenServicios proyecto={proyectoElegido} contratos={contracts} tareas={tasks} />
             )}
 
             <ConfigRecordatorios />

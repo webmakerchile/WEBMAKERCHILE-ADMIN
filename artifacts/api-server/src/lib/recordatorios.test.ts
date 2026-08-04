@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   REGLAS_POR_DEFECTO,
   normalizarReglas,
+  umbralEstancadaPorPrioridad,
   puntosDeAviso,
   escalonDe,
   diasDeAtraso,
@@ -390,6 +391,155 @@ describe("recuento de lo ya recibido", () => {
       desde,
     );
     expect(cuenta.get(7)).toBeUndefined();
+  });
+});
+
+describe("umbral de estancada según prioridad", () => {
+  it("cada prioridad lee su propio campo de reglas", () => {
+    const reglas = {
+      ...REGLAS_POR_DEFECTO,
+      diasTareaEstancadaCritica: 1,
+      diasTareaEstancadaAlta: 2,
+      diasTareaEstancada: 3,
+      diasTareaEstancadaBaja: 5,
+    };
+    expect(umbralEstancadaPorPrioridad(reglas, "crítica")).toBe(1);
+    expect(umbralEstancadaPorPrioridad(reglas, "alta")).toBe(2);
+    expect(umbralEstancadaPorPrioridad(reglas, "media")).toBe(3);
+    expect(umbralEstancadaPorPrioridad(reglas, "baja")).toBe(5);
+  });
+
+  // La prioridad mínima se sube a "baja" en estos dos: si no, el filtro de
+  // prioridad del tablero bloquearía la tarea baja antes de llegar siquiera
+  // a comparar plazos, y la prueba no probaría lo que dice probar.
+  const reglas = { ...REGLAS_POR_DEFECTO, prioridadMinima: "baja" as const };
+
+  it("crítica avisa antes que baja, con los plazos por defecto", () => {
+    // 2 días parada: alcanza el umbral de crítica (1) pero no el de baja (5).
+    const critica = avisosDeTareas([tarea({ priority: "crítica", stageSince: haceDias(2) })], reglas, AHORA, HOY);
+    const baja = avisosDeTareas([tarea({ priority: "baja", stageSince: haceDias(2) })], reglas, AHORA, HOY);
+    expect(critica.map((a) => a.tipo)).toEqual(["estancada"]);
+    expect(baja).toEqual([]);
+  });
+
+  it("alta usa su propio plazo configurado, no el de media", () => {
+    const conAltaLarga = { ...reglas, diasTareaEstancadaAlta: 6 };
+    expect(avisosDeTareas([tarea({ priority: "alta", stageSince: haceDias(5) })], conAltaLarga, AHORA, HOY)).toEqual([]);
+    expect(avisosDeTareas([tarea({ priority: "alta", stageSince: haceDias(6) })], conAltaLarga, AHORA, HOY)).toHaveLength(1);
+  });
+});
+
+describe("copia a dirección — tareas", () => {
+  const reglas = REGLAS_POR_DEFECTO;
+
+  // Es el hueco que encontró el equipo: dirección solo se enteraba de un
+  // atraso si entraba a mirar el tablero, nunca por notificación.
+  it("dirección recibe una copia, con el nombre del responsable", () => {
+    const avisos = avisosDeTareas(
+      [tarea({ stageSince: haceDias(8), assigneeId: 7 })],
+      reglas, AHORA, HOY, [1], new Map([[7, "Ana"]]),
+    );
+    expect(avisos).toHaveLength(2);
+    const propio = avisos.find((a) => a.userId === 7)!;
+    const copia = avisos.find((a) => a.userId === 1)!;
+    expect(copia.ref).not.toBe(propio.ref);
+    expect(copia.cuerpo).toContain("Responsable: Ana.");
+  });
+
+  it("si dirección es la misma responsable, no se duplica", () => {
+    const avisos = avisosDeTareas(
+      [tarea({ stageSince: haceDias(8), assigneeId: 1 })],
+      reglas, AHORA, HOY, [1], new Map([[1, "CEO"]]),
+    );
+    expect(avisos).toHaveLength(1);
+  });
+
+  it("sin nombre conocido, la copia igual llega, sin inventar uno", () => {
+    const avisos = avisosDeTareas(
+      [tarea({ stageSince: haceDias(8), assigneeId: 7 })],
+      reglas, AHORA, HOY, [1], new Map(),
+    );
+    const copia = avisos.find((a) => a.userId === 1);
+    expect(copia).toBeDefined();
+    expect(copia?.cuerpo).not.toContain("Responsable");
+  });
+
+  it("sin dirección configurada, se comporta exactamente como antes", () => {
+    const avisos = avisosDeTareas([tarea({ stageSince: haceDias(8) })], reglas, AHORA, HOY);
+    expect(avisos).toHaveLength(1);
+  });
+});
+
+describe("copia a dirección — proyectos", () => {
+  const reglas = REGLAS_POR_DEFECTO;
+  const proyecto = (p: Partial<ProyectoVigilado> = {}): ProyectoVigilado => ({
+    id: "p1",
+    name: "Landing M&M",
+    status: "dev",
+    updatedAt: haceDias(30).getTime(),
+    assigneeIds: [7],
+    ...p,
+  });
+
+  // Antes esto no avisaba a nadie: un proyecto huérfano quedaba parado sin
+  // que absolutamente nadie se enterara.
+  it("un proyecto sin asignar ahora avisa a dirección", () => {
+    const avisos = avisosDeProyectos([proyecto({ assigneeIds: [] })], reglas, AHORA, [1]);
+    expect(avisos.map((a) => a.userId)).toEqual([1]);
+    expect(avisos[0].cuerpo).toContain("Sin nadie asignado");
+  });
+
+  it("un proyecto asignado también copia a dirección", () => {
+    const avisos = avisosDeProyectos([proyecto({ assigneeIds: [7] })], reglas, AHORA, [1]);
+    expect(avisos.map((a) => a.userId).sort()).toEqual([1, 7]);
+  });
+
+  it("si dirección ya es una de las asignadas, no se duplica", () => {
+    const avisos = avisosDeProyectos([proyecto({ assigneeIds: [1, 7] })], reglas, AHORA, [1]);
+    expect(avisos.map((a) => a.userId).sort()).toEqual([1, 7]);
+  });
+
+  it("el cuerpo dice la etapa y cuántas tareas quedan pendientes", () => {
+    const avisos = avisosDeProyectos(
+      [proyecto({ assigneeIds: [7] })], reglas, AHORA, [], new Map([["p1", 4]]),
+    );
+    expect(avisos[0].cuerpo).toContain("Etapa: Desarrollo");
+    expect(avisos[0].cuerpo).toContain("4 tareas pendientes");
+  });
+
+  // Bug real encontrado en revisión: un proyecto sin ninguna tarea pendiente
+  // no aparece en el mapa (el llamador solo anota proyectos con AL MENOS una
+  // tarea sin terminar), y eso NO es lo mismo que "no sé cuántas tiene". El
+  // aviso debe decir "0 tareas pendientes", no callarse el dato.
+  it("un proyecto sin ninguna tarea pendiente dice '0 tareas pendientes', no omite el conteo", () => {
+    const avisos = avisosDeProyectos(
+      [proyecto({ assigneeIds: [7] })], reglas, AHORA, [], new Map([["otro-proyecto", 4]]),
+    );
+    expect(avisos[0].cuerpo).toContain("0 tareas pendientes");
+  });
+
+  // Si el llamador ni siquiera calculó los pendientes (no mandó el mapa), el
+  // aviso omite el dato en vez de inventar un cero engañoso.
+  it("sin mapa de pendientes, el cuerpo no menciona el conteo", () => {
+    const avisos = avisosDeProyectos([proyecto({ assigneeIds: [7] })], reglas, AHORA, []);
+    expect(avisos[0].cuerpo).not.toContain("pendiente");
+  });
+});
+
+describe("proyecto con varios asignados: uno no tapa al otro", () => {
+  // El bug real que se encontró: las dos referencias salían idénticas y
+  // `filtrarAvisos` descartaba la segunda por "ya vista en esta ronda",
+  // así que solo uno de los dos asignados llegaba a recibir el aviso.
+  it("cada asignado tiene su propia referencia y su propio aviso", () => {
+    const proyecto: ProyectoVigilado = {
+      id: "p1", name: "Landing M&M", status: "dev",
+      updatedAt: haceDias(30).getTime(), assigneeIds: [7, 9],
+    };
+    const avisos = avisosDeProyectos([proyecto], REGLAS_POR_DEFECTO, AHORA);
+    expect(new Set(avisos.map((a) => a.ref)).size).toBe(2);
+
+    const filtrados = filtrarAvisos(avisos, new Set());
+    expect(filtrados.map((a) => a.userId).sort()).toEqual([7, 9]);
   });
 });
 

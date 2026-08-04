@@ -30,6 +30,7 @@ import VentasPanel from "@/components/ventas-panel";
 import CobrosPanel from "@/components/cobros-panel";
 import TorrePanel from "@/components/torre-panel";
 import { SheetHeader, OptionCard, SectionHeader, EmptyState, StatusChip, SkeletonShimmer } from "@/components/hub-kit";
+import { ConfigRecordatorios } from "@/components/config-recordatorios";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -4540,6 +4541,7 @@ function SvcView({ canManage, showToast }: { canManage: boolean; showToast: (msg
 
       <PlaybooksManager canManage={canManage} showToast={showToast} />
       <SlaManager canManage={canManage} showToast={showToast} />
+      <ConfigRecordatorios />
     </div>
   );
 }

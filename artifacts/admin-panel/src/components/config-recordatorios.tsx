@@ -20,6 +20,9 @@ const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
 export interface ReglasRecordatorio {
   diasTareaEstancada: number;
+  diasTareaEstancadaCritica: number;
+  diasTareaEstancadaAlta: number;
+  diasTareaEstancadaBaja: number;
   diasEnCola: number;
   diasVencida: number;
   diasProyectoParado: number;
@@ -52,12 +55,17 @@ export function useReglasRecordatorio() {
   });
 }
 
+const CAMPOS_POR_PRIORIDAD: Array<{
+  clave: "diasTareaEstancadaCritica" | "diasTareaEstancadaAlta" | "diasTareaEstancada" | "diasTareaEstancadaBaja";
+  label: string;
+}> = [
+  { clave: "diasTareaEstancadaCritica", label: "Crítica" },
+  { clave: "diasTareaEstancadaAlta", label: "Alta" },
+  { clave: "diasTareaEstancada", label: "Media" },
+  { clave: "diasTareaEstancadaBaja", label: "Baja" },
+];
+
 const CAMPOS: Array<{ clave: keyof Omit<ReglasRecordatorio, "prioridadMinima">; label: string; ayuda: string }> = [
-  {
-    clave: "diasTareaEstancada",
-    label: "Tarea sin avanzar",
-    ayuda: "Días en la misma etapa antes de avisar. No cuenta el backlog.",
-  },
   {
     clave: "diasVencida",
     label: "Tarea atrasada",
@@ -71,7 +79,7 @@ const CAMPOS: Array<{ clave: keyof Omit<ReglasRecordatorio, "prioridadMinima">; 
   {
     clave: "diasProyectoParado",
     label: "Proyecto sin movimiento",
-    ayuda: "Días sin ningún cambio en el panel. Solo avisa a quien lo tenga asignado.",
+    ayuda: "Días sin ningún cambio en el panel. Avisa a quien lo tenga asignado y a dirección (si no tiene a nadie asignado, avisa solo a dirección).",
   },
 ];
 
@@ -141,6 +149,32 @@ export function ConfigRecordatorios() {
 
         {abierto && (
           <div className="space-y-3 pt-1">
+            <div>
+              <span className="block text-xs font-medium mb-1">Tarea sin avanzar, según prioridad</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {CAMPOS_POR_PRIORIDAD.map((c) => (
+                  <label key={c.clave} className="block">
+                    <span className="block text-[11px] text-muted-foreground mb-1">{c.label}</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={actual[c.clave]}
+                        disabled={!data.puedeEditar}
+                        onChange={(e) => editar({ [c.clave]: Number(e.target.value) } as Partial<ReglasRecordatorio>)}
+                        className="h-9 w-16 rounded-lg border border-foreground/15 bg-card/60 px-2 text-sm disabled:opacity-50"
+                      />
+                      <span className="text-xs text-muted-foreground">d</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <span className="block text-[11px] text-muted-foreground/80 mt-1">
+                Días en la misma etapa antes de avisar. Las críticas avisan antes que las bajas. No cuenta el backlog.
+              </span>
+            </div>
+
             <div className="grid sm:grid-cols-2 gap-3">
               {CAMPOS.map((c) => (
                 <label key={c.clave} className="block">

@@ -14,3 +14,5 @@ description: Invariantes al escribir el blob compartido del Hub y al convivir co
   **How to apply:** tras una transición del servidor que deba quedar firme, cerrar la ficha y refrescar (respetando el guard de edición sucia). Transiciones que la ficha no pinta en inputs pueden quedarse abiertas.
 
 - Avisos del embudo: un hecho → un aviso. Si dos recordatorios pueden dispararse por el mismo hecho (fecha de seguimiento que apunta a una reunión pendiente), el genérico se calla a favor del específico; y toda acción que resuelve el hecho debe apagar o mover la fecha que lo alimentaba, o sonará una alarma vencida por algo ya resuelto.
+
+- Para sembrar datos de prueba del tablero en dev: escribir `projects`/`contracts` directo en el JSON de la fila de `hub_state` alcanza — la resolución adopta por CONTENIDO la fila más reciente que tenga algo en `projects/tasks/clients/meetings/notes/contracts`, incluso sin ningún usuario ceo/superadmin en la base. No hace falta crear ni tocar un usuario "dueño" para que el tablero aparezca.

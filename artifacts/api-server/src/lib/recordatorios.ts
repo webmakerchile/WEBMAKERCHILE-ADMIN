@@ -49,8 +49,14 @@ const normalizarEtapa = (v: unknown) => String(v ?? "").trim().toLowerCase();
 /* ==================== Reglas configurables ============================== */
 
 export interface ReglasRecordatorio {
-  /** Días sin cambiar de etapa para considerar una tarea estancada. */
+  /** Días sin cambiar de etapa para considerar estancada una tarea de prioridad media. */
   diasTareaEstancada: number;
+  /** Igual, para prioridad crítica: por defecto avisa mucho antes que las demás. */
+  diasTareaEstancadaCritica: number;
+  /** Igual, para prioridad alta. */
+  diasTareaEstancadaAlta: number;
+  /** Igual, para prioridad baja: por defecto tolera más tiempo sin moverse. */
+  diasTareaEstancadaBaja: number;
   /** Días en backlog antes de preguntar si sigue teniendo sentido. */
   diasEnCola: number;
   /** Días de atraso sobre la fecha de vencimiento de la tarea. */
@@ -63,6 +69,9 @@ export interface ReglasRecordatorio {
 
 export const REGLAS_POR_DEFECTO: ReglasRecordatorio = {
   diasTareaEstancada: 3,
+  diasTareaEstancadaCritica: 1,
+  diasTareaEstancadaAlta: 2,
+  diasTareaEstancadaBaja: 5,
   diasEnCola: 30,
   diasVencida: 1,
   diasProyectoParado: 14,
@@ -80,11 +89,27 @@ export function normalizarReglas(
   };
   return {
     diasTareaEstancada: dia(crudas?.diasTareaEstancada, REGLAS_POR_DEFECTO.diasTareaEstancada),
+    diasTareaEstancadaCritica: dia(crudas?.diasTareaEstancadaCritica, REGLAS_POR_DEFECTO.diasTareaEstancadaCritica),
+    diasTareaEstancadaAlta: dia(crudas?.diasTareaEstancadaAlta, REGLAS_POR_DEFECTO.diasTareaEstancadaAlta),
+    diasTareaEstancadaBaja: dia(crudas?.diasTareaEstancadaBaja, REGLAS_POR_DEFECTO.diasTareaEstancadaBaja),
     diasEnCola: dia(crudas?.diasEnCola, REGLAS_POR_DEFECTO.diasEnCola),
     diasVencida: dia(crudas?.diasVencida, REGLAS_POR_DEFECTO.diasVencida),
     diasProyectoParado: dia(crudas?.diasProyectoParado, REGLAS_POR_DEFECTO.diasProyectoParado),
     prioridadMinima: claveDePrioridad(crudas?.prioridadMinima) ?? REGLAS_POR_DEFECTO.prioridadMinima,
   };
+}
+
+/**
+ * Umbral de "estancada" según la prioridad de la tarea.
+ *
+ * Antes había un solo plazo para el tablero entero. Con esto una crítica
+ * puede sonar al día, mientras una baja tolera casi una semana sin moverse.
+ */
+export function umbralEstancadaPorPrioridad(reglas: ReglasRecordatorio, prioridad: Prioridad): number {
+  if (prioridad === "crítica") return reglas.diasTareaEstancadaCritica;
+  if (prioridad === "alta") return reglas.diasTareaEstancadaAlta;
+  if (prioridad === "baja") return reglas.diasTareaEstancadaBaja;
+  return reglas.diasTareaEstancada;
 }
 
 /* ==================== Cada cuánto se repite un aviso ===================== */
@@ -186,12 +211,18 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
  *
  * Sin asignado no se avisa: no habría a quién, y mandárselo a dirección
  * convierte el aviso en ruido para quien no puede hacer nada con él.
+ *
+ * @param direccionIds  A quién copiar (CEO/superadmin) además del responsable.
+ *   Si dirección es también la responsable, no se duplica.
+ * @param nombrePorId  Para que la copia de dirección diga de quién es la tarea.
  */
 export function avisosDeTareas(
   tareas: readonly TareaVigilada[],
   reglas: ReglasRecordatorio,
   ahora: Date = new Date(),
   hoy?: string,
+  direccionIds: readonly number[] = [],
+  nombrePorId: ReadonlyMap<number, string> = new Map(),
 ): Aviso[] {
   const fechaHoy = hoy ?? ahora.toISOString().slice(0, 10);
   const salida: Aviso[] = [];
@@ -202,13 +233,15 @@ export function avisosDeTareas(
     if (etapa === ETAPA_TERMINADA) continue;
     if (!alcanzaPrioridad(t.priority, reglas.prioridadMinima)) continue;
 
+    const prioridad = claveDePrioridad(t.priority) ?? "media";
     const enCola = etapa === ETAPA_EN_COLA;
     const quieta = diasDesde(t.stageSince, ahora);
-    const umbral = enCola ? reglas.diasEnCola : reglas.diasTareaEstancada;
+    const umbral = enCola ? reglas.diasEnCola : umbralEstancadaPorPrioridad(reglas, prioridad);
     const escalon = quieta === null ? null : escalonDe(quieta, umbral);
 
+    const propios: Aviso[] = [];
     if (escalon !== null && quieta !== null) {
-      salida.push({
+      propios.push({
         tipo: enCola ? "en_cola" : "estancada",
         ref: `tarea:${t.id}:${enCola ? "en_cola" : "estancada"}:${escalon}`,
         titulo: enCola ? "Tarea aparcada" : "Tarea sin avanzar",
@@ -226,7 +259,7 @@ export function avisosDeTareas(
     const atraso = diasDeAtraso(t.dueDate, fechaHoy);
     const escalonAtraso = atraso === null ? null : escalonDe(atraso, reglas.diasVencida);
     if (escalonAtraso !== null && atraso !== null) {
-      salida.push({
+      propios.push({
         tipo: "vencida",
         ref: `tarea:${t.id}:vencida:${t.dueDate}:${escalonAtraso}`,
         titulo: "Tarea atrasada",
@@ -235,6 +268,25 @@ export function avisosDeTareas(
         userId: t.assigneeId,
         dias: atraso,
       });
+    }
+
+    salida.push(...propios);
+
+    // Copia a dirección de cada aviso propio, salvo que dirección sea la
+    // misma persona responsable (ya lo recibió arriba).
+    if (propios.length > 0 && direccionIds.length > 0) {
+      const nombre = nombrePorId.get(t.assigneeId);
+      for (const ceoId of direccionIds) {
+        if (ceoId === t.assigneeId) continue;
+        for (const base of propios) {
+          salida.push({
+            ...base,
+            ref: `${base.ref}:dir:${ceoId}`,
+            userId: ceoId,
+            cuerpo: nombre ? `${base.cuerpo} Responsable: ${nombre}.` : base.cuerpo,
+          });
+        }
+      }
     }
   }
   return salida;
@@ -253,16 +305,32 @@ export interface ProyectoVigilado {
 /** Estado de proyecto que significa "ya está entregado". */
 const PROYECTO_TERMINADO = "done";
 
+/** Etiquetas legibles de las etapas del embudo de proyectos del Hub. */
+const ETAPA_PROYECTO_LABEL: Record<string, string> = {
+  lead: "Lead", disc: "Descubrimiento", dev: "Desarrollo", rev: "Revisión", done: "Entregado",
+};
+
 /**
  * Avisos de proyectos abiertos que llevan tiempo sin tocarse.
  *
  * Es lo que el equipo llamó "tiempo de permanencia del proyecto en el panel", y
  * hoy no lo mira nadie.
+ *
+ * @param direccionIds  A quién copiar (CEO/superadmin) además de los asignados.
+ *   Un proyecto sin nadie asignado igual les avisa a ellos: si no, nadie se
+ *   entera de que quedó huérfano.
+ * @param pendientesPorProyecto  Cuántas tareas sin terminar tiene cada proyecto,
+ *   para que el aviso diga algo más que "lleva N días". Si no se entrega, el
+ *   aviso omite el conteo (llamador no lo calculó). Si se entrega, un proyecto
+ *   ausente del mapa cuenta como 0 -- puede llevar días parado y no tener
+ *   ninguna tarea pendiente, y eso también hay que decirlo.
  */
 export function avisosDeProyectos(
   proyectos: readonly ProyectoVigilado[],
   reglas: ReglasRecordatorio,
   ahora: Date = new Date(),
+  direccionIds: readonly number[] = [],
+  pendientesPorProyecto?: ReadonlyMap<string, number>,
 ): Aviso[] {
   const salida: Aviso[] = [];
   for (const p of proyectos) {
@@ -272,18 +340,60 @@ export function avisosDeProyectos(
     const escalon = quieto === null ? null : escalonDe(quieto, reglas.diasProyectoParado);
     if (escalon === null || quieto === null) continue;
 
-    // Sin asignados no se avisa a nadie. Un proyecto "de todos" mandaría el
-    // mismo recordatorio a la agencia entera, que es cómo se entrena a la gente
-    // para ignorar las notificaciones.
-    for (const userId of p.assigneeIds ?? []) {
-      if (!Number.isInteger(userId) || userId <= 0) continue;
+    const asignados = (p.assigneeIds ?? []).filter(
+      (u): u is number => Number.isInteger(u) && u > 0,
+    );
+    const etiqueta = ETAPA_PROYECTO_LABEL[normalizarEtapa(p.status)] ?? String(p.status ?? "");
+    // Ausente del mapa = 0, no "desconocido": el mapa lo arma el llamador
+    // recorriendo TODAS las tareas no terminadas, así que si este proyecto no
+    // aparece es porque de verdad no tiene ninguna pendiente.
+    const pendientes = pendientesPorProyecto ? (pendientesPorProyecto.get(p.id) ?? 0) : null;
+    const notaPendientes =
+      pendientes !== null
+        ? ` · ${plural(pendientes, "tarea pendiente", "tareas pendientes")}`
+        : "";
+    const cuerpoBase = `"${p.name}" lleva ${plural(quieto, "día", "días")} sin cambios en el panel. Etapa: ${etiqueta}${notaPendientes}.`;
+
+    if (asignados.length === 0) {
+      // Sin asignados no hay a quién avisar en el equipo -- un proyecto "de
+      // todos" entrena a la agencia entera a ignorar notificaciones. Pero
+      // dirección sí debe saber que uno quedó huérfano: nadie más lo va a mover.
+      for (const ceoId of direccionIds) {
+        if (!Number.isInteger(ceoId) || ceoId <= 0) continue;
+        salida.push({
+          tipo: "proyecto_parado",
+          ref: `proyecto:${p.id}:${escalon}:${ceoId}`,
+          titulo: "Proyecto sin movimiento",
+          cuerpo: `${cuerpoBase} Sin nadie asignado.`,
+          enlace: "/mis-tareas",
+          userId: ceoId,
+          dias: quieto,
+        });
+      }
+      continue;
+    }
+
+    for (const userId of asignados) {
       salida.push({
         tipo: "proyecto_parado",
-        ref: `proyecto:${p.id}:${escalon}`,
+        ref: `proyecto:${p.id}:${escalon}:${userId}`,
         titulo: "Proyecto sin movimiento",
-        cuerpo: `"${p.name}" lleva ${plural(quieto, "día", "días")} sin cambios en el panel.`,
+        cuerpo: cuerpoBase,
         enlace: "/mis-tareas",
         userId,
+        dias: quieto,
+      });
+    }
+    // Copia a dirección, salvo que ya esté entre los asignados.
+    for (const ceoId of direccionIds) {
+      if (asignados.includes(ceoId)) continue;
+      salida.push({
+        tipo: "proyecto_parado",
+        ref: `proyecto:${p.id}:${escalon}:${ceoId}`,
+        titulo: "Proyecto sin movimiento",
+        cuerpo: cuerpoBase,
+        enlace: "/mis-tareas",
+        userId: ceoId,
         dias: quieto,
       });
     }

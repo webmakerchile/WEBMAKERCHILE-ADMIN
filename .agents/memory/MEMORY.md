@@ -35,3 +35,5 @@
 - [Fechas dinámicas en tests](test-fechas-dinamicas.md) — fechas "futuras" fijas caducan solas (test verde que falla sin cambios = sospechar fecha vencida); ventanas "desde hoy" se derivan del reloj.
 - [Subagents con timeout](subagent-jobs-colgados.md) — recolectar con el id del mensaje de timeout, no variables del bloque fallido; verificar que el informe hable de ESTE diff (puede llegar un job viejo homónimo).
 - [Gates de permiso en cliente](gates-permiso-cliente.md) — revalidar al reactivar cerrando por defecto (reset en render, no en efecto); queries deshabilitadas de RQ conservan data/error: filtrar al renderizar.
+- [Señal de modo Plan vs Build](plan-vs-build-mode.md) — ante la duda, el rechazo real de una herramienta manda, no la inferencia por contexto.
+- [Dedup de avisos por destinatario](avisos-dedup-por-destinatario.md) — clave de dedup sin el destinatario colisiona entre personas y descarta avisos en silencio.

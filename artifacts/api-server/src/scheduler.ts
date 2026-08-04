@@ -25,7 +25,7 @@ import { createNotification } from "./lib/notifications";
 import { resumirFallos, requiereIntervencion } from "./lib/errores-publicacion";
 import { checkConnectionsForAdmin, markNetworkRevoked } from "./lib/connections";
 import { getCredential } from "./lib/credentials";
-import { checkSlaBreaches } from "./lib/sla";
+import { checkSlaBreaches, getDireccionIds } from "./lib/sla";
 import { checkDocumentExpiryAlerts } from "./lib/hr-ops";
 import { checkSalesFollowUps, checkContractRenewals, checkCasosFuturo, checkReunionesSinDesenlace } from "./lib/ventas";
 import { resolveBoard } from "./lib/hub-board";
@@ -1464,9 +1464,28 @@ async function checkRecordatorios(): Promise<void> {
       stageSince: hubTasks.stageSince,
       assigneeId: hubTasks.assigneeId,
       dueDate: hubTasks.dueDate,
+      projectRef: hubTasks.projectRef,
     })
     .from(hubTasks)
-    .where(and(isNotNull(hubTasks.assigneeId), ne(hubTasks.stage, "done")));
+    .where(ne(hubTasks.stage, "done"));
+
+  // Cuántas tareas sin terminar tiene cada proyecto, para que el aviso de
+  // "proyecto parado" diga algo más que el número de días. Se calcula de la
+  // misma lectura de arriba: no hace falta una consulta aparte.
+  const pendientesPorProyecto = new Map<string, number>();
+  for (const t of tareas) {
+    if (!t.projectRef) continue;
+    pendientesPorProyecto.set(t.projectRef, (pendientesPorProyecto.get(t.projectRef) ?? 0) + 1);
+  }
+
+  // Dirección se copia en los avisos de tareas y de proyectos: antes no se
+  // enteraba de ninguno salvo que entrara a mirar el tablero.
+  const [direccionIds, filasUsuarios] = await Promise.all([
+    getDireccionIds().catch(() => [] as number[]),
+    db.select({ id: users.id, name: users.name }).from(users),
+  ]);
+  const nombrePorId = new Map<number, string>();
+  for (const u of filasUsuarios) if (u.name) nombrePorId.set(u.id, u.name);
 
   // Las reglas y los proyectos viven en el mismo tablero compartido, así que
   // una sola lectura sirve para los dos. Si el tablero no existe todavía se
@@ -1477,8 +1496,8 @@ async function checkRecordatorios(): Promise<void> {
   const proyectos = (Array.isArray(datos.projects) ? datos.projects : []) as ProyectoVigilado[];
 
   const avisos = [
-    ...avisosDeTareas(tareas, reglas, ahora, hoy),
-    ...avisosDeProyectos(proyectos, reglas, ahora),
+    ...avisosDeTareas(tareas, reglas, ahora, hoy, direccionIds, nombrePorId),
+    ...avisosDeProyectos(proyectos, reglas, ahora, direccionIds, pendientesPorProyecto),
   ];
   if (avisos.length === 0) return;
 

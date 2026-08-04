@@ -32,45 +32,83 @@ function Lista({ titulo, items, icono }: { titulo: string; items: string[]; icon
   );
 }
 
+/** Insignia de alerta: lo que no cuadra entre lo comercial y lo técnico, al frente y sin expandir. */
+function InsigniaOrigen({ origen }: { origen: ModuloResumen["origen"] }) {
+  if (origen === "comercial") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400 whitespace-nowrap">
+        <AlertTriangle className="w-2.5 h-2.5" /> sin especificar
+      </span>
+    );
+  }
+  if (origen === "tecnico") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-sky-500/30 bg-sky-500/10 text-sky-400 whitespace-nowrap">
+        <AlertTriangle className="w-2.5 h-2.5" /> fuera del contrato
+      </span>
+    );
+  }
+  return null;
+}
+
+/** Cuántos entregables se enseñan en la tarjeta antes de tener que expandir. */
+const ENTREGABLES_DE_UN_VISTAZO = 2;
+
 function Modulo({ m, sinMontos }: { m: ModuloResumen; sinMontos: boolean }) {
   const [abierto, setAbierto] = useState(false);
   const hayDetalle = m.entregables.length > 0 || m.requisitos.length > 0 || Boolean(m.descripcion);
+  const previos = m.entregables.slice(0, ENTREGABLES_DE_UN_VISTAZO);
+  const restantes = m.entregables.length - previos.length;
+  const hayEncabezado = m.origen !== "ambos" || (!sinMontos && m.precio !== null);
 
   return (
-    <div className="rounded-lg border border-foreground/10 bg-card/40">
+    // h-full: en la grilla, todas las tarjetas de una fila igualan su alto aunque
+    // el contenido varíe -- si no, una tarjeta con alerta y otra sin ella quedan
+    // dispares y la lectura en fila dejar de ser pareja.
+    <div className="rounded-lg border border-foreground/10 bg-card/40 flex flex-col h-full">
       <button
         type="button"
         onClick={() => hayDetalle && setAbierto(!abierto)}
-        className="w-full flex items-start justify-between gap-3 p-3 text-left"
+        className="w-full flex-1 flex flex-col gap-1.5 p-3 text-left"
         aria-expanded={abierto}
       >
-        <div className="min-w-0">
-          <p className="text-sm font-medium truncate">{m.nombre}</p>
-          {m.descripcion && !abierto && (
-            <p className="text-[11px] text-muted-foreground truncate">{m.descripcion}</p>
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-medium leading-snug">{m.nombre}</p>
+          {hayDetalle && (
+            <ChevronDown className={`w-4 h-4 flex-shrink-0 text-muted-foreground transition mt-0.5 ${abierto ? "rotate-180" : ""}`} />
           )}
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {m.origen === "comercial" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400">
-              sin especificar
-            </span>
-          )}
-          {m.origen === "tecnico" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded border border-sky-500/30 bg-sky-500/10 text-sky-400">
-              fuera del contrato
-            </span>
-          )}
-          {!sinMontos && m.precio !== null && (
-            <span className="text-xs font-semibold tabular-nums">{clp(m.precio)}</span>
-          )}
-          {hayDetalle && <ChevronDown className={`w-4 h-4 text-muted-foreground transition ${abierto ? "rotate-180" : ""}`} />}
-        </div>
+
+        {/* Señal de alerta y precio, al frente: es justo lo que antes solo
+            aparecía tras expandir cada módulo uno por uno. */}
+        {hayEncabezado && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <InsigniaOrigen origen={m.origen} />
+            {!sinMontos && m.precio !== null && (
+              <span className="text-xs font-semibold tabular-nums ml-auto">{clp(m.precio)}</span>
+            )}
+          </div>
+        )}
+
+        {m.descripcion && (
+          <p className={`text-[11px] text-muted-foreground ${abierto ? "" : "line-clamp-2"}`}>{m.descripcion}</p>
+        )}
+
+        {/* Entregables clave visibles sin expandir; el resto queda a un clic. */}
+        {!abierto && previos.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-0.5">
+            {previos.map((e, i) => (
+              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 text-foreground/70 truncate max-w-[10rem]">
+                {e}
+              </span>
+            ))}
+            {restantes > 0 && <span className="text-[10px] px-1 py-0.5 text-muted-foreground">+{restantes} más</span>}
+          </div>
+        )}
       </button>
 
       {abierto && (
         <div className="px-3 pb-3 space-y-2 border-t border-foreground/10 pt-2">
-          {m.descripcion && <p className="text-xs text-foreground/85">{m.descripcion}</p>}
           <Lista titulo="Entregables" items={m.entregables} icono={<Package className="w-3 h-3" />} />
           <Lista titulo="Requisitos" items={m.requisitos} icono={<Wrench className="w-3 h-3" />} />
         </div>
@@ -134,8 +172,13 @@ export function ResumenServicios({
             para que aquí aparezca el alcance.
           </p>
         ) : (
-          <div className="space-y-1.5">
-            {r.modulos.map((m) => <Modulo key={m.nombre} m={m} sinMontos={r.sinMontos} />)}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* Lo descuadrado primero: si hay un módulo vendido sin especificar o
+                fuera de contrato, es lo primero que hay que ver, no algo que
+                aparezca al final de una lista larga. */}
+            {[...r.modulos]
+              .sort((a, b) => Number(a.origen === "ambos") - Number(b.origen === "ambos"))
+              .map((m) => <Modulo key={m.nombre} m={m} sinMontos={r.sinMontos} />)}
           </div>
         )}
 

@@ -42,6 +42,9 @@ function puedeConfigurar(req: Request): boolean {
 
 const cuerpoSchema = z.object({
   diasTareaEstancada: z.number().int().min(1).max(365).optional(),
+  diasTareaEstancadaCritica: z.number().int().min(1).max(365).optional(),
+  diasTareaEstancadaAlta: z.number().int().min(1).max(365).optional(),
+  diasTareaEstancadaBaja: z.number().int().min(1).max(365).optional(),
   diasEnCola: z.number().int().min(1).max(365).optional(),
   diasVencida: z.number().int().min(1).max(365).optional(),
   diasProyectoParado: z.number().int().min(1).max(365).optional(),
