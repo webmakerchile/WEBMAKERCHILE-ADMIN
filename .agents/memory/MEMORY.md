@@ -34,3 +34,4 @@
 - [Contratos: secciones e IA](contratos-secciones-ia.md) — contenido = 7 secciones JSON («garantía» con tilde); SPA 200-HTML ⇒ 503 solo con respuesta_invalida (jamás 404 en bloque); PII de firma va en AMBAS capas de saneo.
 - [Fechas dinámicas en tests](test-fechas-dinamicas.md) — fechas "futuras" fijas caducan solas (test verde que falla sin cambios = sospechar fecha vencida); ventanas "desde hoy" se derivan del reloj.
 - [Subagents con timeout](subagent-jobs-colgados.md) — recolectar con el id del mensaje de timeout, no variables del bloque fallido; verificar que el informe hable de ESTE diff (puede llegar un job viejo homónimo).
+- [Gates de permiso en cliente](gates-permiso-cliente.md) — revalidar al reactivar cerrando por defecto (reset en render, no en efecto); queries deshabilitadas de RQ conservan data/error: filtrar al renderizar.

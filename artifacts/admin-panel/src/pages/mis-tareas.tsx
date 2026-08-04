@@ -181,6 +181,17 @@ export default function MisTareasPage() {
     );
   };
 
+  const vincularCarpeta = (p: HubProject, link: string) => {
+    if (!board) return;
+    patch.mutate(
+      { data: { projects: replaceEntity(projects, p.id, { link }) }, baseVersion: board.version },
+      {
+        onSuccess: () => toast({ title: "Carpeta vinculada", description: `“${p.name}” ya tiene su carpeta de Drive.` }),
+        onError: alFallar,
+      },
+    );
+  };
+
   const enDesarrollo = tasks.filter(t => t.stage === "doing").length;
   const { data: reglas } = useReglasRecordatorio();
   const horasEstancada = (reglas?.reglas.diasTareaEstancada ?? ESTANCADA_HORAS / 24) * 24;
@@ -692,7 +703,13 @@ export default function MisTareasPage() {
                               subió el logo había que salir del tablero. */}
                           {carpetaDe(p)
                             ? <CarpetaProyecto carpetaId={carpetaDe(p)!} nombre={p.name} />
-                            : <SinCarpetaProyecto />}
+                            : (
+                              <SinCarpetaProyecto
+                                puedeVincular={puedeEditarProyectos}
+                                guardando={patch.isPending}
+                                onVincular={link => vincularCarpeta(p, link)}
+                              />
+                            )}
                           <Adjuntos tipo="project" id={p.id} titulo="Adjuntos del proyecto" />
                         </li>
                       );

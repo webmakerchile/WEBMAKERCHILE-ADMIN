@@ -11,43 +11,50 @@
 
 import { useEffect, useState } from "react";
 import { HardDrive, ExternalLink, Loader2 } from "lucide-react";
+import {
+  estadoInicial, alComprobar, alApagar, alResponder, type EstadoDriveBase,
+} from "@/lib/estado-drive";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
-export interface EstadoDrive {
-  conectado: boolean;
-  cargando: boolean;
-  /** URL a la que mandar para dar el permiso. */
-  conectar: string;
-}
+export type EstadoDrive = EstadoDriveBase;
 
 /**
  * ¿Esta cuenta autorizó Drive?
  *
  * Se consulta ANTES de que algo falle: así se puede ofrecer el botón en vez de
  * enseñar una lista vacía y dejar que la persona saque sus conclusiones.
+ *
+ * Cerrado por defecto: cada activación revalida y OLVIDA el resultado
+ * anterior. Las transiciones viven en lib/estado-drive.ts (con sus tests);
+ * aquí solo se conecta eso a React y a la red.
  */
 export function useEstadoDrive(activo = true): EstadoDrive {
-  const [conectado, setConectado] = useState(false);
-  const [cargando, setCargando] = useState(activo);
-  const [conectar, setConectar] = useState("/api/auth/drive");
+  const [estado, setEstado] = useState<EstadoDriveBase>(() => estadoInicial(activo));
+
+  // El reset ocurre EN EL RENDER de la transición, no en un efecto: si se
+  // esperara al efecto, el primer render tras reabrir aún vería el
+  // `conectado` de la vez anterior y habilitaría consultas (y caché de otra
+  // sesión) que quizá ya no corresponden.
+  const [activoPrevio, setActivoPrevio] = useState(activo);
+  if (activo !== activoPrevio) {
+    setActivoPrevio(activo);
+    setEstado((prev) => (activo ? alComprobar(prev) : alApagar(prev)));
+  }
 
   useEffect(() => {
-    if (!activo) { setCargando(false); return; }
+    if (!activo) return;
     let vivo = true;
     fetch(`${API_BASE}/drive/estado`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!vivo || !d) return;
-        setConectado(Boolean(d.conectado));
-        if (typeof d.conectar === "string") setConectar(d.conectar);
-      })
-      .catch(() => { /* si no se sabe, se asume sin conectar y se ofrece el botón */ })
-      .finally(() => { if (vivo) setCargando(false); });
+      .catch(() => null) // fallo de red = sin conexión confirmada, se ofrece el botón
+      .then((d: { conectado?: unknown; conectar?: unknown } | null) => {
+        if (vivo) setEstado((prev) => alResponder(prev, d));
+      });
     return () => { vivo = false; };
   }, [activo]);
 
-  return { conectado, cargando, conectar };
+  return estado;
 }
 
 /**
