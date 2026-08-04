@@ -17,9 +17,12 @@ aunque el correo falle).
 - Sin dominio verificado, Resend está en modo prueba: solo entrega al correo del
   DUEÑO de la cuenta Resend (webmakerchile@gmail.com) y rechaza el resto con un
   mensaje claro que ya se guarda y se muestra en el panel.
-- `RESEND_FROM` (env compartida) define el remitente; quedó puesto a
-  `WebMaker Latam <ventas@webmakerlatam.com>`. En cuanto Lucas verifique
-  webmakerlatam.com en resend.com/domains, los envíos sanan solos, sin tocar código.
+- `RESEND_FROM` (env compartida) define el remitente; está puesto al remitente de
+  pruebas `WebMaker Latam <onboarding@resend.dev>` para que las copias internas
+  (dueño de la cuenta) SÍ lleguen mientras el dominio siga sin verificar. OJO: con
+  la env definida NO hay auto-sanado — cuando Lucas verifique webmakerlatam.com en
+  resend.com/domains hay que RESTAURAR `WebMaker Latam <ventas@webmakerlatam.com>`
+  a mano (+ reiniciar ambos backends y republicar).
 
 **Why:** el 401 de /domains hace inútil cualquier lógica de "buscar dominio
 verificado"; y un fallback silencioso a otro remitente escondería el problema real.
