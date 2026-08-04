@@ -154,6 +154,25 @@ export function useTicketToTask() {
   });
 }
 
+/**
+ * Decide si un ticket pertenece a una bandeja compacta (TicketsInline).
+ *
+ * Con `area` (la de LA PÁGINA que incrusta la bandeja): entra lo de esa área.
+ * Sin `area` (comportamiento legado): entran las áreas del usuario que mira.
+ * En ambos casos se suman los tickets propios (creados por o asignados a
+ * `myId`), y los cerrados nunca se muestran. Sin sesión (`myId` indefinido)
+ * no hay tickets "propios": un `assignedTo` nulo no debe coincidir con nadie.
+ */
+export function perteneceABandeja(
+  t: Pick<Ticket, "area" | "status" | "assignedTo" | "createdBy">,
+  opts: { area?: TicketArea; myAreas: readonly TicketArea[]; myId?: number },
+): boolean {
+  if (t.status === "cerrado") return false;
+  const propio = opts.myId != null && (t.assignedTo === opts.myId || t.createdBy === opts.myId);
+  const porArea = opts.area ? t.area === opts.area : opts.myAreas.includes(t.area);
+  return porArea || propio;
+}
+
 export const fmtWhen = (iso: string | null | undefined) => {
   if (!iso) return "—";
   const d = new Date(iso);

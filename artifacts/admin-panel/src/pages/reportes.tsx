@@ -446,7 +446,7 @@ export default function ReportesPage() {
 
             <MetasInline />
 
-            <TicketsInline title="Solicitudes a finanzas" />
+            <TicketsInline title="Solicitudes a finanzas" area="finanzas" />
           </>
         )}
 

@@ -203,7 +203,7 @@ export default function EdicionPage() {
 
         <MetasInline />
 
-        <TicketsInline title="Lo que te pidieron" />
+        <TicketsInline title="Lo que te pidieron" area="contenido" />
 
         {isLoading && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
 

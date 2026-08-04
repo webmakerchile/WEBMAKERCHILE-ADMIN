@@ -333,7 +333,7 @@ export default function MarketingPage() {
 
             <MetasInline />
 
-            <TicketsInline title="Lo que le pidieron a marketing" />
+            <TicketsInline title="Lo que le pidieron a marketing" area="marketing" />
           </>
         )}
       </div>

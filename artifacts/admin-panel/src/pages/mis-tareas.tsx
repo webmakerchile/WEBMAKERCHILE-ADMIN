@@ -378,7 +378,7 @@ export default function MisTareasPage() {
 
             <MetasInline />
 
-            <TicketsInline title="Solicitudes para desarrollo" />
+            <TicketsInline title="Solicitudes para desarrollo" area="desarrollo" />
 
             {nueva && (
               <Card className="bg-card/60 border-primary/30">

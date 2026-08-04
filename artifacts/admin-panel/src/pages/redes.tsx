@@ -424,7 +424,7 @@ export default function RedesPage() {
 
             <MetasInline />
 
-            <TicketsInline title="Lo que le pidieron a redes" />
+            <TicketsInline title="Lo que le pidieron a redes" area="redes" />
           </>
         )}
       </div>

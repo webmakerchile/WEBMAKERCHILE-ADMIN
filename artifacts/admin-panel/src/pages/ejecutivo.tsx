@@ -1,4 +1,5 @@
 import { JornadaChip } from "@/components/jornada-card";
+import { TicketsInline } from "@/components/tickets-inline";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
 import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
@@ -3454,6 +3455,11 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
           <h2>Actividad Reciente</h2>
           {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, apiTasks).pct}%</span></div>) : <EmptyState title="Sin actividad reciente" hint="Tu historial aparecerá aquí." icon={<ActivityFeed />} />}
         </div>
+      </div>
+      {/* Tickets del área ventas: lo que las otras áreas le piden al ejecutivo.
+          Va al final del dashboard para no estorbar los KPIs ni el mapa. */}
+      <div style={{ marginTop: 14 }}>
+        <TicketsInline title="Solicitudes para ventas" area="ventas" />
       </div>
     </div>
   );

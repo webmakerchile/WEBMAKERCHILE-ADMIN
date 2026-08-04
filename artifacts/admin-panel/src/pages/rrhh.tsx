@@ -266,7 +266,7 @@ export default function RrhhPage() {
 
         <MetasInline />
 
-        <TicketsInline title="Solicitudes a Recursos Humanos" />
+        <TicketsInline title="Solicitudes a Recursos Humanos" area="rrhh" />
 
         {isLoading && <div className="py-16 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
 

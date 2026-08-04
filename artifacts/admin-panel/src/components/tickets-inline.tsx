@@ -2,8 +2,8 @@ import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/App";
-import { TICKET_AREA_LABELS } from "@workspace/roles";
-import { useTickets, STATUS_META, PRIORITY_META, fmtWhen } from "@/lib/tickets";
+import { TICKET_AREA_LABELS, type TicketArea } from "@workspace/roles";
+import { useTickets, perteneceABandeja, STATUS_META, PRIORITY_META, fmtWhen } from "@/lib/tickets";
 import { Loader2, Inbox, ArrowRight, ListChecks } from "lucide-react";
 
 /**
@@ -11,14 +11,20 @@ import { Loader2, Inbox, ArrowRight, ListChecks } from "lucide-react";
  *
  * Es el enganche entre paneles: cada rol ve en su propia pantalla lo que las
  * otras áreas le pidieron, sin tener que ir a buscarlo.
+ *
+ * `area` fija la bandeja al área de LA PÁGINA que la incrusta. Sin ella, la
+ * bandeja filtraba por las áreas del usuario que mira, y la dirección (área
+ * "direccion") veía vacía la bandeja de desarrollo aunque hubiera tickets.
+ * El servidor ya entrega solo lo que el rol puede ver; esto solo decide qué
+ * mostrar en esta tarjeta. Se suman siempre los tickets propios (creados por
+ * o asignados a quien mira), con su etiqueta de área para distinguirlos.
  */
-export function TicketsInline({ title = "Solicitudes de mi área", limit = 5 }: { title?: string; limit?: number }) {
+export function TicketsInline({ title = "Solicitudes de mi área", limit = 5, area }: { title?: string; limit?: number; area?: TicketArea }) {
   const me = useAuth();
   const { data, isLoading } = useTickets(false);
 
   const tickets = (data?.tickets ?? [])
-    .filter(t => (data?.myAreas ?? []).includes(t.area) || t.assignedTo === me?.id || t.createdBy === me?.id)
-    .filter(t => t.status !== "cerrado")
+    .filter(t => perteneceABandeja(t, { area, myAreas: data?.myAreas ?? [], myId: me?.id }))
     .slice(0, limit);
 
   return (

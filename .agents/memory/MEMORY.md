@@ -33,3 +33,4 @@
 - [Arrays en sql`` de drizzle](drizzle-sql-arrays.md) — `ANY(${arr}::text[])` genera SQL inválido (drizzle expande el array en placeholders sueltos); usar IN + sql.join; los tests con DB mockeada no lo detectan.
 - [Contratos: secciones e IA](contratos-secciones-ia.md) — contenido = 7 secciones JSON («garantía» con tilde); SPA 200-HTML ⇒ 503 solo con respuesta_invalida (jamás 404 en bloque); PII de firma va en AMBAS capas de saneo.
 - [Fechas dinámicas en tests](test-fechas-dinamicas.md) — fechas "futuras" fijas caducan solas (test verde que falla sin cambios = sospechar fecha vencida); ventanas "desde hoy" se derivan del reloj.
+- [Subagents con timeout](subagent-jobs-colgados.md) — recolectar con el id del mensaje de timeout, no variables del bloque fallido; verificar que el informe hable de ESTE diff (puede llegar un job viejo homónimo).
