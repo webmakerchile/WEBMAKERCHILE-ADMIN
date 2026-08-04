@@ -17,6 +17,7 @@ import { useAsistencia } from "@/lib/asistencia";
 import { PaseDeLista } from "@/components/pase-de-lista";
 import { EvaluationsManager, LeaveManager, OnboardingManager, PersonDocuments } from "@/components/rrhh-ops";
 import { DesempenoSemanal } from "@/components/desempeno-semanal";
+import { InformeSemanal, ReportesDiarios } from "@/components/rrhh-reportes";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -45,6 +46,10 @@ interface Profile {
   endDate: string;
   monthlySalary: number | null;
   phone: string;
+  personalEmail: string;
+  companyEmail: string;
+  rut: string;
+  birthDate: string;
   emergencyContact: string;
   emergencyPhone: string;
   documentsUrl: string;
@@ -70,6 +75,7 @@ interface Person {
 const emptyProfile = (): Profile => ({
   position: "", area: "", contractType: "indefinido", employmentStatus: "activo",
   startDate: "", endDate: "", monthlySalary: null, phone: "",
+  personalEmail: "", companyEmail: "", rut: "", birthDate: "",
   emergencyContact: "", emergencyPhone: "", documentsUrl: "", notes: "",
   vacationDaysPerYear: 15, commissionPct: 0, hourlyCost: null,
 });
@@ -410,6 +416,10 @@ export default function RrhhPage() {
               <EvaluationsManager people={equipo} />
             </div>
 
+            <ReportesDiarios />
+
+            <InformeSemanal />
+
             <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-2 sm:p-4">
                 <p className="text-sm font-semibold mb-3 px-2 sm:px-0">Equipo ({equipo.length})</p>
@@ -453,6 +463,10 @@ export default function RrhhPage() {
                               <span>Contrato: {CONTRACT_TYPES.find(c => c.id === prof?.contractType)?.label ?? "—"}</span>
                               <span>Renta: {prof?.monthlySalary ? fmtCLP(prof.monthlySalary) : "—"}</span>
                               {prof?.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{prof.phone}</span>}
+                              {prof?.rut && <span>RUT: {prof.rut}</span>}
+                              {prof?.birthDate && <span>Nacimiento: {fmtDate(prof.birthDate)}</span>}
+                              {prof?.personalEmail && <span>Personal: {prof.personalEmail}</span>}
+                              {prof?.companyEmail && <span>Empresa: {prof.companyEmail}</span>}
                               <span>Último acceso: {fmtDate(p.lastLoginAt)}</span>
                               {(() => {
                                 const a = attendanceById.get(p.id);
@@ -493,6 +507,10 @@ export default function RrhhPage() {
                                     placeholder="Sin registrar" />
                                 ))}
                                 {field("Teléfono", <input className={inputClass} value={draft.phone} onChange={e => setDraft(d => ({ ...d, phone: e.target.value }))} placeholder="+56 9 ..." />)}
+                                {field("Correo personal", <input type="email" className={inputClass} value={draft.personalEmail} onChange={e => setDraft(d => ({ ...d, personalEmail: e.target.value }))} placeholder="nombre@gmail.com" data-testid="input-personal-email" />)}
+                                {field("Correo de la empresa", <input type="email" className={inputClass} value={draft.companyEmail} onChange={e => setDraft(d => ({ ...d, companyEmail: e.target.value }))} placeholder="nombre@webmakerlatam.com" data-testid="input-company-email" />)}
+                                {field("RUT", <input className={inputClass} value={draft.rut} onChange={e => setDraft(d => ({ ...d, rut: e.target.value }))} placeholder="12.345.678-9" data-testid="input-rut" />)}
+                                {field("Fecha de nacimiento", <input type="date" className={inputClass} value={draft.birthDate} onChange={e => setDraft(d => ({ ...d, birthDate: e.target.value }))} data-testid="input-birth-date" />)}
                                 {field("Contacto de emergencia", <input className={inputClass} value={draft.emergencyContact} onChange={e => setDraft(d => ({ ...d, emergencyContact: e.target.value }))} />)}
                                 {field("Teléfono de emergencia", <input className={inputClass} value={draft.emergencyPhone} onChange={e => setDraft(d => ({ ...d, emergencyPhone: e.target.value }))} />)}
                                 {field("Días de vacaciones al año", (

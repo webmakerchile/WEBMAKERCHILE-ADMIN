@@ -181,6 +181,21 @@ describe("evaluaciones", () => {
   });
 });
 
+// Fechas dinámicas: el endpoint exige solicitudes "desde hoy en adelante",
+// así que un lunes fijo se vence solo (estos tests reventaron el día que
+// 2026-08-03 quedó atrás). Próximo lunes → viernes: siempre futuro y siempre
+// 5 días hábiles.
+const proximoLunes = (() => {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + (((8 - d.getUTCDay()) % 7) || 7));
+  return d.toISOString().slice(0, 10);
+})();
+const viernesDeEsaSemana = (() => {
+  const d = new Date(`${proximoLunes}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 4);
+  return d.toISOString().slice(0, 10);
+})();
+
 describe("self-service", () => {
   it("POST /me/leave rechaza vacaciones sin saldo", async () => {
     vi.mocked(leaveBalance).mockResolvedValueOnce({
@@ -188,7 +203,7 @@ describe("self-service", () => {
     });
     const res = await request(await buildSelf(devUser))
       .post("/me/leave")
-      .send({ type: "vacaciones", startDate: "2026-08-03", endDate: "2026-08-07" });
+      .send({ type: "vacaciones", startDate: proximoLunes, endDate: viernesDeEsaSemana });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Saldo insuficiente/);
     expect(db.insert).not.toHaveBeenCalled();
@@ -206,7 +221,7 @@ describe("self-service", () => {
     vi.mocked(db.select).mockReturnValue(selectChain([{ name: "Dev" }]));
     const res = await request(await buildSelf(devUser))
       .post("/me/leave")
-      .send({ type: "vacaciones", startDate: "2026-08-03", endDate: "2026-08-07" });
+      .send({ type: "vacaciones", startDate: proximoLunes, endDate: viernesDeEsaSemana });
     expect(res.status).toBe(201);
     expect(ins.values).toHaveBeenCalledWith(expect.objectContaining({ days: 5, userId: 5 }));
   });

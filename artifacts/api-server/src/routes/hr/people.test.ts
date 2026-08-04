@@ -125,6 +125,45 @@ describe("/api/hr/people", () => {
     expect(state.inserted).toMatchObject({ userId: 9, position: "Editora senior", monthlySalary: 1200000 });
   });
 
+  it("guarda los datos personales nuevos y rechaza un correo mal escrito", async () => {
+    await reset("rrhh");
+    let port = await startApp();
+    const ok = await fetch(`http://127.0.0.1:${port}/api/hr/people/9`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...VALID,
+        personalEmail: "maria@gmail.com",
+        companyEmail: "maria@webmakerlatam.com",
+        rut: "12.345.678-9",
+        birthDate: "1995-07-14",
+      }),
+    });
+    expect(ok.status).toBe(200);
+    expect(state.inserted).toMatchObject({
+      personalEmail: "maria@gmail.com",
+      companyEmail: "maria@webmakerlatam.com",
+      rut: "12.345.678-9",
+      birthDate: "1995-07-14",
+    });
+
+    await reset("rrhh");
+    port = await startApp();
+    const badMail = await fetch(`http://127.0.0.1:${port}/api/hr/people/9`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...VALID, personalEmail: "no-es-correo" }),
+    });
+    expect(badMail.status).toBe(400);
+
+    await reset("rrhh");
+    port = await startApp();
+    const badBirth = await fetch(`http://127.0.0.1:${port}/api/hr/people/9`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...VALID, birthDate: "14-07-1995" }),
+    });
+    expect(badBirth.status).toBe(400);
+    expect(state.inserted).toBeNull();
+  });
+
   it("rechaza un tipo de contrato inventado y una fecha mal formada", async () => {
     await reset("rrhh");
     const port = await startApp();

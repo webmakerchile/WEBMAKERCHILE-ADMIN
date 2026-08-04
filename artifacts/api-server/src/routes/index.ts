@@ -29,6 +29,7 @@ import hubRouter from "./hub";
 import hrRouter from "./hr";
 import hrOpsRouter from "./hr/ops";
 import hrSelfRouter from "./hr/self";
+import hrReportesRouter from "./hr/reportes";
 import ticketsRouter from "./tickets";
 import goalsRouter from "./goals";
 import hubTasksRouter from "./hub/tasks";
@@ -141,6 +142,7 @@ router.use(slaRouter);
 router.use(hubRouter);
 router.use(hrRouter);
 router.use(hrOpsRouter);
+router.use(hrReportesRouter);
 router.use(ticketsRouter);
 router.use(goalsRouter);
 

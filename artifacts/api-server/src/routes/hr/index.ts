@@ -56,6 +56,21 @@ const profileSchema = z.object({
     .default(null)
     .transform(v => (v === "" ? null : v)),
   phone: z.string().trim().max(40).default(""),
+  /** Correos opcionales de la ficha; si vienen, deben verse como correos. */
+  personalEmail: z
+    .string()
+    .trim()
+    .max(160)
+    .refine(v => v === "" || /^\S+@\S+\.\S+$/.test(v), "Correo personal inválido")
+    .default(""),
+  companyEmail: z
+    .string()
+    .trim()
+    .max(160)
+    .refine(v => v === "" || /^\S+@\S+\.\S+$/.test(v), "Correo de empresa inválido")
+    .default(""),
+  rut: z.string().trim().max(20).default(""),
+  birthDate: dateStr.default(""),
   emergencyContact: z.string().trim().max(120).default(""),
   emergencyPhone: z.string().trim().max(40).default(""),
   documentsUrl: z.string().trim().max(500).default(""),

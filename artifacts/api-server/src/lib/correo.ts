@@ -10,6 +10,9 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 /** Buzón del equipo de ventas: recibe copia de cada firma. */
 export const CORREO_EQUIPO = "webmakerventas@gmail.com";
 
+/** Buzón de la dirección: recibe copia de cada reporte diario de RRHH. */
+export const CORREO_DIRECCION = "webmakerchile@gmail.com";
+
 export interface AdjuntoCorreo {
   filename: string;
   /** Contenido en base64 pelado (sin el prefijo data:). */

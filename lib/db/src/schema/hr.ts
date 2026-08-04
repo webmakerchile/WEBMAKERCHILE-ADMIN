@@ -33,6 +33,14 @@ export const employeeProfiles = pgTable("employee_profiles", {
   /** Renta bruta mensual en CLP. Null = no registrada. */
   monthlySalary: integer("monthly_salary"),
   phone: text("phone").notNull().default(""),
+  /** Correo personal (distinto de la cuenta con la que entra al panel). */
+  personalEmail: text("personal_email").notNull().default(""),
+  /** Correo corporativo asignado por la empresa. */
+  companyEmail: text("company_email").notNull().default(""),
+  /** RUT, tal como lo escribe RRHH (con puntos y guion). */
+  rut: text("rut").notNull().default(""),
+  /** Fecha de nacimiento (YYYY-MM-DD). */
+  birthDate: text("birth_date").notNull().default(""),
   emergencyContact: text("emergency_contact").notNull().default(""),
   emergencyPhone: text("emergency_phone").notNull().default(""),
   /** Carpeta de Drive con contrato, anexos y documentación. */
@@ -171,3 +179,51 @@ export const employeeDocuments = pgTable(
 );
 
 export type EmployeeDocument = typeof employeeDocuments.$inferSelect;
+
+/**
+ * Reportes diarios de RRHH. Al emitir uno se avisa a la dirección
+ * (notificación interna) y se manda copia por correo; el resultado del correo
+ * queda en la fila — un correo que falla jamás bloquea el reporte.
+ */
+export const hrDailyReports = pgTable(
+  "hr_daily_reports",
+  {
+    id: serial("id").primaryKey(),
+    /** Día que cubre el reporte (YYYY-MM-DD). Precargado con hoy, editable. */
+    reportDate: text("report_date").notNull(),
+    content: text("content").notNull(),
+    authorId: integer("author_id").references(() => users.id, { onDelete: "set null" }),
+    /** "" (sin intento) | enviado | fallido | sin_configurar */
+    emailStatus: text("email_status").notNull().default(""),
+    emailDetail: text("email_detail").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byDate: index("hr_daily_reports_date_idx").on(t.reportDate),
+  }),
+);
+
+export type HrDailyReport = typeof hrDailyReports.$inferSelect;
+
+/**
+ * Informe semanal de RRHH: una fila por semana — identificada por su lunes
+ * (YYYY-MM-DD, semanas de America/Santiago) — con las tres secciones que
+ * redacta Recursos Humanos.
+ */
+export const hrWeeklyReports = pgTable("hr_weekly_reports", {
+  id: serial("id").primaryKey(),
+  /** Lunes de la semana (YYYY-MM-DD). Único: un informe por semana. */
+  weekKey: text("week_key").notNull().unique(),
+  /** Resumen semanal: actividades de todas las áreas, tareas completadas o acciones hechas. */
+  resumen: text("resumen").notNull().default(""),
+  /** Actividades principales a destacar. */
+  destacadas: text("destacadas").notNull().default(""),
+  /** Análisis: retroalimentación de lo hecho y recomendaciones. */
+  analisis: text("analisis").notNull().default(""),
+  updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type HrWeeklyReport = typeof hrWeeklyReports.$inferSelect;
