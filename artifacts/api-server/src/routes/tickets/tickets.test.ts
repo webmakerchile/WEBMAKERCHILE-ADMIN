@@ -6,9 +6,13 @@ const USERS = { __t: "users", id: "users.id" };
 const TICKETS = { __t: "tickets", id: "tickets.id", area: "tickets.area", status: "tickets.status", createdBy: "c", assignedTo: "a", updatedAt: "u" };
 const COMMENTS = { __t: "ticket_comments", ticketId: "t", createdAt: "c" };
 const HUB = { __t: "hub_state", userId: "u" };
+const HUB_TASKS = { __t: "hub_tasks" };
+const HUB_TASK_ACTIVITY = { __t: "hub_task_activity" };
 
 vi.mock("@workspace/db/schema", () => ({
   users: USERS, tickets: TICKETS, ticketComments: COMMENTS, hubState: HUB,
+  hubTasks: HUB_TASKS, hubTaskActivity: HUB_TASK_ACTIVITY,
+  VALID_PRIORITIES: ["crítica", "alta", "media", "baja"],
 }));
 vi.mock("drizzle-orm", () => ({
   and: (...a: unknown[]) => ({ and: a }),
@@ -187,16 +191,17 @@ describe("/api/tickets", () => {
     state.tickets = [{ id: 7, title: "Checkout", description: "d", area: "desarrollo", status: "abierto", createdBy: 9, assignedTo: null, priority: "alta", projectId: "p1", taskId: "" }];
     state.users = [{ id: 1, role: "superadmin", teamRole: "ceo" }, { id: 5, role: "admin", teamRole: "dev" }];
     state.me = [{ id: 5, teamRole: "dev", role: "admin", name: "Dev", email: "dev@x.cl" }];
-    state.hub = [{ userId: 1, data: { tasks: [] } }];
     port = await startApp();
     const ok = await fetch(`http://127.0.0.1:${port}/api/tickets/7/to-task`, { method: "POST" });
     expect(ok.status).toBe(201);
-    const body = await ok.json() as { task: { title: string; stage: string; ticketId: number; projectId: string } };
-    expect(body.task).toMatchObject({ title: "Checkout", stage: "sprint", ticketId: 7, projectId: "p1" });
-    // La tarea queda escrita en el tablero compartido.
-    const boardWrite = state.inserted.find(i => i.table === "hub_state");
-    expect(boardWrite).toBeTruthy();
-    expect((boardWrite!.values.data as { tasks: unknown[] }).tasks).toHaveLength(1);
+    const body = await ok.json() as { task: { title: string; stage: string; priority: string; projectRef: string; assigneeId: number } };
+    // La tarea se crea en la tabla real del tablero (hub_tasks) — si cae en
+    // el blob viejo queda invisible para "Mis tareas" y el Scrumban.
+    expect(body.task).toMatchObject({ title: "Checkout", stage: "sprint", priority: "alta", projectRef: "p1", assigneeId: 5 });
+    expect(state.inserted.find(i => i.table === "hub_tasks")).toBeTruthy();
+    expect(state.inserted.find(i => i.table === "hub_state")).toBeFalsy();
+    // Y el ticket queda enlazado al id real de esa tarea.
+    expect(state.updated[0]).toMatchObject({ taskId: "101" });
   });
 
   it("no convierte dos veces el mismo ticket", async () => {

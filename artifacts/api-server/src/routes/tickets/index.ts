@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { ticketComments, tickets, users } from "@workspace/db/schema";
+import { ticketComments, tickets, users, hubTasks, hubTaskActivity, VALID_PRIORITIES } from "@workspace/db/schema";
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   TICKET_AREAS, hubWriteScopesFor, isTicketArea, normalizeRole, ticketAreasFor,
@@ -8,7 +8,7 @@ import {
 import { z } from "zod";
 import { createNotification } from "../../lib/notifications";
 import { recordActivity } from "../../lib/activity";
-import { resolveBoard, saveBoard } from "../../lib/hub-board";
+import { claveSemanaActual } from "../../lib/sprint-semanal";
 
 const router: IRouter = Router();
 
@@ -307,7 +307,11 @@ router.post("/tickets/:id/comments", async (req: Request, res: Response) => {
 });
 
 /**
- * Convierte un ticket en una tarea del tablero compartido.
+ * Convierte un ticket en una tarea del tablero Scrum (`hub_tasks`, la misma
+ * tabla que ya usan "Mis tareas" y el tablero del Hub Ejecutivo — antes esto
+ * escribía en la colección vieja del blob, que ninguna pantalla mira desde
+ * que se migraron las tareas; el ticket "se convertía" pero la tarea era
+ * invisible en el tablero real).
  *
  * Es el puente que pedía el negocio: lo que ventas o marketing solicita entra
  * al Scrumban donde el equipo ya trabaja, y el ticket queda enlazado a esa
@@ -330,37 +334,48 @@ router.post("/tickets/:id/to-task", async (req: Request, res: Response) => {
   if (!ticket) { res.status(404).json({ error: "Ticket no encontrado" }); return; }
   if (ticket.taskId) { res.status(409).json({ error: "Este ticket ya tiene una tarea en el tablero" }); return; }
 
-  // El tablero es el mismo que abre el Hub: se resuelve por el helper compartido
-  // para que la tarea aparezca donde el equipo realmente trabaja.
-  const board = await resolveBoard();
-  if (!board) { res.status(409).json({ error: "No hay tablero de dirección" }); return; }
-  const tasks = Array.isArray(board.data.tasks) ? (board.data.tasks as Record<string, unknown>[]) : [];
+  const now = new Date();
+  const assigneeId = ticket.assignedTo ?? me.id;
+  const [task] = await db
+    .insert(hubTasks)
+    .values({
+      title: ticket.title,
+      notes: [ticket.description, `— Desde el ticket #${ticket.id}`].filter(Boolean).join("\n\n"),
+      createdById: me.id,
+      assigneeId,
+      projectRef: ticket.projectId || null,
+      priority: (VALID_PRIORITIES as readonly string[]).includes(ticket.priority) ? ticket.priority : "media",
+      // Entra directo al sprint: un ticket accionable no tiene por qué
+      // esperar en el backlog, el Scrumban es donde el equipo ya trabaja.
+      stage: "sprint",
+      stageSince: now,
+      stageTime: {},
+      // Nace fuera del backlog: cuenta para la semana en curso igual que si
+      // alguien la hubiera arrastrado a mano (misma regla que crear tareas).
+      sprintWeek: claveSemanaActual(),
+    })
+    .returning();
+  if (!task) { res.status(500).json({ error: "Error al crear la tarea" }); return; }
 
-  const now = Date.now();
-  const taskId = `tk${id}-${now.toString(36)}`;
-  const task = {
-    id: taskId,
-    title: ticket.title,
-    projectId: ticket.projectId || "",
-    crit: ticket.priority,
-    stage: "sprint",
-    stageSince: now,
-    stageTime: {},
-    notes: [ticket.description, `— Desde el ticket #${ticket.id}`].filter(Boolean).join("\n\n"),
-    ticketId: ticket.id,
-    createdAt: now,
-    updatedAt: now,
-  };
+  try {
+    await db.insert(hubTaskActivity).values({
+      taskId: task.id,
+      taskTitle: task.title,
+      userId: me.id,
+      action: "created",
+    });
+  } catch (e) {
+    console.error("[tickets/to-task] no se pudo registrar la actividad de la tarea", e);
+  }
+  recordActivity({ actorId: me.id, entityType: "task", entityId: task.id, entityLabel: task.title, action: "created" });
 
-  await saveBoard(board.boardUserId, { ...board.data, tasks: [...tasks, task] });
   const stamp = new Date();
-
   const [updated] = await db
     .update(tickets)
     .set({
-      taskId,
+      taskId: String(task.id),
       status: ticket.status === "abierto" ? "en_progreso" : ticket.status,
-      assignedTo: ticket.assignedTo ?? me.id,
+      assignedTo: assigneeId,
       updatedAt: stamp,
     })
     .where(eq(tickets.id, id))
