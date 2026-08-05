@@ -95,6 +95,13 @@ interface Project {
    * campo es el que se puede usar sin volver a adivinar.
    */
   driveFolderId?: string;
+  /**
+   * Motivo del último intento fallido de crear la carpeta automática, o
+   * vacío si nunca falló (o ya se resolvió). Se persiste porque un toast
+   * desaparece en segundos y nadie más volvía a enterarse de que el
+   * proyecto se quedó sin carpeta hasta ir a buscar los archivos.
+   */
+  driveFolderError?: string;
   /** A quién le toca, por id real de usuario. Vacío = de todo el equipo. */
   assigneeIds?: number[];
   /**
@@ -178,6 +185,17 @@ interface ContractBrief {
   generatedAt?: number;
 }
 interface HubState { projects: Project[]; clients: Client[]; meetings: Meeting[]; notes: Note[]; tasks: Task[]; contracts: Contract[]; }
+/**
+ * `onSave` acepta el estado nuevo directo, o una función `(prev) => next`.
+ * La forma función es obligatoria en cualquier continuación async (fetch,
+ * setTimeout) que vaya a fusionar sobre el estado "actual": el componente
+ * que la disparó puede desmontarse antes de que resuelva (p. ej. el modal de
+ * "crear proyecto" se cierra solo, en el mismo tick, tras guardar), y una
+ * `state`/`stateRef` capturada por closure queda congelada en lo que había
+ * ANTES de esa creación. La forma función se resuelve dentro del setState de
+ * React, que siempre ve el estado más reciente sin importar qué se desmontó.
+ */
+type StateUpdater = HubState | ((prev: HubState) => HubState);
 interface WizModule { id: string; name: string; desc: string; price: number; }
 interface WizData { client: string; project: string; scope: string; date: string; advisor: string; modules: WizModule[]; downPct: number; notes: string; monthly: string; monthlyPrice: string; validityDays: number; }
 const emptyWiz = (): WizData => ({ client: "", project: "", scope: "", date: new Date().toISOString().slice(0, 10), advisor: "", modules: [{ id: Math.random().toString(36).slice(2), name: "", desc: "", price: 0 }], downPct: 50, notes: "", monthly: "", monthlyPrice: "", validityDays: 15 });
@@ -681,7 +699,11 @@ function ProjectDriveInline({ folderId, rootName = "Carpeta del proyecto" }: { f
   );
 }
 
-function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; tasks: HubTask[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void }) {
+function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd, onRetryDrive, retryingDrive }: {
+  p: Project; tasks: HubTask[]; onClick: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
+  /** Reintenta crear la carpeta automática cuando el primer intento falló. */
+  onRetryDrive?: (p: Project) => void; retryingDrive?: boolean;
+}) {
   const prog = projProg(p.id, tasks);
   return (
     <div className="pcard" draggable onClick={onClick} onDragStart={onDragStart} onDragEnd={onDragEnd}>
@@ -697,6 +719,15 @@ function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd }: { p: Project; t
             className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--orange2)", borderColor: "var(--orange-line)", textDecoration: "none" }}>
             <DriveIcon /> Drive
           </a>
+        )}
+        {/* Sin carpeta porque el intento automático falló (no porque nadie la
+            vinculó todavía): se avisa aquí, en la tarjeta, para que no haga
+            falta abrir el proyecto para enterarse. */}
+        {!p.link && p.driveFolderError && (
+          <button type="button" className="chip drive-warn" title={`No se pudo crear la carpeta: ${p.driveFolderError}`}
+            onClick={e => { e.stopPropagation(); if (!retryingDrive) onRetryDrive?.(p); }} disabled={retryingDrive}>
+            ⚠ {retryingDrive ? "Creando…" : "Sin carpeta · Reintentar"}
+          </button>
         )}
       </div>
       <div className="bar-prog"><i style={{ width: prog.pct + "%" }} /></div>
@@ -1033,8 +1064,40 @@ function FolderPickerPanel({ onSelect }: { onSelect: (id: string, name: string, 
   );
 }
 
-function DriveFolderSelector({ value, onChange, projectName, clientName, onToast }: {
+/**
+ * Crea la carpeta automática de un proyecto en Drive.
+ *
+ * La usan dos flujos: el intento silencioso al crear el proyecto y el botón
+ * de reintentar cuando ese primer intento falló. Antes cada uno tenía su
+ * propio fetch — al agregar el reintento hubiera quedado una tercera copia.
+ */
+async function crearCarpetaAutoProyecto(
+  name: string,
+  cliente: string,
+): Promise<{ ok: true; link: string; driveFolderId?: string } | { ok: false; error: string }> {
+  try {
+    const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nombreDeCarpeta(name, cliente), parentId: "hub" }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(e.error || `El servidor respondió ${res.status}`);
+    }
+    const d = await res.json() as { id?: string; webViewLink?: string };
+    const link = d.webViewLink || (d.id ? `https://drive.google.com/drive/folders/${d.id}` : "");
+    if (!link) throw new Error("Drive no devolvió un enlace utilizable");
+    return { ok: true, link, driveFolderId: d.id };
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : "error desconocido" };
+  }
+}
+
+function DriveFolderSelector({ value, onChange, projectName, clientName, onToast, error }: {
   value: string; onChange: (link: string) => void; projectName: string; clientName?: string; onToast: (msg: string) => void;
+  /** Motivo del último intento automático fallido (ver `Project.driveFolderError`). */
+  error?: string;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1093,6 +1156,11 @@ function DriveFolderSelector({ value, onChange, projectName, clientName, onToast
         </div>
       ) : (
         <div style={{ ...wrapBox, color: "var(--faint)", fontSize: 12 }}>Sin carpeta de Drive vinculada</div>
+      )}
+      {!value && error && (
+        <div style={{ marginTop: 6, fontSize: 11.5, color: "#f87171", lineHeight: 1.4 }}>
+          ⚠ La carpeta automática no se pudo crear: {error}
+        </div>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <button style={btnSec} onClick={() => setPickerOpen(v => !v)}>
@@ -1490,7 +1558,7 @@ function BriefView({ brief, briefUrl, doc, onGenerate, generating, estadoContrat
   );
 }
 
-interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: HubState) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; canWrite: (scope: HubScope) => boolean; apiTasks: HubTask[]; teamMembers: TeamMember[]; onRefreshTasks: () => void; onBoardRefresh: () => void; }
+interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; onSave: (next: StateUpdater) => void; onToast: (msg: string, undo?: () => void) => void; onNavigate: (tab: Tab) => void; onOpenSheet: (s: SheetKind) => void; onConfirm: (msg: string, onYes: () => void) => void; canWrite: (scope: HubScope) => boolean; apiTasks: HubTask[]; teamMembers: TeamMember[]; onRefreshTasks: () => void; onBoardRefresh: () => void; }
 
 function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, canWrite, apiTasks, teamMembers, onRefreshTasks, onBoardRefresh }: SheetProps) {
   const authUser = useAuth();
@@ -1912,25 +1980,23 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         // proyecto por algo que no tiene nada que ver con él.
         if (!driveFolderLink) {
           void (async () => {
-            try {
-              const res = await fetch(`${DRIVE_API_BASE}/drive/mkdir`, {
-                method: "POST", credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: nombreDeCarpeta(name, cliente), parentId: "hub" }),
-              });
-              if (!res.ok) {
-                const e = await res.json().catch(() => ({})) as { error?: string };
-                throw new Error(e.error || `El servidor respondió ${res.status}`);
-              }
-              const d = await res.json() as { id?: string; webViewLink?: string };
-              const link = d.webViewLink || (d.id ? `https://drive.google.com/drive/folders/${d.id}` : "");
-              if (!link) return;
-              onSave({ ...state, projects: state.projects.map(p => p.id !== newProjId ? p : { ...p, link, driveFolderId: d.id, updatedAt: Date.now() }) });
+            const resultado = await crearCarpetaAutoProyecto(name, cliente);
+            // Se fusiona vía función, no contra un `state`/ref capturado: el
+            // modal ya se cerró solo (`onClose()` corrió junto al `onSave`
+            // que creó el proyecto), así que este componente puede llevar
+            // rato desmontado. Solo el `prev` que entrega React al momento
+            // de aplicar el cambio es prueba de que el proyecto ya existe.
+            if (resultado.ok) {
+              onSave(prev => ({ ...prev, projects: prev.projects.map(p => p.id !== newProjId ? p : { ...p, link: resultado.link, driveFolderId: resultado.driveFolderId, driveFolderError: undefined, updatedAt: Date.now() }) }));
               onToast(`Carpeta de Drive creada para "${name}"`);
-            } catch (e: unknown) {
-              // Se dice. Un fallo callado deja el proyecto sin carpeta y nadie
-              // se entera hasta que va a buscar los archivos.
-              onToast(`El proyecto se creó, pero no se pudo crear su carpeta: ${e instanceof Error ? e.message : "error desconocido"}`);
+            } else {
+              // Se guarda el fallo en el proyecto, no solo en un toast: un
+              // toast se pierde en segundos y nadie más volvía a enterarse de
+              // que la carpeta automática nunca se creó hasta ir a buscar los
+              // archivos. Queda visible en la tarjeta con un botón para
+              // reintentar.
+              onSave(prev => ({ ...prev, projects: prev.projects.map(p => p.id !== newProjId ? p : { ...p, driveFolderError: resultado.error, updatedAt: Date.now() }) }));
+              onToast(`El proyecto se creó, pero no se pudo crear su carpeta: ${resultado.error}`);
             }
           })();
         }
@@ -2027,14 +2093,16 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
       </div>
       <div className="field">
         <label>Carpeta de Drive</label>
-        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={p.name} onToast={onToast} />
+        <DriveFolderSelector value={driveFolderLink} onChange={setDriveFolderLink} projectName={p.name} onToast={onToast} error={p.driveFolderError} />
       </div>
       <button className="save" onClick={() => {
         const newStatus = V("st") as ProjStatus;
         const projects = state.projects.map(x => {
           if (x.id !== p.id) return x;
           const computedProg = projProg(x.id, apiTasks).pct;
-          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, driveFolderId: idDeCarpeta(driveFolderLink) ?? undefined, assigneeIds: asignados, marketing: marketingOn, updatedAt: Date.now() };
+          // Guardar un enlace a mano también cuenta como resolver la carpeta:
+          // si quedaba un aviso de fallo automático, ya no tiene sentido.
+          const u: Record<string, unknown> = { ...x, name: V("n").trim() || x.name, client: V("cli").trim(), type: V("ty").trim(), prio: V("prio"), owner: V("ow").trim(), due: V("due"), prog: computedProg, notes: V("no"), link: driveFolderLink, driveFolderId: idDeCarpeta(driveFolderLink) ?? undefined, driveFolderError: driveFolderLink ? undefined : x.driveFolderError, assigneeIds: asignados, marketing: marketingOn, updatedAt: Date.now() };
           if (newStatus !== x.status) advanceStageObj(u, newStatus, "status");
           return u as unknown as Project;
         });
@@ -3476,7 +3544,7 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
 }
 
 function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted, onNew }: {
-  state: HubState; onSave: (n: HubState) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
+  state: HubState; onSave: (n: StateUpdater) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
   onToast: (m: string) => void; projView: ProjView; setProjView: (v: ProjView) => void;
   searchQ: string; setSearchQ: (v: string) => void; filterPrio: string; setFilterPrio: (v: string) => void;
   apiTasks: HubTask[]; onRefreshTasks: () => void;
@@ -3484,6 +3552,23 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  const [retryingDriveIds, setRetryingDriveIds] = useState<Set<string>>(new Set());
+  const retryDriveFolder = async (p: Project) => {
+    if (retryingDriveIds.has(p.id)) return;
+    setRetryingDriveIds(prev => new Set(prev).add(p.id));
+    const resultado = await crearCarpetaAutoProyecto(p.name, p.client);
+    setRetryingDriveIds(prev => { const next = new Set(prev); next.delete(p.id); return next; });
+    // Fusión vía función: el reintento tarda (va a la red) y esta vista se
+    // desmonta apenas se cambia de pestaña, así que un `state` de closure
+    // podría estar viejo. `prev` lo entrega React al aplicar el cambio.
+    if (resultado.ok) {
+      onSave(prev => ({ ...prev, projects: prev.projects.map(x => x.id !== p.id ? x : { ...x, link: resultado.link, driveFolderId: resultado.driveFolderId, driveFolderError: undefined, updatedAt: Date.now() }) }));
+      onToast(`Carpeta de Drive creada para "${p.name}"`);
+    } else {
+      onSave(prev => ({ ...prev, projects: prev.projects.map(x => x.id !== p.id ? x : { ...x, driveFolderError: resultado.error, updatedAt: Date.now() }) }));
+      onToast(`No se pudo crear la carpeta: ${resultado.error}`);
+    }
+  };
   const fp = state.projects.filter(p => (!filterPrio || p.prio === filterPrio) && (!searchQ || (p.name + p.client + p.type).toLowerCase().includes(searchQ)));
   const ft = apiTasks.filter(t => {
     if (filterPrio && t.priority !== filterPrio) return false;
@@ -3548,7 +3633,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
                 onDragLeave={() => setDragOver(null)}
                 onDrop={() => dropProj(s.id)}>
                 <h3><span className="top"><span className="dot" style={{ background: s.color }} />{s.label}</span><span className="n">{items.length}</span></h3>
-                {items.length ? items.map(p => <ProjCard key={p.id} p={p} tasks={apiTasks} onClick={() => onOpenProject(p.id)} onDragStart={e => { setDragId(p.id); e.dataTransfer.setData("text/plain", p.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} />) : <div className="col-empty">—</div>}
+                {items.length ? items.map(p => <ProjCard key={p.id} p={p} tasks={apiTasks} onClick={() => onOpenProject(p.id)} onDragStart={e => { setDragId(p.id); e.dataTransfer.setData("text/plain", p.id); }} onDragEnd={() => { setDragId(null); setDragOver(null); }} onRetryDrive={retryDriveFolder} retryingDrive={retryingDriveIds.has(p.id)} />) : <div className="col-empty">—</div>}
               </div>
             );
           })}
@@ -3561,7 +3646,15 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
             <div key={p.id} className="gcard" onClick={() => onOpenProject(p.id)}>
               <div className="gt">{p.name}</div><div className="gsub">{p.client} · {p.type}</div>
               <div className="gbody">{p.notes || ""}</div>
-              <div className="gfoot"><span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{projProg(p.id, apiTasks).pct}%</span></div>
+              <div className="gfoot">
+                <span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{projProg(p.id, apiTasks).pct}%</span>
+                {!p.link && p.driveFolderError && (
+                  <button type="button" className="chip drive-warn" title={`No se pudo crear la carpeta: ${p.driveFolderError}`}
+                    onClick={e => { e.stopPropagation(); if (!retryingDriveIds.has(p.id)) retryDriveFolder(p); }} disabled={retryingDriveIds.has(p.id)}>
+                    ⚠ {retryingDriveIds.has(p.id) ? "Creando…" : "Sin carpeta · Reintentar"}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -3891,7 +3984,7 @@ function MeetView({ state, onOpen }: { state: HubState; onOpen: (id: string) => 
   );
 }
 
-function NotesView({ state, onSave, onOpen, onToast, filterCat, setFilterCat, searchQ, setSearchQ }: { state: HubState; onSave: (n: HubState) => void; onOpen: (id: string) => void; onToast: (m: string) => void; filterCat: string; setFilterCat: (v: string) => void; searchQ: string; setSearchQ: (v: string) => void }) {
+function NotesView({ state, onSave, onOpen, onToast, filterCat, setFilterCat, searchQ, setSearchQ }: { state: HubState; onSave: (n: StateUpdater) => void; onOpen: (id: string) => void; onToast: (m: string) => void; filterCat: string; setFilterCat: (v: string) => void; searchQ: string; setSearchQ: (v: string) => void }) {
   const q = searchQ.trim();
   const list = state.notes
     .filter(n => (!filterCat || n.cat === filterCat) && (!q || (n.title + " " + (n.body || "")).toLowerCase().includes(q)))
@@ -5773,42 +5866,53 @@ export default function EjecutivoPage() {
     });
   }, [storageKey]);
 
-  const setState = useCallback((next: HubState) => {
+  const setState = useCallback((nextOrUpdater: StateUpdater) => {
     dirtyRef.current = true;
     const seq = ++saveSeqRef.current;
-    setStateRaw(next);
-    saveState(storageKey, next);
-    if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+    // Resolver la forma función DENTRO del setState de React (no contra un
+    // `state`/`stateRef` de closure): es la única fuente que no se congela
+    // si el componente que llamó a `onSave` se desmontó mientras tanto (p.
+    // ej. una continuación async de "crear carpeta de Drive" que termina
+    // después de que el modal que la disparó ya se cerró solo).
+    setStateRaw(prev => {
+      const next = typeof nextOrUpdater === "function" ? nextOrUpdater(prev) : nextOrUpdater;
+      saveState(storageKey, next);
+      if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
 
-    // Reintento con espera creciente. Un corte de red de unos segundos no
-    // puede dejar el tablero guardado solo en el navegador de una persona.
-    const enviar = (intento: number) => {
-      void patchHubToServer(next, versionRef.current).then(result => {
-        // Si el usuario siguió editando, ese cambio más nuevo manda: se
-        // descarta este envío y su reintento.
-        if (saveSeqRef.current !== seq) return;
+      // Reintento con espera creciente. Un corte de red de unos segundos no
+      // puede dejar el tablero guardado solo en el navegador de una persona.
+      const enviar = (intento: number) => {
+        void patchHubToServer(next, versionRef.current).then(result => {
+          // Si el usuario siguió editando, ese cambio más nuevo manda: se
+          // descarta este envío y su reintento.
+          if (saveSeqRef.current !== seq) return;
 
-        if (result.ok) {
-          versionRef.current = result.version;
-          dirtyRef.current = false;
-          setErrorGuardado(null);
-          adoptServerData(result.data, result.version);
-          return;
-        }
+          if (result.ok) {
+            versionRef.current = result.version;
+            dirtyRef.current = false;
+            setErrorGuardado(null);
+            adoptServerData(result.data, result.version);
+            return;
+          }
 
-        if (!result.permanente && intento < 4) {
-          const espera = 2000 * 2 ** intento;
-          serverSaveTimer.current = setTimeout(() => enviar(intento + 1), espera);
-          return;
-        }
-        // Agotados los reintentos (o fallo que no se arregla reintentando):
-        // se dice. `dirtyRef` sigue en true a propósito — hay trabajo local
-        // sin enviar y traer del servidor lo borraría.
-        setErrorGuardado(result.error);
-      });
-    };
+          if (!result.permanente && intento < 4) {
+            const espera = 2000 * 2 ** intento;
+            serverSaveTimer.current = setTimeout(() => enviar(intento + 1), espera);
+            return;
+          }
+          // Agotados los reintentos (o fallo que no se arregla reintentando):
+          // se dice. `dirtyRef` sigue en true a propósito — hay trabajo local
+          // sin enviar y traer del servidor lo borraría.
+          setErrorGuardado(result.error);
+        });
+      };
 
-    serverSaveTimer.current = setTimeout(() => enviar(0), 1500);
+      // En StrictMode (dev) React puede invocar este updater dos veces; el
+      // clearTimeout de arriba hace que solo el timer de la última llamada
+      // sobreviva, así que el doble-invoke no duplica el guardado real.
+      serverSaveTimer.current = setTimeout(() => enviar(0), 1500);
+      return next;
+    });
   }, [storageKey, adoptServerData]);
 
   useEffect(() => {

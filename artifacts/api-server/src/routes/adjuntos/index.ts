@@ -33,7 +33,7 @@ import {
   NOMBRE_TIPO,
 } from "../../lib/adjuntos";
 import { resolveBoard } from "../../lib/hub-board";
-import { normalizarRaices, type RaicesDrive } from "../../lib/raices-drive";
+import { normalizarRaices, carpetaPropiaDe, type RaicesDrive } from "../../lib/raices-drive";
 import { normalizeRole } from "@workspace/roles";
 
 const router: IRouter = Router();
@@ -70,7 +70,7 @@ async function carpetaDestino(tipo: string, entidadId: string): Promise<string |
   if (tipo === "project") {
     const proyectos = Array.isArray(board?.data?.projects) ? (board!.data!.projects as Record<string, unknown>[]) : [];
     const p = proyectos.find((x) => String(x?.id) === entidadId);
-    const propia = String(p?.driveFolderId ?? "").trim();
+    const propia = carpetaPropiaDe(p);
     if (propia) return propia;
   }
   return raices.hub;

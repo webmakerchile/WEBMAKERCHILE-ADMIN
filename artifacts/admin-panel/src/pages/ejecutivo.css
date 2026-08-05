@@ -144,6 +144,9 @@
 .hub-root .chip.prio-baja{color:#6aa0c0;border-color:rgba(106,160,192,.4);}
 .hub-root .chip.due.soon{color:var(--gold);border-color:rgba(201,164,74,.45);}
 .hub-root .chip.due.overdue{color:var(--red);border-color:rgba(192,86,58,.55);}
+.hub-root .chip.drive-warn{font-family:inherit;background:rgba(248,113,113,.08);color:#f87171;border-color:rgba(248,113,113,.4);cursor:pointer;}
+.hub-root .chip.drive-warn:hover:not(:disabled){background:rgba(248,113,113,.16);border-color:rgba(248,113,113,.6);}
+.hub-root .chip.drive-warn:disabled{opacity:.6;cursor:default;}
 .hub-root .pcard .bar-prog{height:5px;background:var(--line);border-radius:4px;margin-top:9px;overflow:hidden;}
 .hub-root .pcard .bar-prog i{display:block;height:100%;background:var(--orange);border-radius:4px;}
 .hub-root .col-empty{color:var(--faint);font-size:10.5px;text-align:center;padding:14px 0;font-family:'IBM Plex Mono',monospace;letter-spacing:1px;}

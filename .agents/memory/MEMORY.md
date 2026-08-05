@@ -39,3 +39,4 @@
 - [Señal de modo Plan vs Build](plan-vs-build-mode.md) — ante la duda, el rechazo real de una herramienta manda, no la inferencia por contexto.
 - [Dedup de avisos por destinatario](avisos-dedup-por-destinatario.md) — clave de dedup sin el destinatario colisiona entre personas y descarta avisos en silencio.
 - [Bandejas de tickets: embebida vs. nav vs. vista completa](tickets-bandejas-por-area.md) — "no lo veo": build/pestaña antes que bug; embebido≠nav≠vista completa embebida (ver contador+header).
+- [Continuaciones async que pisan el estado al desmontar](onsave-stale-unmount.md) — un stateRef sincronizado "por render" se congela si el componente se desmonta antes de resolver; fusionar con función `(prev)=>next` dentro del setState real, no con un ref capturado.

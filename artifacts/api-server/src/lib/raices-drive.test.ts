@@ -3,7 +3,7 @@
 // vacía. Es el mismo fallo que ya tuvimos con los ids escritos a fuego.
 
 import { describe, it, expect } from "vitest";
-import { idDeRaiz, normalizarRaices, RAICES_POR_DEFECTO, urlDeRaiz } from "./raices-drive";
+import { carpetaPropiaDe, idDeRaiz, normalizarRaices, RAICES_POR_DEFECTO, urlDeRaiz } from "./raices-drive";
 
 const ID = "1af5QA5n0uE1DH28nqVbSzBXZLM5bR_kB";
 
@@ -60,5 +60,31 @@ describe("normalizar las raíces", () => {
 describe("enlace para comprobarla a ojo", () => {
   it("abre la carpeta en Drive", () => {
     expect(urlDeRaiz(ID)).toBe(`https://drive.google.com/drive/folders/${ID}`);
+  });
+});
+
+describe("carpeta propia de un proyecto", () => {
+  // Este es el fallback que faltaba: un proyecto vinculado a mano (o creado
+  // antes de que existiera `driveFolderId`) solo tiene `link`. Sin esto los
+  // archivos subidos caían en la raíz del Hub en vez de en su carpeta.
+  it("usa el id ya extraído si está", () => {
+    expect(carpetaPropiaDe({ driveFolderId: ID })).toBe(ID);
+  });
+
+  it("cae al enlace cuando no hay id propio", () => {
+    expect(carpetaPropiaDe({ link: `https://drive.google.com/drive/folders/${ID}` })).toBe(ID);
+    expect(carpetaPropiaDe({ driveFolderId: "", link: ID })).toBe(ID);
+  });
+
+  it("prioriza el id propio sobre el enlace si ambos están", () => {
+    const otro = "z" + ID.slice(1);
+    expect(carpetaPropiaDe({ driveFolderId: otro, link: `https://drive.google.com/drive/folders/${ID}` })).toBe(otro);
+  });
+
+  it("sin id ni enlace utilizable, no se inventa nada", () => {
+    expect(carpetaPropiaDe({})).toBeNull();
+    expect(carpetaPropiaDe({ link: "texto suelto sin url" })).toBeNull();
+    expect(carpetaPropiaDe(null)).toBeNull();
+    expect(carpetaPropiaDe(undefined)).toBeNull();
   });
 });

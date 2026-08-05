@@ -43,6 +43,19 @@ export function idDeRaiz(valor: unknown): string | null {
   return /^[A-Za-z0-9_-]{10,}$/.test(s) ? s : null;
 }
 
+/**
+ * Carpeta propia de un proyecto (no la raíz general del Hub).
+ *
+ * Prioriza el id ya extraído (`driveFolderId`) y cae al enlace guardado en
+ * `link` — que es lo único que tienen los proyectos vinculados a mano o
+ * creados antes de que existiera `driveFolderId`. Sin este fallback esos
+ * proyectos no resolvían carpeta propia y sus archivos subidos caían en la
+ * raíz del Hub en vez de en la carpeta que la persona sí vinculó.
+ */
+export function carpetaPropiaDe(p: { driveFolderId?: unknown; link?: unknown } | null | undefined): string | null {
+  return idDeRaiz(p?.driveFolderId) ?? idDeRaiz(p?.link);
+}
+
 /** Normaliza lo guardado, cayendo a los valores de arranque. */
 export function normalizarRaices(crudas: Partial<RaicesDrive> | null | undefined): RaicesDrive {
   return {

@@ -14,3 +14,7 @@ La herramienta de captura de pantalla navega **sin cookies**: en esta app solo v
 **Why:** la única vía visual autenticada es el subagente de testing; curl + flip de rol es la vía barata para probar gates y payloads reales sin montar OAuth.
 
 **How to apply:** cualquier verificación en vivo de rutas bajo sesión/rol en esta app (gates 403, catálogos filtrados por rol, páginas nuevas). Siempre dejar DB y rol como estaban.
+
+## El tablero de dirección (Hub) exige un dueño
+
+Si la única cuenta en DB dev es la de prueba (`team_role='tester'`), el Hub entero queda sin dueño: el backend busca un `role='superadmin'` o `team_role='ceo'` para resolver a QUIÉN pertenece el tablero, y si no encuentra ninguno, GET /hub devuelve tablero vacío y PATCH /hub devuelve 409 "todavía no hay tablero" — se ve igual que un fallo de guardado real. Antes de probar cualquier flujo del Hub (proyectos/clientes/tareas/notas/contratos) en dev, confirmar que existe un dueño; si no, aplicar el mismo flip de rol de arriba (`team_role='ceo'`) a la cuenta de prueba, probar, y restaurar a `tester` al final igual que cualquier otro flip.
