@@ -3404,6 +3404,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
    VISTAS
    ============================================================ */
 function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubState; onOpenProject: (id: string) => void; onNavigate: (tab: Tab) => void; apiTasks: HubTask[] }) {
+  const authUser = useAuth();
+  const isDev = authUser?.teamRole === "dev";
   const active = state.projects.filter(p => p.status !== "done");
   const avg = state.projects.length ? Math.round(state.projects.reduce((a, p) => a + projProg(p.id, apiTasks).pct, 0) / state.projects.length) : 0;
   const urgent = state.projects.filter(p => p.prio === "alta" && p.status !== "done").length;
@@ -3457,10 +3459,14 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
           {acts.length ? acts.map(p => <div key={p.id} className="aitem"><span className="tag">{statusOf(p.status).label}</span><span>{p.name} · {p.client} → {projProg(p.id, apiTasks).pct}%</span></div>) : <EmptyState title="Sin actividad reciente" hint="Tu historial aparecerá aquí." icon={<ActivityFeed />} />}
         </div>
       </div>
-      {/* Tickets del área ventas: lo que las otras áreas le piden al ejecutivo.
-          Va al final del dashboard para no estorbar los KPIs ni el mapa. */}
+      {/* Tickets del área de quien mira: Hub Ejecutivo lo visitan ventas/dirección
+          Y dev, así que la bandeja no puede quedar fija en "ventas" o al dev
+          nunca le muestra nada relevante. Va al final para no estorbar los
+          KPIs ni el mapa. */}
       <div style={{ marginTop: 14 }}>
-        <TicketsInline title="Solicitudes para ventas" area="ventas" />
+        {isDev
+          ? <TicketsInline title="Solicitudes para desarrollo" area="desarrollo" />
+          : <TicketsInline title="Solicitudes para ventas" area="ventas" />}
       </div>
     </div>
   );
