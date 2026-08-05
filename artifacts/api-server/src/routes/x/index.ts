@@ -365,10 +365,15 @@ async function uploadVideoChunked(
  * STATUS polling) using the OAuth 2.0 user-context Bearer token, then publishes a
  * tweet referencing the resulting media_id. Requires the `media.write` scope.
  *
- * Tries the v2 endpoint first (api.x.com/2/media/upload). If v2 returns 403/404
- * (typical when the app/tier hasn't enabled v2 media), it falls back to the
- * legacy v1.1 endpoint (upload.twitter.com/1.1/media/upload.json) which is
- * available on the Free tier.
+ * Tries the v2 endpoint first (api.x.com/2/media/upload). v2 access is
+ * inconsistent across X API tiers and has been observed failing with
+ * different status codes (403/404 when the path is plainly unavailable, but
+ * also 400 and others depending on the account) rather than a single
+ * predictable code. So ANY failure at any stage of the v2 attempt (INIT,
+ * APPEND, FINALIZE or STATUS) falls back to a fresh attempt via the legacy
+ * v1.1 endpoint (upload.twitter.com/1.1/media/upload.json), which is the one
+ * known to work on the current plan. If v1.1 also fails, both errors are
+ * combined into one message so it's clear neither path is the fix.
  */
 export async function publishXTweetWithVideo(
   user: any,
@@ -382,12 +387,16 @@ export async function publishXTweetWithVideo(
 
   try {
     let upload = await uploadVideoChunked(X_MEDIA_UPLOAD_URL_V2, token, videoBuffer);
-    if ("error" in upload && (upload.status === 403 || upload.status === 404)) {
-      console.warn(`[X] v2 media upload returned ${upload.status}; falling back to v1.1`);
-      upload = await uploadVideoChunked(X_MEDIA_UPLOAD_URL_V1, token, videoBuffer);
-    }
     if ("error" in upload) {
-      return { success: false, error: upload.error };
+      const v2Error = upload.error;
+      console.warn(`[X] v2 media upload failed (${v2Error}); falling back to v1.1`);
+      upload = await uploadVideoChunked(X_MEDIA_UPLOAD_URL_V1, token, videoBuffer);
+      if ("error" in upload) {
+        return {
+          success: false,
+          error: `Subida de video a X falló por las dos vías (v2: ${v2Error}; v1.1: ${upload.error})`,
+        };
+      }
     }
     const mediaId = upload.mediaId;
 

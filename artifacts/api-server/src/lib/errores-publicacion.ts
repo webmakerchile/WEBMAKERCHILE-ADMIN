@@ -53,7 +53,16 @@ const REGLAS: Regla[] = [
     prueba: /401|unauthorized|invalid token/i,
     mensaje: "La conexión con X caducó. Vuelve a conectarla desde Cuentas Sociales.",
   },
-  // Instagram.
+  // Instagram: token de servidor inválido o vencido. Meta devuelve mensajes
+  // técnicos distintos según el caso ("Cannot parse access token", "Invalid
+  // OAuth access token", #190) pero todos significan lo mismo: hay que pegar
+  // un token nuevo en Ajustes, no reintentar.
+  {
+    red: "instagram",
+    prueba: /access token|OAuthException|cannot parse|#190/i,
+    mensaje:
+      "El token de acceso de Instagram no es válido o venció. Hay que generar uno nuevo en Meta Business y actualizarlo en Ajustes → Instagram; reintentar no lo arregla.",
+  },
   {
     red: "instagram",
     prueba: /aspect ratio|not supported.*(format|ratio)/i,
@@ -101,7 +110,7 @@ export function explicarErrorPublicacion(red: RedPublicacion, crudo: string): st
 /** true si reintentar no puede funcionar hasta que alguien cambie algo. */
 export function requiereIntervencion(red: RedPublicacion, crudo: string): boolean {
   const texto = String(crudo || "");
-  return /#200|pages_manage_posts|pages_read_engagement|#190|invalid_grant|credits? depleted|usage cap|quotaExceeded|unauthorized|Invalid Credentials/i.test(
+  return /#200|pages_manage_posts|pages_read_engagement|#190|invalid_grant|credits? depleted|usage cap|quotaExceeded|unauthorized|Invalid Credentials|access token|OAuthException|cannot parse/i.test(
     texto,
   );
 }

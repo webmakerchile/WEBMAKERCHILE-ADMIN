@@ -86,3 +86,95 @@ describe("publishXPost", () => {
     expect(r.error).toBe("ETIMEDOUT");
   });
 });
+
+// Bug real de producción: el intento v2 falló con 400 en INIT (no 403/404), y
+// el código solo reintentaba por v1.1 ante 403/404, así que la publicación con
+// video en X quedaba fallando siempre aunque v1.1 sí funciona en el plan actual.
+describe("publishXTweetWithVideo", () => {
+  let realFetch: typeof globalThis.fetch;
+  beforeEach(() => { realFetch = globalThis.fetch; });
+  afterEach(() => { globalThis.fetch = realFetch; vi.restoreAllMocks(); });
+
+  const videoBuffer = Buffer.from("fake-video-bytes");
+
+  it("falls back to v1.1 when v2 INIT fails with an unexpected 400 (not just 403/404)", async () => {
+    const fetchSpy = vi.fn(async (url: any) => {
+      const u = String(url);
+      if (u.startsWith("https://api.x.com/2/media/upload")) {
+        return { ok: false, status: 400, text: async () => "Bad Request" };
+      }
+      if (u.startsWith("https://upload.twitter.com/1.1/media/upload.json")) {
+        if (u.includes("command=FINALIZE")) {
+          return { ok: true, status: 200, json: async () => ({ data: { id: "v1-media-1" } }) };
+        }
+        if (u.includes("command=INIT")) {
+          return { ok: true, status: 200, json: async () => ({ media_id_string: "v1-media-1" }) };
+        }
+        // APPEND: bare URL (no query string), FormData body.
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      if (u.startsWith("https://api.twitter.com/2/tweets")) {
+        return { ok: true, status: 201, json: async () => ({ data: { id: "tweet-1" } }) };
+      }
+      throw new Error(`fetch inesperado a ${u}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { publishXTweetWithVideo } = await import("./index");
+    const r = await publishXTweetWithVideo(validUser, "un video", videoBuffer);
+    expect(r.success).toBe(true);
+    expect(r.postId).toBe("tweet-1");
+    const calledV1 = (fetchSpy.mock.calls as unknown as Array<[string]>).some((c) =>
+      String(c[0]).startsWith("https://upload.twitter.com"),
+    );
+    expect(calledV1).toBe(true);
+  });
+
+  it("returns one combined, clear error when both v2 and v1.1 fail", async () => {
+    const fetchSpy = vi.fn(async (url: any) => {
+      const u = String(url);
+      if (u.startsWith("https://api.x.com/2/media/upload")) {
+        return { ok: false, status: 400, text: async () => "v2 broken" };
+      }
+      if (u.startsWith("https://upload.twitter.com/1.1/media/upload.json")) {
+        return { ok: false, status: 401, text: async () => "v1 unauthorized" };
+      }
+      throw new Error(`fetch inesperado a ${u}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { publishXTweetWithVideo } = await import("./index");
+    const r = await publishXTweetWithVideo(validUser, "un video", videoBuffer);
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("400");
+    expect(r.error).toContain("401");
+  });
+
+  it("does not fall back when v2 succeeds outright", async () => {
+    const fetchSpy = vi.fn(async (url: any) => {
+      const u = String(url);
+      if (u.startsWith("https://api.x.com/2/media/upload")) {
+        if (u.includes("command=FINALIZE")) {
+          return { ok: true, status: 200, json: async () => ({ data: { id: "v2-media-1" } }) };
+        }
+        if (u.includes("command=INIT")) {
+          return { ok: true, status: 200, json: async () => ({ data: { id: "v2-media-1" } }) };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      if (u.startsWith("https://api.twitter.com/2/tweets")) {
+        return { ok: true, status: 201, json: async () => ({ data: { id: "tweet-2" } }) };
+      }
+      throw new Error(`fetch inesperado a ${u}`);
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { publishXTweetWithVideo } = await import("./index");
+    const r = await publishXTweetWithVideo(validUser, "un video", videoBuffer);
+    expect(r.success).toBe(true);
+    const calledV1 = (fetchSpy.mock.calls as unknown as Array<[string]>).some((c) =>
+      String(c[0]).startsWith("https://upload.twitter.com"),
+    );
+    expect(calledV1).toBe(false);
+  });
+});

@@ -32,6 +32,12 @@ describe("explicarErrorPublicacion", () => {
     expect(explicarErrorPublicacion("instagram", "Unsupported aspect ratio")).toContain("4:5");
   });
 
+  it("traduce el token de Instagram inválido o vencido (error real visto en producción)", () => {
+    const m = explicarErrorPublicacion("instagram", "Invalid OAuth access token - Cannot parse access token");
+    expect(m).toContain("Ajustes");
+    expect(m).not.toContain("Cannot parse");
+  });
+
   it("no aplica una regla de una red a otra distinta", () => {
     // El #200 es de Facebook: en LinkedIn ese texto no significa lo mismo.
     expect(explicarErrorPublicacion("linkedin", "(#200) algo de grupos")).toBe("(#200) algo de grupos");
@@ -56,6 +62,10 @@ describe("requiereIntervencion", () => {
 
   it("no marca los transitorios", () => {
     expect(requiereIntervencion("instagram", "ETIMEDOUT")).toBe(false);
+  });
+
+  it("marca el token de Instagram inválido: reintentar no lo arregla", () => {
+    expect(requiereIntervencion("instagram", "Invalid OAuth access token - Cannot parse access token")).toBe(true);
   });
 });
 
