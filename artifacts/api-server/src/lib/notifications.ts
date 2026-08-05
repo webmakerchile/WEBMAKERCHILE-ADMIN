@@ -95,7 +95,9 @@ export async function createNotification(input: CreateNotificationInput) {
 /**
  * Avisa a la dirección: crea la notificación (panel + push + DM de Discord si
  * lo activó) para cada cuenta aprobada cuyo rol normalizado es CEO.
- * `excludeUserId` evita el auto-aviso cuando quien actúa es la propia dirección.
+ * `excludeUserId` evita el auto-aviso cuando quien actúa (o ya fue avisada por
+ * otra vía, p. ej. como responsable directa) es una de las mismas cuentas de
+ * dirección — acepta un id suelto o varios.
  * Devuelve cuántos avisos se crearon; un destinatario que falla no bloquea al resto.
  */
 export async function notifyCeos(input: {
@@ -103,15 +105,22 @@ export async function notifyCeos(input: {
   body?: string | null;
   link?: string | null;
   type?: NotificationType;
-  excludeUserId?: number;
+  excludeUserId?: number | number[];
 }): Promise<number> {
+  const excluidos = new Set(
+    input.excludeUserId === undefined
+      ? []
+      : Array.isArray(input.excludeUserId)
+        ? input.excludeUserId
+        : [input.excludeUserId],
+  );
   const team = await db
     .select({ id: users.id, role: users.role, teamRole: users.teamRole, approvalStatus: users.approvalStatus })
     .from(users);
   const ceos = team.filter(
     (u) =>
       u.approvalStatus === "approved" &&
-      u.id !== input.excludeUserId &&
+      !excluidos.has(u.id) &&
       normalizeRole(u.teamRole, u.role === "superadmin") === "ceo",
   );
   let sent = 0;
@@ -130,6 +139,54 @@ export async function notifyCeos(input: {
     }
   }
   return sent;
+}
+
+/**
+ * Avisa a un grupo puntual de responsables (por id) y, además, a dirección —
+ * sin duplicar cuando alguno de los responsables ya es de dirección.
+ *
+ * Pensado para eventos puntuales que hoy no avisan a nadie (p. ej. un fallo de
+ * IA dentro de un proyecto): cada responsable conocido recibe la notificación
+ * una vez, y dirección siempre queda al tanto aunque no tenga responsables
+ * resueltos (p. ej. un contrato, que no tiene asignados en este panel).
+ *
+ * Nunca lanza: un fallo de notificación no debe tumbar la respuesta HTTP del
+ * flujo que la dispara (normalmente ya está en su propio camino de error).
+ */
+export async function notifyResponsablesYDireccion(input: {
+  responsableIds: readonly (number | null | undefined)[];
+  title: string;
+  body?: string | null;
+  link?: string | null;
+  type?: NotificationType;
+}): Promise<void> {
+  const ids = Array.from(
+    new Set(input.responsableIds.filter((id): id is number => Number.isInteger(id) && (id as number) > 0)),
+  );
+  for (const userId of ids) {
+    try {
+      await createNotification({
+        userId,
+        type: input.type ?? "system",
+        title: input.title,
+        body: input.body ?? null,
+        link: input.link ?? null,
+      });
+    } catch (err: any) {
+      console.error("[Notifications] notifyResponsablesYDireccion responsable failed:", err?.message || err);
+    }
+  }
+  try {
+    await notifyCeos({
+      title: input.title,
+      body: input.body ?? null,
+      link: input.link ?? null,
+      type: input.type,
+      excludeUserId: ids,
+    });
+  } catch (err: any) {
+    console.error("[Notifications] notifyResponsablesYDireccion dirección failed:", err?.message || err);
+  }
 }
 
 /** Punto único de envío del DM. Exportado para tests. */

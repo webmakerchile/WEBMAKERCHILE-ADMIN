@@ -5,7 +5,7 @@ import { eq, and, asc, desc, sql, gte, lte, isNull, isNotNull, or, ne } from "dr
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { hubWriteScopesFor, normalizeRole } from "@workspace/roles";
-import { createNotification } from "../../lib/notifications";
+import { createNotification, notifyResponsablesYDireccion } from "../../lib/notifications";
 import { recordActivity } from "../../lib/activity";
 import { claveSemanaActual } from "../../lib/sprint-semanal";
 import { generarPlanContenido, type VideoSemana } from "../../lib/contenido-ia";
@@ -713,6 +713,10 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
     res.status(403).json({ error: "Solo redes, marketing o dirección pueden generar el plan" });
     return;
   }
+  // Declarados fuera del try: si la IA falla DESPUÉS de resolverlos, el
+  // catch también necesita saber a quién avisar además de a dirección.
+  let socialUser: { id: number } | undefined;
+  let editoraUser: { id: number } | undefined;
   try {
     const user = me(req);
     const semana = claveSemanaActual();
@@ -738,8 +742,8 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
       .from(users)
       .where(eq(users.approvalStatus, "approved"))
       .orderBy(asc(users.id));
-    const socialUser = equipo.find((p) => normalizeRole(p.teamRole) === "social");
-    const editoraUser = equipo.find((p) => normalizeRole(p.teamRole) === "editora");
+    socialUser = equipo.find((p) => normalizeRole(p.teamRole) === "social");
+    editoraUser = equipo.find((p) => normalizeRole(p.teamRole) === "editora");
     if (!socialUser || !editoraUser) {
       res.status(400).json({
         error: !socialUser
@@ -748,6 +752,10 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
       });
       return;
     }
+    // Copias no-opcionales: la transacción de abajo es un closure aparte y
+    // TS no arrastra el chequeo anterior dentro de él.
+    const social = socialUser;
+    const editora = editoraUser;
 
     // Videos en juego: los agendados esta semana + los recientes sin fecha.
     const ventana = await db
@@ -817,7 +825,7 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
               ...comun,
               title: item.redes.titulo,
               notes: item.redes.descripcion || null,
-              assigneeId: socialUser.id,
+              assigneeId: social.id,
               orderIndex: base + i * 2,
               checklist: chk(item.redes.checklist, "r"),
             },
@@ -825,7 +833,7 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
               ...comun,
               title: item.edicion.titulo,
               notes: item.edicion.descripcion || null,
-              assigneeId: editoraUser.id,
+              assigneeId: editora.id,
               orderIndex: base + i * 2 + 1,
               checklist: chk(item.edicion.checklist, "e"),
             },
@@ -848,6 +856,12 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
     }
     const creadas = resultado.creadas;
     if (creadas.length === 0) {
+      await notifyResponsablesYDireccion({
+        responsableIds: [socialUser.id, editoraUser.id],
+        title: "⚠️ No se pudo generar el plan de contenido",
+        body: `El plan de contenido de la semana ${semana} no generó tareas nuevas (la IA no entregó nada usable). Se puede reintentar.`,
+        link: "/mis-tareas",
+      });
       res.status(502).json({ error: "La IA no entregó un plan usable, intenta de nuevo" });
       return;
     }
@@ -877,6 +891,12 @@ router.post("/hub/tasks/generar-contenido", async (req: Request, res: Response) 
     res.status(201).json({ semana, pares: creadas.length, tareas: creadas.length * 2 });
   } catch (err) {
     console.error("[hub/tasks/generar-contenido POST]", err);
+    await notifyResponsablesYDireccion({
+      responsableIds: [socialUser?.id, editoraUser?.id],
+      title: "⚠️ No se pudo generar el plan de contenido",
+      body: "El plan de contenido de esta semana falló (IA no disponible). Se puede reintentar.",
+      link: "/mis-tareas",
+    });
     res.status(502).json({ error: "No se pudo generar el plan de contenido (IA no disponible). Intenta de nuevo." });
   }
 });

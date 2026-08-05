@@ -14,7 +14,7 @@ import { recordActivity } from "../../lib/activity";
 import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
 import { handoffContractClosed, handoffProjectDelivered } from "../../lib/handoffs";
 import { buildCeoAvisos, diffHubEntities, entityLabel, entityState } from "../../lib/hub-diff";
-import { notifyCeos } from "../../lib/notifications";
+import { notifyCeos, notifyResponsablesYDireccion } from "../../lib/notifications";
 
 const router: IRouter = Router();
 
@@ -568,6 +568,20 @@ function sanitizeBrief(brief: z.infer<typeof briefSchema>): z.infer<typeof brief
   };
 }
 
+function avisarFalloBriefIA(req: Request): Promise<void> {
+  const u = getUser(req);
+  const { contract } = (req.body ?? {}) as { contract?: Record<string, unknown> };
+  const nombre = String(contract?.title || contract?.client || "").trim();
+  return notifyResponsablesYDireccion({
+    responsableIds: [u?.id],
+    title: "⚠️ No se pudo generar el brief técnico",
+    body: nombre
+      ? `La IA no logró armar el brief técnico del contrato "${nombre}". Se puede reintentar desde su ficha.`
+      : "La IA no logró armar el brief técnico de un contrato. Se puede reintentar desde su ficha.",
+    link: "/ejecutivo",
+  });
+}
+
 router.post("/hub/contracts/brief", async (req: Request, res: Response) => {
   try {
     await generarBriefTecnico(req, res);
@@ -576,6 +590,7 @@ router.post("/hub/contracts/brief", async (req: Request, res: Response) => {
     // salía como un 500 sin cuerpo. El panel lo leía como "brief null" y
     // guardaba el contrato sin brief sin decir nada.
     console.error("[hub/contracts/brief]", (err as Error)?.message);
+    await avisarFalloBriefIA(req);
     res.status(502).json({
       error: "No se pudo generar el brief técnico ahora mismo. El contrato se puede guardar igual y generarlo después desde su ficha.",
     });
@@ -651,6 +666,7 @@ Un elemento de "alcance" por cada módulo contratado. Sé concreto y accionable:
   // alcance real del proyecto. Un vacío que se ve como un éxito es peor que
   // un error.
   if (brief.alcance.length === 0) {
+    await avisarFalloBriefIA(req);
     res.status(502).json({
       error: "La IA no logró armar el brief técnico a partir de este contrato. Revisa que el documento tenga módulos con descripción y vuelve a intentarlo.",
     });
@@ -661,7 +677,7 @@ Un elemento de "alcance" por cada módulo contratado. Sé concreto y accionable:
 }
 
 router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response) => {
-  const { project } = req.body as { project?: Record<string, string> };
+  const { project } = req.body as { project?: Record<string, unknown> };
   if (!project || typeof project !== "object") {
     res.status(400).json({ error: "Se requiere el objeto 'project'" });
     return;
@@ -670,6 +686,24 @@ router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response
     res.status(400).json({ error: "El proyecto necesita notas o nombre para generar tareas" });
     return;
   }
+  // El formulario ya tiene el proyecto completo a mano (se llama desde su
+  // ficha): id y asignados viajan solo para poder avisar a quien corresponde
+  // si la IA falla, no se usan para redactar el prompt.
+  const assigneeIds = Array.isArray(project.assigneeIds)
+    ? (project.assigneeIds as unknown[]).filter((id): id is number => Number.isInteger(id))
+    : [];
+  const nombreProyecto = String(project.name || project.client || "").trim();
+  const avisarFalloExtraccion = () => {
+    const u = getUser(req);
+    return notifyResponsablesYDireccion({
+      responsableIds: [...assigneeIds, u?.id],
+      title: "⚠️ No se pudieron generar tareas con IA",
+      body: nombreProyecto
+        ? `El proyecto "${nombreProyecto}" no pudo generar sus tareas automáticas. Se puede reintentar desde su ficha.`
+        : "Un proyecto no pudo generar sus tareas automáticas. Se puede reintentar desde su ficha.",
+      link: "/ejecutivo",
+    });
+  };
 
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -683,17 +717,19 @@ router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response
     project.notes && `Requerimientos/Alcance: ${project.notes}`,
   ].filter(Boolean).join("\n");
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: "Eres un Scrum Master de una agencia digital. Generas historias de usuario y tareas técnicas bien definidas para el backlog de proyectos. Responde SOLO con JSON válido.",
-      },
-      {
-        role: "user",
-        content: `Genera las tareas Scrum para el siguiente proyecto de agencia digital. Crea entre 6 y 14 tareas concretas y accionables que cubran todo el alcance del proyecto.
+  let raw: string;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "Eres un Scrum Master de una agencia digital. Generas historias de usuario y tareas técnicas bien definidas para el backlog de proyectos. Responde SOLO con JSON válido.",
+        },
+        {
+          role: "user",
+          content: `Genera las tareas Scrum para el siguiente proyecto de agencia digital. Crea entre 6 y 14 tareas concretas y accionables que cubran todo el alcance del proyecto.
 
 Proyecto:
 ${projectStr}
@@ -712,14 +748,34 @@ Reglas:
 - notes: descripción breve de qué implica la tarea (máx 150 chars)
 - Cubre fases típicas: kickoff/briefing, diseño, desarrollo/implementación, contenido, pruebas/QA, entrega
 - Sé específico según el tipo de proyecto`,
-      },
-    ],
-  });
+        },
+      ],
+    });
+    raw = completion.choices[0]?.message?.content || "";
+  } catch (err) {
+    // Sin este catch, un fallo de red/API llegaba crudo al manejador
+    // genérico de Express (500 sin mensaje) y nadie se enteraba.
+    console.error("[hub/projects/ai-extract-tasks]", (err as Error)?.message);
+    await avisarFalloExtraccion();
+    res.status(502).json({ error: "No se pudo generar tareas con IA ahora mismo. Intenta de nuevo." });
+    return;
+  }
 
-  const raw = completion.choices[0]?.message?.content || '{"tasks":[]}';
   let result: { tasks: Array<{ title: string; crit: string; notes: string }> } = { tasks: [] };
-  try { result = JSON.parse(raw); } catch { /* leave empty */ }
+  try { result = raw ? JSON.parse(raw) : { tasks: [] }; } catch { result = { tasks: [] }; }
   if (!Array.isArray(result.tasks)) result.tasks = [];
+
+  // Antes, una respuesta sin JSON válido (o "tasks" vacío) volvía igual como
+  // 200 con `{ tasks: [] }`: el panel lo mostraba como "no hace falta ninguna
+  // tarea", indistinguible de un proyecto ya bien cubierto. El prompt siempre
+  // pide entre 6 y 14 tareas, así que un array vacío es señal de fallo, no de
+  // un resultado legítimo — se avisa igual que cualquier otro fallo de IA.
+  if (result.tasks.length === 0) {
+    console.error("[hub/projects/ai-extract-tasks] respuesta sin tareas usables");
+    await avisarFalloExtraccion();
+    res.status(502).json({ error: "La IA no pudo generar tareas — agrega más notas al proyecto o intenta de nuevo" });
+    return;
+  }
 
   res.json(result);
 });
@@ -807,18 +863,33 @@ se mencionan tal cual están (mismo id, nombre, descripción y precio).`
     : `
 Este contrato no tiene documento estructurado: modifica solo la ficha.`;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4.1",
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content:
-          "Eres un asistente de contratos y cotizaciones de una agencia digital chilena. El usuario te pide cambios en lenguaje natural y tú devuelves el contrato actualizado en JSON, aplicando SOLO los cambios pedidos y conservando el resto intacto. Responde SOLO con JSON válido, sin markdown.",
-      },
-      {
-        role: "user",
-        content: `Ficha del contrato:
+  const avisarFalloAiChat = () => {
+    const u = getUser(req);
+    const nombre = String(contract?.title || contract?.client || "").trim();
+    return notifyResponsablesYDireccion({
+      responsableIds: [u?.id],
+      title: "⚠️ La IA no pudo editar el contrato",
+      body: nombre
+        ? `La edición con IA del contrato "${nombre}" falló. Se puede reintentar desde su ficha.`
+        : "La edición con IA de un contrato falló. Se puede reintentar desde su ficha.",
+      link: "/ejecutivo",
+    });
+  };
+
+  let raw: string;
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4.1",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Eres un asistente de contratos y cotizaciones de una agencia digital chilena. El usuario te pide cambios en lenguaje natural y tú devuelves el contrato actualizado en JSON, aplicando SOLO los cambios pedidos y conservando el resto intacto. Responde SOLO con JSON válido, sin markdown.",
+        },
+        {
+          role: "user",
+          content: `Ficha del contrato:
 ${contractStr}
 ${docBlock}
 
@@ -830,18 +901,55 @@ Responde con este JSON exacto:
   ${hasDoc ? '"doc": { …el documento completo con los cambios aplicados… },' : '"doc": null,'}
   "summary": "una frase corta en español describiendo qué cambiaste"
 }`,
-      },
-    ],
-  });
+        },
+      ],
+    });
+    raw = completion.choices[0]?.message?.content || "";
+  } catch (err) {
+    // Antes esto no tenía try/catch: un fallo de red/API (sin API key, rate
+    // limit, timeout) llegaba crudo al manejador genérico de errores de
+    // Express y salía como un 500 sin avisar a nadie.
+    console.error("[hub/contracts/ai-chat]", (err as Error)?.message);
+    await avisarFalloAiChat();
+    res.status(502).json({ error: "No se pudo aplicar la edición con IA ahora mismo. Intenta de nuevo." });
+    return;
+  }
 
-  const raw = completion.choices[0]?.message?.content || "{}";
-  let parsed: Record<string, unknown> = {};
-  try { parsed = JSON.parse(raw); } catch { /* leave empty */ }
+  // Una respuesta vacía o que no parsea como JSON NO es un resultado válido.
+  //
+  // Antes se tragaba el error (`parsed` quedaba `{}`) y el contrato/documento
+  // volvían igual de vacíos con HTTP 200: el panel lo mostraba como una
+  // edición aplicada, cuando en realidad no se aplicó nada.
+  let parsed: Record<string, unknown>;
+  try {
+    if (!raw) throw new Error("respuesta vacía del modelo");
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.error("[hub/contracts/ai-chat] respuesta no usable:", (err as Error)?.message);
+    await avisarFalloAiChat();
+    res.status(502).json({ error: "La IA no devolvió una respuesta usable. Intenta de nuevo o reformula la instrucción." });
+    return;
+  }
 
   // La IA a veces devuelve los campos de la ficha en la raíz en vez de
   // dentro de "contract": aceptamos ambas formas.
   const rawContract = (parsed.contract && typeof parsed.contract === "object" ? parsed.contract : parsed) as Record<string, unknown>;
   const contractOut = contractFicha.safeParse(rawContract);
+  const contractData = contractOut.success ? contractOut.data : {};
+
+  // Un JSON sintácticamente válido pero sin NINGÚN campo utilizable de la
+  // ficha (p. ej. "{}" o solo "summary") es tan inútil como una respuesta
+  // vacía. El prompt le pide a la IA devolver SIEMPRE la ficha completa
+  // (conservando lo no tocado), así que una ficha hueca nunca es un
+  // resultado legítimo. Antes esto volvía igual con HTTP 200 y un contrato
+  // vacío: el panel lo mostraba como una edición aplicada.
+  const contractUsable = Object.values(contractData).some((v) => typeof v === "string" && v.trim() !== "");
+  if (!contractUsable) {
+    console.error("[hub/contracts/ai-chat] respuesta sin campos utilizables en la ficha");
+    await avisarFalloAiChat();
+    res.status(502).json({ error: "La IA no devolvió una edición utilizable. Intenta de nuevo o reformula la instrucción." });
+    return;
+  }
 
   let docOut: Record<string, unknown> | null = null;
   if (hasDoc) {
@@ -852,7 +960,7 @@ Responde con este JSON exacto:
   }
 
   res.json({
-    contract: contractOut.success ? contractOut.data : {},
+    contract: contractData,
     doc: docOut,
     summary: typeof parsed.summary === "string" ? parsed.summary : "",
   });

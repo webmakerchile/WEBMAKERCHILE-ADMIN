@@ -20,6 +20,9 @@ vi.mock("openai", () => ({
   },
 }));
 
+const notifyMock = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../lib/notifications", () => ({ notifyResponsablesYDireccion: notifyMock }));
+
 function aiReplies(content: string) {
   createMock.mockResolvedValueOnce({ choices: [{ message: { content } }] });
 }
@@ -125,7 +128,7 @@ describe("POST /api/hub/contracts/ai-chat", () => {
     expect(body.doc).toBeNull();
   });
 
-  it("survives a non-JSON answer from the model", async () => {
+  it("rejects a non-JSON answer from the model instead of returning an empty contract", async () => {
     aiReplies("lo siento, no puedo");
     const port = await startApp();
     const r = await fetch(`http://127.0.0.1:${port}/api/hub/contracts/ai-chat`, {
@@ -133,10 +136,32 @@ describe("POST /api/hub/contracts/ai-chat", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contract: CONTRACT, doc: DOC, instruction: "cambia el precio" }),
     });
-    expect(r.status).toBe(200);
-    const body = await r.json() as { contract: Record<string, string>; doc: unknown; summary: string };
-    expect(body.contract).toEqual({});
-    expect(body.doc).toBeNull();
-    expect(body.summary).toBe("");
+    expect(r.status).toBe(502);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock.mock.calls[0]![0]).toMatchObject({ responsableIds: [42] });
+  });
+
+  it("rejects a syntactically valid but empty edit (no usable ficha fields)", async () => {
+    aiReplies(JSON.stringify({ summary: "Listo, ya lo cambié" }));
+    const port = await startApp();
+    const r = await fetch(`http://127.0.0.1:${port}/api/hub/contracts/ai-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contract: CONTRACT, doc: DOC, instruction: "cambia el precio" }),
+    });
+    expect(r.status).toBe(502);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an empty JSON object as the whole reply", async () => {
+    aiReplies("{}");
+    const port = await startApp();
+    const r = await fetch(`http://127.0.0.1:${port}/api/hub/contracts/ai-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contract: CONTRACT, doc: DOC, instruction: "cambia el precio" }),
+    });
+    expect(r.status).toBe(502);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
   });
 });

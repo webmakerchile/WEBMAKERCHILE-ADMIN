@@ -2123,7 +2123,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const res = await fetch(`${DRIVE_API_BASE}/hub/projects/ai-extract-tasks`, {
                   method: "POST", credentials: "include",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ project: { name: V("n") || p.name, client: V("cli") || p.client, type: V("ty") || p.type, notes: V("no") || p.notes } }),
+                  body: JSON.stringify({ project: { id: p.id, name: V("n") || p.name, client: V("cli") || p.client, type: V("ty") || p.type, notes: V("no") || p.notes, assigneeIds: p.assigneeIds } }),
                 });
                 if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al generar tareas"); return; }
                 const data = await res.json() as { tasks?: Array<{ title: string; crit: string; notes: string }> };
@@ -2189,7 +2189,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
                 const res = await fetch(`${DRIVE_API_BASE}/hub/projects/ai-extract-tasks`, {
                   method: "POST", credentials: "include",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ project: { name: V("n") || p.name, client: V("cli") || p.client, type: V("ty") || p.type, notes: V("no") || p.notes } }),
+                  body: JSON.stringify({ project: { id: p.id, name: V("n") || p.name, client: V("cli") || p.client, type: V("ty") || p.type, notes: V("no") || p.notes, assigneeIds: p.assigneeIds } }),
                 });
                 if (!res.ok) { const e = await res.json().catch(() => ({})) as { error?: string }; onToast(e.error || "Error al regenerar tareas"); return; }
                 const data = await res.json() as { tasks?: Array<{ title: string; crit: string; notes: string }> };
