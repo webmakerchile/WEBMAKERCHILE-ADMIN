@@ -1,5 +1,6 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { TicketsInline } from "@/components/tickets-inline";
+import { TicketsManager } from "@/components/tickets-manager";
 import { useTickets, perteneceABandeja } from "@/lib/tickets";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
@@ -5695,8 +5696,6 @@ export default function EjecutivoPage() {
   const canManageSvc = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo";
   // Torre de control CEO: solo dirección (mismo criterio que el backend: rol ceo).
   const isCeo = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
-  // Pestaña Tickets: mismo criterio de área que ya usaba la bandeja del Dashboard.
-  const isDev = authUser?.teamRole === "dev";
   // La pestaña Servicios/Playbooks la ven admins y quienes pueden gestionarla (ceo/ventas).
   const canSeeSvc = isAdmin || canManageSvc;
   // Asistencia (pase de lista del equipo): mismo criterio que canOversee en el backend
@@ -5729,11 +5728,12 @@ export default function EjecutivoPage() {
   });
   const teamMembers: TeamMember[] = teamMembersData?.users ?? [];
 
-  // Cuenta para el numerito de la pestaña Tickets: misma bandeja que ya se
-  // muestra en Dashboard (área "ventas" para dirección/ventas, "desarrollo" para dev).
+  // Cuenta para el numerito de la pestaña Tickets: mismo criterio que el filtro
+  // "De mi área" que ve el usuario al abrir la pestaña (así el número nunca
+  // contradice lo que muestra la lista por defecto).
   const { data: ticketsData } = useTickets();
   const ticketCount = (ticketsData?.tickets ?? []).filter(t =>
-    perteneceABandeja(t, { area: isDev ? "desarrollo" : "ventas", myAreas: ticketsData?.myAreas ?? [], myId: authUser?.id })
+    perteneceABandeja(t, { myAreas: ticketsData?.myAreas ?? [], myId: authUser?.id })
   ).length;
 
   const handleLogout = async () => {
@@ -6136,11 +6136,7 @@ export default function EjecutivoPage() {
             </div>
             <div style={{ padding: "10px 18px 0" }}><PushEnableBanner /></div>
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} apiTasks={apiTasks} />}
-            {tab === "tickets" && (
-              isDev
-                ? <TicketsInline title="Solicitudes para desarrollo" area="desarrollo" limit={20} />
-                : <TicketsInline title="Solicitudes para ventas" area="ventas" limit={20} />
-            )}
+            {tab === "tickets" && <TicketsManager showHeader={false} />}
             {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} onNew={handleNew} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}

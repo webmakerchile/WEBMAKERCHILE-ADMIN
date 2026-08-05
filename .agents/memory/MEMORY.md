@@ -37,4 +37,4 @@
 - [Gates de permiso en cliente](gates-permiso-cliente.md) — revalidar al reactivar cerrando por defecto (reset en render, no en efecto); queries deshabilitadas de RQ conservan data/error: filtrar al renderizar.
 - [Señal de modo Plan vs Build](plan-vs-build-mode.md) — ante la duda, el rechazo real de una herramienta manda, no la inferencia por contexto.
 - [Dedup de avisos por destinatario](avisos-dedup-por-destinatario.md) — clave de dedup sin el destinatario colisiona entre personas y descarta avisos en silencio.
-- [Bandejas de tickets: embebida vs. nav](tickets-bandejas-por-area.md) — "no lo veo" en una página con pestañas: descartar build viejo y pestaña equivocada antes que bug; embebido en una pestaña ≠ ítem de nav.
+- [Bandejas de tickets: embebida vs. nav vs. vista completa](tickets-bandejas-por-area.md) — "no lo veo": build/pestaña antes que bug; embebido≠nav≠vista completa embebida (ver contador+header).
