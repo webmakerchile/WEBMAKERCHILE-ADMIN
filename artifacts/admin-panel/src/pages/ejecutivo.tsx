@@ -1,5 +1,6 @@
 import { JornadaChip } from "@/components/jornada-card";
 import { TicketsInline } from "@/components/tickets-inline";
+import { useTickets, perteneceABandeja } from "@/lib/tickets";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
 import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
@@ -23,7 +24,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun, HandCoins,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun, HandCoins, Inbox,
 } from "lucide-react";
 import { JornadaCard } from "@/components/jornada-card";
 import VentasPanel from "@/components/ventas-panel";
@@ -78,7 +79,7 @@ interface TeamMember {
   approvalStatus: string | null;
 }
 type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
-type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "cobros" | "svc" | "drive" | "team" | "att" | "midia";
+type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "cobros" | "svc" | "drive" | "team" | "att" | "midia" | "tickets";
 type ProjView = "board" | "list" | "scrum";
 
 interface Project {
@@ -228,6 +229,7 @@ const TAB_TITLES: Record<Tab, [string, string]> = {
   torre: ["Torre CEO", "Semáforo por área · metas de empresa · rentabilidad"],
   svc: ["Servicios", "Catálogo de referencia"],
   drive: ["Drive", "Explorador de archivos del proyecto"],
+  tickets: ["Tickets", "Solicitudes entre áreas"],
 };
 /** Catálogo de servicios: ahora vive en la base de datos (tabla hub_services, API /api/hub/services). */
 type HubServiceTier = { plan: string; price: string; detail: string };
@@ -5660,6 +5662,7 @@ const HubTabIcons: Record<Tab, React.ComponentType<{ className?: string }>> = {
   torre: Gauge,
   drive: FolderTree,
   svc: Package,
+  tickets: Inbox,
 };
 
 const HUB_API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -5679,6 +5682,7 @@ const TabIcons: Record<Tab, React.ReactNode> = {
   svc: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
   drive: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
   cobros: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>,
+  tickets: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>,
 };
 
 /* ============================================================
@@ -5691,6 +5695,8 @@ export default function EjecutivoPage() {
   const canManageSvc = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo";
   // Torre de control CEO: solo dirección (mismo criterio que el backend: rol ceo).
   const isCeo = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
+  // Pestaña Tickets: mismo criterio de área que ya usaba la bandeja del Dashboard.
+  const isDev = authUser?.teamRole === "dev";
   // La pestaña Servicios/Playbooks la ven admins y quienes pueden gestionarla (ceo/ventas).
   const canSeeSvc = isAdmin || canManageSvc;
   // Asistencia (pase de lista del equipo): mismo criterio que canOversee en el backend
@@ -5722,6 +5728,13 @@ export default function EjecutivoPage() {
     staleTime: 120000,
   });
   const teamMembers: TeamMember[] = teamMembersData?.users ?? [];
+
+  // Cuenta para el numerito de la pestaña Tickets: misma bandeja que ya se
+  // muestra en Dashboard (área "ventas" para dirección/ventas, "desarrollo" para dev).
+  const { data: ticketsData } = useTickets();
+  const ticketCount = (ticketsData?.tickets ?? []).filter(t =>
+    perteneceABandeja(t, { area: isDev ? "desarrollo" : "ventas", myAreas: ticketsData?.myAreas ?? [], myId: authUser?.id })
+  ).length;
 
   const handleLogout = async () => {
     try {
@@ -5837,8 +5850,8 @@ export default function EjecutivoPage() {
     // Si volvemos del OAuth de Calendar (?calendar=...), aterrizar en Reuniones.
     try { if (new URLSearchParams(window.location.search).has("calendar")) return "meet"; } catch { /* ignore */ }
     // Enlace directo (?tab=...): lo usa el bot de Discord para llevar a "Mi día".
-    try { const q = new URLSearchParams(window.location.search).get("tab"); if (q && ["midia","dash","proj","clients","meet","notes","contracts","svc","drive","team","att"].includes(q)) return q as Tab; } catch { /* ignore */ }
-    try { const s = localStorage.getItem(LS_TAB); if (s && ["midia","dash","proj","clients","meet","notes","contracts","svc","drive","team"].includes(s)) return s as Tab; } catch { /* ignore */ }
+    try { const q = new URLSearchParams(window.location.search).get("tab"); if (q && ["midia","dash","proj","clients","meet","notes","contracts","svc","drive","team","att","tickets"].includes(q)) return q as Tab; } catch { /* ignore */ }
+    try { const s = localStorage.getItem(LS_TAB); if (s && ["midia","dash","proj","clients","meet","notes","contracts","svc","drive","team","tickets"].includes(s)) return s as Tab; } catch { /* ignore */ }
     return "dash";
   });
 
@@ -5969,6 +5982,7 @@ export default function EjecutivoPage() {
     // Pase de lista del equipo: solo supervisores (dirección, ventas, RRHH).
     ...(canSeeAtt ? [{ id: "att" as Tab }] : []),
     { id: "dash" as Tab },
+    { id: "tickets" as Tab, cnt: ticketCount },
     // Torre de control: solo dirección.
     ...(isCeo ? [{ id: "torre" as Tab }] : []),
     { id: "proj" as Tab, cnt: state.projects.length },
@@ -5986,7 +6000,7 @@ export default function EjecutivoPage() {
     const scope = TAB_SCOPE[t.id];
     return !scope || scopes.includes(scope);
   });
-  const TAB_LABELS: Record<Tab, string> = { midia: "Mi día", team: "Equipo", att: "Asistencia", dash: "Dashboard", torre: "Torre CEO", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", cobros: "Cobros", svc: "Servicios", drive: "Drive" };
+  const TAB_LABELS: Record<Tab, string> = { midia: "Mi día", team: "Equipo", att: "Asistencia", dash: "Dashboard", torre: "Torre CEO", proj: "Proyectos", clients: "Clientes", meet: "Reuniones", notes: "Notas", contracts: "Contratos", ventas: "Ventas", cobros: "Cobros", svc: "Servicios", drive: "Drive", tickets: "Tickets" };
 
   return (
     <>
@@ -6122,6 +6136,11 @@ export default function EjecutivoPage() {
             </div>
             <div style={{ padding: "10px 18px 0" }}><PushEnableBanner /></div>
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} apiTasks={apiTasks} />}
+            {tab === "tickets" && (
+              isDev
+                ? <TicketsInline title="Solicitudes para desarrollo" area="desarrollo" limit={20} />
+                : <TicketsInline title="Solicitudes para ventas" area="ventas" limit={20} />
+            )}
             {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} onNew={handleNew} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
