@@ -16,6 +16,7 @@
 - [Dirección de arte portadas](cover-art-direction.md) — familia "estudio spotlight" en vertical 9:16 y miniaturas YouTube 16:9 (persona real fotorrealista o Webi); utilería física, jamás stickers.
 - [Prod build skew](prod-build-skew.md) — el usuario prueba solo en la app publicada; ante "permiso denegado" en prod, sospechar primero build viejo: publicar suele ser el fix.
 - [Gates de /hub: área vs rol](hub-area-gates.md) — el gate por área corre antes que los routers montados; abrir por rol exige eximir el path en hub-gate.ts; los tests de router no ven ese middleware.
+- [Navegación Hub↔panel: dos guards frontend](hub-area-gates.md) — AreaGuard(viejo) fuera de RouteShell(nuevo) gana y muestra "Acceso restringido" en vez de redirigir a home; "Volver al panel" con href fijo atrapa a roles sin esa ruta en su área.
 - [Edición de imágenes (ajustes)](image-edit-adjustments.md) — gpt-image-1 edit reencuadra si el aspecto ≠ lienzo: letterbox negro determinista + recorte; sharp: un solo resize por pipeline.
 - [Modelo de imágenes (portadas)](image-model-choice.md) — gpt-image-1 se queda: gpt-image-2 rechaza input_fidelity y pierde la identidad en fotos de persona; A/B vía AI_IMAGE_MODEL.
 - [Facebook: token de página](facebook-page-token.md) — el #200 de Meta al publicar suele ser token de usuario de sistema en vez del de página; derivarlo con /{page-id}?fields=access_token.
