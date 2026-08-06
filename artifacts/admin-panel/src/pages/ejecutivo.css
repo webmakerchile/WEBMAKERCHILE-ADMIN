@@ -178,6 +178,33 @@
 .hub-root .stage-breakdown .sbrow.now{color:var(--orange2);}
 .hub-root .stage-breakdown .sbrow .sbv{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--text);}
 
+/* modo pantalla completa del tablero (Proyectos): sin límite de ancho, texto
+   más grande y columnas que se reparten el viewport completo. El grid sigue
+   usando minmax(...,1fr) + overflow-x:auto, así que en pantallas angostas
+   sigue cayendo solo al scroll horizontal + board-nav (chips/flechas). */
+.hub-root .wrap.board-fullscreen{max-width:none;padding:18px 28px 40px;}
+.hub-root .wrap.board-fullscreen .toolbar{margin-top:0;}
+.hub-root .wrap.board-fullscreen .seg button{font-size:13px;padding:12px 18px;}
+.hub-root .wrap.board-fullscreen select.filter{font-size:13.5px;padding:12px 16px;}
+.hub-root .wrap.board-fullscreen .tsearch{font-size:14.5px;padding:12px 16px;}
+.hub-root .wrap.board-fullscreen .board{gap:18px;}
+.hub-root .wrap.board-fullscreen .board.scrum6{grid-template-columns:repeat(6,minmax(185px,1fr));}
+.hub-root .wrap.board-fullscreen .board.scrum6 .col{min-width:185px;}
+.hub-root .wrap.board-fullscreen .col{padding:16px 14px;}
+.hub-root .wrap.board-fullscreen .col h3{font-size:13px;}
+.hub-root .wrap.board-fullscreen .col h3 .dot{width:10px;height:10px;}
+.hub-root .wrap.board-fullscreen .pcard{padding:15px 16px;}
+.hub-root .wrap.board-fullscreen .pcard .pt{font-size:17px;}
+.hub-root .wrap.board-fullscreen .pcard .cl{font-size:13px;}
+.hub-root .wrap.board-fullscreen .chip{font-size:10.5px;padding:3px 9px;}
+.hub-root .wrap.board-fullscreen .tcard--compact{padding:12px 14px;margin-bottom:8px;}
+.hub-root .wrap.board-fullscreen .tcard--compact .tcard-title{font-size:15.5px;margin-bottom:6px;}
+.hub-root .wrap.board-fullscreen .tcard--compact .tcard-meta{gap:7px;}
+.hub-root .wrap.board-fullscreen .tcard--compact .tcard-meta .chip{font-size:11px;padding:2px 7px;}
+.hub-root .wrap.board-fullscreen .tcard--compact .tcard-proj{font-size:12px;}
+.hub-root .wrap.board-fullscreen .tcard--compact .tcard-timer{font-size:11.5px;}
+.hub-root .wrap.board-fullscreen .stage-timer{font-size:12px;}
+
 /* cards grid */
 .hub-root .cardlist{margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;}
 .hub-root .gcard{background:var(--card1);border:1px solid var(--line);border-radius:13px;padding:16px 17px;cursor:pointer;transition:border-color 0.2s,transform .1s;}

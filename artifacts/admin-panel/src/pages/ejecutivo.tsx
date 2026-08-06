@@ -27,6 +27,7 @@ import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
   AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun, HandCoins, Inbox, Upload,
+  Maximize2, Minimize2,
 } from "lucide-react";
 import { JornadaCard } from "@/components/jornada-card";
 import VentasPanel from "@/components/ventas-panel";
@@ -3569,12 +3570,13 @@ function DashView({ state, onOpenProject, onNavigate, apiTasks }: { state: HubSt
   );
 }
 
-function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted, onNew }: {
+function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted, onNew, boardFullscreen, setBoardFullscreen }: {
   state: HubState; onSave: (n: StateUpdater) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
   onToast: (m: string) => void; projView: ProjView; setProjView: (v: ProjView) => void;
   searchQ: string; setSearchQ: (v: string) => void; filterPrio: string; setFilterPrio: (v: string) => void;
   apiTasks: HubTask[]; onRefreshTasks: () => void;
   canManage: boolean; onDeleteTask: (id: number) => void; onClearCompleted: () => void; onNew: () => void;
+  boardFullscreen: boolean; setBoardFullscreen: (v: boolean) => void;
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -3627,7 +3629,7 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
   };
   const scrumNav = useBoardNav();
   return (
-    <div className="wrap">
+    <div className={cn("wrap", boardFullscreen && "board-fullscreen")}>
       <div className="toolbar">
         <div className="tsearch"><span>🔍</span><input value={searchQ} onChange={e => setSearchQ(e.target.value.toLowerCase())} placeholder="Buscar proyecto o tarea…" /></div>
         <div className="seg">
@@ -3647,6 +3649,15 @@ function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView,
             >🧹 Limpiar completadas{doneCount > 0 ? ` (${doneCount})` : ""}</button>
           );
         })()}
+        <button
+          type="button"
+          onClick={() => setBoardFullscreen(!boardFullscreen)}
+          title={boardFullscreen ? "Salir de pantalla completa (Esc)" : "Ver el tablero en pantalla completa"}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 9, border: "1px solid var(--line)", background: boardFullscreen ? "var(--orange-soft)" : "transparent", color: boardFullscreen ? "var(--orange2)" : "var(--dim)", cursor: "pointer", fontSize: "0.78em", whiteSpace: "nowrap" }}
+        >
+          {boardFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+          {boardFullscreen ? "Salir" : "Pantalla completa"}
+        </button>
       </div>
       {projView === "board" && (
         <div className="board">
@@ -6048,6 +6059,18 @@ export default function EjecutivoPage() {
   const navigate = useCallback((t: Tab) => { setTab(t); window.scrollTo(0, 0); }, [setTab]);
 
   const [projView, setProjView] = useState<ProjView>("board");
+  // Vista inmersiva del tablero: oculta la navegación propia del Hub y agranda
+  // el tablero para que quepan todas las columnas sin scroll horizontal.
+  const [boardFullscreen, setBoardFullscreen] = useState(false);
+  useEffect(() => {
+    if (!boardFullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBoardFullscreen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [boardFullscreen]);
+  // Si se cambia de pestaña (o se cierra sesión, etc.) mientras estaba activa,
+  // no debe quedar "atascada" ocultando la navegación en otra vista.
+  useEffect(() => { if (tab !== "proj") setBoardFullscreen(false); }, [tab]);
   const [projSearch, setProjSearch] = useState("");
   const [projPrio, setProjPrio] = useState("");
   const [clientSearch, setClientSearch] = useState("");
@@ -6202,7 +6225,7 @@ export default function EjecutivoPage() {
         <div className="hub-root flex-1 min-w-0 flex flex-col overflow-hidden relative">
 
           {/* ---- MOBILE HEADER ---- */}
-          <header className="lg:hidden flex items-center justify-between h-14 px-4 border-b border-foreground/10 bg-card/80 backdrop-blur-xl relative z-30 flex-shrink-0">
+          <header className={boardFullscreen ? "hidden" : "lg:hidden flex items-center justify-between h-14 px-4 border-b border-foreground/10 bg-card/80 backdrop-blur-xl relative z-30 flex-shrink-0"}>
             <div className="flex items-center gap-2">
               <img src="/icon-192.png" alt="Hub" className="w-7 h-7 rounded-lg" />
               <span className="font-bold text-lg">WebMaker<span className="text-primary"> Hub</span></span>
@@ -6217,7 +6240,7 @@ export default function EjecutivoPage() {
 
           {/* ---- MOBILE SLIDE-IN MENU ---- */}
           <AnimatePresence>
-            {mobileMenuOpen && (
+            {mobileMenuOpen && !boardFullscreen && (
               <>
                 <motion.div
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -6289,22 +6312,26 @@ export default function EjecutivoPage() {
 
           {/* ---- MAIN SCROLLABLE CONTENT ---- */}
           <div className="main">
-            <div className="topbar">
-              <div className="ptitle">
-                <span>{tt}</span>
-                <small>
-                  {tsub}
-                  {/* El tablero es compartido: que se vea de quién es y si soy de solo lectura. */}
-                  {boardOwner && <> · tablero de {boardOwner.name || boardOwner.email}</>}
-                  {writeScopes.length === 0 && <> · solo lectura</>}
-                </small>
-              </div>
-              <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
-            </div>
-            <div style={{ padding: "10px 18px 0" }}><PushEnableBanner /></div>
+            {!boardFullscreen && (
+              <>
+                <div className="topbar">
+                  <div className="ptitle">
+                    <span>{tt}</span>
+                    <small>
+                      {tsub}
+                      {/* El tablero es compartido: que se vea de quién es y si soy de solo lectura. */}
+                      {boardOwner && <> · tablero de {boardOwner.name || boardOwner.email}</>}
+                      {writeScopes.length === 0 && <> · solo lectura</>}
+                    </small>
+                  </div>
+                  <GlobalSearch state={state} onOpen={openSheet} onNavigate={navigate} />
+                </div>
+                <div style={{ padding: "10px 18px 0" }}><PushEnableBanner /></div>
+              </>
+            )}
             {tab === "dash" && <DashView state={state} onOpenProject={id => openSheet({ kind: "proj", id })} onNavigate={navigate} apiTasks={apiTasks} />}
             {tab === "tickets" && <TicketsManager showHeader={false} />}
-            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} onNew={handleNew} />}
+            {tab === "proj" && <ProjView state={state} onSave={setState} onOpenProject={id => openSheet({ kind: "proj", id })} onOpenTask={id => openSheet({ kind: "task", id })} onToast={showToast} projView={projView} setProjView={setProjView} searchQ={projSearch} setSearchQ={setProjSearch} filterPrio={projPrio} setFilterPrio={setProjPrio} apiTasks={apiTasks} onRefreshTasks={onRefreshTasks} canManage={canManageTasks} onDeleteTask={handleDeleteTask} onClearCompleted={handleClearCompleted} onNew={handleNew} boardFullscreen={boardFullscreen} setBoardFullscreen={setBoardFullscreen} />}
             {tab === "clients" && <ClientsView state={state} onOpen={id => openSheet({ kind: "client", id })} searchQ={clientSearch} setSearchQ={setClientSearch} />}
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onSave={setState} onOpen={id => openSheet({ kind: "note", id })} onToast={showToast} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
@@ -6331,7 +6358,7 @@ export default function EjecutivoPage() {
           )}
 
           {/* ---- MOBILE BOTTOM NAV ---- */}
-          <nav className="lg:hidden flex-shrink-0 border-t border-foreground/10 bg-card/80 backdrop-blur-xl safe-bottom">
+          <nav className={boardFullscreen ? "hidden" : "lg:hidden flex-shrink-0 border-t border-foreground/10 bg-card/80 backdrop-blur-xl safe-bottom"}>
             <div className="flex items-center justify-around h-16 px-1">
               {TABS.slice(0, 5).map(({ id }) => {
                 const isActive = tab === id;
@@ -6388,7 +6415,7 @@ export default function EjecutivoPage() {
         </div>
 
         {/* ======= RIGHT SIDEBAR (same aesthetics as main Layout) ======= */}
-        <aside className="hidden lg:flex w-64 flex-shrink-0 border-l border-foreground/10 bg-card/60 backdrop-blur-xl flex-col relative z-20">
+        <aside className={boardFullscreen ? "hidden" : "hidden lg:flex w-64 flex-shrink-0 border-l border-foreground/10 bg-card/60 backdrop-blur-xl flex-col relative z-20"}>
 
           {/* Logo + Brand */}
           <div className="h-16 flex items-center px-5 border-b border-foreground/10">
