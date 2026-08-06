@@ -35,6 +35,7 @@ import CobrosPanel from "@/components/cobros-panel";
 import TorrePanel from "@/components/torre-panel";
 import { SheetHeader, OptionCard, SectionHeader, EmptyState, StatusChip, SkeletonShimmer } from "@/components/hub-kit";
 import { ConfigRecordatorios } from "@/components/config-recordatorios";
+import { TAREAS_QUERY_KEY } from "@/lib/tareas-hub";
 import "./ejecutivo.css";
 
 /* ============================================================
@@ -1564,6 +1565,7 @@ interface SheetProps { sheet: SheetKind; state: HubState; onClose: () => void; o
 
 function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOpenSheet, onConfirm, canWrite, apiTasks, teamMembers, onRefreshTasks, onBoardRefresh }: SheetProps) {
   const authUser = useAuth();
+  const queryClient = useQueryClient();
   const canDeleteTasks = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
   const r = useRef<Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null>>({});
   const R = (k: string) => (el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null) => { r.current[k] = el; };
@@ -1907,7 +1909,7 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         <button className="del-link" onClick={() => onConfirm("¿Eliminar esta tarea? No se puede deshacer.", async () => {
           try {
             await fetch(`${DRIVE_API_BASE}/hub/tasks/${t.id}`, { method: "DELETE", credentials: "include" });
-            onRefreshTasks(); onClose(); onToast("Tarea eliminada");
+            onRefreshTasks(); void queryClient.invalidateQueries({ queryKey: TAREAS_QUERY_KEY }); onClose(); onToast("Tarea eliminada");
           } catch { onToast("Error al eliminar"); }
         })}>Eliminar tarea</button>
       )}
@@ -4943,6 +4945,7 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
   onConfirm: (msg: string, onYes: () => void) => void;
 }) {
   const authUser = useAuth();
+  const queryClient = useQueryClient();
   const canDelete = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -5022,7 +5025,7 @@ function TeamView({ teamMembers, showToast, onRefreshTasks, onConfirm }: {
       const r = await fetch(`${HUB_API_BASE}/hub/tasks/${id}`, { method: "DELETE", credentials: "include" });
       if (!r.ok) { const e2 = await r.json().catch(() => ({} as Record<string, unknown>)); showToast((e2 as { error?: string }).error || "Error al eliminar"); return; }
       showToast("Tarea eliminada");
-      tvRefetch(); onRefreshTasks();
+      tvRefetch(); onRefreshTasks(); void queryClient.invalidateQueries({ queryKey: TAREAS_QUERY_KEY });
     } catch { showToast("Error de conexión"); }
   };
 
@@ -6098,11 +6101,11 @@ export default function EjecutivoPage() {
           const r = await fetch(`${HUB_API_BASE}/hub/tasks/${id}`, { method: "DELETE", credentials: "include" });
           if (!r.ok) { const e = await r.json().catch(() => ({} as Record<string, unknown>)); showToast((e as { error?: string }).error || "Error al eliminar"); return; }
           showToast("Tarea eliminada");
-          onRefreshTasks();
+          onRefreshTasks(); void queryClient.invalidateQueries({ queryKey: TAREAS_QUERY_KEY });
         } catch { showToast("Error de conexión"); }
       },
     });
-  }, [showToast, onRefreshTasks]);
+  }, [showToast, onRefreshTasks, queryClient]);
 
   const handleClearCompleted = useCallback(() => {
     setConfirm({
@@ -6114,11 +6117,11 @@ export default function EjecutivoPage() {
           const d = await r.json().catch(() => ({ deleted: 0 }));
           const n = (d as { deleted?: number }).deleted ?? 0;
           showToast(`${n} tarea${n !== 1 ? "s" : ""} completada${n !== 1 ? "s" : ""} eliminada${n !== 1 ? "s" : ""}`);
-          onRefreshTasks();
+          onRefreshTasks(); void queryClient.invalidateQueries({ queryKey: TAREAS_QUERY_KEY });
         } catch { showToast("Error de conexión"); }
       },
     });
-  }, [showToast, onRefreshTasks]);
+  }, [showToast, onRefreshTasks, queryClient]);
 
   const openSheet = useCallback((s: SheetKind) => setSheet(s), []);
 
