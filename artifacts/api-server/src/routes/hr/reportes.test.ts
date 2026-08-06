@@ -309,3 +309,90 @@ describe("/api/hr/informes", () => {
     expect(await vacio.json()).toBeNull();
   });
 });
+
+describe("/api/hr/informes/:week/enviar", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const body = {
+    resumen: "Contenido cerró 12 videos; ventas firmó 2 contratos.",
+    destacadas: "Lanzamiento del nuevo panel.",
+    analisis: "Reforzar onboarding de edición.",
+  };
+
+  it("bloquea a los roles que no gestionan personas", async () => {
+    reset("editora");
+    const port = await startApp();
+    const r = await post(port, "/api/hr/informes/2026-08-03/enviar", body);
+    expect(r.status).toBe(403);
+    expect(state.upserted).toBeNull();
+    expect(notifyCeos).not.toHaveBeenCalled();
+    expect(enviarCorreo).not.toHaveBeenCalled();
+  });
+
+  it("exige que la semana sea un lunes válido, igual que guardar", async () => {
+    reset("rrhh");
+    const port = await startApp();
+    // 2026-08-04 es martes.
+    expect((await post(port, "/api/hr/informes/2026-08-04/enviar", body)).status).toBe(400);
+    expect(notifyCeos).not.toHaveBeenCalled();
+  });
+
+  it("rechaza un informe sin contenido en ninguna sección", async () => {
+    reset("rrhh");
+    const port = await startApp();
+    const r = await post(port, "/api/hr/informes/2026-08-03/enviar", { resumen: "  ", destacadas: "", analisis: "" });
+    expect(r.status).toBe(400);
+    expect(state.upserted).toBeNull();
+    expect(notifyCeos).not.toHaveBeenCalled();
+  });
+
+  it("envía el informe: guarda, avisa a la dirección y manda la copia por correo", async () => {
+    reset("rrhh");
+    const port = await startApp();
+    const r = await post(port, "/api/hr/informes/2026-08-03/enviar", body);
+    expect(r.status).toBe(200);
+
+    expect(state.upserted?.tbl).toBe(INFORMES);
+    expect(state.upserted?.v).toMatchObject({ weekKey: "2026-08-03", updatedBy: 5 });
+
+    expect(notifyCeos).toHaveBeenCalledTimes(1);
+    const aviso = notifyCeos.mock.calls[0][0] as { title: string; link: string; excludeUserId: number };
+    expect(aviso.title).toContain("2026-08-03");
+    expect(aviso.link).toBe("/informes-rrhh");
+    expect(aviso.excludeUserId).toBe(5);
+
+    expect(enviarCorreo).toHaveBeenCalledTimes(1);
+    const correo = enviarCorreo.mock.calls[0][0] as { to: string; html: string };
+    expect(correo.to).toBe("webmakerchile@gmail.com");
+    expect(correo.html).toContain("Resumen semanal");
+    expect(correo.html).toContain("Lanzamiento del nuevo panel");
+
+    expect(state.updates.at(-1)?.v).toMatchObject({ emailStatus: "enviado" });
+    const respuesta = (await r.json()) as { emailStatus: string };
+    expect(respuesta.emailStatus).toBe("enviado");
+  });
+
+  it("un correo fallido (o que lanza) jamás bloquea el envío del informe", async () => {
+    reset("rrhh");
+    enviarCorreo.mockResolvedValueOnce({ ok: false, motivo: "fallido", detalle: "Resend 500" });
+    let port = await startApp();
+    let r = await post(port, "/api/hr/informes/2026-08-03/enviar", body);
+    expect(r.status).toBe(200);
+    expect(state.updates.at(-1)?.v).toMatchObject({ emailStatus: "fallido", emailDetail: "Resend 500" });
+
+    reset("rrhh");
+    enviarCorreo.mockRejectedValueOnce(new Error("kaput"));
+    port = await startApp();
+    r = await post(port, "/api/hr/informes/2026-08-03/enviar", body);
+    expect(r.status).toBe(200);
+    expect(state.updates.at(-1)?.v).toMatchObject({ emailStatus: "fallido" });
+  });
+
+  it("la caída del aviso interno tampoco tumba el envío", async () => {
+    reset("rrhh");
+    notifyCeos.mockRejectedValueOnce(new Error("discord caído"));
+    const port = await startApp();
+    const r = await post(port, "/api/hr/informes/2026-08-03/enviar", body);
+    expect(r.status).toBe(200);
+  });
+});

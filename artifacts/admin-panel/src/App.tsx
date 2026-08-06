@@ -55,6 +55,7 @@ const ReportesPage = lazy(() => import("./pages/reportes"));
 const ProyeccionesPage = lazy(() => import("./pages/proyecciones"));
 const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
 const RrhhPage = lazy(() => import("./pages/rrhh"));
+const InformesRrhhPage = lazy(() => import("./pages/informes-rrhh"));
 const TicketsPage = lazy(() => import("./pages/tickets"));
 const EdicionPage = lazy(() => import("./pages/edicion"));
 const RedesPage = lazy(() => import("./pages/redes"));
@@ -440,6 +441,9 @@ function Router() {
       </Route>
       <Route path="/rrhh">
         <RouteShell name="rrhh"><RrhhPage /></RouteShell>
+      </Route>
+      <Route path="/informes-rrhh">
+        <RouteShell name="informes-rrhh"><InformesRrhhPage /></RouteShell>
       </Route>
       <Route path="/tickets">
         <RouteShell name="tickets"><TicketsPage /></RouteShell>

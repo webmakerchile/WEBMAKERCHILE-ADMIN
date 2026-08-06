@@ -222,6 +222,11 @@ export const hrWeeklyReports = pgTable("hr_weekly_reports", {
   /** Análisis: retroalimentación de lo hecho y recomendaciones. */
   analisis: text("analisis").notNull().default(""),
   updatedBy: integer("updated_by").references(() => users.id, { onDelete: "set null" }),
+  /** Último envío formal a dirección (distinto de guardar un borrador). Null = nunca enviado. */
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  /** "" (sin intento) | enviado | fallido | sin_configurar — del último envío. */
+  emailStatus: text("email_status").notNull().default(""),
+  emailDetail: text("email_detail").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

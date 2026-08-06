@@ -11,7 +11,9 @@
 - [Team attendance design](team-attendance-design.md) — team-wide self-service APIs must avoid the area-gated /hub prefix; Santiago-TZ day bucketing, Monday weeks, 16h open-session cap.
 - [Activity log design](activity-log-design.md) — all bitácora writes go through recordActivity + money-sanitized labels; team feed visibility mirrors jornada oversight roles.
 - [Handoffs & playbooks](handoffs-playbooks.md) — claim-then-release en handoff_log; append jsonb atómico; fallos de IA se tragan DENTRO del claim (fallback), dinero se limpia en la frontera del insert.
-- [Monorepo lib builds](monorepo-lib-builds.md) — after task merges, run pnpm install + tsc -b on lib/* before assuming merged code is broken; custom user names must never be overwritten by Google profile on login.
+- [Monorepo lib builds](monorepo-lib-builds.md) — cualquier edición a lib/*/src (no solo merges) exige tsc -b lib/<pkg> antes de que los consumidores vean el tipo nuevo; custom user names must never be overwritten by Google profile on login.
+- [Reportes/informes de RRHH → Dirección](hr-reportes-informes-ceo.md) — guardar (silencioso) vs. enviar (notifica+correo) son acciones separadas en registros de edición continua; un rol de supervisión con acceso wildcard igual puede necesitar un apartado propio en vez de la página operativa de otro rol.
+- [Spinner negro tras editar frontend](vite-hmr-flaky-after-edits.md) — varias ediciones seguidas pueden dejar un `import()` lazy colgado sin error en consola; reintentar con recarga completa antes de tratarlo como regresión real.
 - [Render de portadas](cover-rendering.md) — librsvg pierde espacios en bordes de tspan (unir con &#160;); fuentes nix invisibles para fontconfig → empaquetar TTFs + FONTCONFIG_FILE al boot.
 - [Dirección de arte portadas](cover-art-direction.md) — familia "estudio spotlight" en vertical 9:16 y miniaturas YouTube 16:9 (persona real fotorrealista o Webi); utilería física, jamás stickers.
 - [Prod build skew](prod-build-skew.md) — el usuario prueba solo en la app publicada; ante "permiso denegado" en prod, sospechar primero build viejo: publicar suele ser el fix.

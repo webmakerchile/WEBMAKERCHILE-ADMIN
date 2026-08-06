@@ -16,6 +16,9 @@ import {
  *   reporte ya emitido no vuelve a avisar.
  * - Informe semanal: una ficha por semana (partiendo el lunes) con las tres
  *   secciones que redacta RRHH; las semanas anteriores quedan consultables.
+ *   Guardar es un borrador silencioso; Enviar a dirección avisa a los CEO y
+ *   manda copia por correo (se puede repetir en la misma semana si hay
+ *   novedades).
  */
 
 const API = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
@@ -258,6 +261,9 @@ interface Informe {
   resumen: string;
   destacadas: string;
   analisis: string;
+  sentAt: string | null;
+  emailStatus: string;
+  emailDetail: string;
   updatedAt: string;
   updatedByName: string | null;
   updatedByEmail: string | null;
@@ -344,6 +350,26 @@ function EditorInforme({ semana, inicial }: { semana: string; inicial: Informe |
     onError: (e: Error) => toast({ title: "No se pudo guardar el informe", description: e.message, variant: "destructive" }),
   });
 
+  const enviar = useMutation({
+    mutationFn: () =>
+      jfetch<Informe>(`/hr/informes/${semana}/enviar`, {
+        method: "POST",
+        body: JSON.stringify({ resumen, destacadas, analisis }),
+      }),
+    onSuccess: (row) => {
+      queryClient.invalidateQueries({ queryKey: ["hr-informe", semana] });
+      queryClient.invalidateQueries({ queryKey: ["hr-informes"] });
+      const descripcion =
+        row.emailStatus === "enviado"
+          ? "Se avisó a la dirección y se envió la copia por correo."
+          : row.emailStatus === "sin_configurar"
+            ? "Se avisó a la dirección. El correo no está configurado, así que no salió copia."
+            : "Se avisó a la dirección, pero la copia por correo no pudo enviarse.";
+      toast({ title: "Informe enviado a dirección", description: descripcion });
+    },
+    onError: (e: Error) => toast({ title: "No se pudo enviar el informe", description: e.message, variant: "destructive" }),
+  });
+
   const seccion = (label: string, hint: string, value: string, set: (v: string) => void, testid: string) => (
     <label className="block">
       <span className="text-xs font-medium">{label}</span>
@@ -371,17 +397,33 @@ function EditorInforme({ semana, inicial }: { semana: string; inicial: Informe |
         analisis, setAnalisis, "input-informe-analisis",
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" disabled={guardar.isPending} onClick={() => guardar.mutate()}
+        <Button size="sm" variant="outline" disabled={guardar.isPending} onClick={() => guardar.mutate()}
           data-testid="button-guardar-informe">
           {guardar.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
-          Guardar informe
+          Guardar borrador
         </Button>
-        {inicial && (
-          <span className="text-[11px] text-muted-foreground">
-            Última edición: {fmtMomento(inicial.updatedAt)} por {inicial.updatedByName || inicial.updatedByEmail || "—"}
+        <Button size="sm" disabled={enviar.isPending || (!resumen.trim() && !destacadas.trim() && !analisis.trim())}
+          onClick={() => enviar.mutate()} data-testid="button-enviar-informe">
+          {enviar.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
+          Enviar a dirección
+        </Button>
+        {inicial?.emailStatus && inicial.emailStatus !== "enviado" && (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400"
+            title={inicial.emailDetail || "La copia por correo no pudo enviarse"}
+          >
+            <MailWarning className="w-3 h-3" /> Correo no enviado
           </span>
         )}
       </div>
+      {inicial && (
+        <p className="text-[11px] text-muted-foreground">
+          {inicial.sentAt
+            ? `Enviado a dirección el ${fmtMomento(inicial.sentAt)}. `
+            : "Aún no se ha enviado a dirección. "}
+          Última edición: {fmtMomento(inicial.updatedAt)} por {inicial.updatedByName || inicial.updatedByEmail || "—"}
+        </p>
+      )}
     </div>
   );
 }

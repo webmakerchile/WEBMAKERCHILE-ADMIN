@@ -70,6 +70,35 @@ function htmlReporte(fecha: string, autor: string, contenido: string): string {
   ].join("");
 }
 
+/** Bloque de una sección del informe semanal; se omite si viene vacía. */
+function seccionHtml(titulo: string, contenido: string): string {
+  if (!contenido.trim()) return "";
+  return [
+    `<div style="margin:0 0 14px">`,
+    `<h3 style="margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.03em;color:#555">${esc(titulo)}</h3>`,
+    `<div style="white-space:pre-wrap;border:1px solid #ddd;border-radius:8px;padding:12px;background:#fafafa">${esc(contenido)}</div>`,
+    `</div>`,
+  ].join("");
+}
+
+function htmlInforme(week: string, autor: string, resumen: string, destacadas: string, analisis: string): string {
+  return [
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;max-width:640px">`,
+    `<h2 style="margin:0 0 4px">Informe semanal RRHH — semana del ${esc(week)}</h2>`,
+    `<p style="margin:0 0 16px;color:#555">Enviado por ${esc(autor)} desde el panel de WebMaker.</p>`,
+    seccionHtml("Resumen semanal", resumen),
+    seccionHtml("Actividades principales a destacar", destacadas),
+    seccionHtml("Análisis", analisis),
+    `</div>`,
+  ].join("");
+}
+
+/** Primer texto no vacío entre las tres secciones, para el aviso corto. */
+function previewInforme(resumen: string, destacadas: string, analisis: string): string {
+  const texto = [resumen, destacadas, analisis].find((s) => s.trim()) || "";
+  return texto.length > 180 ? `${texto.slice(0, 180)}…` : texto;
+}
+
 /* ========================== Reportes diarios ============================= */
 
 const reporteSchema = z.object({
@@ -120,7 +149,7 @@ router.post("/hr/reportes", async (req, res) => {
   await notifyCeos({
     title: `Reporte diario de RRHH — ${reportDate}`,
     body: `${autor}: ${content.length > 180 ? `${content.slice(0, 180)}…` : content}`,
-    link: "/rrhh",
+    link: "/informes-rrhh",
     excludeUserId: me.id,
   }).catch((err) => console.error("[hr reportes] notifyCeos failed", err));
 
@@ -220,6 +249,9 @@ router.get("/hr/informes/:week", async (req, res) => {
       resumen: hrWeeklyReports.resumen,
       destacadas: hrWeeklyReports.destacadas,
       analisis: hrWeeklyReports.analisis,
+      sentAt: hrWeeklyReports.sentAt,
+      emailStatus: hrWeeklyReports.emailStatus,
+      emailDetail: hrWeeklyReports.emailDetail,
       updatedAt: hrWeeklyReports.updatedAt,
       updatedByName: users.name,
       updatedByEmail: users.email,
@@ -231,7 +263,11 @@ router.get("/hr/informes/:week", async (req, res) => {
   res.json(row ?? null);
 });
 
-/** PUT /hr/informes/:week — crea o actualiza el informe de la semana. */
+/**
+ * PUT /hr/informes/:week — crea o actualiza el BORRADOR de la semana. Guardar
+ * no avisa ni manda correo: RRHH puede volver a esta ficha muchas veces
+ * mientras redacta. Enviarlo a dirección es una acción aparte (ver abajo).
+ */
 router.put("/hr/informes/:week", async (req, res) => {
   const me = await requireHr(req, res);
   if (!me) return;
@@ -251,6 +287,70 @@ router.put("/hr/informes/:week", async (req, res) => {
     })
     .returning();
   res.json(row);
+});
+
+/**
+ * POST /hr/informes/:week/enviar — guarda el informe y lo ENVÍA a dirección:
+ * avisa a los CEO (notificación interna) y manda copia por correo. Se puede
+ * volver a enviar la misma semana si hay novedades (a diferencia del reporte
+ * diario, el informe semanal es una sola ficha que se redacta en varias
+ * pasadas). Ni el aviso ni el correo deciden la suerte del guardado.
+ */
+router.post("/hr/informes/:week/enviar", async (req, res) => {
+  const me = await requireHr(req, res);
+  if (!me) return;
+  const week = String(req.params.week);
+  if (!semanaValida(week, res)) return;
+  const parsed = informeSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message || "Datos inválidos" });
+    return;
+  }
+  const { resumen, destacadas, analisis } = parsed.data;
+  if (!resumen.trim() && !destacadas.trim() && !analisis.trim()) {
+    res.status(400).json({ error: "El informe no puede ir vacío" });
+    return;
+  }
+  const sentAt = new Date();
+  const [row] = await db
+    .insert(hrWeeklyReports)
+    .values({ weekKey: week, ...parsed.data, updatedBy: me.id, updatedAt: sentAt, sentAt })
+    .onConflictDoUpdate({
+      target: hrWeeklyReports.weekKey,
+      set: { ...parsed.data, updatedBy: me.id, updatedAt: sentAt, sentAt },
+    })
+    .returning();
+
+  const autor = me.name || me.email;
+  await notifyCeos({
+    title: `Informe semanal de RRHH — semana del ${week}`,
+    body: `${autor}: ${previewInforme(resumen, destacadas, analisis)}`,
+    link: "/informes-rrhh",
+    excludeUserId: me.id,
+  }).catch((err) => console.error("[hr informes] notifyCeos failed", err));
+
+  let emailStatus = "fallido";
+  let emailDetail = "";
+  try {
+    const r = await enviarCorreo({
+      to: CORREO_DIRECCION,
+      subject: `Informe semanal RRHH — semana del ${week}`,
+      html: htmlInforme(week, autor, resumen, destacadas, analisis),
+      text: `Informe semanal RRHH — semana del ${week}\nEnviado por: ${autor}\n\nResumen semanal:\n${resumen}\n\nActividades a destacar:\n${destacadas}\n\nAnálisis:\n${analisis}`,
+    });
+    emailStatus = r.ok ? "enviado" : r.motivo;
+    emailDetail = r.ok ? "" : r.detalle;
+  } catch (err) {
+    emailDetail = (err instanceof Error ? err.message : String(err)).slice(0, 300);
+    console.error("[hr informes] enviarCorreo lanzó (no debería)", emailDetail);
+  }
+  const [final] = await db
+    .update(hrWeeklyReports)
+    .set({ emailStatus, emailDetail })
+    .where(eq(hrWeeklyReports.weekKey, week))
+    .returning();
+
+  res.json({ ...(final ?? { ...row, emailStatus, emailDetail }), updatedByName: me.name, updatedByEmail: me.email });
 });
 
 export default router;

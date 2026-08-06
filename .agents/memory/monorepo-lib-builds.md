@@ -3,11 +3,11 @@ name: Monorepo lib builds after merges
 description: Stale composite dist after merges o codegen, y el pipeline correcto para agregar endpoints nuevos a la API
 ---
 
-After a task-agent merge, TS errors like "Cannot find module '@workspace/x'" or TS6305 ("Output file ... has not been built") usually mean environment drift, not bad code.
+After a task-agent merge, TS errors like "Cannot find module '@workspace/x'" or TS6305 ("Output file ... has not been built") usually mean environment drift, not bad code. Same symptom happens with NO merge involved: editing a `lib/*/src` file yourself (e.g. adding a column to a `lib/db` schema) and typechecking a consumer package (e.g. `api-server`) fails with "Property X does not exist" even though the source clearly has it.
 
-**Why:** lib packages (`lib/roles`, `lib/areas`, `lib/db`) are composite TS projects consumed via `dist/*.d.ts`; merges add new deps/exports but neither `pnpm install` nor `tsc -b` runs automatically.
+**Why:** lib packages (`lib/roles`, `lib/areas`, `lib/db`) are composite TS projects consumed via `dist/*.d.ts`; the package.json `exports` field points at `.ts` source (fine for tsx/vite runtime), but cross-package **type-checking** goes through TS project references, which resolve against the stale compiled `dist/*.d.ts` — neither `pnpm install` nor `tsc -b` runs automatically after a source edit, a merge, or codegen.
 
-**How to apply:** run `pnpm install` at the repo root, then `npx tsc -b lib/<pkg>` for each failing lib, before assuming merged code is broken. Also verify new tables from the merge exist in the dev DB.
+**How to apply:** any time you edit a `lib/*/src` file (not just after a merge) and a consumer's `tsc --noEmit` complains about a property/export that is clearly in the source, run `npx tsc -b lib/<pkg>` for that lib first before debugging further. After a task-agent merge specifically, also run `pnpm install` at the repo root first, then `tsc -b` each failing lib, and verify new tables from the merge exist in the dev DB.
 
 ## Pipeline para endpoints nuevos de la API
 

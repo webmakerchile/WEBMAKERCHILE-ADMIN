@@ -47,6 +47,7 @@ import {
   Activity,
   Clock3,
   HardDrive,
+  Inbox,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
@@ -116,6 +117,7 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
         { href: "/reportes", icon: Receipt, label: t.navReports, tour: "nav-reportes" },
         { href: "/proyecciones", icon: TrendingUp, label: t.navProyecciones, tour: "nav-proyecciones" },
         { href: "/rrhh", icon: IdCard, label: t.navHr, tour: "nav-rrhh" },
+        { href: "/informes-rrhh", icon: Inbox, label: t.navInformesRrhh, tour: "nav-informes-rrhh" },
       ],
     },
     {
