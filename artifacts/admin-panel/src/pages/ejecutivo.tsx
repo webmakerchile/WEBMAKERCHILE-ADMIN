@@ -1636,6 +1636,11 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   // Documento (cotización) del contrato abierto: borrador editable por el chat IA.
   const [docDraft, setDocDraft] = useState<WizData | null>(null);
   const [faltaDriveDocs, setFaltaDriveDocs] = useState(false);
+  // Se consulta ANTES de que la persona intente regenerar algo: a ventas
+  // nunca se le ofreció "Conectar Google Drive" en una página a la que
+  // tuviera acceso, así que sin esto el primer aviso llegaba recién después
+  // de un intento fallido (y muchas veces ni se leía el toast).
+  const estadoDriveDocs = useEstadoDrive(sheet?.kind === "contract");
   const [descargandoDoc, setDescargandoDoc] = useState<"cliente" | "tecnico" | null>(null);
   const [regeneratingDoc, setRegeneratingDoc] = useState(false);
   const [generatingBrief, setGeneratingBrief] = useState(false);
@@ -2740,6 +2745,13 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
           const btnMini: React.CSSProperties = { padding: "5px 10px", borderRadius: 6, border: "1px solid var(--border)", background: "transparent", color: "var(--fg)", fontSize: "0.74em", fontWeight: 600, cursor: "pointer" };
 
           return (<>
+            {/* Proactivo: se sabe ANTES de tocar nada, no recién tras un 409.
+                Ventas nunca tuvo dónde conectar Drive — este es ese lugar. */}
+            {!estadoDriveDocs.cargando && !estadoDriveDocs.conectado && (
+              <div style={{ marginBottom: 10 }}>
+                <ConectarDrive volverA="ejecutivo" motivo="Sin esto, los documentos no se pueden subir a Drive: se generan pero no queda dónde guardarlos." />
+              </div>
+            )}
             {/* Resumen compacto: lo esencial de un vistazo, sin muro de texto */}
             {docDraft && totals && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px", marginBottom: 10, fontSize: "0.78em", padding: "10px 12px", borderRadius: 8, background: "var(--card-bg)", border: "1px solid var(--border)" }}>
@@ -2819,7 +2831,12 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
               </div>
             )}
 
-            {faltaDriveDocs && <ConectarDrive volverA="ejecutivo" motivo="Por eso los PDFs no se pudieron subir a Drive." />}
+            {/* Ya se ve el aviso de arriba si Drive está desconectado; esto es
+                solo para el caso raro de que el permiso se cayera A MITAD de
+                una sesión que arrancó conectada. */}
+            {faltaDriveDocs && (estadoDriveDocs.cargando || estadoDriveDocs.conectado) && (
+              <ConectarDrive volverA="ejecutivo" motivo="Por eso los PDFs no se pudieron subir a Drive." />
+            )}
 
             {/* Regenerar solo cuando hay algo desactualizado — nada de botón eterno */}
             {!readOnlyContract && !sinMontos && docDraft && hayQueRegenerar && (
