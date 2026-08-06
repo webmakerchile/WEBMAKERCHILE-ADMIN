@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useHubBoard } from "@/lib/hub-write";
+import { TAREAS_QUERY_KEY } from "@/lib/tareas-hub";
 import { Layout } from "@/components/layout";
 import { CheckSquare2, Square, ChevronDown, ChevronUp, AlertTriangle, CalendarDays, Clock3, CalendarX, CheckCheck, Loader2, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -359,6 +360,7 @@ export default function MiDiaPage() {
       const r = await fetch(`${API}/hub/tasks/${task.id}`, { method: "DELETE", credentials: "include" });
       if (!r.ok) return;
       queryClient.invalidateQueries({ queryKey: ["my-day"] });
+      queryClient.invalidateQueries({ queryKey: TAREAS_QUERY_KEY });
     } catch { /* ignore */ }
   };
 
