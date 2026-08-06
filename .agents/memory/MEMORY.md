@@ -42,3 +42,5 @@
 - [Continuaciones async que pisan el estado al desmontar](onsave-stale-unmount.md) — un stateRef sincronizado "por render" se congela si el componente se desmonta antes de resolver; fusionar con función `(prev)=>next` dentro del setState real, no con un ref capturado.
 - [Endpoints de subida, fuera del codegen](upload-endpoints-convention.md) — multipart/FormData no pasa por openapi.yaml/orval a propósito; seguir el patrón fetch+FormData de Adjuntos/PdfUploadField/drive routes.
 - [Drive por usuario, no por dueño del tablero](hub-drive-por-usuario.md) — toda ruta de Drive usa el token de quien pide, no el del dueño del Hub; roles sin acceso a /cuentas quedan sin dónde conectar; avisar proactivo, no reactivo.
+- [Firma con múltiples motivos](firma-motivo-multisujeto.md) — una tabla + discriminador `motivo` para varios sujetos; el texto de éxito vive en 3 lugares (página, fallback servidor, JS embebido) — revisar los tres al sumar un motivo.
+- [Dos backends, reiniciar ambos](panel-agencia-espejo.md) — tras cambios de rutas API, "Cannot GET" en preview con curl a :3001 dando 401 = instancia vieja; reiniciar "Backend API" Y "artifacts/api-server: API Server".

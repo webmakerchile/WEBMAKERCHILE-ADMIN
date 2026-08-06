@@ -1,9 +1,16 @@
-// Enlace de aceptación de una propuesta, en la ficha del contrato.
+// Enlace de aceptación de una propuesta, en la ficha del contrato — y de
+// aprobación de inicio / cierre, en la ficha del proyecto.
 //
 // Genera el enlace que se le manda al cliente y, cuando ya lo firmó, enseña la
 // constancia completa: quién, cuándo, desde qué dirección, LA FIRMA capturada
 // y si los correos de confirmación salieron. Esa constancia es el motivo de
 // todo esto — y un correo que falló se dice aquí, no en un log que nadie lee.
+//
+// `FirmaSeccion` es el cuerpo presentacional compartido por los tres casos
+// (contrato, aprobación de proyecto, cierre de proyecto): mismos tres estados
+// (sin enlace / pendiente / firmado), misma constancia, mismo mecanismo de
+// firma del lado del cliente. Solo cambian los textos y a qué endpoint se
+// genera/consulta el enlace.
 
 import { useEffect, useState } from "react";
 import { Link2, Copy, Check, Loader2, ShieldCheck, AlertCircle, Mail } from "lucide-react";
@@ -24,6 +31,10 @@ interface Firma {
   emailClienteEstado: string | null;
   emailEquipoEstado: string | null;
   emailDetalle: string | null;
+}
+
+interface FirmaProyecto extends Firma {
+  motivo: "aprobacion_proyecto" | "cierre_proyecto";
 }
 
 const fecha = (iso: string | null) =>
@@ -53,65 +64,46 @@ function EstadoCorreo({ etiqueta, estado, testid }: { etiqueta: string; estado: 
   );
 }
 
-export function EnlaceFirma({ contractId }: { contractId: string }) {
-  const [firmas, setFirmas] = useState<Firma[] | null>(null);
-  const [generando, setGenerando] = useState(false);
-  const [copiado, setCopiado] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const cargar = () => {
-    fetch(`${API_BASE}/hub/contracts/${encodeURIComponent(contractId)}/firma`, { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setFirmas(d?.firmas ?? []))
-      .catch(() => setFirmas([]));
-  };
-
-  useEffect(cargar, [contractId]);
-
-  const generar = async () => {
-    setGenerando(true);
-    setError(null);
-    try {
-      const r = await fetch(`${API_BASE}/hub/contracts/${encodeURIComponent(contractId)}/firma`, {
-        method: "POST",
-        credentials: "include",
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.error || "No se pudo generar el enlace");
-      cargar();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo generar el enlace");
-    } finally {
-      setGenerando(false);
-    }
-  };
-
-  const copiar = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
-    } catch {
-      // Sin permiso de portapapeles el enlace sigue siendo seleccionable a mano.
-      setError("No se pudo copiar. Selecciona el enlace y cópialo tú.");
-    }
-  };
-
-  const firmado = firmas?.find((f) => f.estado === "firmado") ?? null;
-  const pendiente = firmas?.find((f) => f.estado === "pendiente" && f.url) ?? null;
+function FirmaSeccion({
+  titulo,
+  etiquetaFirmado,
+  textoBoton,
+  descBoton,
+  descPendiente,
+  firmado,
+  pendiente,
+  generando,
+  copiado,
+  error,
+  onGenerar,
+  onCopiar,
+}: {
+  titulo: string;
+  etiquetaFirmado: string;
+  textoBoton: string;
+  descBoton: string;
+  descPendiente: string;
+  firmado: Firma | null;
+  pendiente: Firma | null;
+  generando: boolean;
+  copiado: boolean;
+  error: string | null;
+  onGenerar: () => void;
+  onCopiar: (url: string) => void;
+}) {
   // Las firmas anteriores a esta función no registraron correos: no se inventa.
   const conCorreos = Boolean(firmado && (firmado.emailClienteEstado || firmado.emailEquipoEstado));
 
   return (
     <div className="sheet-sec">
-      <h4>Aceptación del cliente</h4>
+      <h4>{titulo}</h4>
 
       {firmado ? (
         // La constancia completa: es el motivo de existir de esta función.
         <div className="field" style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           <ShieldCheck className="w-4 h-4" style={{ color: "#34d399", flex: "none", marginTop: 2 }} />
           <div style={{ fontSize: "0.82em", lineHeight: 1.6, minWidth: 0 }}>
-            <div style={{ color: "#34d399", fontWeight: 700 }}>Aceptada y firmada</div>
+            <div style={{ color: "#34d399", fontWeight: 700 }}>{etiquetaFirmado}</div>
             <div><span style={{ color: "var(--dim)" }}>Por:</span> {firmado.signerName || "—"}</div>
             {firmado.signerEmail && <div><span style={{ color: "var(--dim)" }}>Correo:</span> {firmado.signerEmail}</div>}
             <div><span style={{ color: "var(--dim)" }}>Cuándo:</span> {fecha(firmado.signedAt)}</div>
@@ -174,26 +166,22 @@ export function EnlaceFirma({ contractId }: { contractId: string }) {
               style={{ flex: 1, fontSize: "0.78em" }}
               aria-label="Enlace de aceptación"
             />
-            <button type="button" onClick={() => copiar(pendiente.url!)} className="save" style={{ flex: "none" }}>
+            <button type="button" onClick={() => onCopiar(pendiente.url!)} className="save" style={{ flex: "none" }}>
               {copiado ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
           </div>
           <div style={{ fontSize: "0.72em", color: "var(--faint)", marginTop: 6 }}>
-            Mándaselo al cliente: verá el contrato completo y podrá firmarlo (dibujo, imagen o texto).
-            Al firmar se registra su nombre, la firma, la fecha y desde dónde lo hizo.
+            {descPendiente}
             {pendiente.expiresAt && ` Vence el ${fecha(pendiente.expiresAt)}.`}
           </div>
         </div>
       ) : (
         <div className="field">
-          <button type="button" className="add-btn" disabled={generando} onClick={generar}>
+          <button type="button" className="add-btn" disabled={generando} onClick={onGenerar}>
             {generando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-            {generando ? " Generando…" : " Generar enlace de aceptación"}
+            {generando ? " Generando…" : ` ${textoBoton}`}
           </button>
-          <div style={{ fontSize: "0.72em", color: "var(--faint)", marginTop: 6 }}>
-            El cliente ve el contrato con la marca WebMaker y firma en línea.
-            No es firma electrónica avanzada: es constancia de quién aceptó, cuándo y desde dónde.
-          </div>
+          <div style={{ fontSize: "0.72em", color: "var(--faint)", marginTop: 6 }}>{descBoton}</div>
         </div>
       )}
 
@@ -203,5 +191,169 @@ export function EnlaceFirma({ contractId }: { contractId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+export function EnlaceFirma({ contractId }: { contractId: string }) {
+  const [firmas, setFirmas] = useState<Firma[] | null>(null);
+  const [generando, setGenerando] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const cargar = () => {
+    fetch(`${API_BASE}/hub/contracts/${encodeURIComponent(contractId)}/firma`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setFirmas(d?.firmas ?? []))
+      .catch(() => setFirmas([]));
+  };
+
+  useEffect(cargar, [contractId]);
+
+  const generar = async () => {
+    setGenerando(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API_BASE}/hub/contracts/${encodeURIComponent(contractId)}/firma`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.error || "No se pudo generar el enlace");
+      cargar();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo generar el enlace");
+    } finally {
+      setGenerando(false);
+    }
+  };
+
+  const copiar = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      // Sin permiso de portapapeles el enlace sigue siendo seleccionable a mano.
+      setError("No se pudo copiar. Selecciona el enlace y cópialo tú.");
+    }
+  };
+
+  const firmado = firmas?.find((f) => f.estado === "firmado") ?? null;
+  const pendiente = firmas?.find((f) => f.estado === "pendiente" && f.url) ?? null;
+
+  return (
+    <FirmaSeccion
+      titulo="Aceptación del cliente"
+      etiquetaFirmado="Aceptada y firmada"
+      textoBoton="Generar enlace de aceptación"
+      descBoton="El cliente ve el contrato con la marca WebMaker y firma en línea.
+            No es firma electrónica avanzada: es constancia de quién aceptó, cuándo y desde dónde."
+      descPendiente="Mándaselo al cliente: verá el contrato completo y podrá firmarlo (dibujo, imagen o texto).
+            Al firmar se registra su nombre, la firma, la fecha y desde dónde lo hizo."
+      firmado={firmado}
+      pendiente={pendiente}
+      generando={generando}
+      copiado={copiado}
+      error={error}
+      onGenerar={generar}
+      onCopiar={copiar}
+    />
+  );
+}
+
+const MOTIVO_CONFIG = {
+  aprobacion_proyecto: {
+    titulo: "Aprobación de inicio",
+    etiquetaFirmado: "Aprobado y firmado",
+    textoBoton: "Generar enlace de aprobación",
+    descBoton: "El cliente aprueba el inicio del proyecto y firma en línea. No es firma electrónica avanzada: es constancia de quién aprobó, cuándo y desde dónde.",
+    descPendiente: "Mándaselo al cliente para que apruebe el inicio del proyecto (dibujo, imagen o texto). Al firmar se registra su nombre, la firma, la fecha y desde dónde lo hizo.",
+  },
+  cierre_proyecto: {
+    titulo: "Cierre del proyecto",
+    etiquetaFirmado: "Cerrado y confirmado",
+    textoBoton: "Generar enlace de cierre",
+    descBoton: "El cliente confirma que el proyecto quedó a su conformidad y firma en línea. No es firma electrónica avanzada: es constancia de quién confirmó, cuándo y desde dónde.",
+    descPendiente: "Mándaselo al cliente para que confirme la conformidad del proyecto (dibujo, imagen o texto). Al firmar se registra su nombre, la firma, la fecha y desde dónde lo hizo.",
+  },
+} as const;
+
+/**
+ * Las dos firmas de un proyecto — aprobación de inicio y cierre — en una sola
+ * ficha. Un solo fetch trae ambas (`GET /hub/projects/:id/firma` no filtra
+ * por motivo) y cada sección genera/copia la suya de forma independiente,
+ * porque pueden vivir en momentos completamente distintos del proyecto.
+ */
+export function EnlaceFirmaProyecto({ projectId }: { projectId: string }) {
+  const [firmas, setFirmas] = useState<FirmaProyecto[] | null>(null);
+  const [generando, setGenerando] = useState<Partial<Record<"aprobacion_proyecto" | "cierre_proyecto", boolean>>>({});
+  const [copiadoMotivo, setCopiadoMotivo] = useState<string | null>(null);
+  const [errores, setErrores] = useState<Partial<Record<"aprobacion_proyecto" | "cierre_proyecto", string | null>>>({});
+
+  const cargar = () => {
+    fetch(`${API_BASE}/hub/projects/${encodeURIComponent(projectId)}/firma`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setFirmas(d?.firmas ?? []))
+      .catch(() => setFirmas([]));
+  };
+
+  useEffect(cargar, [projectId]);
+
+  const generar = async (motivo: "aprobacion_proyecto" | "cierre_proyecto") => {
+    setGenerando((g) => ({ ...g, [motivo]: true }));
+    setErrores((e) => ({ ...e, [motivo]: null }));
+    try {
+      const r = await fetch(`${API_BASE}/hub/projects/${encodeURIComponent(projectId)}/firma`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.error || "No se pudo generar el enlace");
+      cargar();
+    } catch (e) {
+      setErrores((er) => ({ ...er, [motivo]: e instanceof Error ? e.message : "No se pudo generar el enlace" }));
+    } finally {
+      setGenerando((g) => ({ ...g, [motivo]: false }));
+    }
+  };
+
+  const copiar = async (motivo: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiadoMotivo(motivo);
+      setTimeout(() => setCopiadoMotivo((m) => (m === motivo ? null : m)), 2000);
+    } catch {
+      setErrores((er) => ({ ...er, [motivo as "aprobacion_proyecto" | "cierre_proyecto"]: "No se pudo copiar. Selecciona el enlace y cópialo tú." }));
+    }
+  };
+
+  return (
+    <>
+      {(["aprobacion_proyecto", "cierre_proyecto"] as const).map((motivo) => {
+        const cfg = MOTIVO_CONFIG[motivo];
+        const propias = firmas?.filter((f) => f.motivo === motivo) ?? null;
+        const firmado = propias?.find((f) => f.estado === "firmado") ?? null;
+        const pendiente = propias?.find((f) => f.estado === "pendiente" && f.url) ?? null;
+        return (
+          <FirmaSeccion
+            key={motivo}
+            titulo={cfg.titulo}
+            etiquetaFirmado={cfg.etiquetaFirmado}
+            textoBoton={cfg.textoBoton}
+            descBoton={cfg.descBoton}
+            descPendiente={cfg.descPendiente}
+            firmado={firmado}
+            pendiente={pendiente}
+            generando={Boolean(generando[motivo])}
+            copiado={copiadoMotivo === motivo}
+            error={errores[motivo] ?? null}
+            onGenerar={() => generar(motivo)}
+            onCopiar={(url) => copiar(motivo, url)}
+          />
+        );
+      })}
+    </>
   );
 }

@@ -270,6 +270,101 @@ router.get("/hub/contracts/:id/firma", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /hub/projects/:id/firma — genera (o reutiliza) el enlace para que el
+ * cliente apruebe el inicio o confirme el cierre del proyecto.
+ *
+ * Un proyecto puede tener dos enlaces pendientes a la vez — uno de aprobación
+ * y otro de cierre, en momentos distintos de su ciclo de vida — así que se
+ * reutiliza el pendiente del MISMO motivo, no cualquiera del proyecto.
+ */
+router.post("/hub/projects/:id/firma", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Solo dirección y ventas generan enlaces de firma" }); return; }
+
+  const projectId = String(req.params.id ?? "");
+  if (!projectId) { res.status(400).json({ error: "Falta el proyecto" }); return; }
+  const motivo = (req.body as Rec)?.motivo;
+  if (motivo !== "aprobacion_proyecto" && motivo !== "cierre_proyecto") {
+    res.status(400).json({ error: "Motivo inválido: debe ser aprobación de inicio o cierre" });
+    return;
+  }
+
+  try {
+    const board = await resolveBoard();
+    const proyectos = board && Array.isArray(board.data.projects) ? (board.data.projects as Rec[]) : [];
+    if (!proyectos.some((p) => str(p.id) === projectId)) {
+      res.status(404).json({ error: "Ese proyecto no existe" });
+      return;
+    }
+
+    const [existente] = await db.select().from(contractSignatures)
+      .where(and(
+        eq(contractSignatures.projectId, projectId),
+        eq(contractSignatures.motivo, motivo),
+        eq(contractSignatures.estado, "pendiente"),
+      ))
+      .limit(1);
+
+    const vigente = existente && (!existente.expiresAt || existente.expiresAt.getTime() > Date.now());
+    const fila = vigente
+      ? existente
+      : (await db.insert(contractSignatures).values({
+          projectId,
+          motivo,
+          token: generarToken(),
+          createdById: me.id,
+          expiresAt: caducidad(),
+        }).returning())[0]!;
+
+    res.json({
+      token: fila.token,
+      url: urlDeFirma(basePublica(req), fila.token),
+      expiresAt: fila.expiresAt,
+      estado: fila.estado,
+    });
+  } catch (err) {
+    console.error("[hub/projects/firma POST]", err);
+    res.status(500).json({ error: "No se pudo generar el enlace de firma" });
+  }
+});
+
+/** GET /hub/projects/:id/firma — estado y constancia de las firmas del proyecto (aprobación y cierre). */
+router.get("/hub/projects/:id/firma", async (req: Request, res: Response) => {
+  const me = await loadMe(req, res);
+  if (!me) return;
+  if (!canManageVentas(me)) { res.status(403).json({ error: "Sin acceso" }); return; }
+  try {
+    const filas = await db.select().from(contractSignatures)
+      .where(eq(contractSignatures.projectId, String(req.params.id ?? "")));
+    res.json({
+      firmas: filas.map((f) => ({
+        motivo: f.motivo,
+        estado: f.estado,
+        url: f.estado === "pendiente" ? urlDeFirma(basePublica(req), f.token) : null,
+        expiresAt: f.expiresAt,
+        signedAt: f.signedAt,
+        signerName: f.signerName,
+        signerEmail: f.signerEmail,
+        // La IP es parte de la constancia: sin ella el registro dice mucho menos.
+        signerIp: f.signerIp,
+        // La firma capturada y cómo se capturó, para enseñarla en la ficha.
+        signatureKind: f.signatureKind,
+        signatureData: f.signatureData,
+        userAgent: f.userAgent,
+        // Estado de los correos de confirmación: si fallaron, se dice AQUÍ.
+        emailClienteEstado: f.emailClienteEstado,
+        emailEquipoEstado: f.emailEquipoEstado,
+        emailDetalle: f.emailDetalle,
+      })),
+    });
+  } catch (err) {
+    console.error("[hub/projects/firma GET]", err);
+    res.status(500).json({ error: "No se pudo leer el estado de la firma" });
+  }
+});
+
 /** Base pública del panel, para armar el enlace que se le manda al cliente. */
 function basePublica(req: Request): string {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL;

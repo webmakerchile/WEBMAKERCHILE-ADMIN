@@ -28,10 +28,11 @@ import {
   nombreFirmanteValido,
   validarFirma,
   type FirmaCapturada,
+  type MotivoFirma,
 } from "../../lib/firma-contrato";
 import { enviarCorreo, CORREO_EQUIPO, type ResultadoCorreo } from "../../lib/correo";
 import { correoParaCliente, correoParaEquipo, type DatosCorreoFirma } from "../../lib/correo-firma";
-import { paginaMensaje, paginaContrato, CLP, type DocumentoFirma } from "./plantilla";
+import { paginaMensaje, paginaContrato, paginaProyecto, CLP, type DocumentoFirma, type DocumentoProyecto } from "./plantilla";
 import { logoDataUri } from "../cotizaciones/template";
 
 const router: IRouter = Router();
@@ -75,14 +76,19 @@ router.get("/firma/:token", async (req: Request, res: Response) => {
       },
     );
 
+    const motivoFirma = (enlace?.motivo || "contrato") as MotivoFirma;
+
     if (motivo === "ya_firmado" && enlace?.signedAt) {
       // Ya aceptado NO es un error: se le confirma, con la fecha, para que no
       // se quede con la duda de si su "sí" llegó.
-      responder(res, paginaMensaje("Documento aceptado", `
-        <h1 class="ok">Ya está aceptado</h1>
-        <p class="sub">Lo aceptó ${esc(enlace.signerName || "el cliente")} el
-        ${esc(enlace.signedAt.toLocaleDateString("es-CL", { timeZone: "America/Santiago" }))}.
-        No hace falta que hagas nada más.</p>`));
+      const fechaTxt = esc(enlace.signedAt.toLocaleDateString("es-CL", { timeZone: "America/Santiago" }));
+      const quien = esc(enlace.signerName || "el cliente");
+      const cuerpo = motivoFirma === "cierre_proyecto"
+        ? `<p class="sub">${quien} confirmó la conformidad de este proyecto el ${fechaTxt}. No hace falta que hagas nada más.</p>`
+        : motivoFirma === "aprobacion_proyecto"
+        ? `<p class="sub">${quien} aprobó el inicio de este proyecto el ${fechaTxt}. No hace falta que hagas nada más.</p>`
+        : `<p class="sub">Lo aceptó ${quien} el ${fechaTxt}. No hace falta que hagas nada más.</p>`;
+      responder(res, paginaMensaje("Documento aceptado", `<h1 class="ok">Ya está aceptado</h1>${cuerpo}`));
       return;
     }
     if (motivo) {
@@ -90,11 +96,21 @@ router.get("/firma/:token", async (req: Request, res: Response) => {
       return;
     }
 
-    const doc = await documentoDe(enlace!.contractId, enlace!.expiresAt);
-    res.status(200).type("html").send(paginaContrato({
+    if (motivoFirma === "contrato") {
+      const doc = await documentoDe(enlace!.contractId!, enlace!.expiresAt);
+      res.status(200).type("html").send(paginaContrato({
+        token,
+        logo: logoDataUri(),
+        doc,
+        anio: String(new Date().getFullYear()),
+      }));
+      return;
+    }
+    const docProyecto = await documentoProyectoDe(enlace!.projectId!, motivoFirma);
+    res.status(200).type("html").send(paginaProyecto({
       token,
       logo: logoDataUri(),
-      doc,
+      doc: docProyecto,
       anio: String(new Date().getFullYear()),
     }));
   } catch (err) {
@@ -191,28 +207,37 @@ router.post("/firma/:token/aceptar", async (req: Request, res: Response) => {
       return;
     }
 
-    console.log(`[firma] contrato ${enlace!.contractId} firmado por "${nombre}" (${firma.kind})`);
+    const motivoFirma = (enlace!.motivo || "contrato") as MotivoFirma;
+    console.log(`[firma] ${motivoFirma} ${enlace!.contractId ?? enlace!.projectId} firmado por "${nombre}" (${firma.kind})`);
 
-    // La venta se concreta AQUÍ: el contrato del tablero pasa de borrador a
-    // activo. Es una transición acotada (ver activar-contrato.ts) y ningún
-    // dato del firmante entra al tablero. Si no se puede guardar, la firma
-    // vale igual: se activa a mano en la ficha, y el fallo queda en el log.
-    try {
-      const activacion = await activarContratoFirmado({
-        contractId: enlace!.contractId,
-        fechaFirma: ahora,
-        actorId: enlace!.createdById ?? null,
-      });
-      if (activacion === "fallo") {
-        console.error(`[firma] contrato ${enlace!.contractId}: firmado OK pero NO se pudo activar en el tablero — activar a mano en la ficha`);
+    if (motivoFirma === "contrato") {
+      // La venta se concreta AQUÍ: el contrato del tablero pasa de borrador a
+      // activo. Es una transición acotada (ver activar-contrato.ts) y ningún
+      // dato del firmante entra al tablero. Si no se puede guardar, la firma
+      // vale igual: se activa a mano en la ficha, y el fallo queda en el log.
+      try {
+        const activacion = await activarContratoFirmado({
+          contractId: enlace!.contractId!,
+          fechaFirma: ahora,
+          actorId: enlace!.createdById ?? null,
+        });
+        if (activacion === "fallo") {
+          console.error(`[firma] contrato ${enlace!.contractId}: firmado OK pero NO se pudo activar en el tablero — activar a mano en la ficha`);
+        }
+      } catch (e) {
+        console.error(`[firma] contrato ${enlace!.contractId}: firmado OK pero la activación reventó`, e);
       }
-    } catch (e) {
-      console.error(`[firma] contrato ${enlace!.contractId}: firmado OK pero la activación reventó`, e);
     }
+    // Aprobar el inicio o cerrar un proyecto NO cambia su estado en el
+    // tablero: a diferencia del contrato, aquí la firma es solo una
+    // constancia (ver la tarea de origen). Queda guardada en esta misma fila
+    // y se ve en la ficha del proyecto, igual que ya se ve la del contrato.
 
     // ---- Correos de confirmación (el resultado SIEMPRE queda en la fila) ----
     const correos = await mandarCorreos({
+      motivo: motivoFirma,
       contractId: enlace!.contractId,
+      projectId: enlace!.projectId,
       expiresAt: enlace!.expiresAt,
       nombre, email, firma, ahora,
       ip: ipDeLaPeticion(req.headers as Record<string, unknown>, req.ip) || null,
@@ -244,9 +269,14 @@ router.post("/firma/:token/aceptar", async (req: Request, res: Response) => {
       res.status(200).json({ ok: true, correoCliente: correos.cliente });
       return;
     }
-    responder(res, paginaMensaje("Propuesta aceptada", `
+    const tituloExito = motivoFirma === "cierre_proyecto" ? "Cierre confirmado"
+      : motivoFirma === "aprobacion_proyecto" ? "Proyecto aprobado" : "Propuesta aceptada";
+    const cuerpoExito = motivoFirma === "cierre_proyecto" ? "Tu confirmación y tu firma quedaron registradas."
+      : motivoFirma === "aprobacion_proyecto" ? "Tu aprobación y tu firma quedaron registradas."
+      : "Tu aceptación y tu firma quedaron registradas.";
+    responder(res, paginaMensaje(tituloExito, `
       <h1 class="ok">¡Listo, ${esc(nombre.split(" ")[0])}!</h1>
-      <p class="sub">Tu aceptación y tu firma quedaron registradas. El equipo de WebMaker Latam se pondrá en
+      <p class="sub">${cuerpoExito} El equipo de WebMaker Latam se pondrá en
       contacto contigo para los siguientes pasos.</p>`));
   } catch (err) {
     console.error("[firma POST]", err);
@@ -257,7 +287,9 @@ router.post("/firma/:token/aceptar", async (req: Request, res: Response) => {
 /* ==================== Correos =========================================== */
 
 interface ParaCorreos {
-  contractId: string;
+  motivo: MotivoFirma;
+  contractId: string | null;
+  projectId: string | null;
   expiresAt: Date | null;
   nombre: string;
   email: string | null;
@@ -277,14 +309,27 @@ const estadoDe = (r: ResultadoCorreo): EstadoCorreo => (r.ok ? "enviado" : r.mot
  * equipo. Nunca lanza: devuelve los estados para guardarlos en la fila.
  */
 async function mandarCorreos(p: ParaCorreos): Promise<{ cliente: EstadoCorreo; equipo: EstadoCorreo; detalle: string | null }> {
-  const doc = await documentoDe(p.contractId, p.expiresAt).catch(() => null);
-  const totalTexto = doc?.totalConIva ? `${CLP(doc.totalConIva)} · IVA incluido`
-    : doc?.valorFicha ? `${doc.valorFicha} · IVA incluido` : null;
+  let titulo = "";
+  let clienteNombre = "";
+  let totalTexto: string | null = null;
+  if (p.motivo === "contrato" && p.contractId) {
+    const doc = await documentoDe(p.contractId, p.expiresAt).catch(() => null);
+    titulo = doc?.titulo || "Propuesta de trabajo";
+    clienteNombre = doc?.cliente || "";
+    totalTexto = doc?.totalConIva ? `${CLP(doc.totalConIva)} · IVA incluido`
+      : doc?.valorFicha ? `${doc.valorFicha} · IVA incluido` : null;
+  } else if (p.projectId) {
+    const doc = await documentoProyectoDe(p.projectId, p.motivo === "cierre_proyecto" ? "cierre_proyecto" : "aprobacion_proyecto").catch(() => null);
+    titulo = doc?.titulo || "Proyecto";
+    clienteNombre = doc?.cliente || "";
+    // Sin monto: aprobar o cerrar un proyecto no lleva cobro asociado.
+  }
 
   const esImagen = p.firma.kind !== "texto";
   const datos: DatosCorreoFirma = {
-    titulo: doc?.titulo || "Propuesta de trabajo",
-    cliente: doc?.cliente || "",
+    motivo: p.motivo,
+    titulo,
+    cliente: clienteNombre,
     firmante: p.nombre,
     correoFirmante: p.email,
     fechaFirma: p.ahora,
@@ -397,6 +442,41 @@ async function documentoDe(contractId: string, vence: Date | null): Promise<Docu
     monthlyPrice: num(doc.monthlyPrice),
     valorFicha,
     validaHasta,
+  };
+}
+
+/**
+ * Lo que se le enseña al cliente que va a aprobar el inicio de un proyecto o
+ * confirmar su cierre. Deliberadamente mínimo: a diferencia del contrato, un
+ * proyecto no separa un campo "público" de sus notas internas, así que esas
+ * notas NUNCA salen en esta página. Si hay un contrato vinculado, se reusa SU
+ * alcance — ya es público porque el mismo cliente lo vio y lo aceptó ahí.
+ */
+async function documentoProyectoDe(
+  projectId: string,
+  motivo: "aprobacion_proyecto" | "cierre_proyecto",
+): Promise<DocumentoProyecto> {
+  const { resolveBoard } = await import("../../lib/hub-board");
+  const board = await resolveBoard();
+  const proyectos = board && Array.isArray(board.data.projects) ? (board.data.projects as Array<Record<string, unknown>>) : [];
+  const p = proyectos.find((x) => String(x.id ?? "") === projectId) ?? {};
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+
+  let alcance = "";
+  const contractId = str(p.contractId);
+  if (contractId) {
+    const contratos = board && Array.isArray(board.data.contracts) ? (board.data.contracts as Array<Record<string, unknown>>) : [];
+    const c = contratos.find((x) => String(x.id ?? "") === contractId);
+    const doc = (c?.doc ?? {}) as Record<string, unknown>;
+    alcance = str(doc.scope);
+  }
+
+  return {
+    titulo: str(p.name) || "Proyecto",
+    cliente: str(p.client),
+    tipo: str(p.type),
+    alcance,
+    motivo,
   };
 }
 

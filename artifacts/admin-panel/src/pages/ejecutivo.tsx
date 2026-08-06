@@ -6,7 +6,7 @@ import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
 import { Adjuntos } from "@/components/adjuntos";
 import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
 import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
-import { EnlaceFirma } from "@/components/enlace-firma";
+import { EnlaceFirma, EnlaceFirmaProyecto } from "@/components/enlace-firma";
 import { ReunionesOportunidad } from "@/components/reuniones-oportunidad";
 import { AsignarProyecto } from "@/components/asignar-proyecto";
 import { ElegirDelCatalogo } from "@/components/elegir-del-catalogo";
@@ -2029,6 +2029,10 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
   /* ---- Detalle proyecto ---- */
   if (sheet.kind === "proj") {
     const p = state.projects.find(x => x.id === sheet.id); if (!p) return null;
+    // Mismo corte que ya usa Ventas en el resto del Hub (torre-panel, catálogo
+    // de servicios): dirección y ejecutivos comerciales generan los enlaces
+    // de firma, el resto del equipo no.
+    const canFirmarProyecto = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo";
     return (<>
       <SheetHeader title="Proyecto" subtitle={p.name} icon={<FolderTree className="w-5 h-5" />} onClose={onClose} />
       
@@ -2114,6 +2118,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         });
         onSave({ ...state, projects }); onClose(); onToast("Proyecto actualizado");
       }}>Guardar cambios</button>
+
+      {canFirmarProyecto && <EnlaceFirmaProyecto projectId={p.id} />}
 
       {/* ---- Generar tareas Scrum con IA ---- */}
       <SectionHeader title="Asistente de tareas" icon={<Sun className="w-4 h-4" />} />

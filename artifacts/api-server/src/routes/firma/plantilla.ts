@@ -147,6 +147,49 @@ export function paginaMensaje(titulo: string, cuerpoHtml: string, estado = 200):
   };
 }
 
+/**
+ * Bloque de aceptación y firma, compartido por la página del contrato y la
+ * del proyecto: mismos campos, mismas pestañas (dibujo/imagen/texto), mismo
+ * botón. Solo cambian el texto legal y el placeholder de "quién firma",
+ * porque lo que se está aceptando no es lo mismo.
+ */
+function seccionFirma(numero: string, legal: string, placeholderNombre: string): string {
+  return `<section class="bloque" id="firmar">
+  <div class="sec-label"><span class="num">${numero}</span> · ACEPTACIÓN Y FIRMA</div>
+  <div class="firmar">
+    <label for="f-nombre">Tu nombre y apellido</label>
+    <input type="text" id="f-nombre" maxlength="120" autocomplete="name" placeholder="${esc(placeholderNombre)}">
+    <label for="f-email">Tu correo — te enviaremos la constancia (opcional)</label>
+    <input type="email" id="f-email" maxlength="160" autocomplete="email" placeholder="nombre@empresa.com">
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab" data-tab="dibujo" aria-selected="true">✍️ Dibujar</button>
+      <button type="button" class="tab" data-tab="imagen" aria-selected="false">🖼️ Subir imagen</button>
+      <button type="button" class="tab" data-tab="texto" aria-selected="false">⌨️ Escribir</button>
+    </div>
+
+    <div class="panel" id="panel-dibujo">
+      <canvas class="lienzo" id="lienzo"></canvas>
+      <div class="panel-hint">Dibuja tu firma con el dedo o el mouse.</div>
+      <button type="button" class="btn-sec" id="btn-limpiar">Borrar y dibujar de nuevo</button>
+    </div>
+    <div class="panel" id="panel-imagen" style="display:none">
+      <input type="file" id="f-archivo" accept="image/png,image/jpeg">
+      <div class="panel-hint">Una foto o imagen de tu firma (PNG o JPG).</div>
+      <div class="preview-img" id="preview-imagen"><img alt="Tu firma" id="img-firma"></div>
+    </div>
+    <div class="panel" id="panel-texto" style="display:none">
+      <input type="text" id="f-texto" maxlength="120" placeholder="Escribe tu firma">
+      <div class="preview-texto" id="preview-texto"></div>
+    </div>
+
+    <button type="button" class="btn-firmar" id="btn-firmar" data-testid="btn-firmar">Aceptar y firmar</button>
+    <div class="error-firma" id="error-firma"></div>
+    <p class="legal">${legal}</p>
+  </div>
+</section>`;
+}
+
 /** La página completa: contrato + firma. */
 export function paginaContrato(opts: { token: string; logo: string; doc: DocumentoFirma; anio: string }): string {
   const { doc, logo, token, anio } = opts;
@@ -214,45 +257,67 @@ export function paginaContrato(opts: { token: string; logo: string; doc: Documen
   ${doc.validaHasta ? `<div class="vigencia">Propuesta válida hasta el ${esc(doc.validaHasta)}</div>` : ""}
 </div>
 ${cuerpoSecciones}
-<section class="bloque" id="firmar">
-  <div class="sec-label"><span class="num">${nFirma}</span> · ACEPTACIÓN Y FIRMA</div>
-  <div class="firmar">
-    <label for="f-nombre">Tu nombre y apellido</label>
-    <input type="text" id="f-nombre" maxlength="120" autocomplete="name" placeholder="Quien acepta la propuesta">
-    <label for="f-email">Tu correo — te enviaremos la constancia (opcional)</label>
-    <input type="email" id="f-email" maxlength="160" autocomplete="email" placeholder="nombre@empresa.com">
-
-    <div class="tabs" role="tablist">
-      <button type="button" class="tab" data-tab="dibujo" aria-selected="true">✍️ Dibujar</button>
-      <button type="button" class="tab" data-tab="imagen" aria-selected="false">🖼️ Subir imagen</button>
-      <button type="button" class="tab" data-tab="texto" aria-selected="false">⌨️ Escribir</button>
-    </div>
-
-    <div class="panel" id="panel-dibujo">
-      <canvas class="lienzo" id="lienzo"></canvas>
-      <div class="panel-hint">Dibuja tu firma con el dedo o el mouse.</div>
-      <button type="button" class="btn-sec" id="btn-limpiar">Borrar y dibujar de nuevo</button>
-    </div>
-    <div class="panel" id="panel-imagen" style="display:none">
-      <input type="file" id="f-archivo" accept="image/png,image/jpeg">
-      <div class="panel-hint">Una foto o imagen de tu firma (PNG o JPG).</div>
-      <div class="preview-img" id="preview-imagen"><img alt="Tu firma" id="img-firma"></div>
-    </div>
-    <div class="panel" id="panel-texto" style="display:none">
-      <input type="text" id="f-texto" maxlength="120" placeholder="Escribe tu firma">
-      <div class="preview-texto" id="preview-texto"></div>
-    </div>
-
-    <button type="button" class="btn-firmar" id="btn-firmar" data-testid="btn-firmar">Aceptar y firmar</button>
-    <div class="error-firma" id="error-firma"></div>
-    <p class="legal">Al firmar aceptas esta propuesta. Como constancia se registran tu nombre, tu firma,
-    la fecha y la dirección (IP) desde la que firmas. No es firma electrónica avanzada: es el registro
-    de quién aceptó, cuándo y desde dónde.</p>
-  </div>
-</section>
+${seccionFirma(nFirma, "Al firmar aceptas esta propuesta. Como constancia se registran tu nombre, tu firma, la fecha y la dirección (IP) desde la que firmas. No es firma electrónica avanzada: es el registro de quién aceptó, cuándo y desde dónde.", "Quien acepta la propuesta")}
 <footer class="pie"><span>WebMaker Latam · webmakerlatam.com</span><span>agencia@webmakerlatam.com</span></footer>
 </div>
-<script>${scriptFirma(token)}</script>`);
+<script>${scriptFirma(token, "contrato")}</script>`);
+}
+
+/** Lo que se le enseña al cliente que va a aprobar el inicio de un proyecto o confirmar su cierre. */
+export interface DocumentoProyecto {
+  titulo: string;
+  cliente: string;
+  tipo: string;
+  /** Alcance del contrato vinculado, si hay uno — ya es público porque el mismo cliente lo vio y aceptó ahí. */
+  alcance: string;
+  motivo: "aprobacion_proyecto" | "cierre_proyecto";
+}
+
+/**
+ * La página completa: proyecto + firma.
+ *
+ * Deliberadamente más simple que la del contrato: sin módulos ni precios (no
+ * hay cobro asociado a aprobar o cerrar un proyecto) y sin volcar las notas
+ * internas del proyecto, que a diferencia del contrato no tiene un campo
+ * "público" separado de las notas del equipo.
+ */
+export function paginaProyecto(opts: { token: string; logo: string; doc: DocumentoProyecto; anio: string }): string {
+  const { doc, logo, token, anio } = opts;
+  const esCierre = doc.motivo === "cierre_proyecto";
+
+  const explicacion = esCierre
+    ? "Con tu firma confirmas que este proyecto fue entregado y quedó a tu conformidad."
+    : "Con tu firma apruebas el inicio de este proyecto. El equipo de WebMaker Latam comenzará el trabajo según lo acordado.";
+  const legal = esCierre
+    ? "Al firmar confirmas la conformidad de este proyecto. Como constancia se registran tu nombre, tu firma, la fecha y la dirección (IP) desde la que firmas. No es firma electrónica avanzada: es el registro de quién confirmó, cuándo y desde dónde."
+    : "Al firmar apruebas el inicio de este proyecto. Como constancia se registran tu nombre, tu firma, la fecha y la dirección (IP) desde la que firmas. No es firma electrónica avanzada: es el registro de quién aprobó, cuándo y desde dónde.";
+  const placeholder = esCierre ? "Quien confirma la conformidad" : "Quien aprueba el proyecto";
+
+  const secciones: Array<{ id: string; label: string; html: string }> = [];
+  const add = (id: string, label: string, html: string) => { if (html) secciones.push({ id, label, html }); };
+  add("resumen", esCierre ? "CONFORMIDAD DE CIERRE" : "APROBACIÓN DE INICIO", `<p class="parrafo">${esc(explicacion)}</p>`);
+  add("alcance", "ALCANCE ACORDADO", doc.alcance ? `<p class="parrafo">${esc(doc.alcance)}</p>` : "");
+
+  const cuerpoSecciones = secciones.map((s, i) => `<section class="bloque" id="${s.id}">
+    <div class="sec-label"><span class="num">0${i + 1}</span> · ${s.label}</div>${s.html}</section>`).join("");
+  const nFirma = `0${secciones.length + 1}`;
+
+  return shell(`${doc.titulo} · WebMaker Latam`, `<div class="wrap">
+<header class="top">
+  <div class="brand">${logo ? `<img src="${logo}" alt="WebMaker Latam">` : ""}
+    <span class="brand-name">WEB<span class="hl">MAKER</span> LATAM</span></div>
+  <div class="top-meta">${esCierre ? "Cierre de proyecto" : "Aprobación de proyecto"}<br>${esc(anio)}</div>
+</header>
+<div class="hero">
+  <span class="badge">${esCierre ? "Cierre de proyecto" : "Aprobación de inicio"} · ${esc((doc.cliente || "cliente").toUpperCase())}</span>
+  <h1 class="titulo" data-testid="doc-titulo">${esc(doc.titulo)}</h1>
+  <div class="hero-sub">Para <b>${esc(doc.cliente || "tu empresa")}</b>${doc.tipo ? ` · ${esc(doc.tipo)}` : ""}</div>
+</div>
+${cuerpoSecciones}
+${seccionFirma(nFirma, legal, placeholder)}
+<footer class="pie"><span>WebMaker Latam · webmakerlatam.com</span><span>agencia@webmakerlatam.com</span></footer>
+</div>
+<script>${scriptFirma(token, doc.motivo)}</script>`);
 }
 
 function filaPrecios(neto: number): string {
@@ -267,9 +332,15 @@ function filaPrecios(neto: number): string {
 /**
  * El JS de la firma. Vanilla y sin template literals internos para no pelear
  * con el template literal exterior de TypeScript.
+ *
+ * El mensaje de éxito se arma en el navegador (no en el servidor) porque
+ * reemplaza la sección sin recargar la página, así que también necesita
+ * saber el motivo para no decirle "aceptaste la propuesta" a alguien que
+ * acaba de aprobar o cerrar un proyecto.
  */
-function scriptFirma(token: string): string {
+function scriptFirma(token: string, motivo: "contrato" | "aprobacion_proyecto" | "cierre_proyecto"): string {
   return `(function(){
+var motivo='${motivo}';
 var activo='dibujo';
 var tabs=document.querySelectorAll('.tab');
 function muestra(t){activo=t;tabs.forEach(function(b){b.setAttribute('aria-selected',String(b.dataset.tab===t))});
@@ -336,12 +407,15 @@ body:JSON.stringify({nombre:nombre,email:document.getElementById('f-email').valu
 if(!res.ok){muestraError(res.d.error||'No se pudo registrar. Vuelve a intentarlo en unos minutos.');
 btn.disabled=false;btn.textContent='Aceptar y firmar';return;}
 var pila=nombre.split(' ')[0];
+var cuerpoExito=motivo==='cierre_proyecto'?'Tu confirmación y tu firma quedaron registradas.'
+:motivo==='aprobacion_proyecto'?'Tu aprobación y tu firma quedaron registradas.'
+:'Tu aceptación y tu firma quedaron registradas.';
 var correoNota='';
 if(res.d.correoCliente==='enviado'){correoNota='<p>Te enviamos la constancia a tu correo.</p>';}
 else if(res.d.correoCliente==='fallido'||res.d.correoCliente==='sin_configurar'){correoNota='<p>No pudimos enviarte la copia por correo — guarda o imprime esta página como constancia.</p>';}
 var s=document.createElement('div');s.className='exito';
 s.innerHTML='<h2>¡Listo, '+pila.replace(/[<>&]/g,'')+'!</h2>'+
-'<p>Tu aceptación y tu firma quedaron registradas. El equipo de WebMaker Latam se pondrá en contacto contigo para los siguientes pasos.</p>'+correoNota;
+'<p>'+cuerpoExito+' El equipo de WebMaker Latam se pondrá en contacto contigo para los siguientes pasos.</p>'+correoNota;
 var sec=document.getElementById('firmar');sec.innerHTML='';sec.appendChild(s);
 s.scrollIntoView({behavior:'smooth',block:'center'});})
 .catch(function(){muestraError('No hay conexión. Revisa tu internet y vuelve a intentarlo.');

@@ -107,6 +107,17 @@ export function urlDeFirma(base: string, token: string): string {
   return `${limpia}/api/firma/${token}`;
 }
 
+/* ==================== Motivo (qué se firma) ============================= */
+
+/**
+ * Qué se está firmando. Mismo enlace público, misma mecánica de firma
+ * (dibujo/imagen/texto) y misma tabla para los tres — "aprobacion_proyecto" y
+ * "cierre_proyecto" son los dos momentos nuevos del ciclo de vida de un
+ * proyecto, y no cambian en nada cómo se firma un contrato.
+ */
+export const MOTIVOS_FIRMA = ["contrato", "aprobacion_proyecto", "cierre_proyecto"] as const;
+export type MotivoFirma = (typeof MOTIVOS_FIRMA)[number];
+
 /* ==================== Firma digital ==================================== */
 
 export const METODOS_FIRMA = ["dibujo", "imagen", "texto"] as const;

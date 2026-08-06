@@ -8,10 +8,12 @@
 // sobrevive a los clientes de correo (Gmail reescribe estilos), y una
 // confirmación ilegible es peor que una sosa.
 
-import type { MetodoFirma } from "./firma-contrato";
+import type { MetodoFirma, MotivoFirma } from "./firma-contrato";
 import { METODO_FIRMA_LABEL } from "./firma-contrato";
 
 export interface DatosCorreoFirma {
+  /** Qué se firmó: cambia el asunto y el texto, no la mecánica del correo. Sin valor = "contrato" (compatibilidad). */
+  motivo?: MotivoFirma;
   titulo: string;
   cliente: string;
   firmante: string;
@@ -56,6 +58,41 @@ function envoltura(cuerpo: string): string {
 /** Confirmación para quien firmó: su constancia de la aceptación. */
 export function correoParaCliente(d: DatosCorreoFirma): { subject: string; html: string; text: string } {
   const nombrePila = d.firmante.split(" ")[0] || d.firmante;
+
+  if (d.motivo === "aprobacion_proyecto" || d.motivo === "cierre_proyecto") {
+    const esCierre = d.motivo === "cierre_proyecto";
+    const accion = esCierre ? "confirmación de conformidad" : "aprobación";
+    const cierre = esCierre
+      ? "El equipo de WebMaker Latam da por cerrado el proyecto."
+      : "El equipo de WebMaker Latam comenzará el trabajo según lo acordado.";
+    const filas = [
+      fila("Proyecto", d.titulo),
+      d.cliente ? fila("Empresa", d.cliente) : "",
+      fila(esCierre ? "Confirmada el" : "Aprobada el", fechaLarga(d.fechaFirma)),
+      fila("Firma", METODO_FIRMA_LABEL[d.metodo]),
+    ].join("");
+    const html = envoltura(`
+<h1 style="margin:0 0 6px;font-size:19px;color:#1c1c1a">¡Gracias, ${esc(nombrePila)}!</h1>
+<p style="margin:0 0 18px;color:#55554f;font-size:13.5px;line-height:1.6">
+Tu ${accion} quedó registrada. Este correo es tu constancia: guárdalo.</p>
+<table style="border-collapse:collapse;width:100%">${filas}</table>
+${d.firmaAdjunta ? `<p style="margin:16px 0 0;color:#8a8a86;font-size:12px">Adjuntamos la imagen de tu firma tal como quedó registrada.</p>` : ""}
+<p style="margin:18px 0 0;color:#55554f;font-size:13.5px;line-height:1.6">${esc(cierre)}</p>`);
+    const text = [
+      `¡Gracias, ${nombrePila}!`,
+      `Tu ${accion} de "${d.titulo}" quedó registrada el ${fechaLarga(d.fechaFirma)}.`,
+      `Firma: ${METODO_FIRMA_LABEL[d.metodo]}`,
+      cierre,
+    ].filter(Boolean).join("\n");
+    return {
+      subject: esCierre
+        ? `Confirmaste el cierre de "${d.titulo}" — constancia de firma · WebMaker Latam`
+        : `Aprobaste el inicio de "${d.titulo}" — constancia de firma · WebMaker Latam`,
+      html,
+      text,
+    };
+  }
+
   const filas = [
     fila("Propuesta", d.titulo),
     d.cliente ? fila("Empresa", d.cliente) : "",
@@ -83,6 +120,41 @@ El equipo de WebMaker Latam se pondrá en contacto contigo para los siguientes p
 
 /** Aviso al buzón de ventas: quién firmó, cuándo, desde dónde. */
 export function correoParaEquipo(d: DatosCorreoFirma): { subject: string; html: string; text: string } {
+  if (d.motivo === "aprobacion_proyecto" || d.motivo === "cierre_proyecto") {
+    const esCierre = d.motivo === "cierre_proyecto";
+    const verbo = esCierre ? "confirmó la conformidad de" : "aprobó el inicio de";
+    const filas = [
+      fila("Proyecto", d.titulo),
+      d.cliente ? fila("Empresa", d.cliente) : "",
+      fila("Firmó", d.firmante),
+      d.correoFirmante ? fila("Correo", d.correoFirmante) : fila("Correo", "no dejó"),
+      fila("Cuándo", fechaLarga(d.fechaFirma)),
+      fila("Método", METODO_FIRMA_LABEL[d.metodo]),
+      d.ip ? fila("Desde (IP)", d.ip) : "",
+      d.userAgent ? fila("Navegador", d.userAgent.slice(0, 120)) : "",
+    ].join("");
+    const html = envoltura(`
+<h1 style="margin:0 0 6px;font-size:19px;color:#1c1c1a">Firma registrada ✍️</h1>
+<p style="margin:0 0 18px;color:#55554f;font-size:13.5px;line-height:1.6">
+${esc(d.firmante)} ${verbo} el proyecto.</p>
+<table style="border-collapse:collapse;width:100%">${filas}</table>
+${d.firmaAdjunta ? `<p style="margin:16px 0 0;color:#8a8a86;font-size:12px">La firma va adjunta a este correo.</p>` : ""}
+${d.urlPanel ? `<p style="margin:20px 0 0"><a href="${esc(d.urlPanel)}" style="display:inline-block;background:#F97015;color:#ffffff;text-decoration:none;font-size:13px;font-weight:700;padding:10px 18px;border-radius:8px">Ver en el panel</a></p>` : ""}`);
+    const text = [
+      `Firma registrada: ${d.firmante} ${verbo} "${d.titulo}"${d.cliente ? ` (${d.cliente})` : ""}.`,
+      d.correoFirmante ? `Correo: ${d.correoFirmante}` : "Sin correo del firmante.",
+      `Cuándo: ${fechaLarga(d.fechaFirma)} · Método: ${METODO_FIRMA_LABEL[d.metodo]}${d.ip ? ` · IP: ${d.ip}` : ""}`,
+      d.urlPanel ? `Panel: ${d.urlPanel}` : "",
+    ].filter(Boolean).join("\n");
+    return {
+      subject: esCierre
+        ? `✍️ Cierre: ${d.cliente || d.firmante} confirmó "${d.titulo}"`
+        : `✍️ Aprobación: ${d.cliente || d.firmante} aprobó "${d.titulo}"`,
+      html,
+      text,
+    };
+  }
+
   const filas = [
     fila("Propuesta", d.titulo),
     d.cliente ? fila("Empresa", d.cliente) : "",
