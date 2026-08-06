@@ -46,3 +46,4 @@
 - [Firma con múltiples motivos](firma-motivo-multisujeto.md) — una tabla + discriminador `motivo` para varios sujetos; el texto de éxito vive en 3 lugares (página, fallback servidor, JS embebido) — revisar los tres al sumar un motivo.
 - [Dos backends, reiniciar ambos](panel-agencia-espejo.md) — tras cambios de rutas API, "Cannot GET" en preview con curl a :3001 dando 401 = instancia vieja; reiniciar "Backend API" Y "artifacts/api-server: API Server".
 - [Series de Proyecciones](proyecciones-series.md) — timestamp crudo por mes usa periodKey (Santiago), no slice ISO; hub_tasks.completedAt refleja "done ahora", se limpia solo al reabrir.
+- [Hub Ejecutivo → páginas del sidebar](hub-shell-to-sidebar-migration.md) — shell /ejecutivo eliminado; 13 rutas propias; visibilidad = lib/roles directo; ruta≠contenido (torre-ceo vs tester).

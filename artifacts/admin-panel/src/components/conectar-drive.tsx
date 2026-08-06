@@ -69,7 +69,7 @@ export function ConectarDrive({
   motivo,
   compacto = false,
 }: {
-  volverA: "ejecutivo" | "mis-tareas" | "videos" | "drive" | "cuentas";
+  volverA: "contratos" | "drive-hub" | "mis-tareas" | "videos" | "drive" | "cuentas";
   /** Qué se estaba intentando hacer, para que el aviso no sea genérico. */
   motivo?: string;
   compacto?: boolean;

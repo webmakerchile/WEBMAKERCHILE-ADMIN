@@ -246,7 +246,7 @@ router.get("/auth/drive", requireAuth, requireApproved, async (req: Request, res
  * A dónde volver tras conectar. Lista blanca: un `from` libre en la URL sería
  * un redirect abierto hacia cualquier sitio.
  */
-export const DESTINOS_CONEXION = ["/cuentas", "/ejecutivo", "/mis-tareas", "/videos", "/drive"] as const;
+export const DESTINOS_CONEXION = ["/cuentas", "/contratos", "/drive-hub", "/mis-tareas", "/videos", "/drive"] as const;
 export function destinoSeguro(from: unknown): string {
   const v = typeof from === "string" ? (from.startsWith("/") ? from : `/${from}`) : "";
   return (DESTINOS_CONEXION as readonly string[]).includes(v) ? v : "/cuentas";
@@ -322,7 +322,7 @@ router.get("/auth/youtube/callback", requireAuth, requireApproved, async (req: R
 
 router.get("/auth/google-calendar", requireAuth, requireApproved, async (req: Request, res: Response) => {
   // Volver a la página desde donde se inició la conexión (Reuniones por defecto).
-  const returnTo = req.query.from === "cuentas" ? "/cuentas" : "/ejecutivo";
+  const returnTo = req.query.from === "cuentas" ? "/cuentas" : "/reuniones";
 
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
     // Navegación de enlace: redirigir con el motivo visible en vez de responder JSON.
@@ -352,7 +352,7 @@ router.get("/auth/google-calendar/callback", requireAuth, requireApproved, async
   const { code, state, error } = req.query;
   const user = req.user as any;
 
-  const returnTo = (req.session as any).calendarReturnTo === "/cuentas" ? "/cuentas" : "/ejecutivo";
+  const returnTo = (req.session as any).calendarReturnTo === "/cuentas" ? "/cuentas" : "/reuniones";
   delete (req.session as any).calendarReturnTo;
 
   if (error) {

@@ -17,7 +17,8 @@ describe("destino tras conectar Google", () => {
   });
 
   it("acepta el nombre sin la barra inicial", () => {
-    expect(destinoSeguro("ejecutivo")).toBe("/ejecutivo");
+    expect(destinoSeguro("contratos")).toBe("/contratos");
+    expect(destinoSeguro("drive-hub")).toBe("/drive-hub");
   });
 
   it("rechaza cualquier destino externo", () => {

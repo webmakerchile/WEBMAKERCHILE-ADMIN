@@ -337,7 +337,7 @@ async function mandarCorreos(p: ParaCorreos): Promise<{ cliente: EstadoCorreo; e
     ip: p.ip,
     userAgent: p.userAgent,
     totalTexto,
-    urlPanel: p.base ? `${p.base}/ejecutivo` : null,
+    urlPanel: p.base ? `${p.base}${p.motivo === "contrato" ? "/contratos" : "/proyectos"}` : null,
     firmaAdjunta: esImagen,
   };
   // La firma viaja adjunta (no incrustada): Gmail descarta las imágenes en

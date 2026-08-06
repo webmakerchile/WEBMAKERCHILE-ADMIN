@@ -270,7 +270,7 @@ export async function checkSalesFollowUps(now: Date = new Date()): Promise<numbe
         type: "system",
         title: `Seguimiento vencido: ${str(c.client) || str(c.title)}`,
         body: `La oportunidad "${str(c.title)}" tenía seguimiento para el ${marker} y sigue sin nueva fecha. Retoma el contacto y agenda el próximo paso.`,
-        link: "/ejecutivo",
+        link: "/ventas",
       }).catch(() => {});
     }
     sent++;
@@ -309,7 +309,7 @@ export async function checkContractRenewals(now: Date = new Date()): Promise<num
         type: "system",
         title: `Contrato por vencer: ${str(c.client) || str(c.title)}`,
         body: `"${str(c.title)}" vence el ${str(c.expiresAt)}. Inicia la renovación desde la torre de Ventas antes de que caduque.`,
-        link: "/ejecutivo",
+        link: "/ventas",
       }).catch(() => {});
     }
     sent++;
@@ -364,7 +364,7 @@ export async function checkCasosFuturo(now: Date = new Date()): Promise<number> 
         type: "system",
         title: `Caso a futuro por retomar: ${str(c.client) || str(c.title)}`,
         body: `"${str(c.title)}" quedó a futuro (${motivo}) con fecha estimada ${str(c.futuroFecha)}. Retoma el contacto y agenda la reunión.`,
-        link: "/ejecutivo",
+        link: "/ventas",
       }).catch(() => {});
     }
     sent++;
@@ -416,7 +416,7 @@ export async function checkReunionesSinDesenlace(now: Date = new Date()): Promis
         type: "system",
         title: `Reunión sin desenlace: ${str(m.client) || str(c.title)}`,
         body: `La reunión ${str(m.tipo)} del ${str(m.date)} con "${str(m.client) || str(c.title)}" no tiene desenlace registrado. Anótalo en la ficha del contrato: siguiente reunión, acepta, a futuro o perdido.`,
-        link: "/ejecutivo",
+        link: "/ventas",
       }).catch(() => {});
     }
     sent++;

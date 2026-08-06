@@ -18,7 +18,7 @@ const base = (extra?: Partial<DatosCorreoFirma>): DatosCorreoFirma => ({
   ip: "200.1.2.3",
   userAgent: "Mozilla/5.0 (iPhone)",
   totalTexto: "$2.380.000 · IVA incluido",
-  urlPanel: "https://panel.webmakerlatam.com/ejecutivo",
+  urlPanel: "https://panel.webmakerlatam.com/contratos",
   firmaAdjunta: true,
   ...extra,
 });
@@ -60,7 +60,7 @@ describe("correoParaEquipo", () => {
     expect(c.html).toContain("María José Soto");
     expect(c.html).toContain("mjsoto@clinica-andes.cl");
     expect(c.html).toContain("200.1.2.3");
-    expect(c.html).toContain("https://panel.webmakerlatam.com/ejecutivo");
+    expect(c.html).toContain("https://panel.webmakerlatam.com/contratos");
     expect(c.text).toContain("200.1.2.3");
   });
 

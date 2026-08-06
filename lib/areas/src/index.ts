@@ -41,11 +41,18 @@ export const AREA_PAGES: Record<Area, string[] | "*"> = {
   // /drive y /mis-tareas estaban en ROLES pero NO aquí, y el guardia de área
   // manda: el ítem salía en el menú y al pulsarlo daba "acceso restringido".
   // El área "ejecutivo" cubre a ventas y a desarrollo, que son justo quienes
-  // necesitan la carpeta del proyecto.
-  ejecutivo: ["/ejecutivo", "/mis-tareas", "/drive", "/mi-dia", "/ayuda"],
+  // necesitan la carpeta del proyecto. Las páginas del ex-Hub Ejecutivo son
+  // ahora rutas propias del sidebar (ver @workspace/roles para el detalle
+  // fino por rol); aquí va la unión de lo que ventas + desarrollo necesitan.
+  ejecutivo: [
+    "/dashboard-ejecutivo", "/proyectos", "/clientes", "/reuniones", "/notas",
+    "/contratos", "/ventas", "/cobros", "/servicios", "/equipo-hoy",
+    "/asistencia", "/drive-hub",
+    "/mis-tareas", "/drive", "/mi-dia", "/ayuda",
+  ],
   edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/mi-dia", "/ayuda"],
   marketing: ["/insights", "/historias", "/descripciones", "/schedule", "/cuentas", "/mi-dia", "/ayuda"],
-  rrhh:      ["/ejecutivo", "/equipo", "/", "/mi-dia", "/ayuda"],
+  rrhh:      ["/dashboard-ejecutivo", "/equipo-hoy", "/drive-hub", "/asistencia", "/equipo", "/", "/mi-dia", "/ayuda"],
 };
 
 /**
@@ -74,10 +81,10 @@ export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
 /** Default landing page after login for each area. */
 export const AREA_HOME: Record<Area, string> = {
   ceo:       "/",
-  ejecutivo: "/ejecutivo",
+  ejecutivo: "/dashboard-ejecutivo",
   edicion:   "/",
   marketing: "/insights",
-  rrhh:      "/ejecutivo",
+  rrhh:      "/dashboard-ejecutivo",
 };
 
 /**

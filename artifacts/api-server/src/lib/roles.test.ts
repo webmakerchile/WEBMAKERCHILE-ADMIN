@@ -104,7 +104,7 @@ describe("roles del equipo", () => {
   it("el contador solo ve su reporte y la ayuda", () => {
     expect(canAccessRoute("contador", "/reportes")).toBe(true);
     expect(canAccessRoute("contador", "/ayuda")).toBe(true);
-    expect(canAccessRoute("contador", "/ejecutivo")).toBe(false);
+    expect(canAccessRoute("contador", "/dashboard-ejecutivo")).toBe(false);
     expect(canAccessRoute("contador", "/videos")).toBe(false);
     expect(hubScopesFor("contador")).toEqual(["contracts"]);
   });
@@ -236,15 +236,49 @@ describe("metas por período", () => {
   });
 });
 
-describe("el Hub Ejecutivo es el panel de ventas", () => {
-  it("ventas aterriza en el Hub y no en una pantalla aparte", () => {
-    expect(roleHome("ventas")).toBe("/ejecutivo");
-    expect(canAccessRoute("ventas", "/ejecutivo")).toBe(true);
+describe("el Hub Ejecutivo ahora vive en páginas propias del sidebar", () => {
+  // Las 13 páginas en las que se partió el antiguo Hub Ejecutivo (ver /App.tsx).
+  const HUB_PAGES = [
+    "/dashboard-ejecutivo", "/torre-ceo", "/proyectos", "/clientes", "/reuniones",
+    "/notas", "/contratos", "/ventas", "/cobros", "/servicios",
+    "/equipo-hoy", "/asistencia", "/drive-hub",
+  ] as const;
+
+  it("ventas aterriza en el dashboard del Hub y no en una pantalla aparte", () => {
+    expect(roleHome("ventas")).toBe("/dashboard-ejecutivo");
+    expect(canAccessRoute("ventas", "/dashboard-ejecutivo")).toBe(true);
   });
 
-  it("el Hub sigue siendo exclusivo de dirección y ventas", () => {
-    for (const role of ["editora", "social", "marketing", "contador", "rrhh"] as const) {
-      expect(canAccessRoute(role, "/ejecutivo"), `${role} no debería entrar al Hub`).toBe(false);
+  it("cada rol con acceso al Hub ve solo las páginas de su alcance", () => {
+    const esperado: Record<string, readonly string[]> = {
+      ventas: [
+        "/dashboard-ejecutivo", "/proyectos", "/clientes", "/reuniones", "/contratos",
+        "/ventas", "/cobros", "/servicios", "/equipo-hoy", "/asistencia", "/drive-hub",
+      ],
+      dev: ["/dashboard-ejecutivo", "/proyectos", "/notas", "/contratos", "/equipo-hoy", "/drive-hub"],
+      rrhh: ["/dashboard-ejecutivo", "/equipo-hoy", "/drive-hub", "/asistencia"],
+    };
+    for (const [role, paginas] of Object.entries(esperado)) {
+      for (const pagina of HUB_PAGES) {
+        expect(canAccessRoute(role, pagina), `${role} en ${pagina}`).toBe(paginas.includes(pagina));
+      }
+    }
+  });
+
+  it("edición, redes, marketing y contabilidad no entran a ninguna página del Hub", () => {
+    for (const role of ["editora", "social", "marketing", "contador"] as const) {
+      for (const pagina of HUB_PAGES) {
+        expect(canAccessRoute(role, pagina), `${role} no debería ver ${pagina}`).toBe(false);
+      }
+    }
+  });
+
+  it("la Torre CEO es exclusiva de dirección", () => {
+    for (const role of ["ceo", "tester"] as const) {
+      expect(canAccessRoute(role, "/torre-ceo"), `${role} debería ver la Torre CEO`).toBe(true);
+    }
+    for (const role of ["ventas", "dev", "rrhh", "editora", "social", "marketing", "contador"] as const) {
+      expect(canAccessRoute(role, "/torre-ceo"), `${role} no debería ver la Torre CEO`).toBe(false);
     }
   });
 });

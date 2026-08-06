@@ -35,6 +35,18 @@ import {
   Target,
   TrendingUp,
   Landmark,
+  Gauge,
+  Briefcase,
+  Building2,
+  CalendarDays,
+  FileText,
+  FileCheck2,
+  Handshake,
+  HandCoins,
+  Package,
+  Activity,
+  Clock3,
+  HardDrive,
   type LucideIcon,
 } from "lucide-react";
 import { canAccessRoute } from "@workspace/roles";
@@ -56,7 +68,7 @@ import { useLang } from "@/lib/lang";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout({ children, chromeHidden = false }: { children: React.ReactNode; chromeHidden?: boolean }) {
   const [location] = useLocation();
   const user = useAuth();
   const queryClient = useQueryClient();
@@ -107,9 +119,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
       ],
     },
     {
+      label: t.navSectionHub,
+      items: [
+        { href: "/dashboard-ejecutivo", icon: LayoutGrid, label: t.navHubDash, tour: "nav-hub-dash" },
+        { href: "/torre-ceo", icon: Gauge, label: t.navHubTorre, tour: "nav-hub-torre" },
+        { href: "/proyectos", icon: Briefcase, label: t.navHubProj, tour: "nav-hub-proj" },
+        { href: "/clientes", icon: Building2, label: t.navHubClients, tour: "nav-hub-clients" },
+        { href: "/ventas", icon: Handshake, label: t.navHubVentas, tour: "nav-hub-ventas" },
+        { href: "/cobros", icon: HandCoins, label: t.navHubCobros, tour: "nav-hub-cobros" },
+        { href: "/servicios", icon: Package, label: t.navHubSvc, tour: "nav-hub-svc" },
+        { href: "/contratos", icon: FileCheck2, label: t.navHubContracts, tour: "nav-hub-contracts" },
+        { href: "/reuniones", icon: CalendarDays, label: t.navHubMeet, tour: "nav-hub-meet" },
+        { href: "/notas", icon: FileText, label: t.navHubNotes, tour: "nav-hub-notes" },
+        { href: "/equipo-hoy", icon: Activity, label: t.navHubTeam, tour: "nav-hub-team" },
+        { href: "/asistencia", icon: Clock3, label: t.navHubAtt, tour: "nav-hub-att" },
+        { href: "/drive-hub", icon: HardDrive, label: t.navHubDrive, tour: "nav-hub-drive" },
+      ],
+    },
+    {
       label: t.navSectionAdmin,
       items: [
-        { href: "/ejecutivo", icon: LayoutGrid, label: t.navHub, tour: "nav-ejecutivo" },
         { href: "/agencia", icon: Landmark, label: t.navAgencia, tour: "nav-agencia" },
         { href: "/equipo", icon: UserCog, label: t.navTeam, tour: "nav-equipo" },
         { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
@@ -196,6 +225,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex h-[100dvh] bg-background text-foreground overflow-hidden">
       <OnboardingTour />
       <GlobalShortcutsProvider />
+      {!chromeHidden && (
       <aside className="hidden lg:flex w-64 flex-shrink-0 border-r border-foreground/10 bg-card/60 backdrop-blur-xl flex-col relative z-20">
         <div className="h-16 flex items-center px-6 border-b border-foreground/10">
           <img src="/icon-192.png" alt="Logo" className="w-7 h-7 rounded-lg mr-3" />
@@ -289,8 +319,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
+        {!chromeHidden && (
         <header className="lg:hidden flex items-center justify-between h-14 px-4 border-b border-foreground/10 bg-card/80 backdrop-blur-xl relative z-30 flex-shrink-0">
           <div className="flex items-center gap-2">
             <img src="/icon-192.png" alt="Logo" className="w-7 h-7 rounded-lg" />
@@ -311,9 +343,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
+        )}
 
         <AnimatePresence>
-          {mobileMenuOpen && (
+          {!chromeHidden && mobileMenuOpen && (
             <>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -403,20 +436,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <ViewAsBar />
 
         <main className="flex-1 relative overflow-y-auto overflow-x-hidden bg-background">
-          <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] pointer-events-none bg-halo-1" />
-          <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full blur-[100px] pointer-events-none bg-halo-2" />
+          {!chromeHidden && (
+            <>
+              <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full blur-[120px] pointer-events-none bg-halo-1" />
+              <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full blur-[100px] pointer-events-none bg-halo-2" />
+            </>
+          )}
 
-          <div className="min-h-full px-4 py-6 lg:p-8 max-w-7xl mx-auto relative z-10">
+          <div className={cn("relative z-10", chromeHidden ? "h-full" : "min-h-full px-4 py-6 lg:p-8 max-w-7xl mx-auto")}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
+              className={cn(chromeHidden && "h-full")}
             >
               {children}
             </motion.div>
           </div>
         </main>
 
+        {!chromeHidden && (
         <nav className="lg:hidden flex-shrink-0 border-t border-foreground/10 bg-card/80 backdrop-blur-xl safe-bottom">
           <div className="flex items-center justify-around h-16 px-1">
             {navItems.slice(0, 5).map((item) => {
@@ -445,6 +484,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </nav>
+        )}
       </div>
 
       <InstallBanner />

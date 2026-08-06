@@ -52,7 +52,7 @@ export function GlobalShortcutsProvider() {
     { key: "t", prefix: "g", description: "Ir a Transcriptor", handler: () => setLocation("/transcriptor") },
     { key: "q", prefix: "g", description: "Ir a Equipo", handler: () => setLocation("/equipo") },
     { key: "a", prefix: "g", description: "Ir a Ajustes", handler: () => setLocation("/ajustes") },
-    { key: "h", prefix: "g", description: "Ir a Hub Ejecutivo", handler: () => setLocation("/ejecutivo") },
+    { key: "h", prefix: "g", description: "Ir a Hub Ejecutivo", handler: () => setLocation("/dashboard-ejecutivo") },
   ]);
 
   return (

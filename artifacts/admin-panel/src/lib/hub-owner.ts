@@ -3,7 +3,7 @@ import type { HubScope } from "@workspace/roles";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
-/* Formas mínimas del blob del Hub Ejecutivo (ver pages/ejecutivo.tsx). Los
+/* Formas mínimas del blob del Hub (ver pages/hub/shared.tsx). Los
    campos opcionales toleran tableros antiguos guardados antes de existir. */
 
 export type ContractStatus = "borrador" | "activo" | "vencido" | "cancelado";

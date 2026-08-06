@@ -108,7 +108,7 @@ const PAGES: Page[] = [
   { href: "/equipo", label: (t) => t.navTeam, icon: UserCog, shortcut: ["g", "q"] },
   { href: "/ajustes", label: (t) => t.navSettings, icon: Settings, shortcut: ["g", "a"] },
   { href: "/ayuda", label: (t) => t.navHelp, icon: HelpCircle },
-  { href: "/ejecutivo", label: (t) => t.navHub, icon: LayoutGrid, shortcut: ["g", "h"] },
+  { href: "/dashboard-ejecutivo", label: (t) => t.navHub, icon: LayoutGrid, shortcut: ["g", "h"] },
 ];
 
 type ActionContext = {

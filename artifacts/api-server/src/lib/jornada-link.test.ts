@@ -2,28 +2,22 @@ import { describe, expect, it } from "vitest";
 import { jornadaLink } from "./jornada-link";
 
 /**
- * A dónde llevan los avisos de jornada según el rol: quienes pueden entrar al
- * Hub Ejecutivo van a su "Mi día" dentro del Hub; el resto, al del panel.
- * Cubre también los roles del vocabulario viejo para que un valor legado no
- * mande a alguien a una página que su área tiene vedada.
+ * A dónde llevan los avisos de jornada, sin importar el rol: todo el equipo
+ * marca su jornada desde el mismo "Mi día" del panel — ya no vive dentro del
+ * Hub Ejecutivo, así que ningún rol necesita un destino aparte.
  */
 describe("jornadaLink", () => {
-  const HUB = "/ejecutivo?tab=midia";
   const PANEL = "/mi-dia";
 
-  it.each(["ceo", "ventas", "dev", "contador", "rrhh", "tester", "reviewer", "ejecutivo"])(
-    "rol %s (área con acceso al Hub) → Mi día del Hub",
-    (rol) => expect(jornadaLink(rol)).toBe(HUB),
-  );
-
-  it.each(["editora", "editor", "edicion", "social", "marketing"])(
-    "rol %s (sin acceso al Hub) → Mi día del panel",
+  it.each(["ceo", "ventas", "dev", "contador", "rrhh", "tester", "editora", "social", "marketing"])(
+    "rol %s → Mi día del panel",
     (rol) => expect(jornadaLink(rol)).toBe(PANEL),
   );
 
-  it("rol desconocido o vacío → Mi día del panel (nunca a una página vedada)", () => {
+  it("rol desconocido, vacío o ausente → también Mi día del panel", () => {
     expect(jornadaLink("algo-raro")).toBe(PANEL);
     expect(jornadaLink(null)).toBe(PANEL);
     expect(jornadaLink(undefined)).toBe(PANEL);
+    expect(jornadaLink()).toBe(PANEL);
   });
 });

@@ -96,8 +96,8 @@ describe("notifyCeos", () => {
       { id: 2, role: "admin", teamRole: "tester", approvalStatus: "approved" },
     ];
     vi.mocked(db.select).mockReturnValue(makeSelectChain(team) as never);
-    mockInsertReturning({ id: 11, userId: 1, title: "Nuevo contrato: X", body: null, link: "/ejecutivo" });
-    const sent = await notifyCeos({ title: "Nuevo contrato: X", link: "/ejecutivo", excludeUserId: 4 });
+    mockInsertReturning({ id: 11, userId: 1, title: "Nuevo contrato: X", body: null, link: "/contratos" });
+    const sent = await notifyCeos({ title: "Nuevo contrato: X", link: "/contratos", excludeUserId: 4 });
     expect(sent).toBe(1);
     expect(db.insert).toHaveBeenCalledTimes(1);
   });

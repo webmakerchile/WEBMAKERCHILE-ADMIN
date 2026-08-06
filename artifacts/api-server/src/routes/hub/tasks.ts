@@ -464,7 +464,7 @@ router.post("/hub/tasks/batch", async (req: Request, res: Response) => {
         type: "system",
         title: "Nuevas tareas asignadas",
         body: `${inserted.length} tarea(s) añadidas al backlog`,
-        link: "/ejecutivo",
+        link: "/proyectos",
       }).catch(() => {});
     }
     res.status(201).json({ tasks: inserted });
@@ -953,7 +953,7 @@ router.post("/hub/tasks/:id/tomar", async (req: Request, res: Response) => {
         type: "system",
         title: "🙌 Tomaron tu tarea para ayudar",
         body: `${user.name || "Alguien"} tomó "${task.title}"`,
-        link: "/ejecutivo",
+        link: "/proyectos",
       }).catch(() => {});
     }
     res.json({ ok: true, id });
@@ -1141,7 +1141,7 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
         type: "system",
         title: "✅ Tarea completada",
         body: `"${existing.title}" — completada por ${user.name || "un miembro del equipo"}`,
-        link: "/ejecutivo",
+        link: "/proyectos",
       }).catch(() => {});
     }
 

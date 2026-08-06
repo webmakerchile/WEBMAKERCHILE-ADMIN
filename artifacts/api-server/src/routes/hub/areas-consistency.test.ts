@@ -81,8 +81,9 @@ describe("@workspace/areas — single source of truth invariants", () => {
     expect(AREA_API_PREFIXES.ceo).toBe("*");
   });
 
-  it("rrhh can access /ejecutivo and /equipo pages", () => {
-    expect(areaCanAccessPage("rrhh", "/ejecutivo")).toBe(true);
+  it("rrhh can access its Hub pages and /equipo", () => {
+    expect(areaCanAccessPage("rrhh", "/dashboard-ejecutivo")).toBe(true);
+    expect(areaCanAccessPage("rrhh", "/asistencia")).toBe(true);
     expect(areaCanAccessPage("rrhh", "/equipo")).toBe(true);
     expect(areaCanAccessPage("rrhh", "/")).toBe(true);
   });

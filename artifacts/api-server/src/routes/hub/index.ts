@@ -13,13 +13,20 @@ import { resolveBoard, saveBoard } from "../../lib/hub-board";
 import { recordActivity } from "../../lib/activity";
 import { redactContracts, stripMoneyFromText } from "../../lib/contract-view";
 import { handoffContractClosed, handoffProjectDelivered } from "../../lib/handoffs";
-import { buildCeoAvisos, diffHubEntities, entityLabel, entityState } from "../../lib/hub-diff";
+import { buildCeoAvisos, type CeoAvisoScope, diffHubEntities, entityLabel, entityState } from "../../lib/hub-diff";
 import { notifyCeos, notifyResponsablesYDireccion } from "../../lib/notifications";
 
 const router: IRouter = Router();
 
+/** A qué página del Hub llevar al CEO según qué colección cambió. */
+const CEO_AVISO_LINK: Record<CeoAvisoScope, string> = {
+  contracts: "/contratos",
+  projects: "/proyectos",
+  clients: "/clientes",
+};
+
 // Estructura mínima del blob hub_state.data que persiste el Hub Ejecutivo
-// (ver HubState en admin-panel/src/pages/ejecutivo.tsx). Cada colección es un
+// (ver HubState en admin-panel/src/pages/hub/shared.tsx). Cada colección es un
 // array de objetos; se dejan opcionales para tolerar blobs antiguos parciales.
 const hubEntityArray = z.array(z.record(z.unknown()));
 const hubDataSchema = z
@@ -214,8 +221,9 @@ router.patch("/hub", async (req: Request, res: Response) => {
       // jamás frena el guardado del tablero. Los títulos usan el nombre de la
       // entidad, que no lleva montos.
       if (!esDireccion) {
+        const link = CEO_AVISO_LINK[scope];
         for (const aviso of buildCeoAvisos(scope, diff, actorName)) {
-          void notifyCeos({ ...aviso, link: "/ejecutivo", excludeUserId: me.id }).catch((err) =>
+          void notifyCeos({ ...aviso, link, excludeUserId: me.id }).catch((err) =>
             console.error("[hub PATCH] aviso a dirección falló", err),
           );
         }
@@ -578,7 +586,7 @@ function avisarFalloBriefIA(req: Request): Promise<void> {
     body: nombre
       ? `La IA no logró armar el brief técnico del contrato "${nombre}". Se puede reintentar desde su ficha.`
       : "La IA no logró armar el brief técnico de un contrato. Se puede reintentar desde su ficha.",
-    link: "/ejecutivo",
+    link: "/contratos",
   });
 }
 
@@ -701,7 +709,7 @@ router.post("/hub/projects/ai-extract-tasks", async (req: Request, res: Response
       body: nombreProyecto
         ? `El proyecto "${nombreProyecto}" no pudo generar sus tareas automáticas. Se puede reintentar desde su ficha.`
         : "Un proyecto no pudo generar sus tareas automáticas. Se puede reintentar desde su ficha.",
-      link: "/ejecutivo",
+      link: "/proyectos",
     });
   };
 
@@ -872,7 +880,7 @@ Este contrato no tiene documento estructurado: modifica solo la ficha.`;
       body: nombre
         ? `La edición con IA del contrato "${nombre}" falló. Se puede reintentar desde su ficha.`
         : "La edición con IA de un contrato falló. Se puede reintentar desde su ficha.",
-      link: "/ejecutivo",
+      link: "/contratos",
     });
   };
 

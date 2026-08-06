@@ -38,7 +38,19 @@ const InsightsPage = lazy(() => import("./pages/insights"));
 const EquipoPage = lazy(() => import("./pages/equipo"));
 const TranscriptorPage = lazy(() => import("./pages/transcriptor"));
 const AjustesPage = lazy(() => import("./pages/ajustes"));
-const EjecutivoPage = lazy(() => import("./pages/ejecutivo"));
+const DashboardEjecutivoPage = lazy(() => import("./pages/dashboard-ejecutivo"));
+const TorreCeoPage = lazy(() => import("./pages/torre-ceo"));
+const ProyectosPage = lazy(() => import("./pages/proyectos"));
+const ClientesPage = lazy(() => import("./pages/clientes"));
+const ReunionesPage = lazy(() => import("./pages/reuniones"));
+const NotasPage = lazy(() => import("./pages/notas"));
+const ContratosPage = lazy(() => import("./pages/contratos"));
+const VentasPage = lazy(() => import("./pages/ventas"));
+const CobrosPage = lazy(() => import("./pages/cobros"));
+const ServiciosPage = lazy(() => import("./pages/servicios"));
+const EquipoHoyPage = lazy(() => import("./pages/equipo-hoy"));
+const AsistenciaPage = lazy(() => import("./pages/asistencia"));
+const DriveHubPage = lazy(() => import("./pages/drive-hub"));
 const ReportesPage = lazy(() => import("./pages/reportes"));
 const ProyeccionesPage = lazy(() => import("./pages/proyecciones"));
 const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
@@ -372,8 +384,44 @@ function Router() {
       <Route path="/mi-dia">
         <RouteShell name="mi-dia"><MiDiaPage /></RouteShell>
       </Route>
-      <Route path="/ejecutivo">
-        <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
+      <Route path="/dashboard-ejecutivo">
+        <RouteShell name="dashboard-ejecutivo"><DashboardEjecutivoPage /></RouteShell>
+      </Route>
+      <Route path="/torre-ceo">
+        <RouteShell name="torre-ceo"><TorreCeoPage /></RouteShell>
+      </Route>
+      <Route path="/proyectos">
+        <RouteShell name="proyectos"><ProyectosPage /></RouteShell>
+      </Route>
+      <Route path="/clientes">
+        <RouteShell name="clientes"><ClientesPage /></RouteShell>
+      </Route>
+      <Route path="/reuniones">
+        <RouteShell name="reuniones"><ReunionesPage /></RouteShell>
+      </Route>
+      <Route path="/notas">
+        <RouteShell name="notas"><NotasPage /></RouteShell>
+      </Route>
+      <Route path="/contratos">
+        <RouteShell name="contratos"><ContratosPage /></RouteShell>
+      </Route>
+      <Route path="/ventas">
+        <RouteShell name="ventas"><VentasPage /></RouteShell>
+      </Route>
+      <Route path="/cobros">
+        <RouteShell name="cobros"><CobrosPage /></RouteShell>
+      </Route>
+      <Route path="/servicios">
+        <RouteShell name="servicios"><ServiciosPage /></RouteShell>
+      </Route>
+      <Route path="/equipo-hoy">
+        <RouteShell name="equipo-hoy"><EquipoHoyPage /></RouteShell>
+      </Route>
+      <Route path="/asistencia">
+        <RouteShell name="asistencia"><AsistenciaPage /></RouteShell>
+      </Route>
+      <Route path="/drive-hub">
+        <RouteShell name="drive-hub"><DriveHubPage /></RouteShell>
       </Route>
       <Route path="/reportes">
         <RouteShell name="reportes"><ReportesPage /></RouteShell>
