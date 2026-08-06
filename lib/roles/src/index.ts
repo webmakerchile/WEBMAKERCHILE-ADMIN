@@ -52,6 +52,10 @@ export interface RoleDef {
    * servidor — nunca se le envía el dato y luego se oculta en pantalla.
    */
   canSeeMoney: boolean;
+  /** Puede gestionar el catálogo de servicios y la torre de ventas/cobros del Hub Ejecutivo. */
+  canManageSales: boolean;
+  /** Puede ver la asistencia del equipo (pase de lista) dentro del Hub Ejecutivo. */
+  canSeeAttendance: boolean;
   /** Colecciones del tablero (Hub) que puede leer. */
   hubScopes: readonly HubScope[];
   /**
@@ -107,6 +111,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: true,
     canReview: true,
     canSeeMoney: true,
+    canManageSales: true,
+    canSeeAttendance: true,
     hubScopes: ALL_HUB_SCOPES,
     hubWrite: ALL_HUB_SCOPES,
     ticketAreas: ["direccion"],
@@ -122,6 +128,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: false,
     canReview: false,
     canSeeMoney: false,
+    canManageSales: false,
+    canSeeAttendance: false,
     hubScopes: [],
     hubWrite: [],
     ticketAreas: ["contenido"],
@@ -137,6 +145,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: false,
     canReview: false,
     canSeeMoney: false,
+    canManageSales: false,
+    canSeeAttendance: false,
     hubScopes: [],
     hubWrite: [],
     ticketAreas: ["redes"],
@@ -152,6 +162,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: true,
     canReview: false,
     canSeeMoney: true,
+    canManageSales: true,
+    canSeeAttendance: true,
     hubScopes: ["contracts", "clients", "meetings", "projects"],
     hubWrite: ["contracts", "clients", "meetings"],
     ticketAreas: ["ventas"],
@@ -167,6 +179,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: false,
     canReview: false,
     canSeeMoney: false,
+    canManageSales: false,
+    canSeeAttendance: false,
     hubScopes: ["projects", "tasks", "notes", "contracts"],
     hubWrite: ["projects", "tasks"],
     ticketAreas: ["desarrollo"],
@@ -182,6 +196,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: false,
     canReview: true,
     canSeeMoney: false,
+    canManageSales: false,
+    canSeeAttendance: false,
     hubScopes: ["projects", "tasks", "clients", "contracts"],
     hubWrite: ["tasks"],
     ticketAreas: ["marketing"],
@@ -191,12 +207,16 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     label: "Recursos Humanos",
     description: "Fichas laborales del equipo, contratos, ingresos y solicitudes de acceso.",
     home: "/rrhh",
-    routes: ["/rrhh", "/equipo", "/mis-tareas", "/proyecciones", "/agencia", ...COMMON_ROUTES],
+    // /ejecutivo: RRHH necesita entrar al Hub para la pestaña Asistencia
+    // (pase de lista del equipo) — ver canSeeAttendance.
+    routes: ["/rrhh", "/equipo", "/ejecutivo", "/mis-tareas", "/proyecciones", "/agencia", ...COMMON_ROUTES],
     canManageTeam: true,
     canManagePeople: true,
     canAssignGoals: true,
     canReview: false,
     canSeeMoney: false,
+    canManageSales: false,
+    canSeeAttendance: true,
     hubScopes: [],
     hubWrite: [],
     ticketAreas: ["rrhh"],
@@ -212,6 +232,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: false,
     canReview: false,
     canSeeMoney: true,
+    canManageSales: false,
+    canSeeAttendance: false,
     hubScopes: ["contracts"],
     hubWrite: [],
     ticketAreas: ["finanzas"],
@@ -227,6 +249,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canAssignGoals: true,
     canReview: true,
     canSeeMoney: true,
+    canManageSales: true,
+    canSeeAttendance: true,
     hubScopes: ALL_HUB_SCOPES,
     hubWrite: ALL_HUB_SCOPES,
     ticketAreas: ["direccion"],
@@ -292,6 +316,16 @@ export function canReview(role: unknown, isSuperAdmin = false): boolean {
 /** ¿Este rol puede ver montos (valores, precios por módulo, PDF comercial)? */
 export function canSeeMoney(role: unknown, isSuperAdmin = false): boolean {
   return roleDef(role, isSuperAdmin).canSeeMoney;
+}
+
+/** ¿Puede este rol gestionar el catálogo de servicios y la torre de ventas/cobros del Hub? */
+export function canManageSales(role: unknown, isSuperAdmin = false): boolean {
+  return roleDef(role, isSuperAdmin).canManageSales;
+}
+
+/** ¿Puede este rol ver la asistencia del equipo (pase de lista) en el Hub Ejecutivo? */
+export function canSeeAttendance(role: unknown, isSuperAdmin = false): boolean {
+  return roleDef(role, isSuperAdmin).canSeeAttendance;
 }
 
 export function hubScopesFor(role: unknown, isSuperAdmin = false): readonly HubScope[] {

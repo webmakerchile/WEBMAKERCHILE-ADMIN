@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListDriveFiles, useListDriveFolders } from "@workspace/api-client-react";
 import { useAuth } from "@/App";
-import { ALL_HUB_SCOPES, type HubScope } from "@workspace/roles";
+import { ALL_HUB_SCOPES, type HubScope, canManageSales, canSeeAttendance, roleHome } from "@workspace/roles";
+import { useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PushEnableBanner } from "@/components/push-enable-banner";
 import { ViewAsBar } from "@/components/view-as-bar";
@@ -5862,15 +5863,21 @@ const TabIcons: Record<Tab, React.ReactNode> = {
 export default function EjecutivoPage() {
   const authUser = useAuth();
   const isAdmin = authUser?.role === "superadmin" || authUser?.role === "admin";
-  // "ejecutivo" es alias legacy de "ventas" (mismo criterio que normalizeRole en el backend).
-  const canManageSvc = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo";
+  // Rol efectivo: misma fuente única que el sidebar y el enrutador (respeta
+  // "ver como" y colapsa alias legacy como "ejecutivo"/"edicion").
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
+  const isSuperAdmin = !viewAs && authUser?.role === "superadmin";
+  const homeHref = roleHome(effectiveRole, isSuperAdmin);
+  // Gestión de ventas (catálogo de servicios, torre de ventas/cobros): ceo/ventas.
+  const canManageSvc = canManageSales(effectiveRole, isSuperAdmin);
   // Torre de control CEO: solo dirección (mismo criterio que el backend: rol ceo).
-  const isCeo = authUser?.role === "superadmin" || authUser?.teamRole === "ceo";
+  const isCeo = isSuperAdmin || effectiveRole === "ceo";
   // La pestaña Servicios/Playbooks la ven admins y quienes pueden gestionarla (ceo/ventas).
   const canSeeSvc = isAdmin || canManageSvc;
-  // Asistencia (pase de lista del equipo): mismo criterio que canOversee en el backend
-  // (dirección, ventas y RRHH). El resto tiene su propia jornada en "Mi día".
-  const canSeeAtt = authUser?.role === "superadmin" || authUser?.teamRole === "ceo" || authUser?.teamRole === "ventas" || (authUser?.teamRole as string) === "ejecutivo" || authUser?.teamRole === "rrhh";
+  // Asistencia (pase de lista del equipo): dirección, ventas y RRHH. El resto
+  // tiene su propia jornada en "Mi día".
+  const canSeeAtt = canSeeAttendance(effectiveRole, isSuperAdmin);
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const storageKey = hubStorageKey(authUser?.id);
@@ -6304,7 +6311,7 @@ export default function EjecutivoPage() {
                     <button onClick={handleLogout} className="flex items-center w-full px-3 py-3 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors">
                       <LogOut className="w-4 h-4 mr-3" />Cerrar sesión
                     </button>
-                    <Link href="/" className="flex items-center px-3 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 rounded-xl transition-colors">
+                    <Link href={homeHref} className="flex items-center px-3 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-foreground/5 rounded-xl transition-colors">
                       <ChevronLeft className="w-4 h-4 mr-2" />Volver al panel
                     </Link>
                   </div>
@@ -6520,7 +6527,7 @@ export default function EjecutivoPage() {
                 Cerrar sesión
               </button>
               <Link
-                href="/"
+                href={homeHref}
                 title="Volver al panel"
                 className="flex items-center justify-center px-2.5 py-2.5 text-muted-foreground hover:text-foreground hover:bg-foreground/5 rounded-xl transition-colors"
               >

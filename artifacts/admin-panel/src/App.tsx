@@ -6,12 +6,11 @@ import { createContext, useContext, Component, lazy, Suspense, type ReactNode } 
 import { LangProvider } from "@/lib/lang";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
-import { Loader2, AlertTriangle, ShieldOff } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
 import { canAccessRoute, roleHome, canManageTeam, type TeamRole } from "@workspace/roles";
 import { ViewAsProvider, useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { useEffect } from "react";
-import { areaCanAccessPage, toArea, AREA_HOME, type Area } from "@workspace/areas";
 
 // Eager: dashboard is the landing page; login pages are tiny and unauthed.
 import Dashboard from "./pages/dashboard";
@@ -149,52 +148,6 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   );
 }
 
-/** Shown when a user tries to access a page outside their area. */
-function UnauthorizedPage() {
-  const user = useAuth();
-  const area = toArea(user?.teamRole);
-  const home = AREA_HOME[area];
-  const [, setLocation] = useLocation();
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="text-center p-8 max-w-sm">
-        <ShieldOff className="w-10 h-10 text-amber-500 mx-auto mb-3" />
-        <h2 className="text-lg font-semibold mb-1">Acceso restringido</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Tu área no tiene permiso para ver esta sección.
-        </p>
-        <button
-          onClick={() => setLocation(home)}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm"
-        >
-          Ir a mi panel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/** Wraps a page and shows UnauthorizedPage if the current user's area cannot access path. */
-function AreaGuard({ path, children }: { path: string; children: ReactNode }) {
-  const user = useAuth();
-  const area = toArea(user?.teamRole);
-  if (!areaCanAccessPage(area, path)) {
-    return <UnauthorizedPage />;
-  }
-  return <>{children}</>;
-}
-
-/** Legacy guard kept for the /ejecutivo route — now expanded to include "ejecutivo" area. */
-function EjecutivoRoute({ children }: { children: ReactNode }) {
-  const user = useAuth();
-  if (!user) return null;
-  const area = toArea(user.teamRole);
-  if (user.role !== "superadmin" && area !== "ceo" && area !== "ejecutivo" && area !== "rrhh") {
-    return <UnauthorizedPage />;
-  }
-  return <>{children}</>;
-}
-
 function AccessDeniedScreen({ user }: { user: AuthUser }) {
   const handleLogout = async () => {
     try {
@@ -294,15 +247,14 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     setSentryUser(user ? { id: user.id, email: user.email } : null);
   }, [user]);
 
-  // Post-login redirect: send each area to its home page when landing on "/".
+  // Post-login redirect: send each role to its home page when landing on "/".
   useEffect(() => {
     if (!user || user.approvalStatus !== "approved") return;
-    const area = toArea(user.teamRole);
-    const home = AREA_HOME[area as Area];
+    const home = roleHome(user.teamRole, user.role === "superadmin");
     if (location === "/" && home !== "/") {
       setLocation(home);
     }
-  }, [user?.teamRole, user?.approvalStatus, location, setLocation]);
+  }, [user?.teamRole, user?.role, user?.approvalStatus, location, setLocation]);
 
   if (isLoading) {
     return (
@@ -370,94 +322,58 @@ function Router() {
   return (
     <Switch>
       <Route path="/">
-        <AreaGuard path="/">
-          <RouteShell name="dashboard"><Dashboard /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="dashboard"><Dashboard /></RouteShell>
       </Route>
       <Route path="/videos">
-        <AreaGuard path="/videos">
-          <RouteShell name="videos"><VideosPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="videos"><VideosPage /></RouteShell>
       </Route>
       <Route path="/cover">
-        <AreaGuard path="/cover">
-          <RouteShell name="cover"><CoverGeneratorPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="cover"><CoverGeneratorPage /></RouteShell>
       </Route>
       <Route path="/drive">
-        <AreaGuard path="/drive">
-          <RouteShell name="drive"><DriveBrowserPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="drive"><DriveBrowserPage /></RouteShell>
       </Route>
       <Route path="/schedule">
-        <AreaGuard path="/schedule">
-          <RouteShell name="schedule"><SchedulePage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="schedule"><SchedulePage /></RouteShell>
       </Route>
       <Route path="/estudio">
-        <AreaGuard path="/estudio">
-          <RouteShell name="estudio"><StudioPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="estudio"><StudioPage /></RouteShell>
       </Route>
       <Route path="/historias">
-        <AreaGuard path="/historias">
-          <RouteShell name="historias"><HistoriasPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="historias"><HistoriasPage /></RouteShell>
       </Route>
       <Route path="/descripciones">
-        <AreaGuard path="/descripciones">
-          <RouteShell name="descripciones"><DescripcionesPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="descripciones"><DescripcionesPage /></RouteShell>
       </Route>
       <Route path="/cuentas">
-        <AreaGuard path="/cuentas">
-          <RouteShell name="cuentas"><CuentasPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="cuentas"><CuentasPage /></RouteShell>
       </Route>
       <Route path="/biblioteca">
-        <AreaGuard path="/biblioteca">
-          <RouteShell name="biblioteca"><BibliotecaPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="biblioteca"><BibliotecaPage /></RouteShell>
       </Route>
       <Route path="/insights">
-        <AreaGuard path="/insights">
-          <RouteShell name="insights"><InsightsPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="insights"><InsightsPage /></RouteShell>
       </Route>
       <Route path="/campanas/:id">
-        <AreaGuard path="/biblioteca">
-          <RouteShell name="campana"><CampanaPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="campana"><CampanaPage /></RouteShell>
       </Route>
       <Route path="/equipo">
-        <AreaGuard path="/equipo">
-          <RouteShell name="equipo"><EquipoPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="equipo"><EquipoPage /></RouteShell>
       </Route>
       <Route path="/transcriptor">
-        <AreaGuard path="/transcriptor">
-          <RouteShell name="transcriptor"><TranscriptorPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="transcriptor"><TranscriptorPage /></RouteShell>
       </Route>
       <Route path="/ayuda">
-        <AreaGuard path="/ayuda">
-          <RouteShell name="ayuda"><AyudaPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="ayuda"><AyudaPage /></RouteShell>
       </Route>
       <Route path="/ajustes">
-        <AreaGuard path="/ajustes">
-          <RouteShell name="ajustes"><AjustesPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="ajustes"><AjustesPage /></RouteShell>
       </Route>
       <Route path="/mi-dia">
-        <AreaGuard path="/mi-dia">
-          <RouteShell name="mi-dia"><MiDiaPage /></RouteShell>
-        </AreaGuard>
+        <RouteShell name="mi-dia"><MiDiaPage /></RouteShell>
       </Route>
       <Route path="/ejecutivo">
-        <EjecutivoRoute>
-          <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
-        </EjecutivoRoute>
+        <RouteShell name="ejecutivo"><EjecutivoPage /></RouteShell>
       </Route>
       <Route path="/reportes">
         <RouteShell name="reportes"><ReportesPage /></RouteShell>
