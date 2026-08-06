@@ -11,6 +11,7 @@ import {
   serieCobros,
   serieCumplimiento,
   serieHorasMensuales,
+  serieProduccion,
   serieVentasCerradas,
 } from "./proyecciones";
 import { mesSiguiente } from "./proyeccion-ventas";
@@ -253,5 +254,39 @@ describe("serieCumplimiento", () => {
 
   it("descarta claves que no son semanas", () => {
     expect(serieCumplimiento([{ weekKey: "2026-07", total: 3, done: 1 }])).toEqual([]);
+  });
+});
+
+describe("serieProduccion", () => {
+  it("cuenta tareas completadas por mes y rellena huecos", () => {
+    const serie = serieProduccion([
+      { completedAt: "2026-01-15T18:00:00Z" },
+      { completedAt: "2026-01-20T12:00:00Z" },
+      { completedAt: "2026-03-02T15:00:00Z" },
+    ]);
+    expect(serie).toEqual([
+      { periodo: "2026-01", valor: 2 },
+      { periodo: "2026-02", valor: 0 },
+      { periodo: "2026-03", valor: 1 },
+    ]);
+  });
+
+  it("ignora tareas sin completar y fechas corruptas", () => {
+    expect(serieProduccion([{ completedAt: null }, { completedAt: "no-es-fecha" }])).toEqual([]);
+  });
+
+  it("acepta Date y string ISO por igual", () => {
+    const serie = serieProduccion([
+      { completedAt: new Date("2026-04-10T15:00:00Z") },
+      { completedAt: "2026-04-11T15:00:00Z" },
+    ]);
+    expect(serie).toEqual([{ periodo: "2026-04", valor: 2 }]);
+  });
+
+  it("bucketea por el día de Santiago, no el de UTC", () => {
+    // 01:00 UTC del 1° de junio ya es 31 de mayo en Santiago (UTC-4 en pleno
+    // invierno, sin ambigüedad de horario de verano): tiene que caer en mayo.
+    const serie = serieProduccion([{ completedAt: "2026-06-01T01:00:00Z" }]);
+    expect(serie).toEqual([{ periodo: "2026-05", valor: 1 }]);
   });
 });

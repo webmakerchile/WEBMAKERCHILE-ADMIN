@@ -47,7 +47,7 @@ async function req<T>(path: string): Promise<T> {
 interface SerieDef {
   id: string;
   label: string;
-  unidad: "clp" | "horas" | "pct";
+  unidad: "clp" | "horas" | "pct" | "unidades";
   tipoPeriodo: "mes" | "semana";
   disponible: boolean;
 }
@@ -86,6 +86,7 @@ function labelPeriodo(p: string): string {
 function fmtValor(unidad: SerieDef["unidad"], v: number): string {
   if (unidad === "clp") return fmtCLP(v);
   if (unidad === "horas") return `${v.toLocaleString("es-CL")} h`;
+  if (unidad === "unidades") return v.toLocaleString("es-CL");
   return `${v.toLocaleString("es-CL")}%`;
 }
 
@@ -105,6 +106,7 @@ const NOTA_SERIE: Record<string, string> = {
   cobros: "Abonos realmente recibidos, brutos (IVA incluido).",
   horas: "Horas de jornada registradas por asistencia.",
   cumplimiento: "Tareas listas / comprometidas de todo el equipo, según el cierre de cada semana.",
+  produccion: "Tareas del tablero que llegaron a \"Listo\", contadas en el mes en que se completaron.",
 };
 
 export default function ProyeccionesPage() {

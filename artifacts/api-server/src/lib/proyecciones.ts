@@ -18,6 +18,7 @@ import {
 import { esVentaCerrada } from "./estado-contrato";
 import { contractNet } from "./ventas";
 import { sessionMinutes } from "../routes/jornada";
+import { periodKey } from "./periods";
 
 type Rec = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -266,4 +267,28 @@ export function serieCumplimiento(
     .filter(([, v]) => v.total > 0)
     .map(([periodo, v]) => ({ periodo, valor: Math.round(((100 * v.done) / v.total) * 10) / 10 }))
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
+}
+
+/**
+ * Producción por mes: tareas del Kanban que llegaron a "Listo", contadas en
+ * el mes en que se completaron (hora de Santiago) — el mismo `completedAt`
+ * que ya escribe el tablero al cerrar una tarea, no una fuente nueva. Si una
+ * tarea se reabre, el servidor limpia ese campo solo, así que el conteo
+ * siempre refleja lo que sigue entregado hoy, no picos que luego se deshacen.
+ */
+export function serieProduccion(
+  tareas: readonly { completedAt: Date | string | null }[],
+): PuntoPeriodo[] {
+  const porMes = new Map<string, number>();
+  for (const t of tareas) {
+    if (!t.completedAt) continue;
+    const fecha = t.completedAt instanceof Date ? t.completedAt : new Date(t.completedAt);
+    if (Number.isNaN(fecha.getTime())) continue;
+    const mes = periodKey("mensual", fecha);
+    porMes.set(mes, (porMes.get(mes) ?? 0) + 1);
+  }
+  return completarPeriodos(
+    [...porMes.entries()].map(([periodo, valor]) => ({ periodo, valor })),
+    mesSiguiente,
+  );
 }

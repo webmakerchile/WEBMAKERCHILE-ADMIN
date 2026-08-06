@@ -9,11 +9,12 @@ import { z } from "zod";
 import { db } from "@workspace/db";
 import {
   contractPayments,
+  hubTasks,
   hubWorkSessions,
   projectAssignments,
   sprintWeekClosures,
 } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { canSeeMoney, normalizeRole, type TeamRole } from "@workspace/roles";
 import { resolveBoard } from "../../lib/hub-board";
 import { mesSiguiente } from "../../lib/proyeccion-ventas";
@@ -23,6 +24,7 @@ import {
   serieCobros,
   serieCumplimiento,
   serieHorasMensuales,
+  serieProduccion,
   serieVentasCerradas,
   type PuntoPeriodo,
 } from "../../lib/proyecciones";
@@ -68,6 +70,12 @@ const SERIES = {
     tipoPeriodo: "semana",
     dinero: false,
   },
+  produccion: {
+    label: "Tareas completadas por mes",
+    unidad: "unidades",
+    tipoPeriodo: "mes",
+    dinero: false,
+  },
 } as const;
 type SerieId = keyof typeof SERIES;
 
@@ -105,7 +113,7 @@ router.get("/hub/proyecciones/series", async (req: Request, res: Response) => {
 });
 
 const DatosQuery = z.object({
-  serie: z.enum(["ventas", "cobros", "horas", "cumplimiento"]),
+  serie: z.enum(["ventas", "cobros", "horas", "cumplimiento", "produccion"]),
   /** Últimos N periodos del histórico; 0 = todo lo que haya. */
   rango: z.coerce.number().int().min(0).max(60).default(12),
   horizonte: z.coerce.number().int().min(1).max(6).default(3),
@@ -177,6 +185,14 @@ router.get("/hub/proyecciones/datos", async (req: Request, res: Response) => {
       completa = serieCumplimiento(cierres);
       break;
     }
+    case "produccion": {
+      const tareas = await db
+        .select({ completedAt: hubTasks.completedAt })
+        .from(hubTasks)
+        .where(isNotNull(hubTasks.completedAt));
+      completa = serieProduccion(tareas);
+      break;
+    }
   }
 
   // El rango recorta el histórico ANTES de ajustar: la recta describe lo que
@@ -185,7 +201,7 @@ router.get("/hub/proyecciones/datos", async (req: Request, res: Response) => {
   const siguiente = def.tipoPeriodo === "semana" ? semanaSiguiente : mesSiguiente;
   const analisis = analizarSerie(historico, horizonte, siguiente, {
     tope: serieId === "cumplimiento" ? 100 : undefined,
-    decimales: def.unidad === "clp" ? 0 : 1,
+    decimales: def.unidad === "clp" || def.unidad === "unidades" ? 0 : 1,
   });
 
   res.json({

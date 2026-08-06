@@ -10,15 +10,18 @@ const PAYMENTS = { __table: "contract_payments", fecha: "fecha", monto: "monto" 
 const SESSIONS = { __table: "hub_work_sessions", userId: "u", workDate: "d", checkIn: "ci", checkOut: "co" };
 const ASSIGN = { __table: "project_assignments", projectRef: "ref", userId: "u", allocationPct: "pct" };
 const CLOSURES = { __table: "sprint_week_closures", weekKey: "wk", total: "t", done: "dn" };
+const TASKS = { __table: "hub_tasks", completedAt: "ca" };
 
 vi.mock("@workspace/db/schema", () => ({
   contractPayments: PAYMENTS,
   hubWorkSessions: SESSIONS,
   projectAssignments: ASSIGN,
   sprintWeekClosures: CLOSURES,
+  hubTasks: TASKS,
 }));
 vi.mock("drizzle-orm", () => ({
   eq: (a: unknown, b: unknown) => ({ a, b }),
+  isNotNull: (a: unknown) => ({ isNotNull: a }),
 }));
 
 let boardData: Record<string, unknown> = {};
@@ -31,7 +34,8 @@ const rows: {
   sessions: Record<string, unknown>[];
   assignments: Record<string, unknown>[];
   closures: Record<string, unknown>[];
-} = { payments: [], sessions: [], assignments: [], closures: [] };
+  tasks: Record<string, unknown>[];
+} = { payments: [], sessions: [], assignments: [], closures: [], tasks: [] };
 
 vi.mock("@workspace/db", () => {
   const from = (table: unknown) => {
@@ -40,6 +44,7 @@ vi.mock("@workspace/db", () => {
       if (table === SESSIONS) return rows.sessions;
       if (table === ASSIGN) return rows.assignments;
       if (table === CLOSURES) return rows.closures;
+      if (table === TASKS) return rows.tasks;
       return [];
     };
     const chain: Record<string, unknown> = {};
@@ -80,6 +85,7 @@ beforeEach(() => {
   rows.sessions = [];
   rows.assignments = [];
   rows.closures = [];
+  rows.tasks = [];
 });
 
 describe("GET /hub/proyecciones/series", () => {
@@ -97,6 +103,7 @@ describe("GET /hub/proyecciones/series", () => {
     expect(porId.get("cobros")).toBe(false);
     expect(porId.get("horas")).toBe(true);
     expect(porId.get("cumplimiento")).toBe(true);
+    expect(porId.get("produccion")).toBe(true);
   });
 
   it("lista solo proyectos con horas imputadas, con su nombre del tablero", async () => {
@@ -201,5 +208,20 @@ describe("GET /hub/proyecciones/datos", () => {
     expect(r.status).toBe(200);
     expect(r.body.pendiente).toBeNull();
     expect(r.body.proyeccion).toEqual([]);
+  });
+
+  it("producción: RRHH también puede (no es serie de dinero) y cuenta tareas por mes", async () => {
+    rows.tasks = [
+      { completedAt: "2026-01-10T15:00:00Z" },
+      { completedAt: "2026-01-20T15:00:00Z" },
+      { completedAt: "2026-02-05T15:00:00Z" },
+    ];
+    const r = await api(RRHH, "/hub/proyecciones/datos?serie=produccion");
+    expect(r.status).toBe(200);
+    expect(r.body.historico).toEqual([
+      { periodo: "2026-01", valor: 2 },
+      { periodo: "2026-02", valor: 1 },
+    ]);
+    expect((r.body.serie as { unidad: string }).unidad).toBe("unidades");
   });
 });
