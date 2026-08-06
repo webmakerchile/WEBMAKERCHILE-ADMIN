@@ -281,4 +281,13 @@ describe("el Hub Ejecutivo ahora vive en páginas propias del sidebar", () => {
       expect(canAccessRoute(role, "/torre-ceo"), `${role} no debería ver la Torre CEO`).toBe(false);
     }
   });
+
+  it("Agencia es exclusiva de dirección: ningún otro rol la ve, ni con vista reducida", () => {
+    for (const role of ["ceo", "tester"] as const) {
+      expect(canAccessRoute(role, "/agencia"), `${role} debería ver Agencia`).toBe(true);
+    }
+    for (const role of ["editora", "social", "ventas", "dev", "marketing", "rrhh", "contador"] as const) {
+      expect(canAccessRoute(role, "/agencia"), `${role} no debería ver Agencia`).toBe(false);
+    }
+  });
 });

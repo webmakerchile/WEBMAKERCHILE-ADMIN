@@ -3,11 +3,12 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 
 /**
- * Router /panel (sección Agencia), con dos modos resueltos en el servidor:
+ * Router /panel (sección Agencia), SOLO de dirección — con una excepción:
  * - dirección (teamRole ceo o superadmin): ve todo tal cual llega del panel
- * - equipo (todos los demás roles): entra, pero CADA respuesta sale saneada
- *   (sin plata, sin finanzas, sin documentos de dirección) y los proyectos
- *   terminados solo aparecen si fueron compartidos.
+ * - "tester" (cuenta de revisión de TikTok, no se toca): entra en modo
+ *   equipo, con CADA respuesta saneada (sin plata, sin finanzas, sin
+ *   documentos de dirección) y proyectos terminados solo si se compartieron.
+ * - cualquier otro rol del equipo: 403 en la puerta, no entra ni reducido.
  * El rol se lee SIEMPRE de la base; la caché de vistas guarda el payload
  * crudo y se sanea por request (dirección y equipo comparten entrada).
  */
@@ -149,6 +150,10 @@ const comoCeo = () => {
 const comoEditora = () => {
   usuarioDb = { id: 8, role: "admin", teamRole: "editora" };
 };
+/** Cuenta de revisión de TikTok: la única excepción que sigue en modo equipo. */
+const comoTester = () => {
+  usuarioDb = { id: 10, role: "admin", teamRole: "tester" };
+};
 
 /** El sync manual limpia la caché real de vistas: lo usamos entre tests. */
 const limpiarCache = async () => {
@@ -175,8 +180,23 @@ describe("modos de acceso", () => {
     expect(r.status).toBe(403);
   });
 
-  it("una editora AHORA entra, pero en modo equipo: estado sin recursos de dirección", async () => {
+  it("una editora ya no entra a Agencia: 403 en la puerta, ni con vista reducida", async () => {
     comoEditora();
+    const r = await llamar("GET", "/panel/estado");
+    expect(r.status).toBe(403);
+    expect(r.cuerpo.porRecurso).toBeUndefined();
+  });
+
+  it("el resto de los roles del equipo tampoco entra a Agencia", async () => {
+    for (const teamRole of ["social", "ventas", "dev", "marketing", "rrhh", "contador"] as const) {
+      usuarioDb = { id: 20, role: "admin", teamRole };
+      const r = await llamar("GET", "/panel/estado");
+      expect(r.status, `${teamRole} no debería entrar a Agencia`).toBe(403);
+    }
+  });
+
+  it("tester (cuenta de revisión) sigue entrando en modo equipo: estado sin recursos de dirección", async () => {
+    comoTester();
     const r = await llamar("GET", "/panel/estado");
     expect(r.status).toBe(200);
     expect(r.cuerpo.porRecurso.clientes).toBe(5);
@@ -191,8 +211,8 @@ describe("modos de acceso", () => {
     expect(r.cuerpo.cursor).toBe("2026-08-01T00:00:00.000Z");
   });
 
-  it("equipo: el estado no trae diagnóstico interno (cursor/detalle/error crudo)", async () => {
-    comoEditora();
+  it("equipo (tester): el estado no trae diagnóstico interno (cursor/detalle/error crudo)", async () => {
+    comoTester();
     estadoFilaMock.mockResolvedValueOnce({
       id: 1,
       cursor: "2026-08-01T00:00:00.000Z",
@@ -224,8 +244,8 @@ describe("modos de acceso", () => {
     expect(r.cuerpo.detalle).toEqual({ duracionMs: 40 });
   });
 
-  it("equipo: el sync devuelve solo si se aplicó, sin diagnóstico", async () => {
-    comoEditora();
+  it("equipo (tester): el sync devuelve solo si se aplicó, sin diagnóstico", async () => {
+    comoTester();
     sincronizarMock.mockResolvedValueOnce({ aplicado: true, motivo: "cursor movido", porRecurso: { "pagos-mantenimiento": 4 } });
     const r = await llamar("POST", "/panel/sync");
     expect(r.status).toBe(200);
@@ -240,11 +260,11 @@ describe("modos de acceso", () => {
     expect(r.cuerpo.porRecurso).toEqual({ clientes: 2 });
   });
 
-  it("ventas ya no ve finanzas: modo equipo → 403 solo_direccion", async () => {
+  it("ventas: bloqueada en la puerta de Agencia, ni llega al gate de finanzas", async () => {
     usuarioDb = { id: 9, role: "admin", teamRole: "ventas" };
     const r = await llamar("GET", "/panel/finanzas/resumen");
     expect(r.status).toBe(403);
-    expect(r.cuerpo.error).toBe("solo_direccion");
+    expect(r.cuerpo.error).not.toBe("solo_direccion");
   });
 
   it("superadmin manda aunque su teamRole sea otro: modo completo", async () => {
@@ -273,7 +293,7 @@ describe("espejo", () => {
   });
 
   it("equipo: pide el listado con visibilidad de equipo y lo entrega saneado", async () => {
-    comoEditora();
+    comoTester();
     leerEspejoMock.mockResolvedValueOnce({
       total: 1,
       limite: 100,
@@ -287,14 +307,14 @@ describe("espejo", () => {
   });
 
   it("equipo: recursos de dirección (pagos-mantenimiento) → 403", async () => {
-    comoEditora();
+    comoTester();
     const r = await llamar("GET", "/panel/espejo/pagos-mantenimiento");
     expect(r.status).toBe(403);
     expect(r.cuerpo.error).toBe("solo_direccion");
   });
 
   it("equipo: proyecto terminado NO compartido → 404 (mismo mensaje que inexistente)", async () => {
-    comoEditora();
+    comoTester();
     leerRegistroMock.mockResolvedValueOnce({ id: "pr1", status: "COMPLETED", name: "Sitio", totalValue: 5 });
     const r = await llamar("GET", "/panel/espejo/proyectos/pr1");
     expect(r.status).toBe(404);
@@ -302,7 +322,7 @@ describe("espejo", () => {
   });
 
   it("equipo: proyecto terminado compartido → 200 saneado", async () => {
-    comoEditora();
+    comoTester();
     visibilidadFilas = [{ panelId: "pr1" }];
     leerRegistroMock.mockResolvedValueOnce({ id: "pr1", status: "COMPLETED", name: "Sitio", totalValue: 5 });
     const r = await llamar("GET", "/panel/espejo/proyectos/pr1");
@@ -312,7 +332,7 @@ describe("espejo", () => {
   });
 
   it("equipo: tarea de un proyecto terminado no compartido → 404", async () => {
-    comoEditora();
+    comoTester();
     leerRegistroMock
       .mockResolvedValueOnce({ id: "t1", projectId: "pr1", title: "Deploy", status: "DOING" })
       .mockResolvedValueOnce({ id: "pr1", status: "COMPLETED" });
@@ -341,7 +361,7 @@ describe("vistas en vivo", () => {
     expect(ceo.status).toBe(200);
     expect(ceo.cuerpo.negocio.mrrNeto).toBe(7);
 
-    comoEditora();
+    comoTester();
     const equipo = await llamar("GET", "/panel/resumen");
     expect(panelGetMock).toHaveBeenCalledTimes(1); // misma entrada de caché
     expect(equipo.cuerpo.negocio).toEqual({ contratosMantenimientoActivos: 1, proyectosActivos: 3, presupuestosAbiertos: 2 });
@@ -349,7 +369,7 @@ describe("vistas en vivo", () => {
   });
 
   it("equipo: finanzas y contratos en vivo → 403; plantillas → solo id y nombre", async () => {
-    comoEditora();
+    comoTester();
     const fin = await llamar("GET", "/panel/finanzas/resumen");
     expect(fin.status).toBe(403);
     const con = await llamar("GET", "/panel/contratos");
@@ -363,7 +383,7 @@ describe("vistas en vivo", () => {
   });
 
   it("equipo: vista de detalle saneada en profundidad (items sin precios)", async () => {
-    comoEditora();
+    comoTester();
     panelGetMock.mockResolvedValueOnce({
       ok: true,
       datos: {
@@ -380,7 +400,7 @@ describe("vistas en vivo", () => {
   });
 
   it("equipo: vista de proyecto que no está en el espejo o no compartido → 404 sin tocar el panel", async () => {
-    comoEditora();
+    comoTester();
     const r = await llamar("GET", "/panel/vistas/proyectos/pr9");
     expect(r.status).toBe(404);
     expect(panelGetMock).not.toHaveBeenCalled();
@@ -389,7 +409,7 @@ describe("vistas en vivo", () => {
 
 describe("compartir proyectos terminados (solo dirección)", () => {
   it("equipo no puede ni mirar ni tocar", async () => {
-    comoEditora();
+    comoTester();
     const ver = await llamar("GET", "/panel/compartidos/proyectos");
     expect(ver.status).toBe(403);
     const tocar = await llamar("PUT", "/panel/compartidos/proyectos", { compartido: true });
@@ -450,7 +470,7 @@ describe("escrituras delegadas", () => {
   });
 
   it("crear presupuesto (equipo): puede tipear precios, pero la respuesta vuelve sin plata", async () => {
-    comoEditora();
+    comoTester();
     const devuelto = { id: "p2", clientId: "c1", status: "DRAFT", total: 119000, notes: "n" };
     panelPostMock.mockResolvedValueOnce({ ok: true, datos: devuelto, calculo: { total: 119000 } });
     const r = await llamar("POST", "/panel/presupuestos", {
@@ -469,7 +489,7 @@ describe("escrituras delegadas", () => {
   });
 
   it("editar presupuesto (equipo): solo viaja el estado, nada de notas ni vigencia", async () => {
-    comoEditora();
+    comoTester();
     panelPatchMock.mockResolvedValueOnce({ ok: true, datos: { id: "p1", status: "SENT", total: 9 } });
     const r = await llamar("PATCH", "/panel/presupuestos/p1", { estado: "SENT", notes: "hack", validUntil: "2027-01-01" });
     expect(r.status).toBe(200);
@@ -479,7 +499,7 @@ describe("escrituras delegadas", () => {
   });
 
   it("crear contrato (equipo): sin contenido libre; la respuesta conserva SOLO el link de firma", async () => {
-    comoEditora();
+    comoTester();
     panelPostMock.mockResolvedValueOnce({
       ok: true,
       creado: true,
@@ -538,7 +558,7 @@ describe("escrituras delegadas", () => {
 
 describe("redacción de contratos con IA", () => {
   it("equipo → 403 en redactar y corregir (la redacción trae plata)", async () => {
-    comoEditora();
+    comoTester();
     const r1 = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1" });
     expect(r1.status).toBe(403);
     expect(r1.cuerpo.error).toBe("solo_direccion");
@@ -592,7 +612,7 @@ describe("redacción de contratos con IA", () => {
   });
 
   it("equipo: la vista en vivo de un contrato no trae email ni IP del firmante", async () => {
-    comoEditora();
+    comoTester();
     panelGetMock.mockResolvedValueOnce({
       ok: true,
       datos: {
@@ -648,7 +668,7 @@ describe("redacción de contratos con IA", () => {
   });
 
   it("crear contrato (equipo): las secciones se descartan igual que el contenido libre", async () => {
-    comoEditora();
+    comoTester();
     panelPostMock.mockResolvedValueOnce({ ok: true, creado: true, datos: { id: "cs3", proposalId: "p1", status: "DRAFT" } });
     const r = await llamar("POST", "/panel/contratos-servicio", {
       presupuestoId: "p1",

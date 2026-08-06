@@ -32,12 +32,15 @@ import { guardarVista, limpiarCacheVistas, vistaEnCache } from "../../lib/panel/
 
 /**
  * Sección Agencia: espejo del panel autoadministrable de webmakerlatam.com.
+ * Es SOLO de dirección: ningún otro rol del equipo entra, ni con vista reducida.
  *
- * Dos modos, resueltos acá y NUNCA en el cliente:
+ * Modos, resueltos acá y NUNCA en el cliente:
  *  - "completo": dirección (CEO / superadmin). Ve todo tal cual llega del panel.
- *  - "equipo": todos los demás roles del equipo. El servidor sanea cada
- *    respuesta (lista blanca + depuración profunda): sin plata, sin finanzas,
- *    sin documentos de dirección; proyectos terminados solo si se compartieron.
+ *  - "equipo": EXCLUSIVO de "tester" (cuenta de revisión de TikTok review, no
+ *    se toca). El servidor sanea cada respuesta (lista blanca + depuración
+ *    profunda): sin plata, sin finanzas, sin documentos de dirección;
+ *    proyectos terminados solo si se compartieron.
+ *  - cualquier otro rol del equipo: bloqueado con 403 antes de tocar el panel.
  *
  * Lecturas: del espejo local (listados) o del panel en vivo con caché corta.
  * La caché guarda SIEMPRE el payload crudo y se sanea después por request,
@@ -60,7 +63,13 @@ async function modoAgencia(req: Request): Promise<ModoAgencia | null> {
   const [me] = await db.select().from(users).where(eq(users.id, sessionUser.id)).limit(1);
   if (!me) return null;
   const esSuper = me.role === "superadmin";
-  return esSuper || normalizeRole(me.teamRole, esSuper) === "ceo" ? "completo" : "equipo";
+  if (esSuper) return "completo";
+  const rol = normalizeRole(me.teamRole, esSuper);
+  if (rol === "ceo") return "completo";
+  // Cuenta de revisión de TikTok: no se toca, sigue en modo equipo como hoy.
+  if (rol === "tester") return "equipo";
+  // Agencia es solo de dirección: cualquier otro rol del equipo queda afuera.
+  return null;
 }
 
 router.use("/panel", (req: Request, res: Response, next: NextFunction) => {
