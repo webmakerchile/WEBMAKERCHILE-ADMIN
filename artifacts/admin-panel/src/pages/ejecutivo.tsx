@@ -3,6 +3,7 @@ import { TicketsInline } from "@/components/tickets-inline";
 import { TicketsManager } from "@/components/tickets-manager";
 import { useTickets, perteneceABandeja } from "@/lib/tickets";
 import { ConectarDrive, useEstadoDrive } from "@/components/conectar-drive";
+import { Adjuntos } from "@/components/adjuntos";
 import { hashDocContrato, hashBriefContrato } from "@/lib/contrato-hash";
 import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
 import { EnlaceFirma } from "@/components/enlace-firma";
@@ -25,7 +26,7 @@ import { ActivityFeed } from "@/components/activity-feed";
 import {
   LogOut, Plus, Menu, X, ChevronLeft,
   LayoutDashboard, Briefcase, Users2, CalendarClock, FileText, FileCheck2, FolderTree, Package,
-  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun, HandCoins, Inbox,
+  AlertTriangle, Clock3, Send, ChevronDown, ChevronUp, ChevronRight, Pin, Headphones, TrendingUp, Gauge, Sun, HandCoins, Inbox, Upload,
 } from "lucide-react";
 import { JornadaCard } from "@/components/jornada-card";
 import VentasPanel from "@/components/ventas-panel";
@@ -2889,6 +2890,8 @@ function SheetContent({ sheet, state, onClose, onSave, onToast, onNavigate, onOp
         })()}
       </div>
 
+      <Adjuntos tipo="contract" id={c.id} titulo="Adjuntos del contrato" />
+
       {/* ---- Proyectos vinculados ---- */}
       {(() => {
         const linked = state.projects.filter(p => p.contractId === c.id);
@@ -4717,12 +4720,14 @@ function GlobalSearch({ state, onOpen, onNavigate }: { state: HubState; onOpen: 
  */
 const HUB_DRIVE_ROOT = "hub";
 
-function HubDriveView() {
+function HubDriveView({ showToast }: { showToast: (msg: string) => void }) {
   const [currentFolderId, setCurrentFolderId] = useState<string>(HUB_DRIVE_ROOT);
   const [folderHistory, setFolderHistory] = useState<{ id: string; name: string }[]>([{ id: HUB_DRIVE_ROOT, name: "Raíz" }]);
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: filesData, isLoading: filesLoading, error: filesError } = useListDriveFiles({ folderId: currentFolderId });
-  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useListDriveFolders({ parentId: currentFolderId });
+  const { data: filesData, isLoading: filesLoading, error: filesError, refetch: refetchFiles } = useListDriveFiles({ folderId: currentFolderId });
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError, refetch: refetchFolders } = useListDriveFolders({ parentId: currentFolderId });
   const drive = useEstadoDrive();
   // Un error NO es una carpeta vacía. Pintarlos igual es lo que ocultó durante
   // meses que al ejecutivo comercial le faltaba el permiso de Drive.
@@ -4740,6 +4745,33 @@ function HubDriveView() {
       const prev = newHistory[newHistory.length - 1];
       setFolderHistory(newHistory);
       setCurrentFolderId(prev.id);
+    }
+  };
+
+  // Antes solo se podía mirar el Drive del Hub, nunca meter algo nuevo: había
+  // que salir al Drive real para subir un archivo a la carpeta que ya se
+  // estaba viendo aquí mismo.
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("parentId", currentFolderId);
+      const res = await fetch(`${DRIVE_API_BASE}/drive/upload`, { method: "POST", credentials: "include", body: fd });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: string };
+        showToast(e.error || "Error al subir el archivo");
+        return;
+      }
+      const data = await res.json() as { name: string };
+      showToast(`"${data.name}" subido a Drive`);
+      void refetchFiles();
+      void refetchFolders();
+    } catch {
+      showToast("Error de conexión al subir el archivo");
+    } finally {
+      setUploading(false);
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
   };
 
@@ -4765,6 +4797,14 @@ function HubDriveView() {
               </span>
             ))}
           </div>
+          {(drive.cargando || drive.conectado) && (<>
+            <button onClick={() => uploadInputRef.current?.click()} disabled={uploading}
+              style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "var(--card1)", border: "1px solid var(--line)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontWeight: 600, cursor: uploading ? "not-allowed" : "pointer", opacity: uploading ? 0.6 : 1 }}>
+              <Upload className="w-3.5 h-3.5" />{uploading ? "Subiendo…" : "Subir archivo"}
+            </button>
+            <input ref={uploadInputRef} type="file" style={{ display: "none" }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) void handleUpload(f); }} />
+          </>)}
         </div>
 
         {/* File grid */}
@@ -6246,7 +6286,7 @@ export default function EjecutivoPage() {
             {tab === "meet" && <MeetView state={state} onOpen={id => openSheet({ kind: "meet", id })} />}
             {tab === "notes" && <NotesView state={state} onSave={setState} onOpen={id => openSheet({ kind: "note", id })} onToast={showToast} filterCat={noteCat} setFilterCat={setNoteCat} searchQ={noteSearch} setSearchQ={setNoteSearch} />}
             {tab === "contracts" && <ContractsView state={state} onOpen={id => openSheet({ kind: "contract", id })} onNew={handleNew} />}
-            {tab === "drive" && <HubDriveView />}
+            {tab === "drive" && <HubDriveView showToast={showToast} />}
             {tab === "team" && <TeamView teamMembers={teamMembers} showToast={showToast} onRefreshTasks={onRefreshTasks} onConfirm={(msg, onYes) => setConfirm({ msg, onYes })} />}
             {tab === "att" && canSeeAtt && <AttendanceView />}
             {tab === "midia" && (

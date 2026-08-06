@@ -40,3 +40,4 @@
 - [Dedup de avisos por destinatario](avisos-dedup-por-destinatario.md) — clave de dedup sin el destinatario colisiona entre personas y descarta avisos en silencio.
 - [Bandejas de tickets: embebida vs. nav vs. vista completa](tickets-bandejas-por-area.md) — "no lo veo": build/pestaña antes que bug; embebido≠nav≠vista completa embebida (ver contador+header).
 - [Continuaciones async que pisan el estado al desmontar](onsave-stale-unmount.md) — un stateRef sincronizado "por render" se congela si el componente se desmonta antes de resolver; fusionar con función `(prev)=>next` dentro del setState real, no con un ref capturado.
+- [Endpoints de subida, fuera del codegen](upload-endpoints-convention.md) — multipart/FormData no pasa por openapi.yaml/orval a propósito; seguir el patrón fetch+FormData de Adjuntos/PdfUploadField/drive routes.

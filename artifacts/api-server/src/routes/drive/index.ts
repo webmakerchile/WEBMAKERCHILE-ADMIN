@@ -249,6 +249,53 @@ router.post("/drive/upload-pdf", upload.single("file"), async (req, res) => {
   }
 });
 
+/**
+ * Sube cualquier archivo (no solo PDF) a una carpeta de Drive.
+ *
+ * Antes solo existía /drive/upload-pdf: el explorador de Drive del Hub dejaba
+ * ver carpetas y archivos pero no tenía cómo meter uno nuevo, así que subir
+ * algo que no fuera la cotización de un contrato seguía obligando a salir al
+ * Drive real.
+ */
+router.post("/drive/upload", upload.single("file"), async (req, res) => {
+  if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
+
+  const parentId = await resolverCarpeta((req.body as { parentId?: string }).parentId);
+
+  try {
+    const drive = driveDe(req.user);
+    if (!drive) { sinGoogle(res); return; }
+
+    const bufferStream = new Readable();
+    bufferStream.push(req.file.buffer);
+    bufferStream.push(null);
+
+    const mimeType = req.file.mimetype || "application/octet-stream";
+    const fileMetadata: { name: string; mimeType: string; parents?: string[] } = {
+      name: req.file.originalname,
+      mimeType,
+    };
+    if (parentId) fileMetadata.parents = [parentId];
+
+    const response = await drive.files.create({
+      requestBody: fileMetadata,
+      media: { mimeType, body: bufferStream },
+      fields: "id,name,mimeType,webViewLink",
+    });
+
+    res.json({
+      id: response.data.id,
+      name: response.data.name,
+      mimeType: response.data.mimeType,
+      webViewLink: response.data.webViewLink,
+      uploadedAt: Date.now(),
+    });
+  } catch (error: any) {
+    console.error("[Drive] Error uploading file:", error.message);
+    res.status(500).json({ error: mensajeErrorGoogle(error) });
+  }
+});
+
 router.post("/drive/mkdir", async (req, res) => {
   const { name } = req.body as { name?: string; parentId?: string };
   const parentId = await resolverCarpeta((req.body as { parentId?: string }).parentId);
