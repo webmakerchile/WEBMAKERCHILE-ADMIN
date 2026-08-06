@@ -27,6 +27,7 @@ import {
   LayoutGrid,
   Receipt,
   ListChecks,
+  ClipboardList,
   IdCard,
   Ticket as TicketIcon,
   Scissors,
@@ -87,6 +88,7 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
       items: [
         { href: "/", icon: LayoutDashboard, label: t.navHome, tour: "nav-inicio" },
         { href: "/mi-dia", icon: CheckSquare2, label: t.navMyDay, tour: "nav-mi-dia" },
+        { href: "/mis-pendientes", icon: ClipboardList, label: t.navMisPendientes, tour: "nav-mis-pendientes" },
         { href: "/schedule", icon: CalendarClock, label: t.navPosts, tour: "nav-schedule" },
         { href: "/cuentas", icon: Users2, label: t.navAccounts, tour: "nav-cuentas" },
         { href: "/videos", icon: Video, label: t.navVideos, tour: "nav-videos" },

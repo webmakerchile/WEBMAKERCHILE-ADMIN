@@ -12,6 +12,7 @@ import xRouter from "./x";
 import facebookRouter from "./facebook";
 import communityRouter from "./community";
 import ideasRouter from "./ideas";
+import personalTasksRouter from "./personal-tasks";
 import analyticsRouter from "./analytics";
 import inspirationsRouter from "./inspirations";
 import onboardingRouter from "./onboarding";
@@ -114,6 +115,11 @@ router.use(hrSelfRouter);
 // Bitácora de actividad: la propia para todos; la global gateada por rol
 // dentro del router (dirección/ventas/rrhh) — mismo patrón que jornada.
 router.use(activityRouter);
+
+// "Mis pendientes": tareas y checklists 100% privados por usuario, para
+// TODAS las áreas aprobadas — mismo patrón que jornada/ideas. Sin relación
+// con hub/tasks.ts (el tablero compartido detrás de la página "Mis tareas").
+router.use(personalTasksRouter);
 
 // Adjuntos: transversal a proyectos, tareas, tickets y contratos, que son de
 // areas distintas. El router se guarda solo (autenticacion + dueño al borrar).

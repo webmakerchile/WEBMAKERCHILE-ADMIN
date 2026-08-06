@@ -97,7 +97,7 @@ export const TICKET_AREA_LABELS: Record<TicketArea, string> = {
  * `/ajustes` NO está aquí a propósito: guarda credenciales de API y gestión de
  * usuarios, así que es de dirección.
  */
-export const COMMON_ROUTES = ["/mi-dia", "/metas", "/tickets", "/ayuda"] as const;
+export const COMMON_ROUTES = ["/mi-dia", "/mis-pendientes", "/metas", "/tickets", "/ayuda"] as const;
 
 export const ROLES: Record<TeamRole, RoleDef> = {
   ceo: {

@@ -54,6 +54,7 @@ const DriveHubPage = lazy(() => import("./pages/drive-hub"));
 const ReportesPage = lazy(() => import("./pages/reportes"));
 const ProyeccionesPage = lazy(() => import("./pages/proyecciones"));
 const MisTareasPage = lazy(() => import("./pages/mis-tareas"));
+const MisPendientesPage = lazy(() => import("./pages/mis-pendientes"));
 const RrhhPage = lazy(() => import("./pages/rrhh"));
 const InformesRrhhPage = lazy(() => import("./pages/informes-rrhh"));
 const TicketsPage = lazy(() => import("./pages/tickets"));
@@ -438,6 +439,9 @@ function Router() {
       </Route>
       <Route path="/mis-tareas">
         <RouteShell name="mis-tareas"><MisTareasPage /></RouteShell>
+      </Route>
+      <Route path="/mis-pendientes">
+        <RouteShell name="mis-pendientes"><MisPendientesPage /></RouteShell>
       </Route>
       <Route path="/rrhh">
         <RouteShell name="rrhh"><RrhhPage /></RouteShell>

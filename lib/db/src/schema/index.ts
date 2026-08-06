@@ -33,3 +33,4 @@ export * from "./contract-signatures";
 export * from "./attachments";
 export * from "./contract-payments";
 export * from "./panel-espejo";
+export * from "./personal-tasks";
