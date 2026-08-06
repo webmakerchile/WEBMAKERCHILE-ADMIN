@@ -197,8 +197,8 @@
 .hub-root .wrap.board-fullscreen .pcard .pt{font-size:17px;}
 .hub-root .wrap.board-fullscreen .pcard .cl{font-size:13px;}
 .hub-root .wrap.board-fullscreen .chip{font-size:10.5px;padding:3px 9px;}
-.hub-root .wrap.board-fullscreen .tcard--compact{padding:12px 14px;margin-bottom:8px;}
-.hub-root .wrap.board-fullscreen .tcard--compact .tcard-title{font-size:15.5px;margin-bottom:6px;}
+.hub-root .wrap.board-fullscreen .tcard--compact{padding:14px 16px;margin-bottom:10px;}
+.hub-root .wrap.board-fullscreen .tcard--compact .tcard-title{font-size:19px;line-height:1.32;margin-bottom:8px;}
 .hub-root .wrap.board-fullscreen .tcard--compact .tcard-meta{gap:7px;}
 .hub-root .wrap.board-fullscreen .tcard--compact .tcard-meta .chip{font-size:11px;padding:2px 7px;}
 .hub-root .wrap.board-fullscreen .tcard--compact .tcard-proj{font-size:12px;}
