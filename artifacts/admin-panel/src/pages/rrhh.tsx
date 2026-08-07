@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/layout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -118,6 +118,16 @@ export default function RrhhPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState<Profile>(emptyProfile);
+
+  // Los avisos de reportes de RRHH (notificación + correo a dirección) enlazan
+  // acá con #informes-rrhh — antes tenían su propia página ("Informes RRHH");
+  // ahora Recursos Humanos es el único lugar, así que el enlace debe aterrizar
+  // directo en la sección en vez de dejar a dirección arriba de toda la página.
+  useEffect(() => {
+    if (window.location.hash !== "#informes-rrhh") return;
+    const el = document.getElementById("informes-rrhh");
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   const { data: people = [], isLoading, error } = useQuery<Person[]>({
     queryKey: ["hr-people"],
@@ -416,9 +426,10 @@ export default function RrhhPage() {
               <EvaluationsManager people={equipo} />
             </div>
 
-            <ReportesDiarios />
-
-            <InformeSemanal />
+            <div id="informes-rrhh" className="space-y-4 scroll-mt-20">
+              <ReportesDiarios />
+              <InformeSemanal />
+            </div>
 
             <Card className="bg-card/40 border-foreground/10">
               <CardContent className="p-2 sm:p-4">

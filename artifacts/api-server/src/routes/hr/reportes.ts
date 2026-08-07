@@ -149,7 +149,7 @@ router.post("/hr/reportes", async (req, res) => {
   await notifyCeos({
     title: `Reporte diario de RRHH — ${reportDate}`,
     body: `${autor}: ${content.length > 180 ? `${content.slice(0, 180)}…` : content}`,
-    link: "/informes-rrhh",
+    link: "/rrhh#informes-rrhh",
     excludeUserId: me.id,
   }).catch((err) => console.error("[hr reportes] notifyCeos failed", err));
 
@@ -325,7 +325,7 @@ router.post("/hr/informes/:week/enviar", async (req, res) => {
   await notifyCeos({
     title: `Informe semanal de RRHH — semana del ${week}`,
     body: `${autor}: ${previewInforme(resumen, destacadas, analisis)}`,
-    link: "/informes-rrhh",
+    link: "/rrhh#informes-rrhh",
     excludeUserId: me.id,
   }).catch((err) => console.error("[hr informes] notifyCeos failed", err));
 

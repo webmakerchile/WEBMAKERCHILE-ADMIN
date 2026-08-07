@@ -23,3 +23,11 @@ Un rol (p. ej. CEO con `routes: ["*"]`) puede tener acceso técnico de sobra a l
 **Why:** la queja real no es "no puedo entrar", es "no hay un lugar pensado para mí". Reusar `/rrhh` tal cual para Dirección la obliga a bucear entre fichas de personas, sueldos y contratos para encontrar los dos reportes que le interesan.
 
 **How to apply:** cuando el pedido es que un rol de supervisión (CEO/Dirección) vea algo que hoy vive dentro de la página operativa de otra área, considerar una página nueva y angosta que reutilice los MISMOS componentes/endpoints (mismo permiso, ej. `canManagePeople`), en vez de forzar al rol de supervisión a navegar la página completa del área operativa. Mantener la página operativa original sin tocar su rol dueño.
+
+## Este patrón se revirtió una vez — no es definitivo
+
+El apartado angosto para Dirección ("Informes RRHH") terminó fusionado de vuelta dentro de la página operativa (`/rrhh`) porque el usuario prefirió un solo lugar en vez de dos secciones adyacentes en el menú. La fusión fue simple porque la página operativa ya embebía los mismos componentes de reporte al final — solo hubo que quitar el apartado propio (nav/ruta/página) y agregar una **ancla navegable**: un `id` en el contenedor de la sección + un efecto que hace `scrollIntoView` cuando la URL trae ese hash al cargar. Cualquier link guardado (avisos, plantillas de correo) que apuntaba a la página angosta pasa a `rutaOperativa#ancla`.
+
+**Why:** "un apartado propio" y "todo junto" son ambas preferencias válidas de UX y pueden alternar con el tiempo — no hay una respuesta universalmente correcta, así que no hay que tratar la sección "Apartado propio vs. página operativa compartida" de arriba como una regla permanente.
+
+**How to apply:** antes de crear (o de asumir que corresponde mantener) un apartado propio para un rol de supervisión, confirmar la preferencia vigente. Si piden fusionar uno existente hacia la página operativa, reusar la técnica de ancla + scroll-on-mount en vez de dejar a la persona aterrizando arriba de toda la página operativa.

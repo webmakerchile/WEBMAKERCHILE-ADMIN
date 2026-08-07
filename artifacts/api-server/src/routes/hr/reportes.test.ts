@@ -358,7 +358,7 @@ describe("/api/hr/informes/:week/enviar", () => {
     expect(notifyCeos).toHaveBeenCalledTimes(1);
     const aviso = notifyCeos.mock.calls[0][0] as { title: string; link: string; excludeUserId: number };
     expect(aviso.title).toContain("2026-08-03");
-    expect(aviso.link).toBe("/informes-rrhh");
+    expect(aviso.link).toBe("/rrhh#informes-rrhh");
     expect(aviso.excludeUserId).toBe(5);
 
     expect(enviarCorreo).toHaveBeenCalledTimes(1);
