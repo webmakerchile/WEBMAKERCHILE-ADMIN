@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 import sharp from "sharp";
 import { db } from "@workspace/db";
 import { communityContent } from "@workspace/db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { ai } from "@workspace/integrations-gemini-ai";
 import { firstText } from "../../lib/gemini-parts";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
@@ -50,7 +50,6 @@ import {
 import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
 import {
   resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte,
-  prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit,
 } from "../../lib/cover-style";
 import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
 import { posesCompatibles, textoEncuadre, textoGesto } from "../../lib/set-presets";
@@ -2706,7 +2705,7 @@ router.get("/community/borradores", async (req, res) => {
         createdAt: communityContent.createdAt,
       })
       .from(communityContent)
-      .where(eq(communityContent.kind, KIND_POR_TIPO[tipo]))
+      .where(and(eq(communityContent.kind, KIND_POR_TIPO[tipo]), ne(communityContent.subtype, "portada_reel")))
       .orderBy(desc(communityContent.createdAt))
       .limit(MAX_BORRADORES);
 
@@ -2996,63 +2995,5 @@ async function componerInteractivo(
   return compuesta.toString("base64");
 }
 
-/* ==================== Portada para Reels (Posts IA) ====================== */
-//
-// Versión mínima del generador de Portadas (2 campos: título + descripción)
-// embebida en Posts IA para editoras/redes que solo necesitan una portada
-// vertical rápida, sin tocar dirección/pose/plantilla. Reusa EXACTAMENTE el
-// mismo pipeline que /gemini/generate-cover (prepararPortada + zorro/edit +
-// composeVerticalCover) para que el resultado nunca se desvíe del estilo ya
-// establecido del sitio; lo único nuevo es que además queda guardada como
-// borrador de "post", igual que Clásica e Interactivo.
-
-const GenerarPortadaReelBody = z.object({
-  titulo: z.string().min(1).max(120),
-  descripcion: z.string().min(1).max(500),
-});
-
-router.post("/community/portada-reel/generar", async (req, res) => {
-  try {
-    const body = GenerarPortadaReelBody.parse(req.body);
-    const tema = `${body.titulo} ${body.descripcion}`.trim();
-    const { direccion, plantilla, estiloTitular, prompt } = prepararPortada(tema);
-    const ilustracion = await generateFoxIllustration(prompt);
-    const compuesta = await composeVerticalCover(ilustracion, body.titulo, direccion, plantilla, estiloTitular);
-    const imagen = `data:image/png;base64,${compuesta.toString("base64")}`;
-    const thumb = await miniatura(imagen);
-
-    const [row] = await db.insert(communityContent).values({
-      kind: "descripcion",
-      subtype: "portada_reel",
-      topic: body.titulo,
-      data: {
-        tema: body.titulo,
-        tipo_contenido: "portada_reel",
-        tipo_publicacion: "unica",
-        texto_en_imagen: true,
-        titulo: body.titulo,
-        descripcion: body.descripcion,
-        thumb,
-        piezas: [{ numero: 1, rol: "unica", titulo: body.titulo, subtitulo: body.descripcion, imagen: await comprimirParaBorrador(imagen) }],
-        descripciones: {},
-      },
-      imageUrl: imagen,
-    }).returning();
-
-    void purgarBorradores("post");
-
-    res.json({
-      success: true,
-      data: { id: row!.id, fecha: row!.createdAt, titulo: body.titulo, descripcion: body.descripcion, imagen },
-    });
-  } catch (err: any) {
-    console.error("[PortadaReel] Error:", err);
-    if (err?.message === "RATE_LIMIT" || esErrorRateLimit(err)) {
-      res.status(429).json({ success: false, error: "El servicio de imágenes está saturado. Espera un par de minutos." });
-      return;
-    }
-    res.status(500).json({ success: false, error: err.message || "Error interno" });
-  }
-});
 
 export default router;

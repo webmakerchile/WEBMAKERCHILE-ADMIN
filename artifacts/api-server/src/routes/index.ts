@@ -81,7 +81,7 @@ router.use(xRouter);
 router.use(facebookRouter);
 
 // Community + analytics + inspirations: marketing area only — excepto Posts
-// IA (descripciones/interactivo/portada-reel), que edición también necesita.
+// IA (descripciones/interactivo), que edición también necesita.
 // Historias sigue exclusivo de marketing/dirección: ver community-gate.ts.
 const communityMarketingOnly = requireArea("ceo", "marketing");
 const communityWithEdicion = requireArea("ceo", "marketing", "edicion");

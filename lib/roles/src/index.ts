@@ -139,7 +139,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     label: "Redes sociales",
     description: "Calendario de publicaciones, cuentas conectadas, historias y descripciones.",
     home: "/redes",
-    routes: ["/redes", "/", "/schedule", "/cuentas", "/videos", "/historias", "/descripciones", "/insights", "/biblioteca", "/campanas", "/mis-tareas", ...COMMON_ROUTES],
+    routes: ["/redes", "/", "/schedule", "/cuentas", "/videos", "/historias", "/descripciones", "/cover", "/insights", "/biblioteca", "/campanas", "/mis-tareas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canAssignGoals: false,

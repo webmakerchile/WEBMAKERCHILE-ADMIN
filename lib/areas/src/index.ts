@@ -69,7 +69,7 @@ export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
     "/transcriber", "/calendar", "/ideas", "/onboarding",
     "/saved-views", "/connections", "/notifications", "/social",
     "/credentials", "/settings", "/hub/tasks",
-    // Solo Posts IA (descripciones/interactivo/portada-reel); Historias
+    // Solo Posts IA (descripciones/interactivo); Historias
     // sigue exclusivo de marketing — ver community-gate.ts en el backend.
     "/community",
   ],

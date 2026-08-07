@@ -4,7 +4,6 @@ import { Sparkles, Copy, AlertCircle, Loader2, Check, Dices, Download, ChevronLe
 import { EstiloTitularPicker } from "@/components/estilo-titular-picker";
 import { TiraBorradores } from "@/components/tira-borradores";
 import { FormatosInteractivosPanel } from "@/components/formatos-interactivos-panel";
-import { PortadaReelPanel, type PortadaReelResultado } from "@/components/portada-reel-panel";
 import { GuardarEnVideo } from "@/components/guardar-en-video";
 import {
   useSetEstudio,
@@ -107,12 +106,9 @@ export default function DescripcionesPage() {
   const [toast, setToast] = useState<string | null>(null);
   // Tres modos: la pieza de siempre, el contenido interactivo y la portada
   // rápida para Reels.
-  const [modo, setModo] = useState<"clasico" | "interactivo" | "portada">("interactivo");
+  const [modo, setModo] = useState<"clasico" | "interactivo">("interactivo");
   // Sube tras cada generación para que la tira de borradores se refresque.
   const [versionBorradores, setVersionBorradores] = useState(0);
-  // Borrador de portada-reel abierto desde la tira: se muestra tal cual en su
-  // panel, sin forzarlo dentro del visor de carrusel (que espera slides).
-  const [portadaReelCargada, setPortadaReelCargada] = useState<PortadaReelResultado | null>(null);
 
   useEffect(() => {
     if (loading) {
@@ -431,11 +427,10 @@ export default function DescripcionesPage() {
         {/* El contenido interactivo va PRIMERO y viene marcado por defecto: es
             lo que la gente responde. La pieza clásica sigue estando para lo
             que de verdad solo se lee. */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {([
             { id: "interactivo" as const, t: "Interactivo", d: "Encuestas, quiz, retos" },
             { id: "clasico" as const, t: "Publicación clásica", d: "Imagen + copy por red" },
-            { id: "portada" as const, t: "Portada para Reel", d: "Imagen vertical desde un prompt" },
           ]).map((m) => (
             <button
               key={m.id}
@@ -453,13 +448,6 @@ export default function DescripcionesPage() {
         </div>
 
         {modo === "interactivo" && <FormatosInteractivosPanel />}
-
-        {modo === "portada" && (
-          <PortadaReelPanel
-            cargada={portadaReelCargada}
-            onGenerado={() => setVersionBorradores((v) => v + 1)}
-          />
-        )}
 
         <motion.form
           initial={{ opacity: 0, y: 10 }}
@@ -676,20 +664,6 @@ export default function DescripcionesPage() {
           recargar={versionBorradores}
           onError={setError}
           onCargar={(d) => {
-            // Portada para Reel: es una pieza suelta (sin redes, sin slides
-            // de carrusel), así que no entra al visor clásico/interactivo —
-            // se abre en su propio panel con imagen + descarga.
-            if (d.tipo_contenido === "portada_reel") {
-              setModo("portada");
-              setPortadaReelCargada({
-                id: d.id,
-                titulo: d.titulo ?? d.tema,
-                descripcion: d.descripcion ?? "",
-                imagen: d.piezas?.[0]?.imagen ?? null,
-              });
-              showToast("📂 Borrador abierto");
-              return;
-            }
             // El borrador vuelve como resultado activo: se puede seguir
             // reintentando slides y descargando desde donde se dejó.
             setResultado({
