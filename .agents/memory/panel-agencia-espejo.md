@@ -21,6 +21,9 @@ Hay dos workflows del api-server ("Backend API" en :3001 y el gestionado "artifa
 ## Wouter v3: comodines
 wouter v3 usa `regexparam`, NO path-to-regexp: `path="/seccion/:rest*"` (sintaxis v2) no matchea nada → 404 global. Usar `path="/seccion/*"` (y una ruta exacta `/seccion` aparte). Síntoma: subrutas caen a la página NotFound aunque la ruta "exista".
 
+## No confundir con el port de pantallas WMC (proxy)
+Esta integración (sync/espejo con saneo local, ids/estados propios) es DISTINTA del port de pantallas admin de webmakerlatam bajo `/admin/*` (passthrough en vivo sin tablas locales, gateado por allowlist de email) — ver [wmc-screens-proxy-port.md](wmc-screens-proxy-port.md). Mismo origen externo, dos mecanismos de acceso que no comparten código ni convenciones; no reusar el uno para extender el otro.
+
 ## Quirks del panel externo
 Booleanos 0/1 al leer (acepta true al escribir), CLP enteros, IVA 19% calculado allá, POST idempotentes con `creado:false`, `forzarNuevo` para regenerar contrato de un presupuesto, volúmenes chicos (~85 clientes → snapshot liviano).
 

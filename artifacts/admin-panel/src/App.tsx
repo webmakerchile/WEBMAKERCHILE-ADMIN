@@ -9,6 +9,7 @@ import { RouteErrorBoundary } from "@/components/route-error-boundary";
 import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
+import { queryClient as wmcQueryClient } from "@/lib/wmc/queryClient";
 import { canAccessRoute, roleHome, canManageTeam, type TeamRole } from "@workspace/roles";
 import { ViewAsProvider, useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { useEffect } from "react";
@@ -199,9 +200,11 @@ function WmcRouteShell({ name, children }: { name: string; children: ReactNode }
   }
 
   return (
-    <RouteErrorBoundary routeName={name}>
-      <Suspense fallback={<PageLoader />}>{children}</Suspense>
-    </RouteErrorBoundary>
+    <QueryClientProvider client={wmcQueryClient}>
+      <RouteErrorBoundary routeName={name}>
+        <Suspense fallback={<PageLoader />}>{children}</Suspense>
+      </RouteErrorBoundary>
+    </QueryClientProvider>
   );
 }
 
