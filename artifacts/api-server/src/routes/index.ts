@@ -52,6 +52,7 @@ import adminUsersRouter from "./admin-users";
 import panelRouter from "./panel";
 import { requireArea } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
+import { communityIsHistoriasOnly } from "../lib/community-gate";
 
 const router: IRouter = Router();
 
@@ -79,8 +80,15 @@ router.use(linkedinRouter);
 router.use(xRouter);
 router.use(facebookRouter);
 
-// Community + analytics + inspirations: marketing area only
-router.use("/community", requireArea("ceo", "marketing"));
+// Community + analytics + inspirations: marketing area only — excepto Posts
+// IA (descripciones/interactivo/portada-reel), que edición también necesita.
+// Historias sigue exclusivo de marketing/dirección: ver community-gate.ts.
+const communityMarketingOnly = requireArea("ceo", "marketing");
+const communityWithEdicion = requireArea("ceo", "marketing", "edicion");
+router.use("/community", (req, res, next) => {
+  if (communityIsHistoriasOnly(req.path)) { communityMarketingOnly(req, res, next); return; }
+  communityWithEdicion(req, res, next);
+});
 router.use(communityRouter);
 // Cuentas publicitarias de clientes: del área de marketing (y dirección).
 router.use("/marketing", requireArea("ceo", "marketing"));

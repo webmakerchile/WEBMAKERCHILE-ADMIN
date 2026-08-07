@@ -44,6 +44,7 @@ const MUST_AI = [
   "/api/community/descripciones/redactar-idea",
   "/api/community/redactar-idea",
   "/api/community/interactivo/generar",
+  "/api/community/portada-reel/generar",
   "/api/hub/contracts/extract-pdf",
   "/api/hub/contracts/extract-from-meeting",
   "/api/hub/contracts/ai-chat",

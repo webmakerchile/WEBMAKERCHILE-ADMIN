@@ -50,7 +50,7 @@ export const AREA_PAGES: Record<Area, string[] | "*"> = {
     "/asistencia", "/drive-hub",
     "/mis-tareas", "/drive", "/mi-dia", "/ayuda",
   ],
-  edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/mi-dia", "/ayuda"],
+  edicion:   ["/", "/schedule", "/cuentas", "/videos", "/cover", "/estudio", "/transcriptor", "/drive", "/biblioteca", "/descripciones", "/mi-dia", "/ayuda"],
   marketing: ["/insights", "/historias", "/descripciones", "/schedule", "/cuentas", "/mi-dia", "/ayuda"],
   rrhh:      ["/dashboard-ejecutivo", "/equipo-hoy", "/drive-hub", "/asistencia", "/equipo", "/", "/mi-dia", "/ayuda"],
 };
@@ -69,6 +69,9 @@ export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
     "/transcriber", "/calendar", "/ideas", "/onboarding",
     "/saved-views", "/connections", "/notifications", "/social",
     "/credentials", "/settings", "/hub/tasks",
+    // Solo Posts IA (descripciones/interactivo/portada-reel); Historias
+    // sigue exclusivo de marketing — ver community-gate.ts en el backend.
+    "/community",
   ],
   marketing: [
     "/analytics", "/community", "/inspirations", "/library",

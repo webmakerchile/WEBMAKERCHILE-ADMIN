@@ -48,12 +48,16 @@ import {
   type GuionHistoria,
 } from "../../lib/story-script";
 import { REGLA_ESPANOL_NEUTRO, neutralizarProfundo } from "../../lib/lenguaje-neutro";
-import { resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte } from "../../lib/cover-style";
+import {
+  resolverDireccionDeMarca, listarOpcionesPortada, ID_DIRECCION_MARCA, type DireccionArte,
+  prepararPortada, generateFoxIllustration, composeVerticalCover, esErrorRateLimit,
+} from "../../lib/cover-style";
 import { PORTADA_POSES, type PoseEntry } from "../../lib/pose-bank";
 import { posesCompatibles, textoEncuadre, textoGesto } from "../../lib/set-presets";
 import { prepararFotos, type FotosPorRanura } from "../../lib/foto-ranura";
 import { buildRedactarIdeaPostPrompt, parseIdeaPost } from "../../lib/redactar-idea-post";
 import { planPurga, avisoCaducidad, diasRestantes, DIAS_RETENCION, MAX_BORRADORES } from "../../lib/borradores";
+import { puedeVerHistorias } from "../../lib/community-gate";
 import {
   listarFormatosInteractivos,
   obtenerFormatoInteractivo,
@@ -2687,6 +2691,10 @@ export async function purgarBorradoresCaducados(): Promise<void> {
 
 router.get("/community/borradores", async (req, res) => {
   const tipo = (req.query.tipo === "historia" ? "historia" : "post") as TipoBorrador;
+  if (tipo === "historia" && !puedeVerHistorias(req.user as { role?: string; teamRole?: string } | undefined)) {
+    res.status(403).json({ success: false, error: "No tienes acceso a esta sección" });
+    return;
+  }
   try {
     const rows = await db
       .select({
@@ -2738,6 +2746,10 @@ router.get("/community/borradores/:id", async (req, res) => {
     res.status(404).json({ success: false, error: "Borrador no encontrado" });
     return;
   }
+  if (row.kind === "historia" && !puedeVerHistorias(req.user as { role?: string; teamRole?: string } | undefined)) {
+    res.status(403).json({ success: false, error: "No tienes acceso a esta sección" });
+    return;
+  }
   const d = (row.data ?? {}) as Record<string, any>;
   // `thumb` fuera: pesa y quien abre el borrador ya tiene las imágenes reales.
   const { thumb: _omitido, ...datos } = d;
@@ -2751,6 +2763,15 @@ router.delete("/community/borradores/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
     res.status(400).json({ success: false, error: "id inválido" });
+    return;
+  }
+  const [row] = await db
+    .select({ kind: communityContent.kind })
+    .from(communityContent)
+    .where(eq(communityContent.id, id))
+    .limit(1);
+  if (row?.kind === "historia" && !puedeVerHistorias(req.user as { role?: string; teamRole?: string } | undefined)) {
+    res.status(403).json({ success: false, error: "No tienes acceso a esta sección" });
     return;
   }
   await db.delete(communityContent).where(eq(communityContent.id, id));
@@ -2974,5 +2995,64 @@ async function componerInteractivo(
   const compuesta = await sharp(buf).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer();
   return compuesta.toString("base64");
 }
+
+/* ==================== Portada para Reels (Posts IA) ====================== */
+//
+// Versión mínima del generador de Portadas (2 campos: título + descripción)
+// embebida en Posts IA para editoras/redes que solo necesitan una portada
+// vertical rápida, sin tocar dirección/pose/plantilla. Reusa EXACTAMENTE el
+// mismo pipeline que /gemini/generate-cover (prepararPortada + zorro/edit +
+// composeVerticalCover) para que el resultado nunca se desvíe del estilo ya
+// establecido del sitio; lo único nuevo es que además queda guardada como
+// borrador de "post", igual que Clásica e Interactivo.
+
+const GenerarPortadaReelBody = z.object({
+  titulo: z.string().min(1).max(120),
+  descripcion: z.string().min(1).max(500),
+});
+
+router.post("/community/portada-reel/generar", async (req, res) => {
+  try {
+    const body = GenerarPortadaReelBody.parse(req.body);
+    const tema = `${body.titulo} ${body.descripcion}`.trim();
+    const { direccion, plantilla, estiloTitular, prompt } = prepararPortada(tema);
+    const ilustracion = await generateFoxIllustration(prompt);
+    const compuesta = await composeVerticalCover(ilustracion, body.titulo, direccion, plantilla, estiloTitular);
+    const imagen = `data:image/png;base64,${compuesta.toString("base64")}`;
+    const thumb = await miniatura(imagen);
+
+    const [row] = await db.insert(communityContent).values({
+      kind: "descripcion",
+      subtype: "portada_reel",
+      topic: body.titulo,
+      data: {
+        tema: body.titulo,
+        tipo_contenido: "portada_reel",
+        tipo_publicacion: "unica",
+        texto_en_imagen: true,
+        titulo: body.titulo,
+        descripcion: body.descripcion,
+        thumb,
+        piezas: [{ numero: 1, rol: "unica", titulo: body.titulo, subtitulo: body.descripcion, imagen: await comprimirParaBorrador(imagen) }],
+        descripciones: {},
+      },
+      imageUrl: imagen,
+    }).returning();
+
+    void purgarBorradores("post");
+
+    res.json({
+      success: true,
+      data: { id: row!.id, fecha: row!.createdAt, titulo: body.titulo, descripcion: body.descripcion, imagen },
+    });
+  } catch (err: any) {
+    console.error("[PortadaReel] Error:", err);
+    if (err?.message === "RATE_LIMIT" || esErrorRateLimit(err)) {
+      res.status(429).json({ success: false, error: "El servicio de imágenes está saturado. Espera un par de minutos." });
+      return;
+    }
+    res.status(500).json({ success: false, error: err.message || "Error interno" });
+  }
+});
 
 export default router;

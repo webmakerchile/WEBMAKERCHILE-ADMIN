@@ -122,7 +122,7 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     label: "Editora de video",
     description: "Edición y producción: videos, estudio de grabación, portadas y transcripciones.",
     home: "/edicion",
-    routes: ["/edicion", "/videos", "/estudio", "/cover", "/transcriptor", "/drive", "/biblioteca", "/mis-tareas", ...COMMON_ROUTES],
+    routes: ["/edicion", "/videos", "/estudio", "/cover", "/descripciones", "/transcriptor", "/drive", "/biblioteca", "/mis-tareas", ...COMMON_ROUTES],
     canManageTeam: false,
     canManagePeople: false,
     canAssignGoals: false,
