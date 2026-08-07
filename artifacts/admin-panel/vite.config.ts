@@ -35,6 +35,7 @@ export default defineConfig({
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      "@shared": path.resolve(import.meta.dirname, "shared-wmc"),
     },
     dedupe: ["react", "react-dom"],
   },

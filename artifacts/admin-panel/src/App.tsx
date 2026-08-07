@@ -1,6 +1,7 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as WmcToaster } from "@/components/wmc/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createContext, useContext, Component, lazy, Suspense, type ReactNode } from "react";
 import { LangProvider } from "@/lib/lang";
@@ -64,6 +65,14 @@ const MetasPage = lazy(() => import("./pages/metas"));
 const MiDiaPage = lazy(() => import("./pages/mi-dia"));
 const AgenciaPage = lazy(() => import("./pages/agencia"));
 
+// Wmc: pantallas portadas 1:1 desde webmakerlatam.com (propuestas/proyectos).
+// Llaman al service API del origen vía proxy — este panel no guarda sus datos.
+const WmcProposalsPage = lazy(() => import("./pages/wmc/proposals"));
+const WmcProposalBuilderPage = lazy(() => import("./pages/wmc/proposal-builder"));
+const WmcProposalDetailsPage = lazy(() => import("./pages/wmc/proposal-details"));
+const WmcProjectsPage = lazy(() => import("./pages/wmc/projects"));
+const WmcProjectDetailsPage = lazy(() => import("./pages/wmc/project-details"));
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
   constructor(props: { children: ReactNode }) {
     super(props);
@@ -116,6 +125,8 @@ export type AuthUser = {
   approvalStatus?: string;
   /** La cuenta de dirección debe validar su clave extra antes de usar el panel. */
   claveRequerida?: boolean;
+  /** Allowlist por email para las pantallas portadas de webmakerlatam.com. */
+  wmcAccess?: boolean;
 };
 
 const AuthContext = createContext<AuthUser | null>(null);
@@ -153,6 +164,39 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   }, [allowed, location, home, setLocation]);
 
   if (!allowed) return <PageLoader />;
+
+  return (
+    <RouteErrorBoundary routeName={name}>
+      <Suspense fallback={<PageLoader />}>{children}</Suspense>
+    </RouteErrorBoundary>
+  );
+}
+
+/**
+ * Gate para las pantallas portadas 1:1 desde webmakerlatam.com (propuestas y
+ * proyectos bajo /admin/*): independiente del sistema de rol/área
+ * (canAccessRoute) a propósito — hoy es una allowlist de un solo email, no un
+ * rol. La aplicación real vive en el servidor (cada llamada al proxy la
+ * valida); esto solo evita mostrar la UI, con un mensaje claro en vez de
+ * redirigir en silencio.
+ */
+function WmcRouteShell({ name, children }: { name: string; children: ReactNode }) {
+  const user = useAuth();
+  const allowed = !!user?.wmcAccess;
+
+  if (!allowed) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center p-8">
+        <div className="text-center max-w-md">
+          <AlertTriangle className="w-10 h-10 text-orange-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold mb-2">Acceso restringido</h2>
+          <p className="text-sm text-muted-foreground">
+            Esta sección no está disponible para tu cuenta.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <RouteErrorBoundary routeName={name}>
@@ -460,6 +504,21 @@ function Router() {
       <Route path="/metas">
         <RouteShell name="metas"><MetasPage /></RouteShell>
       </Route>
+      <Route path="/admin/proposals/:id">
+        <WmcRouteShell name="wmc-proposal-details"><WmcProposalDetailsPage /></WmcRouteShell>
+      </Route>
+      <Route path="/admin/proposals">
+        <WmcRouteShell name="wmc-proposals"><WmcProposalsPage /></WmcRouteShell>
+      </Route>
+      <Route path="/admin/proposal-builder">
+        <WmcRouteShell name="wmc-proposal-builder"><WmcProposalBuilderPage /></WmcRouteShell>
+      </Route>
+      <Route path="/admin/projects/:id">
+        <WmcRouteShell name="wmc-project-details"><WmcProjectDetailsPage /></WmcRouteShell>
+      </Route>
+      <Route path="/admin/projects">
+        <WmcRouteShell name="wmc-projects"><WmcProjectsPage /></WmcRouteShell>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -490,6 +549,7 @@ function App() {
               <PublicRoutes />
             </WouterRouter>
             <Toaster />
+            <WmcToaster />
           </TooltipProvider>
         </QueryClientProvider>
       </ErrorBoundary>

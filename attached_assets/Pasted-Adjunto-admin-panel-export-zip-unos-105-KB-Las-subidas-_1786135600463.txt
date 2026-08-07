@@ -1,0 +1,110 @@
+Adjunto admin-panel-export.zip (unos 105 KB). Las subidas anteriores al árbol
+de archivos fallaron en silencio; por eso te lo mando por acá.
+
+PASO 0 — ANTES DE CONSTRUIR NADA
+Descomprímelo y dame el inventario. Debe traer un documento de especificación
+(EXPORT_SPEC.md) con el esquema de datos, endpoints, validaciones y lógica de
+negocio del sistema de origen, más 30 archivos copiados sin modificar:
+5 pantallas (proposal-builder, proposals, proposal-details, projects,
+project-details), 2 hooks, 2 utilidades de lib, 19 componentes de interfaz,
+el archivo de esquema compartido y un README con las rutas de destino.
+Si falta algo, dímelo y NO empieces a construir. Si está completo, sigue de
+corrido con todo lo de abajo sin esperar mi confirmación.
+
+Ignora los zips viejos que hay en el proyecto (files_1776485029897.zip y
+studio-export.tar_...gz), no tienen relación con esto.
+
+CONTEXTO
+Estoy incorporando a este panel dos secciones que ya existen en otro proyecto
+mío, www.webmakerlatam.com, que es un Repl separado. NO es una migración y NO
+quiero duplicar la base de datos. El otro proyecto sigue siendo el dueño de los
+datos, del esquema y de toda la lógica de negocio. Este panel solo lee y
+escribe a través de su API, para que lo que se haga acá se refleje allá al
+instante.
+
+REGLA PRINCIPAL
+La interfaz debe quedar idéntica a la original, uno a uno. Los archivos del zip
+son la fuente de verdad. No rediseñes, no mejores, no cambies textos,
+etiquetas, orden de campos, colores, espaciados ni comportamiento. Si un
+componente necesita una librería que este proyecto no tiene, instálala en la
+misma versión que indica el documento de especificación. Si este proyecto ya
+tiene un componente de interfaz con el mismo nombre pero distinto contenido, no
+lo pises: guarda el de la exportación aparte y que solo lo usen las pantallas
+nuevas.
+
+CONEXIÓN CON EL ORIGEN
+Monta un proxy servidor a servidor: todo lo que llegue al backend de este
+proyecto bajo el prefijo "wmc" se reenvía a la API de servicio de
+www.webmakerlatam.com agregando una cabecera con la clave que ya cargué en los
+Secrets como WMC_SERVICE_KEY. Reenvío genérico: pasa método, ruta, parámetros y
+cuerpo tal cual, y devuelve estado y respuesta del origen sin transformarlos,
+restringido solo a ese prefijo. La clave NUNCA debe llegar al navegador ni
+quedar en el paquete compilado del frontend. Tiempo límite de 15 segundos; si
+el origen no responde, error claro para la interfaz en vez de carga infinita.
+Un solo reintento en fallos de red y solo en lecturas, nunca en escrituras.
+
+Recursos disponibles en el origen: propuestas (listado, detalle, crear, editar,
+borrar, generar token público); ítems de propuesta; proyectos (listado,
+detalle, editar, borrar, asignar desarrollador, oferta de finalización);
+bitácoras; pagos; tareas (crear, editar, borrar); clientes (listado, crear,
+editar); catálogos de servicios y desarrolladores; configuración de empresa;
+plantillas de contrato y contratos de servicio; cupones con validación por
+código; adicionales de proyecto (crear, enviar, borrar, marcar pago, limpiar
+contrato); y solicitud de URL firmada para subir archivos. El detalle exacto
+está en el documento de especificación.
+
+Reenvía también el endpoint público de tipos de cambio del origen, sin la clave
+porque es público. El proposal builder lo usa para conversión de moneda y no se
+puede llamar directo desde el navegador porque el origen no tiene CORS.
+
+CHOQUE DE NOMBRES: este proyecto YA tiene rutas propias de proyectos y
+propuestas. No las toques, no las reutilices, no las renombres. Las secciones
+nuevas consumen exclusivamente el prefijo "wmc".
+
+MONTAJE
+Coloca los componentes siguiendo el README del zip. El ÚNICO cambio permitido
+dentro de esos archivos es el destino de las llamadas de datos: donde apunten a
+la API local del sistema original, deben apuntar al prefijo del proxy. Todo lo
+demás idéntico, incluidas las claves de caché de las consultas (ajusta solo el
+prefijo). Registra las pantallas en el router y agrégalas al menú con el mismo
+nombre que tienen en el sistema original.
+
+Dos advertencias: el hook de subida pide una URL firmada al origen y luego sube
+el archivo directo al almacenamiento — verifica que funcione desde el navegador
+en este dominio, y si el almacenamiento rechaza el origen avísame antes de
+improvisar. Y la generación de token de propuesta devuelve una URL que apunta
+al dominio del sistema original: es correcta, NO la reescribas al dominio de
+este panel, porque es el enlace que ve el cliente final.
+
+CONTROL DE ACCESO
+Estas secciones son solo para algunos usuarios, no para todos los que entran
+con Google. Lista blanca de correos en una variable de entorno; por ahora el
+único autorizado es webmakerjosue@gmail.com. La verificación va en el BACKEND:
+cada llamada al proxy comprueba que el usuario de la sesión esté en la lista y,
+si no, responde acceso prohibido sin reenviar nada al origen. No confíes en la
+verificación del frontend. En la interfaz además oculta los ítems del menú y
+bloquea las rutas, con un mensaje claro de que no tiene acceso.
+
+VERIFICACIÓN OBLIGATORIA antes de darlo por terminado
+1. Busca la clave de servicio en los archivos compilados del cliente y
+   confirma que NO aparece.
+2. Crea una propuesta de prueba desde este panel y confirma que quedó
+   registrada en el sistema de origen.
+3. Cambia esa propuesta a aprobada desde acá y verifica que en el ORIGEN se
+   dispararon sus efectos: cálculo de comisión, creación del proyecto y carga
+   inicial del checklist. Este panel no debe reimplementar nada de eso.
+4. Con un usuario fuera de la lista blanca, llama directamente al proxy y
+   confirma que devuelve acceso prohibido. No basta con que no vea el menú.
+5. Compara capturas de cada sección contra las originales y repórtame
+   cualquier diferencia visual por mínima que sea.
+6. Confirma que las secciones que este panel ya tenía siguen funcionando igual.
+7. Apunta temporalmente la dirección del origen a una inválida y verifica que
+   la interfaz muestre un error claro en vez de quedarse cargando.
+
+RESTRICCIONES
+No crees tablas locales que dupliquen propuestas, proyectos, clientes, tareas,
+pagos ni ninguna de las 12 tablas del documento: este proyecto no guarda esos
+datos, solo los consume. No reimplementes lógica de negocio: IVA, comisiones,
+cupones, correlativos, generación de token, envío de correo y reajuste de
+plazos viven en el origen. No modifiques el login con Google que ya funciona.
+No toques las secciones que este panel ya tiene.

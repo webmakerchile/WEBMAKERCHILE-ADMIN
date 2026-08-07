@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { normalizeRole } from "@workspace/roles";
 import { clearNetworkRevoked } from "../../lib/connections";
 import { createNotification } from "../../lib/notifications";
+import { hasWmcAccess } from "../../lib/wmc/access";
 
 const router: IRouter = Router();
 
@@ -558,6 +559,11 @@ router.get("/auth/me", (req: Request, res: Response) => {
       hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
       // El frontend muestra la pantalla de clave cuando esto viene true.
       claveRequerida: claveCeoPendiente(req),
+      // Gate de las pantallas portadas de webmakerlatam.com (independiente
+      // del rol): controla si el menú/rutas de /admin/proposals* y
+      // /admin/projects* se muestran. La aplicación real ocurre en el
+      // servidor en cada llamada al proxy — esto solo evita mostrar la UI.
+      wmcAccess: hasWmcAccess(user),
     });
   } else {
     res.status(401).json({ error: "No autenticado" });

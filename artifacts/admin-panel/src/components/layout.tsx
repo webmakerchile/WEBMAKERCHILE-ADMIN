@@ -149,6 +149,18 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
     },
   ];
 
+  // Wmc: pantallas portadas 1:1 desde webmakerlatam.com (propuestas/proyectos
+  // del origen — no confundir con "Proyectos" del Hub). Gate por EMAIL
+  // (user.wmcAccess), no por rol: por eso vive aparte de allRoleSections y se
+  // agrega DESPUÉS del filtro de canAccessRoute, no adentro de él.
+  const wmcSection: NavSection = {
+    label: "WebMaker LATAM",
+    items: [
+      { href: "/admin/proposals", icon: FileText, label: "Propuestas", tour: "nav-wmc-proposals" },
+      { href: "/admin/projects", icon: Briefcase, label: "Proyectos", tour: "nav-wmc-projects" },
+    ],
+  };
+
   // Primero el permiso (qué puede ver el rol), después el gusto (qué eligió ocultar).
   const hiddenNav = useHiddenNav();
   const permitidas = allRoleSections
@@ -163,10 +175,18 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
       ...section,
       items: section.items.filter((item) => !hiddenNav.includes(item.href)),
     }))
+    .filter((section) => section.items.length > 0)
+    .concat(
+      user?.wmcAccess
+        ? [{ ...wmcSection, items: wmcSection.items.filter((item) => !hiddenNav.includes(item.href)) }]
+        : [],
+    )
     .filter((section) => section.items.length > 0);
 
   /** Lo que el personalizador ofrece esconder: solo lo que este rol ve. */
-  const navOptions = permitidas.flatMap((s) => s.items.map((i) => ({ href: i.href, label: i.label })));
+  const navOptions = permitidas
+    .flatMap((s) => s.items.map((i) => ({ href: i.href, label: i.label })))
+    .concat(user?.wmcAccess ? wmcSection.items.map((i) => ({ href: i.href, label: i.label })) : []);
 
   // The mobile bottom-nav shows the first 5 items (the "Contenido" section).
   const navItems = navSections.flatMap((s) => s.items);
