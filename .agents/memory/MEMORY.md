@@ -50,3 +50,4 @@
 - [Series de Proyecciones](proyecciones-series.md) — timestamp crudo por mes usa periodKey (Santiago), no slice ISO; hub_tasks.completedAt refleja "done ahora", se limpia solo al reabrir.
 - [Hub Ejecutivo → páginas del sidebar](hub-shell-to-sidebar-migration.md) — shell /ejecutivo eliminado; 13 rutas propias; visibilidad = lib/roles directo; ruta≠contenido (torre-ceo vs tester).
 - ["/mis-tareas" ya existe y es otra cosa](mis-tareas-vs-privado.md) — es el Scrumban compartido del Hub, no una lista personal; verificar qué hay detrás de una ruta antes de reusarla o chocar nombres.
+- [Sync del tablero Hub (freshness)](hub-board-sync-freshness.md) — refresco por-pestaña en hook compartido; resolveBoard() da data:null en dev sin CEO/fila propia (no ocurre en prod).

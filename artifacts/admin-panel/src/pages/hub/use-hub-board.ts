@@ -35,6 +35,16 @@ export const TAB_ROUTES: Partial<Record<Tab, string>> = {
 };
 
 /**
+ * Frecuencia de refresco cuando la pestaña montada es "Proyectos" (Kanban de
+ * proyectos + Scrumban de tareas): es el tablero donde más rota el trabajo
+ * del equipo entre roles, y el pedido explícito es que una tarjeta que
+ * alguien crea/mueve/borra le llegue a los demás sin que recarguen. El resto
+ * de páginas del Hub no lo pidió y conserva su cadencia actual (30s, sin
+ * refresco por foco) — no hay que multiplicar tráfico donde nadie lo pidió.
+ */
+const PROJ_BOARD_POLL_MS = 15_000;
+
+/**
  * Estado y lógica compartida por las 13 páginas en que se dividió el Hub
  * Ejecutivo: roles/permisos, el tablero (carga, guardado con reintentos,
  * fusión con el servidor), la hoja lateral (sheet), toasts y confirmaciones.
@@ -81,6 +91,13 @@ export function useHubBoard(currentTab: Tab) {
       return res.json() as Promise<{ tasks: HubTask[] }>;
     },
     staleTime: 30000,
+    // El Scrumban de "Proyectos" es compartido entre roles: sin esto, una
+    // tarjeta que otra persona crea/mueve/borra solo aparece al recargar la
+    // página, porque el default global (App.tsx) tiene refetchOnWindowFocus
+    // en false y ninguna query hacía polling. Acotado a esa pestaña: otras
+    // páginas del Hub también leen "hub-tasks" pero no pidieron este tráfico.
+    refetchInterval: currentTab === "proj" ? PROJ_BOARD_POLL_MS : false,
+    refetchOnWindowFocus: currentTab === "proj",
   });
   const apiTasks: HubTask[] = tasksData?.tasks ?? [];
   const onRefreshTasks = useCallback(() => { void refetchTasks(); }, [refetchTasks]);
@@ -196,10 +213,33 @@ export function useHubBoard(currentTab: Tab) {
       });
     };
     pull();
-    // El tablero es compartido: refrescamos para ver lo que hace el resto.
-    const timer = setInterval(pull, 30_000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [storageKey, adoptServerData]);
+    // El tablero es compartido: refrescamos para ver lo que hace el resto. En
+    // "Proyectos" (Kanban/Lista de proyectos) además reaccionamos al volver
+    // el foco a la pestaña, y con un intervalo más corto — es donde más rota
+    // el trabajo del equipo; el resto de páginas del Hub sigue en 30s fijos.
+    const isProj = currentTab === "proj";
+    const timer = setInterval(pull, isProj ? PROJ_BOARD_POLL_MS : 30_000);
+    let onFocus: (() => void) | undefined;
+    if (isProj) {
+      let lastPull = Date.now();
+      onFocus = () => {
+        if (document.visibilityState !== "visible") return;
+        if (Date.now() - lastPull < 5000) return; // evita ráfagas si el foco parpadea
+        lastPull = Date.now();
+        pull();
+      };
+      document.addEventListener("visibilitychange", onFocus);
+      window.addEventListener("focus", onFocus);
+    }
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      if (onFocus) {
+        document.removeEventListener("visibilitychange", onFocus);
+        window.removeEventListener("focus", onFocus);
+      }
+    };
+  }, [storageKey, adoptServerData, currentTab]);
 
   /** Refresco bajo demanda tras acciones que escriben el tablero directo en el
    *  servidor (agendar reunión de venta, registrar desenlace). Mismas reglas
