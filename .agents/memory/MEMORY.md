@@ -52,6 +52,6 @@
 - ["/mis-tareas" ya existe y es otra cosa](mis-tareas-vs-privado.md) — es el Scrumban compartido del Hub, no una lista personal; verificar qué hay detrás de una ruta antes de reusarla o chocar nombres.
 - [Sync del tablero Hub (freshness)](hub-board-sync-freshness.md) — refresco por-pestaña en hook compartido; resolveBoard() da data:null en dev sin CEO/fila propia (no ocurre en prod).
 - [Capas independientes de acceso a una feature](role-feature-access-layers.md) — menú, autorización de backend y límites de uso/IA no se auto-derivan entre sí; endpoints compartidos entre features necesitan autorización por fila, no solo por ruta.
-- [Portar pantallas externas vía proxy (WMC)](wmc-screens-proxy-port.md) — passthrough en vivo ≠ espejo/sync; manifiesto de export puede faltar componentes; schema drizzle no portable; toast duplicado necesita su propio Toaster.
+- [Portar pantallas externas vía proxy (WMC)](wmc-screens-proxy-port.md) — 200 idéntico con llave real/falsa/sin llave = ruta no publicada en el origen, no credencial mala; passthrough ≠ espejo.
 - [QueryClient de contexto vs. importado](query-client-context-shadowing.md) — useQuery sin queryFn explícito usa el Provider ambiental, no el objeto importado; dos apps con distinto default lo rompen en silencio y de forma dispareja.
 - [Verificar qué secreto es cuál](secret-cross-wiring-check.md) — secretos del mismo proveedor/forma pueden cruzarse al configurar; "unauthorized" genérico no distingue clave cruzada de clave vencida — comparar fingerprint (largo+hash) contra la fuente.
