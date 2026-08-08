@@ -126,7 +126,7 @@ export type AuthUser = {
   approvalStatus?: string;
   /** La cuenta de dirección debe validar su clave extra antes de usar el panel. */
   claveRequerida?: boolean;
-  /** Allowlist por email para las pantallas portadas de webmakerlatam.com. */
+  /** Acceso a las pantallas portadas de webmakerlatam.com, calculado por rol (dev/ventas/ceo). */
   wmcAccess?: boolean;
 };
 
@@ -176,9 +176,9 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
 /**
  * Gate para las pantallas portadas 1:1 desde webmakerlatam.com (propuestas y
  * proyectos bajo /admin/*): independiente del sistema de rol/área
- * (canAccessRoute) a propósito — hoy es una allowlist de un solo email, no un
- * rol. La aplicación real vive en el servidor (cada llamada al proxy la
- * valida); esto solo evita mostrar la UI, con un mensaje claro en vez de
+ * (canAccessRoute) a propósito — el acceso se decide por rol (dev/ventas/ceo),
+ * no por área. La aplicación real vive en el servidor (cada llamada al proxy
+ * la valida); esto solo evita mostrar la UI, con un mensaje claro en vez de
  * redirigir en silencio.
  */
 function WmcRouteShell({ name, children }: { name: string; children: ReactNode }) {

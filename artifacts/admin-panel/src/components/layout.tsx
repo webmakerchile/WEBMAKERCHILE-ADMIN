@@ -150,9 +150,10 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
   ];
 
   // Wmc: pantallas portadas 1:1 desde webmakerlatam.com (propuestas/proyectos
-  // del origen — no confundir con "Proyectos" del Hub). Gate por EMAIL
-  // (user.wmcAccess), no por rol: por eso vive aparte de allRoleSections y se
-  // agrega DESPUÉS del filtro de canAccessRoute, no adentro de él.
+  // del origen — no confundir con "Proyectos" del Hub). El backend decide
+  // por ROL (dev/ventas/ceo) y expone el resultado en user.wmcAccess; por eso
+  // vive aparte de allRoleSections y se agrega DESPUÉS del filtro de
+  // canAccessRoute, no adentro de él.
   const wmcSection: NavSection = {
     label: "WebMaker LATAM",
     items: [
