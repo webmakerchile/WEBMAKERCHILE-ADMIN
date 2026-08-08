@@ -546,24 +546,25 @@ export function requireClaveCeo(req: Request, res: Response, next: NextFunction)
 router.get("/auth/me", (req: Request, res: Response) => {
   if (req.isAuthenticated && req.isAuthenticated() && req.user) {
     const user = req.user as any;
+    // Rol normalizado: mapea los roles antiguos y garantiza que el
+    // superadministrador siempre entre como CEO (nunca se queda fuera).
+    const teamRole = normalizeRole(user.teamRole, user.role === "superadmin");
     res.json({
       id: user.id,
       email: user.email,
       name: user.name,
       picture: user.picture,
       role: user.role,
-      // Rol normalizado: mapea los roles antiguos y garantiza que el
-      // superadministrador siempre entre como CEO (nunca se queda fuera).
-      teamRole: normalizeRole(user.teamRole, user.role === "superadmin"),
+      teamRole,
       approvalStatus: user.approvalStatus || "approved",
       hasYoutubeAccess: !!(user.googleAccessToken && user.googleRefreshToken),
       // El frontend muestra la pantalla de clave cuando esto viene true.
       claveRequerida: claveCeoPendiente(req),
-      // Gate de las pantallas portadas de webmakerlatam.com (independiente
-      // del rol): controla si el menú/rutas de /admin/proposals* y
-      // /admin/projects* se muestran. La aplicación real ocurre en el
-      // servidor en cada llamada al proxy — esto solo evita mostrar la UI.
-      wmcAccess: hasWmcAccess(user),
+      // Gate de las pantallas portadas de webmakerlatam.com: solo controla
+      // si el menú/rutas de /admin/proposals* y /admin/projects* se
+      // muestran. La aplicación real (por rol: dev/ventas/ceo) ocurre en
+      // el servidor en cada llamada al proxy — ver lib/wmc/access.ts.
+      wmcAccess: hasWmcAccess(teamRole),
     });
   } else {
     res.status(401).json({ error: "No autenticado" });

@@ -68,8 +68,9 @@ router.use(panelRouter);
 // Wmc: passthrough EN VIVO hacia el service API de webmakerlatam.com para las
 // pantallas portadas 1:1 (propuestas/proyectos) bajo /wmc/*. Este panel no
 // guarda datos propios de esto — el origen sigue siendo el dueño de todo.
-// Gate propio por EMAIL (no por rol/área): ver lib/wmc/access.ts. Sistema
-// aparte del "Agencia" de arriba, que es un espejo con caché local y gate por rol.
+// Gate propio por ROL (dev/ventas/ceo, los tres sin diferencias — ver
+// lib/wmc/access.ts), sin gate de área: no cuelga de /hub. Sistema aparte
+// del "Agencia" de arriba, que es un espejo con caché local y gate por rol.
 router.use("/wmc", wmcRouter);
 router.use(driveRouter);
 router.use(contentRouter);
