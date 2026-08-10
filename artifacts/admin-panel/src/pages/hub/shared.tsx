@@ -201,7 +201,7 @@ export const TAB_TITLES: Record<Tab, [string, string]> = {
   team: ["Equipo hoy", "Centro de comando · cargas · semáforo · actividad"],
   att: ["Asistencia", "Pase de lista · horas trabajadas · registro diario"],
   dash: ["Dashboard", "Resumen ejecutivo en vivo"],
-  proj: ["Proyectos", "Kanban · Lista · Scrumban"],
+  proj: ["Scrum/Ban", "Kanban · Lista · Scrumban"],
   clients: ["Clientes", "Cartera y contactos"],
   meet: ["Reuniones", "Notas, resúmenes y seguimiento"],
   notes: ["Notas", "Ideas, acuerdos y estrategia"],
