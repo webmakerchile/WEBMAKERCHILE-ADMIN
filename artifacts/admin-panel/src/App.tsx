@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tan
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as WmcToaster } from "@/components/wmc/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Layout } from "@/components/layout";
 import { createContext, useContext, Component, lazy, Suspense, type ReactNode } from "react";
 import { LangProvider } from "@/lib/lang";
 import { RouteErrorBoundary } from "@/components/route-error-boundary";
@@ -187,23 +188,27 @@ function WmcRouteShell({ name, children }: { name: string; children: ReactNode }
 
   if (!allowed) {
     return (
-      <div className="min-h-[50vh] flex items-center justify-center p-8">
-        <div className="text-center max-w-md">
-          <AlertTriangle className="w-10 h-10 text-orange-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-2">Acceso restringido</h2>
-          <p className="text-sm text-muted-foreground">
-            Esta sección no está disponible para tu cuenta.
-          </p>
+      <Layout>
+        <div className="min-h-[50vh] flex items-center justify-center p-8">
+          <div className="text-center max-w-md">
+            <AlertTriangle className="w-10 h-10 text-orange-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold mb-2">Acceso restringido</h2>
+            <p className="text-sm text-muted-foreground">
+              Esta sección no está disponible para tu cuenta.
+            </p>
+          </div>
         </div>
-      </div>
+      </Layout>
     );
   }
 
   return (
     <QueryClientProvider client={wmcQueryClient}>
-      <RouteErrorBoundary routeName={name}>
-        <Suspense fallback={<PageLoader />}>{children}</Suspense>
-      </RouteErrorBoundary>
+      <Layout>
+        <RouteErrorBoundary routeName={name}>
+          <Suspense fallback={<PageLoader />}>{children}</Suspense>
+        </RouteErrorBoundary>
+      </Layout>
     </QueryClientProvider>
   );
 }
