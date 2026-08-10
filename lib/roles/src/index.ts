@@ -178,8 +178,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
     canSeeMoney: true,
     canManageSales: true,
     canSeeAttendance: true,
-    hubScopes: ["contracts", "clients", "meetings", "projects"],
-    hubWrite: ["contracts", "clients", "meetings"],
+    hubScopes: ["contracts", "clients", "meetings", "projects", "tasks"],
+    hubWrite: ["contracts", "clients", "meetings", "projects", "tasks"],
     ticketAreas: ["ventas"],
   },
   dev: {

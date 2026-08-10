@@ -110,7 +110,7 @@ describe("roles del equipo", () => {
   });
 
   it("cada rol declara solo los datos del tablero que necesita", () => {
-    expect(hubScopesFor("ventas")).toEqual(["contracts", "clients", "meetings", "projects"]);
+    expect(hubScopesFor("ventas")).toEqual(["contracts", "clients", "meetings", "projects", "tasks"]);
     expect(hubScopesFor("dev")).toEqual(["projects", "tasks", "notes", "contracts"]);
     expect(hubScopesFor("marketing")).toEqual(["projects", "tasks", "clients", "contracts"]);
     // Los roles puramente de producción no entran al tablero: se conectan por tickets.
@@ -129,8 +129,9 @@ describe("roles del equipo", () => {
   });
 
   it("los permisos de escritura del tablero reflejan quién hace cada trabajo", () => {
-    // Ventas cierra contratos y cartera, pero no mueve el tablero de desarrollo.
-    expect(hubWriteScopesFor("ventas")).toEqual(["contracts", "clients", "meetings"]);
+    // Ventas cierra contratos y cartera, y gestiona su propio Scrum/Ban
+    // (proyectos y tareas) — pero no toca las notas internas de desarrollo.
+    expect(hubWriteScopesFor("ventas")).toEqual(["contracts", "clients", "meetings", "projects", "tasks"]);
     expect(hubWriteScopesFor("dev")).toEqual(["projects", "tasks"]);
     // Marketing coordina tareas, no toca contratos.
     expect(hubWriteScopesFor("marketing")).toEqual(["tasks"]);

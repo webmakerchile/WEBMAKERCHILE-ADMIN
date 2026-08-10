@@ -181,7 +181,8 @@ describe("/api/tickets", () => {
   });
 
   it("solo los roles que escriben tareas convierten un ticket en tarea del tablero", async () => {
-    asRole("ventas");
+    // Edición no escribe tareas en el tablero: sigue denegado.
+    asRole("editora");
     state.tickets = [{ id: 7, title: "Checkout", description: "d", area: "desarrollo", status: "abierto", createdBy: 5, assignedTo: null, priority: "alta", projectId: "", taskId: "" }];
     let port = await startApp();
     const denied = await fetch(`http://127.0.0.1:${port}/api/tickets/7/to-task`, { method: "POST" });
@@ -202,6 +203,14 @@ describe("/api/tickets", () => {
     expect(state.inserted.find(i => i.table === "hub_state")).toBeFalsy();
     // Y el ticket queda enlazado al id real de esa tarea.
     expect(state.updated[0]).toMatchObject({ taskId: "101" });
+
+    // Ventas ahora también escribe tareas en su Scrum/Ban (antes era
+    // CEO/dev/marketing-only) — la misma conversión debe funcionarle.
+    asRole("ventas");
+    state.tickets = [{ id: 7, title: "Checkout", description: "d", area: "desarrollo", status: "abierto", createdBy: 9, assignedTo: null, priority: "alta", projectId: "p1", taskId: "" }];
+    port = await startApp();
+    const okVentas = await fetch(`http://127.0.0.1:${port}/api/tickets/7/to-task`, { method: "POST" });
+    expect(okVentas.status).toBe(201);
   });
 
   it("no convierte dos veces el mismo ticket", async () => {

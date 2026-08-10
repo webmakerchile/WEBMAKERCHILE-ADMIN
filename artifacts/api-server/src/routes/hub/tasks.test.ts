@@ -232,11 +232,12 @@ describe("POST /hub/tasks", () => {
     expect(res.status).toBe(400);
   });
 
-  it("ejecutivo gets 403 on create (CEO-only)", async () => {
+  it("ejecutivo (ventas) puede crear tareas (hubWrite incluye tasks)", async () => {
+    mockInsertChain([sampleTask]);
     const res = await request(await buildApp(mockEjecutivoUser))
       .post("/hub/tasks")
       .send({ title: "Task" });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
   });
 
   it("edicion gets 403 on create", async () => {
@@ -275,11 +276,12 @@ describe("POST /hub/tasks/batch", () => {
     expect(res.body.tasks).toHaveLength(2);
   });
 
-  it("ejecutivo gets 403 on batch create", async () => {
+  it("ejecutivo (ventas) puede crear tareas en lote (hubWrite incluye tasks)", async () => {
+    mockInsertChain([sampleTask]);
     const res = await request(await buildApp(mockEjecutivoUser))
       .post("/hub/tasks/batch")
       .send({ tasks: [{ title: "Tarea" }] });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
   });
 
   it("edicion gets 403 on batch create", async () => {

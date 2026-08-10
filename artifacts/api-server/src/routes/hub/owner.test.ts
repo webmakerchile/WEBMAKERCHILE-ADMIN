@@ -99,11 +99,11 @@ describe("GET /api/hub/owner", () => {
     expect(body.scopes).toEqual(["contracts"]);
   });
 
-  it("ventas recibe su cartera y los proyectos que enlaza — nunca tareas ni notas", async () => {
+  it("ventas recibe su cartera, sus proyectos y ahora también sus tareas — nunca notas", async () => {
     const r = await callAsRole("ventas");
     const body = await r.json() as { data: Record<string, unknown[]> };
-    expect(Object.keys(body.data).sort()).toEqual(["clients", "contracts", "meetings", "projects"]);
-    expect(body.data.tasks).toBeUndefined();
+    expect(Object.keys(body.data).sort()).toEqual(["clients", "contracts", "meetings", "projects", "tasks"]);
+    expect(body.data.tasks).toHaveLength(1);
     expect(body.data.notes).toBeUndefined();
   });
 
