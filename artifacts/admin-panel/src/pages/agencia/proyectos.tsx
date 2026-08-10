@@ -17,6 +17,17 @@ const FILTROS = [
 const ESTADOS_FINALES = ["COMPLETED", "CANCELLED", "DELIVERED", "ARCHIVED"];
 const esFinal = (status: unknown) => ESTADOS_FINALES.includes(String(status));
 
+/**
+ * El panel documenta el estado de tarea en minúscula (pending|in_progress|
+ * completed); no hay "DONE" en ese contrato. Se compara sin distinguir
+ * mayúsculas para no depender de qué variante mande el origen, y
+ * completedAt manda igual aunque el status no calce.
+ */
+const tareaHecha = (t: Tarea) => {
+  const s = String(t.status ?? "").toLowerCase();
+  return s === "done" || s === "completed" || Boolean(t.completedAt);
+};
+
 export default function Proyectos({ idAbierto }: { idAbierto?: string }) {
   const [, navegar] = useLocation();
   const [filtro, setFiltro] = useState("curso");
@@ -77,7 +88,7 @@ export default function Proyectos({ idAbierto }: { idAbierto?: string }) {
     for (const t of lista) {
       const peso = Number(t.weight) > 0 ? Number(t.weight) : 1;
       total += peso;
-      if (["DONE", "COMPLETED"].includes(String(t.status)) || t.completedAt) hechas += peso;
+      if (tareaHecha(t)) hechas += peso;
     }
     return total > 0 ? { hechas, total, pct: Math.round((hechas / total) * 100) } : null;
   };
@@ -264,7 +275,7 @@ function DetalleProyecto({ id, alCerrar }: { id: string; alCerrar: () => void })
   for (const t of lista) {
     const peso = Number(t.weight) > 0 ? Number(t.weight) : 1;
     total += peso;
-    if (["DONE", "COMPLETED"].includes(String(t.status)) || t.completedAt) hechas += peso;
+    if (tareaHecha(t)) hechas += peso;
   }
   const pct = total > 0 ? Math.round((hechas / total) * 100) : null;
 
@@ -357,7 +368,7 @@ function DetalleProyecto({ id, alCerrar }: { id: string; alCerrar: () => void })
             ) : (
               <ul className="space-y-1.5">
                 {lista.map((t) => {
-                  const hecha = ["DONE", "COMPLETED"].includes(String(t.status)) || !!t.completedAt;
+                  const hecha = tareaHecha(t);
                   return (
                     <li key={t.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
                       <span className={`h-2 w-2 shrink-0 rounded-full ${hecha ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />

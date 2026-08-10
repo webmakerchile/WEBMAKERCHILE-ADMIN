@@ -64,6 +64,12 @@ export const panelSyncEstado = pgTable("panel_sync_estado", {
   ultimaCorrida: timestamp("ultima_corrida", { withTimezone: true }),
   ultimoExito: timestamp("ultimo_exito", { withTimezone: true }),
   ultimoError: text("ultimo_error"),
+  /**
+   * Última vez que corrió la reconciliación completa (snapshot íntegro +
+   * poda de huérfanos). Independiente de ultimaCorrida/ultimoExito, que
+   * reflejan el sync normal (delta o snapshot inicial).
+   */
+  ultimaReconciliacion: timestamp("ultima_reconciliacion", { withTimezone: true }),
   /** Resumen de la última corrida: { tipo, porRecurso, totalRegistros, duracionMs }. */
   detalle: jsonb("detalle").notNull().$type<Record<string, unknown>>().default({}),
 });

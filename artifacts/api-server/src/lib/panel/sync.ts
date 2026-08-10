@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { panelSyncEstado } from "@workspace/db/schema";
+import { panelEspejo, panelSyncEstado } from "@workspace/db/schema";
 import { panelConfigurado, panelGet, type ListadoPanel } from "./cliente";
 import { estadoSyncFila, guardarRegistros, RECURSOS_PANEL } from "./espejo";
 import { retirarCompartidosDeTerminados } from "./equipo";
@@ -8,6 +8,18 @@ import { limpiarCacheVistas } from "./cache-vistas";
 
 /** Cada cuánto se refresca el espejo (el manifiesto sugiere 5–15 min). */
 const FRESCURA_MS = 10 * 60 * 1000;
+
+/**
+ * Cada cuánto se corre la reconciliación completa (independiente del sync
+ * normal). El manifiesto es explícito: "el panel casi no borra registros...
+ * si necesitás detectar bajas, comparé el universo de ids en cada snapshot
+ * completo" — el sync por cursor (arriba) nunca borra, así que esto es lo
+ * único que detecta bajas del origen y además autocura cualquier campo que
+ * el delta nunca vuelva a traer (p. ej. `tareas` sincroniza por createdAt:
+ * si una tarea cambia de estado sin tocar createdAt, el delta jamás la
+ * vuelve a traer y queda pegada en el estado con el que se creó).
+ */
+const RECONCILIACION_MS = 24 * 60 * 60 * 1000;
 
 interface BloqueRecurso {
   total: number;
@@ -148,8 +160,148 @@ export async function checkPanelSync(): Promise<void> {
   if (Date.now() - ultimoIntentoAuto < FRESCURA_MS) return;
   ultimoIntentoAuto = Date.now();
   try {
-    await sincronizarPanel("auto");
+    const estado = await estadoSyncFila();
+    const tocaReconciliar =
+      !estado.ultimaReconciliacion || Date.now() - estado.ultimaReconciliacion.getTime() >= RECONCILIACION_MS;
+    if (tocaReconciliar) {
+      await reconciliarPanel();
+    } else {
+      await sincronizarPanel("auto");
+    }
   } catch (e) {
     console.error("[PanelSync] fallo:", e instanceof Error ? e.message : e);
+  }
+}
+
+/** Trae el universo COMPLETO y actual de todos los recursos, ignorando el cursor guardado (sin tocar la DB). */
+async function traerSnapshotCompleto(): Promise<{ cursor: string; porRecurso: Record<string, Array<Record<string, unknown>>> }> {
+  const respuesta = await panelGet<RespuestaSync>("/sync/snapshot", {
+    params: { limitePorRecurso: 1000 },
+    timeoutMs: 90_000,
+  });
+
+  const porRecurso: Record<string, Array<Record<string, unknown>>> = {};
+  for (const [recurso, bloque] of Object.entries(respuesta.recursos ?? {})) {
+    porRecurso[recurso] = [...(bloque?.datos ?? [])];
+  }
+  for (const recurso of respuesta.recursosTruncados ?? []) {
+    if (!(RECURSOS_PANEL as readonly string[]).includes(recurso)) continue;
+    const acumulado = (porRecurso[recurso] ??= []);
+    let offset = respuesta.recursos[recurso]?.devueltos ?? acumulado.length;
+    for (let pagina = 0; pagina < 50; pagina++) {
+      const lote = await panelGet<ListadoPanel>(`/${recurso}`, { params: { limite: 1000, offset }, timeoutMs: 60_000 });
+      acumulado.push(...lote.datos);
+      if (!lote.paginacion?.hayMas || lote.datos.length === 0) break;
+      offset += lote.datos.length;
+    }
+  }
+  return { cursor: respuesta.cursor, porRecurso };
+}
+
+export interface ResultadoReconciliacion {
+  aplicado: boolean;
+  motivo?: string;
+  porRecursoActualizados?: Record<string, number>;
+  porRecursoPodados?: Record<string, number>;
+  omitidos?: string[];
+  duracionMs?: number;
+}
+
+/**
+ * Reconciliación completa (además del sync incremental por cursor de
+ * arriba, que solo aplica altas/cambios y NUNCA borra):
+ *
+ *  1) Trae el listado COMPLETO y actual de cada recurso (no un delta).
+ *  2) Pisa el espejo con esos datos frescos — autocura cualquier registro
+ *     que el delta nunca vuelva a traer (ver comentario de RECONCILIACION_MS).
+ *  3) Poda del espejo los ids de ese recurso que ya NO vinieron en el
+ *     listado fresco: son bajas del origen que el cursor nunca detecta.
+ *
+ * Igual patrón anti-carrera que sincronizarPanel: HTTP fuera de la
+ * transacción, adentro advisory lock + re-chequeo del cursor.
+ *
+ * Salvaguarda: si el listado fresco de un recurso viene vacío, se salta la
+ * poda de ESE recurso (se loguea) en vez de borrar todo lo local — el
+ * manifiesto es explícito en que el panel casi nunca vacía un recurso de
+ * verdad, así que una lista vacía es más probable un respuesta rara que una
+ * purga real.
+ */
+export async function reconciliarPanel(): Promise<ResultadoReconciliacion> {
+  const inicio = Date.now();
+  const estado = await estadoSyncFila();
+  const cursorPrevio = estado.cursor;
+
+  try {
+    const snapshot = await traerSnapshotCompleto();
+
+    const resultado = await db.transaction(async (tx): Promise<ResultadoReconciliacion> => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('panel-sync'))`);
+      const fila = await estadoSyncFila(tx);
+      if ((fila.cursor ?? null) !== (cursorPrevio ?? null)) {
+        return { aplicado: false, motivo: "otra_instancia" };
+      }
+
+      const porRecursoActualizados: Record<string, number> = {};
+      const porRecursoPodados: Record<string, number> = {};
+      const omitidos: string[] = [];
+
+      for (const [recurso, datos] of Object.entries(snapshot.porRecurso)) {
+        if (recurso === "proyectos") {
+          await retirarCompartidosDeTerminados(datos, tx);
+        }
+        porRecursoActualizados[recurso] = await guardarRegistros(recurso, datos, tx);
+
+        const idsFrescos = datos
+          .filter((r): r is Record<string, unknown> & { id: string } => typeof r?.id === "string" && r.id.length > 0)
+          .map((r) => r.id);
+
+        if (idsFrescos.length === 0) {
+          omitidos.push(recurso);
+          continue;
+        }
+
+        const podados = await tx
+          .delete(panelEspejo)
+          .where(and(eq(panelEspejo.recurso, recurso), notInArray(panelEspejo.id, idsFrescos)))
+          .returning({ id: panelEspejo.id });
+        if (podados.length) porRecursoPodados[recurso] = podados.length;
+      }
+
+      const ahora = new Date();
+      const duracionMs = Date.now() - inicio;
+      await tx
+        .update(panelSyncEstado)
+        .set({
+          cursor: snapshot.cursor ?? cursorPrevio,
+          ultimaCorrida: ahora,
+          ultimoExito: ahora,
+          ultimoError: null,
+          ultimaReconciliacion: ahora,
+          detalle: { tipo: "reconciliacion", porRecursoActualizados, porRecursoPodados, omitidos, duracionMs },
+        })
+        .where(eq(panelSyncEstado.id, 1));
+
+      return { aplicado: true, porRecursoActualizados, porRecursoPodados, omitidos, duracionMs };
+    });
+
+    if (resultado.aplicado) {
+      limpiarCacheVistas();
+      const totalPodados = Object.values(resultado.porRecursoPodados ?? {}).reduce((a, b) => a + b, 0);
+      console.log(
+        `[PanelReconciliacion] ok: podados ${totalPodados} en ${resultado.duracionMs}ms — ${JSON.stringify(resultado.porRecursoPodados)}`
+      );
+      if (resultado.omitidos?.length) {
+        console.warn(`[PanelReconciliacion] poda salteada (universo vacío) en: ${resultado.omitidos.join(", ")}`);
+      }
+    }
+    return resultado;
+  } catch (e) {
+    const mensaje = e instanceof Error ? e.message : String(e);
+    try {
+      await db.update(panelSyncEstado).set({ ultimaCorrida: new Date(), ultimoError: mensaje }).where(eq(panelSyncEstado.id, 1));
+    } catch {
+      // El error original es el que importa.
+    }
+    throw e;
   }
 }
