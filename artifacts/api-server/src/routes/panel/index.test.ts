@@ -95,6 +95,11 @@ vi.mock("../../lib/panel/espejo", () => ({
       "tareas",
       "bitacora",
       "leads",
+      "gastos",
+      "ingresos",
+      "categorias-gasto",
+      "movimientos-mp",
+      "documentos-sii",
     ].includes(r),
   guardarRegistros: (...a: unknown[]) => guardarMock(...a),
   leerEspejo: (...a: unknown[]) => leerEspejoMock(...a),
@@ -154,6 +159,18 @@ const comoEditora = () => {
 const comoTester = () => {
   usuarioDb = { id: 10, role: "admin", teamRole: "tester" };
 };
+/** Acotado: Finanzas (canSeeMoney) y Proyectos/Propuestas (mismos roles que WMC). */
+const comoVentas = () => {
+  usuarioDb = { id: 11, role: "admin", teamRole: "ventas" };
+};
+/** Acotado: solo Proyectos/Propuestas (canSeeMoney false para dev). */
+const comoDev = () => {
+  usuarioDb = { id: 12, role: "admin", teamRole: "dev" };
+};
+/** Acotado: solo Finanzas (contador no está en WMC_ALLOWED_ROLES). */
+const comoContador = () => {
+  usuarioDb = { id: 13, role: "admin", teamRole: "contador" };
+};
 
 /** El sync manual limpia la caché real de vistas: lo usamos entre tests. */
 const limpiarCache = async () => {
@@ -187,8 +204,8 @@ describe("modos de acceso", () => {
     expect(r.cuerpo.porRecurso).toBeUndefined();
   });
 
-  it("el resto de los roles del equipo tampoco entra a Agencia", async () => {
-    for (const teamRole of ["social", "ventas", "dev", "marketing", "rrhh", "contador"] as const) {
+  it("los roles sin Finanzas ni Proyectos/Propuestas tampoco entran a Agencia", async () => {
+    for (const teamRole of ["social", "marketing", "rrhh"] as const) {
       usuarioDb = { id: 20, role: "admin", teamRole };
       const r = await llamar("GET", "/panel/estado");
       expect(r.status, `${teamRole} no debería entrar a Agencia`).toBe(403);
@@ -260,18 +277,65 @@ describe("modos de acceso", () => {
     expect(r.cuerpo.porRecurso).toEqual({ clientes: 2 });
   });
 
-  it("ventas: bloqueada en la puerta de Agencia, ni llega al gate de finanzas", async () => {
-    usuarioDb = { id: 9, role: "admin", teamRole: "ventas" };
-    const r = await llamar("GET", "/panel/finanzas/resumen");
-    expect(r.status).toBe(403);
-    expect(r.cuerpo.error).not.toBe("solo_direccion");
+  it("superadmin manda aunque su teamRole sea otro: modo completo", async () => {
+    await limpiarCache();
+    usuarioDb = { id: 1, role: "superadmin", teamRole: "editora" };
+    panelGetMock.mockResolvedValueOnce({ ok: true, periodo: "mes", kpis: { ventasNetas: 100 } });
+    const r = await llamar("GET", "/panel/finanzas/periodo?periodo=mes");
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.kpis.ventasNetas).toBe(100);
   });
 
-  it("superadmin manda aunque su teamRole sea otro: modo completo", async () => {
-    usuarioDb = { id: 1, role: "superadmin", teamRole: "editora" };
-    panelGetMock.mockResolvedValueOnce({ ok: true, anio: 2026 });
-    const r = await llamar("GET", "/panel/finanzas/resumen?anio=2026");
-    expect(r.status).toBe(200);
+  it("ventas (acotado): entra a Agencia, ve Finanzas (canSeeMoney) y Proyectos (mismos roles que WMC)", async () => {
+    await limpiarCache();
+    comoVentas();
+    const estado = await llamar("GET", "/panel/estado");
+    expect(estado.status).toBe(200);
+
+    panelGetMock.mockResolvedValueOnce({ ok: true, kpis: { ventasNetas: 100 } });
+    const fin = await llamar("GET", "/panel/finanzas/periodo?periodo=mes");
+    expect(fin.status).toBe(200);
+    expect(fin.cuerpo.kpis.ventasNetas).toBe(100);
+
+    const proyectos = await llamar("GET", "/panel/espejo/proyectos");
+    expect(proyectos.status).toBe(200);
+    // acotado no está en RECURSOS_EQUIPO: la lectura es sin filtro de equipo (misma filosofía que WMC).
+    expect(leerEspejoMock).toHaveBeenLastCalledWith("proyectos", expect.anything(), { soloEquipo: false });
+  });
+
+  it("dev (acotado): ve Proyectos/Propuestas sin redacción, pero Finanzas y Resumen le quedan afuera", async () => {
+    comoDev();
+    const proyectos = await llamar("GET", "/panel/espejo/proyectos");
+    expect(proyectos.status).toBe(200);
+
+    const fin = await llamar("GET", "/panel/finanzas/periodo");
+    expect(fin.status).toBe(403);
+    expect(fin.cuerpo.error).toBe("solo_direccion");
+
+    const resumen = await llamar("GET", "/panel/resumen");
+    expect(resumen.status).toBe(403);
+    expect(panelGetMock).not.toHaveBeenCalled();
+  });
+
+  it("contador (acotado): ve Finanzas, pero Proyectos/Propuestas y Resumen le quedan afuera", async () => {
+    await limpiarCache();
+    comoContador();
+    panelGetMock.mockResolvedValueOnce({ ok: true, kpis: {} });
+    const fin = await llamar("GET", "/panel/finanzas/periodo");
+    expect(fin.status).toBe(200);
+
+    const proyectos = await llamar("GET", "/panel/espejo/proyectos");
+    expect(proyectos.status).toBe(403);
+
+    const nuevoPresupuesto = await llamar("POST", "/panel/presupuestos", {
+      clienteId: "c1",
+      items: [{ name: "Sitio", quantity: 1, unitPrice: 1 }],
+    });
+    expect(nuevoPresupuesto.status).toBe(403);
+    expect(panelPostMock).not.toHaveBeenCalled();
+
+    const resumen = await llamar("GET", "/panel/resumen");
+    expect(resumen.status).toBe(403);
   });
 });
 
@@ -368,18 +432,58 @@ describe("vistas en vivo", () => {
     expect(JSON.stringify(equipo.cuerpo)).not.toMatch(/mrr|pagos-mantenimiento/);
   });
 
-  it("equipo: finanzas y contratos en vivo → 403; plantillas → solo id y nombre", async () => {
+  it("equipo: contratos en vivo (dirección) → 403; plantillas → solo id y nombre", async () => {
     comoTester();
-    const fin = await llamar("GET", "/panel/finanzas/resumen");
-    expect(fin.status).toBe(403);
     const con = await llamar("GET", "/panel/contratos");
     expect(con.status).toBe(403);
-    expect(panelGetMock).not.toHaveBeenCalled();
 
     await llamar("GET", "/panel/plantillas-contrato").then(async (r0) => {
       // primera llamada llena caché (cruda); la respuesta ya viene reducida
       expect(r0.cuerpo.datos ?? []).toEqual([]);
     });
+  });
+
+  it("equipo: Finanzas YA NO está bloqueada entera -- llega saneada por clave (sin montos)", async () => {
+    await limpiarCache();
+    comoTester();
+    panelGetMock.mockResolvedValueOnce({
+      ok: true,
+      periodo: "mes",
+      kpis: { utilidadNeta: 500000, ventasNetas: 900000, ivaDebito: 19000 },
+      porCobrar: [{ proyectoId: "pr1", nombre: "Sitio ACME", total: 100000, pagado: 50000, porcentajePagado: 50 }],
+      movimientosMp: [{ id: "mp1", descripcion: "Pago cliente", amount: 1000, categoria: "hosting" }],
+    });
+    const r = await llamar("GET", "/panel/finanzas/periodo?periodo=mes");
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.porCobrar[0].nombre).toBe("Sitio ACME");
+    expect(r.cuerpo.movimientosMp[0].descripcion).toBe("Pago cliente");
+    expect(JSON.stringify(r.cuerpo)).not.toMatch(/utilidadNeta|ventasNetas|ivaDebito|500000|900000|19000|100000|50000|porcentajePagado|amount/);
+  });
+
+  it("dirección: Finanzas por período trae los montos tal cual", async () => {
+    await limpiarCache();
+    panelGetMock.mockResolvedValueOnce({ ok: true, kpis: { utilidadNeta: 500000 } });
+    const r = await llamar("GET", "/panel/finanzas/periodo?periodo=hoy");
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.kpis.utilidadNeta).toBe(500000);
+  });
+
+  it("Finanzas: el origen todavía no publicó el endpoint (SPA HTML 200) → 503 finanzas_no_disponible honesto", async () => {
+    await limpiarCache();
+    const { PanelError } = await import("../../lib/panel/cliente");
+    panelGetMock.mockRejectedValueOnce(new PanelError(502, "respuesta_invalida", "no era JSON"));
+    const r = await llamar("GET", "/panel/finanzas/periodo?periodo=mes");
+    expect(r.status).toBe(503);
+    expect(r.cuerpo.error).toBe("finanzas_no_disponible");
+  });
+
+  it("Finanzas: un 404 franco del origen (endpoint todavía no existe) también se traduce a 503 honesto", async () => {
+    await limpiarCache();
+    const { PanelError } = await import("../../lib/panel/cliente");
+    panelGetMock.mockRejectedValueOnce(new PanelError(404, "no_encontrado", "not found"));
+    const r = await llamar("GET", "/panel/finanzas/periodo?periodo=mes");
+    expect(r.status).toBe(503);
+    expect(r.cuerpo.error).toBe("finanzas_no_disponible");
   });
 
   it("equipo: vista de detalle saneada en profundidad (items sin precios)", async () => {
@@ -677,5 +781,115 @@ describe("redacción de contratos con IA", () => {
     expect(r.status).toBe(200);
     const [, cuerpo] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
     expect(cuerpo.secciones).toBeUndefined();
+  });
+
+  it("redactar-ia y corregir-ia ahora los puede usar un acotado con Proyectos (ventas/dev), no solo dirección", async () => {
+    comoVentas();
+    panelPostMock.mockResolvedValueOnce({ ok: true, secciones: [{ titulo: "A", contenido: "b" }] });
+    const r = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1" });
+    expect(r.status).toBe(200);
+
+    comoContador();
+    const r2 = await llamar("POST", "/panel/contratos-servicio/redactar-ia", { presupuestoId: "p1" });
+    expect(r2.status).toBe(403);
+  });
+});
+
+describe("Finanzas v2: escrituras delegadas (gasto/ingreso manual, categorizar MP, sync MP)", () => {
+  it("registrar gasto manual: delega al panel y refleja lo devuelto en el espejo (recurso gastos)", async () => {
+    const devuelto = { id: "g1", description: "Hosting", amount: 15000, categoryId: "cat1" };
+    panelPostMock.mockResolvedValueOnce({ ok: true, datos: devuelto });
+    const r = await llamar("POST", "/panel/finanzas/gastos", { description: "Hosting", amount: 15000, categoryId: "cat1" });
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.datos.id).toBe("g1");
+    const [ruta, cuerpo] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(ruta).toBe("/gastos");
+    expect(cuerpo).toEqual({ description: "Hosting", amount: 15000, categoryId: "cat1" });
+    expect(guardarMock).toHaveBeenCalledWith("gastos", [devuelto]);
+  });
+
+  it("registrar ingreso manual: delega al panel y refleja lo devuelto en el espejo (recurso ingresos)", async () => {
+    const devuelto = { id: "i1", description: "Venta directa", amount: 200000 };
+    panelPostMock.mockResolvedValueOnce({ ok: true, datos: devuelto });
+    const r = await llamar("POST", "/panel/finanzas/ingresos", { description: "Venta directa", amount: 200000 });
+    expect(r.status).toBe(200);
+    const [ruta] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(ruta).toBe("/ingresos");
+    expect(guardarMock).toHaveBeenCalledWith("ingresos", [devuelto]);
+  });
+
+  it("categorizar un movimiento de Mercado Pago: delega al panel y refleja lo devuelto en el espejo (recurso movimientos-mp)", async () => {
+    const devuelto = { id: "mp1", amount: 5000, categoryId: "cat2" };
+    panelPatchMock.mockResolvedValueOnce({ ok: true, datos: devuelto });
+    const r = await llamar("PATCH", "/panel/finanzas/movimientos-mp/mp1", { categoryId: "cat2" });
+    expect(r.status).toBe(200);
+    const [ruta, cuerpo] = panelPatchMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(ruta).toBe("/movimientos-mp/mp1");
+    expect(cuerpo).toEqual({ categoryId: "cat2" });
+    expect(guardarMock).toHaveBeenCalledWith("movimientos-mp", [devuelto]);
+  });
+
+  it("categorizar sin categoryId → 400 sin molestar al panel", async () => {
+    const r = await llamar("PATCH", "/panel/finanzas/movimientos-mp/mp1", {});
+    expect(r.status).toBe(400);
+    expect(panelPatchMock).not.toHaveBeenCalled();
+  });
+
+  it("disparar sync de Mercado Pago: guarda TODOS los movimientos que devuelve el panel", async () => {
+    const devueltos = [
+      { id: "mp1", amount: 1000 },
+      { id: "mp2", amount: 2000 },
+    ];
+    panelPostMock.mockResolvedValueOnce({ ok: true, sincronizados: 2, datos: devueltos });
+    const r = await llamar("POST", "/panel/finanzas/mp-sync");
+    expect(r.status).toBe(200);
+    expect(r.cuerpo.sincronizados).toBe(2);
+    const [ruta] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(ruta).toBe("/movimientos-mp/sincronizar");
+    expect(guardarMock).toHaveBeenCalledWith("movimientos-mp", devueltos);
+  });
+
+  it("las 4 escrituras de Finanzas: bloqueadas para un acotado sin puedeFinanzas (dev)", async () => {
+    comoDev();
+    const g = await llamar("POST", "/panel/finanzas/gastos", { description: "x", amount: 1 });
+    expect(g.status).toBe(403);
+    const i = await llamar("POST", "/panel/finanzas/ingresos", { description: "x", amount: 1 });
+    expect(i.status).toBe(403);
+    const c = await llamar("PATCH", "/panel/finanzas/movimientos-mp/mp1", { categoryId: "cat1" });
+    expect(c.status).toBe(403);
+    const s = await llamar("POST", "/panel/finanzas/mp-sync");
+    expect(s.status).toBe(403);
+    expect(panelPostMock).not.toHaveBeenCalled();
+    expect(panelPatchMock).not.toHaveBeenCalled();
+  });
+
+  it("equipo: puede registrar un gasto, pero la respuesta vuelve saneada (sin monto)", async () => {
+    comoTester();
+    const devuelto = { id: "g2", description: "Hosting", amount: 15000 };
+    panelPostMock.mockResolvedValueOnce({ ok: true, datos: devuelto });
+    const r = await llamar("POST", "/panel/finanzas/gastos", { description: "Hosting", amount: 15000 });
+    expect(r.status).toBe(200);
+    // tipeó el monto y viajó al panel tal cual...
+    const [, cuerpo] = panelPostMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(cuerpo.amount).toBe(15000);
+    // ...pero no lo vuelve a ver
+    expect(JSON.stringify(r.cuerpo)).not.toMatch(/15000/);
+    expect(r.cuerpo.datos.description).toBe("Hosting");
+  });
+
+  it("gasto/ingreso: el origen todavía no publicó el endpoint → 503 finanzas_no_disponible honesto", async () => {
+    const { PanelError } = await import("../../lib/panel/cliente");
+    panelPostMock.mockRejectedValueOnce(new PanelError(404, "no_encontrado", "not found"));
+    const r = await llamar("POST", "/panel/finanzas/gastos", { description: "x", amount: 1 });
+    expect(r.status).toBe(503);
+    expect(r.cuerpo.error).toBe("finanzas_no_disponible");
+  });
+
+  it("montos inválidos (negativos o cero) → 400 sin molestar al panel", async () => {
+    const r = await llamar("POST", "/panel/finanzas/gastos", { description: "x", amount: 0 });
+    expect(r.status).toBe(400);
+    const r2 = await llamar("POST", "/panel/finanzas/ingresos", { description: "x", amount: -5 });
+    expect(r2.status).toBe(400);
+    expect(panelPostMock).not.toHaveBeenCalled();
   });
 });

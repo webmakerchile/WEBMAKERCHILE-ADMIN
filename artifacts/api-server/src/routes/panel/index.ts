@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { users } from "@workspace/db/schema";
-import { normalizeRole } from "@workspace/roles";
+import { canSeeMoney, normalizeRole } from "@workspace/roles";
 import { PanelError, panelConfigurado, panelGet, panelPatch, panelPost } from "../../lib/panel/cliente";
 import {
   conteoPorRecurso,
@@ -20,6 +20,7 @@ import {
   esRecursoEquipo,
   esVisibleParaEquipo,
   fijarCompartidoProyecto,
+  finanzasParaEquipo,
   mantenimientoParaEquipo,
   plantillasParaEquipo,
   resumenParaEquipo,
@@ -29,6 +30,7 @@ import {
 } from "../../lib/panel/equipo";
 import { sincronizarPanel } from "../../lib/panel/sync";
 import { guardarVista, limpiarCacheVistas, vistaEnCache } from "../../lib/panel/cache-vistas";
+import { hasWmcAccess } from "../../lib/wmc/access";
 
 /**
  * Sección Agencia: espejo del panel autoadministrable de webmakerlatam.com.
@@ -55,43 +57,120 @@ const router: IRouter = Router();
 /* sesión (como el Hub): un cambio de rol pega al siguiente request.    */
 /* ------------------------------------------------------------------ */
 
-type ModoAgencia = "completo" | "equipo";
+interface InfoAcceso {
+  modo: "completo" | "equipo" | "acotado";
+  /** Solo relevante en modo "acotado": ¿ve Finanzas? (canSeeMoney del rol). */
+  puedeFinanzas: boolean;
+  /** Solo relevante en modo "acotado": ¿ve Proyectos/Propuestas? (mismos roles que WMC). */
+  puedeProyectos: boolean;
+}
 
-async function modoAgencia(req: Request): Promise<ModoAgencia | null> {
+/**
+ * Resuelve el acceso completo de la sesión (ya no un modo binario):
+ *  - "completo": dirección (CEO / superadmin). Ve todo tal cual llega del panel.
+ *  - "equipo": EXCLUSIVO de "tester" (cuenta de revisión de TikTok, no se
+ *    toca). Ahora incluye Finanzas -- antes bloqueada entera, hoy saneada
+ *    como el resto de las vistas del equipo.
+ *  - "acotado": ventas/dev/contador. Ven Finanzas y/o Proyectos/Propuestas
+ *    SIN redacción (misma lógica que ya usan las páginas WMC: los tres ven
+ *    exactamente lo mismo), pero nada del resto de Agencia (Resumen,
+ *    Clientes, Contratos, Mantención) -- eso sigue siendo solo de dirección.
+ *  - cualquier otro rol (sin ninguna de las dos banderas): 403, como hoy.
+ */
+async function infoAcceso(req: Request): Promise<InfoAcceso | null> {
   const sessionUser = req.user as { id?: number } | undefined;
   if (!sessionUser?.id) return null;
   const [me] = await db.select().from(users).where(eq(users.id, sessionUser.id)).limit(1);
   if (!me) return null;
   const esSuper = me.role === "superadmin";
-  if (esSuper) return "completo";
+  if (esSuper) return { modo: "completo", puedeFinanzas: true, puedeProyectos: true };
   const rol = normalizeRole(me.teamRole, esSuper);
-  if (rol === "ceo") return "completo";
+  if (rol === "ceo") return { modo: "completo", puedeFinanzas: true, puedeProyectos: true };
   // Cuenta de revisión de TikTok: no se toca, sigue en modo equipo como hoy.
-  if (rol === "tester") return "equipo";
-  // Agencia es solo de dirección: cualquier otro rol del equipo queda afuera.
-  return null;
+  if (rol === "tester") return { modo: "equipo", puedeFinanzas: true, puedeProyectos: true };
+  const puedeFinanzas = canSeeMoney(rol);
+  const puedeProyectos = hasWmcAccess(rol);
+  if (!puedeFinanzas && !puedeProyectos) return null;
+  return { modo: "acotado", puedeFinanzas, puedeProyectos };
 }
 
 router.use("/panel", (req: Request, res: Response, next: NextFunction) => {
-  modoAgencia(req)
-    .then((modo) => {
-      if (!modo) {
+  infoAcceso(req)
+    .then((info) => {
+      if (!info) {
         res.status(403).json({ error: "Tu cuenta no tiene acceso a la sección Agencia" });
         return;
       }
-      res.locals.modoPanel = modo;
+      res.locals.acceso = info;
       next();
     })
     .catch(next);
 });
 
-const esEquipo = (res: Response): boolean => res.locals.modoPanel === "equipo";
+const acceso = (res: Response): InfoAcceso => res.locals.acceso as InfoAcceso;
+const esEquipo = (res: Response): boolean => acceso(res).modo === "equipo";
+const esCompleto = (res: Response): boolean => acceso(res).modo === "completo";
 
-/** Corta con 403 lo que es solo de dirección (finanzas, contratos en vivo, compartir). */
+/** Recursos del espejo que un rol acotado con acceso a Proyectos puede leer (mismo universo que hoy exponen las páginas WMC). */
+const RECURSOS_ACOTADO_PROYECTOS = [
+  "proyectos",
+  "presupuestos",
+  "tareas",
+  "bitacora",
+  "clientes",
+  "contratos-servicio",
+] as const;
+
+/** Corta con 403 lo que es solo de dirección (finanzas anual, contratos en vivo, compartir). Ni equipo ni acotado pasan. */
 function soloDireccion(res: Response): boolean {
-  if (!esEquipo(res)) return false;
+  if (esCompleto(res)) return false;
   res.status(403).json({ error: "solo_direccion", mensaje: "Esta parte es solo para dirección." });
   return true;
+}
+
+/** Corta con 403 SOLO a un rol acotado (ventas/dev/contador): dirección y equipo no cambian su comportamiento actual. */
+function bloqueaAcotado(res: Response): boolean {
+  if (acceso(res).modo !== "acotado") return false;
+  res.status(403).json({ error: "solo_direccion", mensaje: "Esta parte no está disponible para tu cuenta." });
+  return true;
+}
+
+/** Lectura de un recurso del espejo/vista: 403 si es acotado sin Proyectos, o el recurso no está en su lista blanca. */
+function bloqueaLecturaAcotada(res: Response, recurso: string): boolean {
+  const info = acceso(res);
+  if (info.modo !== "acotado") return false;
+  if (info.puedeProyectos && (RECURSOS_ACOTADO_PROYECTOS as readonly string[]).includes(recurso)) return false;
+  res.status(403).json({ error: "solo_direccion", mensaje: "Tu cuenta no tiene acceso a ese recurso." });
+  return true;
+}
+
+/** Escrituras de Proyectos/Propuestas: bloquea SOLO a un acotado sin esa bandera (p. ej. contador). Dirección y equipo intactos. */
+function sinAccesoProyectos(res: Response): boolean {
+  const info = acceso(res);
+  if (info.modo === "acotado" && !info.puedeProyectos) {
+    res.status(403).json({ error: "solo_direccion", mensaje: "Tu cuenta no tiene acceso a Proyectos y Propuestas." });
+    return true;
+  }
+  return false;
+}
+
+/** IA de contratos: dirección o acotado-con-Proyectos (ventas/dev). Equipo (tester) sigue afuera, como hoy. */
+function sinAccesoContratoIA(res: Response): boolean {
+  const info = acceso(res);
+  if (info.modo === "completo") return false;
+  if (info.modo === "acotado" && info.puedeProyectos) return false;
+  res.status(403).json({ error: "solo_direccion", mensaje: "Esta parte es solo para dirección, ventas o desarrollo." });
+  return true;
+}
+
+/** Finanzas (vista por período + escrituras): bloquea SOLO a un acotado sin esa bandera (p. ej. dev). */
+function sinAccesoFinanzas(res: Response): boolean {
+  const info = acceso(res);
+  if (info.modo === "acotado" && !info.puedeFinanzas) {
+    res.status(403).json({ error: "solo_direccion", mensaje: "Tu cuenta no tiene acceso a Finanzas." });
+    return true;
+  }
+  return false;
 }
 
 /** Envuelve una ruta: PanelError y Zod se traducen a respuestas honestas. */
@@ -181,8 +260,12 @@ router.get(
       res.status(404).json({ error: "recurso_desconocido", mensaje: `No existe el recurso "${recurso}".` });
       return;
     }
-    if (esEquipo(res) && !esRecursoEquipo(recurso)) {
-      soloDireccion(res);
+    if (esEquipo(res)) {
+      if (!esRecursoEquipo(recurso)) {
+        soloDireccion(res);
+        return;
+      }
+    } else if (bloqueaLecturaAcotada(res, recurso)) {
       return;
     }
     const q = req.query as Record<string, string | undefined>;
@@ -212,8 +295,12 @@ router.get(
       res.status(404).json({ error: "recurso_desconocido", mensaje: `No existe el recurso "${recurso}".` });
       return;
     }
-    if (esEquipo(res) && !esRecursoEquipo(recurso)) {
-      soloDireccion(res);
+    if (esEquipo(res)) {
+      if (!esRecursoEquipo(recurso)) {
+        soloDireccion(res);
+        return;
+      }
+    } else if (bloqueaLecturaAcotada(res, recurso)) {
       return;
     }
     const datos = await leerRegistro(recurso, String(req.params.id));
@@ -241,6 +328,7 @@ router.get(
 router.get(
   "/panel/resumen",
   conPanel(async (_req, res) => {
+    if (bloqueaAcotado(res)) return;
     const crudo = await cargarVista("resumen", () => panelGet("/resumen"));
     res.json(esEquipo(res) ? resumenParaEquipo(crudo) : crudo);
   })
@@ -249,18 +337,49 @@ router.get(
 router.get(
   "/panel/mantenimiento/resumen",
   conPanel(async (_req, res) => {
+    if (bloqueaAcotado(res)) return;
     const crudo = await cargarVista("mantenimiento", () => panelGet("/mantenimiento/resumen"));
     res.json(esEquipo(res) ? mantenimientoParaEquipo(crudo) : crudo);
   })
 );
 
+/**
+ * Finanzas v2: vista en vivo por período (hoy/semana/mes/rango de fechas),
+ * abierta a cualquier rol con canSeeMoney -- ya no es solo de dirección.
+ * KPIs tal cual los entrega el panel (acá nunca se suma nada). Si el origen
+ * todavía no publicó este endpoint (404 franco, o su SPA responde 200 con
+ * HTML), finanzasDelPanel lo traduce a un 503 honesto para que la UI muestre
+ * un aviso en vez de romperse; nada queda cacheado de un intento fallido, así
+ * que el próximo ciclo vuelve a intentar solo.
+ */
+async function finanzasDelPanel<T>(llamada: () => Promise<T>): Promise<T> {
+  try {
+    return await llamada();
+  } catch (e) {
+    if (e instanceof PanelError && (e.codigo === "respuesta_invalida" || e.status === 404)) {
+      throw new PanelError(
+        503,
+        "finanzas_no_disponible",
+        "El panel de la agencia todavía no publica esta parte de Finanzas — reintentamos solo en el próximo ciclo."
+      );
+    }
+    throw e;
+  }
+}
+
+const PERIODOS_FINANZAS = ["hoy", "semana", "mes", "rango"] as const;
+
 router.get(
-  "/panel/finanzas/resumen",
+  "/panel/finanzas/periodo",
   conPanel(async (req, res) => {
-    if (soloDireccion(res)) return;
-    const anio = String(req.query.anio ?? "");
-    const crudo = await cargarVista(`finanzas:${anio}`, () => panelGet("/finanzas/resumen", { params: { anio: anio || undefined } }));
-    res.json(crudo);
+    if (sinAccesoFinanzas(res)) return;
+    const q = req.query as Record<string, string | undefined>;
+    const periodo = q.periodo && (PERIODOS_FINANZAS as readonly string[]).includes(q.periodo) ? q.periodo : undefined;
+    const params = { periodo, desde: q.desde, hasta: q.hasta };
+    const crudo = await finanzasDelPanel(() =>
+      cargarVista(`finanzas-periodo:${JSON.stringify(params)}`, () => panelGet("/finanzas/periodo", { params }))
+    );
+    res.json(esEquipo(res) ? finanzasParaEquipo(crudo) : crudo);
   })
 );
 
@@ -306,6 +425,8 @@ router.get(
           return;
         }
       }
+    } else if (bloqueaLecturaAcotada(res, recurso)) {
+      return;
     }
     const id = encodeURIComponent(String(req.params.id));
     const crudo = await cargarVista(`vista:${recurso}:${id}`, () => panelGet(`/${recurso}/${id}`));
@@ -386,6 +507,7 @@ const esqCliente = z
 router.post(
   "/panel/clientes",
   conPanel(async (req, res) => {
+    if (sinAccesoProyectos(res)) return;
     const cuerpo = esqCliente.parse(req.body ?? {});
     const resp = await panelPost<{ ok: boolean; creado?: boolean; datos: Record<string, unknown> }>("/clientes", cuerpo);
     if (resp?.datos?.id) await guardarRegistros("clientes", [resp.datos]);
@@ -400,6 +522,7 @@ router.post(
 
 const esqItem = z.object({
   name: z.string().trim().min(1),
+  description: z.string().trim().optional(),
   quantity: z.number().positive(),
   unitPrice: z.number().min(0),
 });
@@ -428,6 +551,7 @@ const esqPresupuesto = z
 router.post(
   "/panel/presupuestos",
   conPanel(async (req, res) => {
+    if (sinAccesoProyectos(res)) return;
     const cuerpo = esqPresupuesto.parse(req.body ?? {});
     const resp = await panelPost<{ ok: boolean; datos: Record<string, unknown>; calculo?: unknown; items?: unknown }>(
       "/presupuestos",
@@ -472,6 +596,7 @@ const esqContrato = z
 router.post(
   "/panel/contratos-servicio",
   conPanel(async (req, res) => {
+    if (sinAccesoProyectos(res)) return;
     const cuerpo = esqContrato.parse(req.body ?? {});
     // El equipo arma contratos desde plantilla; el texto libre (contenido o
     // secciones redactadas) es de dirección.
@@ -540,7 +665,7 @@ const esqRedactar = z
 router.post(
   "/panel/contratos-servicio/redactar-ia",
   conPanel(async (req, res) => {
-    if (soloDireccion(res)) return;
+    if (sinAccesoContratoIA(res)) return;
     const cuerpo = esqRedactar.parse(req.body ?? {});
     // No guarda nada: las secciones vuelven a la UI para revisarse y editarse.
     const resp = await iaDelPanel(() =>
@@ -560,7 +685,7 @@ const esqCorregir = z
 router.post(
   "/panel/contratos-servicio/corregir-ia",
   conPanel(async (req, res) => {
-    if (soloDireccion(res)) return;
+    if (sinAccesoContratoIA(res)) return;
     const cuerpo = esqCorregir.parse(req.body ?? {});
     const resp = await iaDelPanel(() =>
       panelPost<Record<string, unknown>>("/contratos-servicio/corregir-ia", cuerpo, { timeoutMs: TIMEOUT_IA_MS })
@@ -575,14 +700,25 @@ const esqPatchPresupuesto = z
     estado: z.enum(["DRAFT", "SENT", "REJECTED", "EXPIRED"]).optional(),
     notes: z.string().optional(),
     validUntil: z.string().nullable().optional(),
+    // Edición del builder (paridad con WMC): mismos campos opcionales que al
+    // crear. El panel decide si los acepta según el estado del presupuesto.
+    items: z.array(esqItem).min(1).optional(),
+    hasIVA: z.boolean().optional(),
+    discount: z.number().min(0).optional(),
+    paymentModality: z.string().trim().optional(),
+    installmentCount: z.number().int().positive().optional(),
+    customPaymentTerms: z.string().trim().optional(),
+    maintenanceType: z.string().trim().optional(),
+    monthlyMaintenance: z.number().min(0).optional(),
   })
   .strip();
 
 router.patch(
   "/panel/presupuestos/:id",
   conPanel(async (req, res) => {
+    if (sinAccesoProyectos(res)) return;
     const cuerpo = esqPatchPresupuesto.parse(req.body ?? {});
-    // El equipo solo mueve estados; notas y vigencia son de dirección.
+    // El equipo solo mueve estados; notas, vigencia y edición de ítems son de dirección/acotado.
     const enviado = esEquipo(res) ? { estado: cuerpo.estado } : cuerpo;
     const id = encodeURIComponent(String(req.params.id));
     const resp = await panelPatch<{ ok: boolean; datos: Record<string, unknown> }>(`/presupuestos/${id}`, enviado);
@@ -606,6 +742,7 @@ const esqPatchContrato = z
 router.patch(
   "/panel/contratos-servicio/:id",
   conPanel(async (req, res) => {
+    if (sinAccesoProyectos(res)) return;
     const cuerpo = esqPatchContrato.parse(req.body ?? {});
     const enviado = esEquipo(res) ? { estado: cuerpo.estado } : cuerpo;
     const id = encodeURIComponent(String(req.params.id));
@@ -633,6 +770,7 @@ const esqLead = z
 router.post(
   "/panel/leads",
   conPanel(async (req, res) => {
+    if (sinAccesoProyectos(res)) return;
     const cuerpo = esqLead.parse(req.body ?? {});
     const resp = await panelPost<{ ok: boolean; datos: Record<string, unknown> }>("/leads", cuerpo);
     if (resp?.datos?.id) await guardarRegistros("leads", [resp.datos]);
@@ -641,6 +779,99 @@ router.post(
       return;
     }
     res.json(resp);
+  })
+);
+
+/* ------------------------------------------------------------------ */
+/* Finanzas v2: escrituras delegadas (gasto/ingreso manual, categorizar */
+/* movimiento MP, disparar sync MP). Mismo criterio 404/HTML que la     */
+/* vista por período: si el origen no publicó el endpoint todavía, un   */
+/* 503 honesto en vez de un error críptico. El equipo puede usarlas     */
+/* (mismo criterio que clientes/presupuestos: tipea, pero no re-ve      */
+/* plata), con la respuesta pasada por el mismo colador de Finanzas.    */
+/* ------------------------------------------------------------------ */
+
+const esqGasto = z
+  .object({
+    description: z.string().trim().min(1, "Falta la descripción"),
+    amount: z.number().positive("El monto debe ser mayor a 0"),
+    categoryId: z.string().trim().optional(),
+    date: z.string().trim().optional(),
+    notes: z.string().trim().optional(),
+  })
+  .strip();
+
+router.post(
+  "/panel/finanzas/gastos",
+  conPanel(async (req, res) => {
+    if (sinAccesoFinanzas(res)) return;
+    const cuerpo = esqGasto.parse(req.body ?? {});
+    const resp = await finanzasDelPanel(() =>
+      panelPost<{ ok: boolean; datos: Record<string, unknown> }>("/gastos", cuerpo)
+    );
+    if (resp?.datos?.id) await guardarRegistros("gastos", [resp.datos]);
+    limpiarCacheVistas();
+    res.json(esEquipo(res) ? finanzasParaEquipo(resp) : resp);
+  })
+);
+
+const esqIngreso = z
+  .object({
+    description: z.string().trim().min(1, "Falta la descripción"),
+    amount: z.number().positive("El monto debe ser mayor a 0"),
+    date: z.string().trim().optional(),
+    notes: z.string().trim().optional(),
+  })
+  .strip();
+
+router.post(
+  "/panel/finanzas/ingresos",
+  conPanel(async (req, res) => {
+    if (sinAccesoFinanzas(res)) return;
+    const cuerpo = esqIngreso.parse(req.body ?? {});
+    const resp = await finanzasDelPanel(() =>
+      panelPost<{ ok: boolean; datos: Record<string, unknown> }>("/ingresos", cuerpo)
+    );
+    if (resp?.datos?.id) await guardarRegistros("ingresos", [resp.datos]);
+    limpiarCacheVistas();
+    res.json(esEquipo(res) ? finanzasParaEquipo(resp) : resp);
+  })
+);
+
+const esqCategorizarMovimiento = z
+  .object({
+    categoryId: z.string().trim().min(1, "Falta la categoría"),
+  })
+  .strip();
+
+router.patch(
+  "/panel/finanzas/movimientos-mp/:id",
+  conPanel(async (req, res) => {
+    if (sinAccesoFinanzas(res)) return;
+    const cuerpo = esqCategorizarMovimiento.parse(req.body ?? {});
+    const id = encodeURIComponent(String(req.params.id));
+    const resp = await finanzasDelPanel(() =>
+      panelPatch<{ ok: boolean; datos: Record<string, unknown> }>(`/movimientos-mp/${id}`, cuerpo)
+    );
+    if (resp?.datos?.id) await guardarRegistros("movimientos-mp", [resp.datos]);
+    limpiarCacheVistas();
+    res.json(esEquipo(res) ? finanzasParaEquipo(resp) : resp);
+  })
+);
+
+router.post(
+  "/panel/finanzas/mp-sync",
+  conPanel(async (_req, res) => {
+    if (sinAccesoFinanzas(res)) return;
+    const resp = await finanzasDelPanel(() =>
+      panelPost<{ ok: boolean; sincronizados?: number; datos?: Array<Record<string, unknown>> }>(
+        "/movimientos-mp/sincronizar",
+        {}
+      )
+    );
+    if (Array.isArray(resp?.datos) && resp.datos.length) await guardarRegistros("movimientos-mp", resp.datos);
+    limpiarCacheVistas();
+    res.json(esEquipo(res) ? finanzasParaEquipo(resp) : resp);
   })
 );
 

@@ -180,10 +180,11 @@ const DROP_EXACTO = new Set([
 const KEEP_EXACTO = new Set(["billingRut", "pagoId"]);
 
 /** Claves cuyo valor SÍ puede quedarse aunque otro filtro las mire feo. */
-function claveVetada(clave: string): boolean {
+function claveVetada(clave: string, extra?: RegExp): boolean {
   if (KEEP_EXACTO.has(clave)) return false;
   if (DROP_EXACTO.has(clave)) return true;
   if (CLAVE_PLATA.test(clave)) return true;
+  if (extra && extra.test(clave)) return true;
   if (CLAVE_ARR.test(clave)) return true;
   if (CLAVE_COLECCION_VETADA.test(clave)) return true;
   return false;
@@ -193,16 +194,18 @@ function claveVetada(clave: string): boolean {
  * Copia recursiva sin claves de plata. Con `comp` además filtra arrays bajo
  * la clave "proyectos" según visibilidad (vistas tipo cliente-360), reduce
  * "items" a { id, name, quantity } y deja en `_enlaces` SOLO el link de firma
- * (`contrato`); propuesta, pdf y descripción son de dirección.
+ * (`contrato`); propuesta, pdf y descripción son de dirección. `extra` suma
+ * vocabulario de plata específico del llamador (ver finanzasParaEquipo) sin
+ * tocar CLAVE_PLATA, que ya está verificada contra el resto de los recursos.
  */
-export function depurarProfundo(valor: unknown, comp?: CompartidosProyectos): unknown {
-  if (Array.isArray(valor)) return valor.map((v) => depurarProfundo(v, comp));
+export function depurarProfundo(valor: unknown, comp?: CompartidosProyectos, extra?: RegExp): unknown {
+  if (Array.isArray(valor)) return valor.map((v) => depurarProfundo(v, comp, extra));
   if (valor === null || typeof valor !== "object") return valor;
 
   const fuente = valor as Record<string, unknown>;
   const salida: Record<string, unknown> = {};
   for (const [clave, v] of Object.entries(fuente)) {
-    if (claveVetada(clave)) continue;
+    if (claveVetada(clave, extra)) continue;
     if (clave === "_enlaces") {
       const enlaces = (v ?? {}) as Record<string, unknown>;
       if (typeof enlaces.contrato === "string") salida._enlaces = { contrato: enlaces.contrato };
@@ -222,10 +225,10 @@ export function depurarProfundo(valor: unknown, comp?: CompartidosProyectos): un
           if (!esProyectoTerminado(o)) return true;
           return comp.todos || (typeof o.id === "string" && comp.ids.has(o.id));
         })
-        .map((p) => depurarProfundo(p, comp));
+        .map((p) => depurarProfundo(p, comp, extra));
       continue;
     }
-    salida[clave] = depurarProfundo(v, comp);
+    salida[clave] = depurarProfundo(v, comp, extra);
   }
   return salida;
 }
@@ -348,6 +351,30 @@ export function mantenimientoParaEquipo(crudo: unknown): Record<string, unknown>
       };
     }),
   };
+}
+
+/**
+ * Finanzas v2 (vista por período): a diferencia de resumen/mantenimiento, acá
+ * no hay lista blanca a mano -- el shape lo define un panel que otro agente
+ * está ampliando EN PARALELO, así que puede seguir cambiando. Se reusa el
+ * mismo colador genérico por clave que ya protege las vistas 360 de recurso
+ * desconocido (CLAVE_PLATA), reforzado con vocabulario propio de Finanzas
+ * que ese colador general nunca tuvo motivo para cubrir (utilidad NETA,
+ * IVA DÉBITO, nota F29, egresos, % pagado, por cobrar): mejor ocultar de
+ * más que dejar pasar un campo de plata con un nombre que el colador
+ * general no anticipaba. Vive aparte (no se suma a CLAVE_PLATA) para no
+ * afectar el resto de los recursos ya verificados contra la DB real.
+ *
+ * OJO: "cobr" (por cobrar/cobranza) queda AFUERA a propósito -- esa palabra
+ * vive en el nombre de la colección ("porCobrar"), no en un campo de plata
+ * puntual, y clavar la palabra ahí borraría la lista entera en vez de solo
+ * sus montos (mismo criterio que ya usan presupuestos/proyectos: la lista
+ * queda, los montos de cada fila no).
+ */
+const CLAVE_PLATA_FINANZAS = /net[oa]|utilidad|debito|f29|profit|egreso|pagad/i;
+
+export function finanzasParaEquipo(crudo: unknown): unknown {
+  return depurarProfundo(crudo, undefined, CLAVE_PLATA_FINANZAS);
 }
 
 /** Plantillas de contrato: el equipo solo necesita id y nombre para el select. */

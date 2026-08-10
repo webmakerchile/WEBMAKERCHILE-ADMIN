@@ -283,11 +283,11 @@ describe("el Hub Ejecutivo ahora vive en páginas propias del sidebar", () => {
     }
   });
 
-  it("Agencia es exclusiva de dirección: ningún otro rol la ve, ni con vista reducida", () => {
-    for (const role of ["ceo", "tester"] as const) {
+  it("Agencia: dirección completa, y acotado para ventas/dev/contador (Finanzas y/o Proyectos vía WMC)", () => {
+    for (const role of ["ceo", "tester", "ventas", "dev", "contador"] as const) {
       expect(canAccessRoute(role, "/agencia"), `${role} debería ver Agencia`).toBe(true);
     }
-    for (const role of ["editora", "social", "ventas", "dev", "marketing", "rrhh", "contador"] as const) {
+    for (const role of ["editora", "social", "marketing", "rrhh"] as const) {
       expect(canAccessRoute(role, "/agencia"), `${role} no debería ver Agencia`).toBe(false);
     }
   });

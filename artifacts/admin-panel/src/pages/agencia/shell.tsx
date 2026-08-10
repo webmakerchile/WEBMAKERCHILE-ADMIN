@@ -5,22 +5,35 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agenciaApi, CLAVE } from "./api";
 import { haceCuanto } from "./formato";
 import { Aviso } from "./ui";
-import { useModoAgencia } from "./modo";
+import { useAccesoAgencia } from "./modo";
 
+/**
+ * `soloDireccionYEquipo`: pestañas que un rol acotado (ventas/dev/contador)
+ * jamás ve, tenga o no puedeFinanzas/puedeProyectos -- Resumen, Clientes,
+ * Contratos y Mantención siguen siendo solo de dirección/equipo, tal como
+ * hoy en el servidor (bloqueaAcotado / bloqueaLecturaAcotada).
+ */
 const PESTANAS = [
-  { ruta: "/agencia", etiqueta: "Resumen" },
-  { ruta: "/agencia/clientes", etiqueta: "Clientes" },
-  { ruta: "/agencia/presupuestos", etiqueta: "Presupuestos" },
-  { ruta: "/agencia/contratos", etiqueta: "Contratos" },
-  { ruta: "/agencia/proyectos", etiqueta: "Proyectos" },
-  { ruta: "/agencia/mantenimiento", etiqueta: "Mantención" },
-  { ruta: "/agencia/finanzas", etiqueta: "Finanzas" },
+  { ruta: "/agencia", etiqueta: "Resumen", soloDireccionYEquipo: true },
+  { ruta: "/agencia/clientes", etiqueta: "Clientes", soloDireccionYEquipo: true },
+  { ruta: "/agencia/presupuestos", etiqueta: "Presupuestos", requiere: "puedeProyectos" as const },
+  { ruta: "/agencia/contratos", etiqueta: "Contratos", soloDireccionYEquipo: true },
+  { ruta: "/agencia/proyectos", etiqueta: "Proyectos", requiere: "puedeProyectos" as const },
+  { ruta: "/agencia/mantenimiento", etiqueta: "Mantención", soloDireccionYEquipo: true },
+  { ruta: "/agencia/finanzas", etiqueta: "Finanzas", requiere: "puedeFinanzas" as const },
 ];
 
 export default function AgenciaShell({ children }: { children: ReactNode }) {
   const [ubicacion] = useLocation();
   const qc = useQueryClient();
-  const esCompleto = useModoAgencia() === "completo";
+  const { modo, puedeFinanzas, puedeProyectos } = useAccesoAgencia();
+  const acotado = modo === "acotado";
+  const puede = { puedeFinanzas, puedeProyectos };
+  const pestanas = PESTANAS.filter((p) => {
+    if (!acotado) return true; // dirección y equipo: exactamente como siempre.
+    if (p.soloDireccionYEquipo) return false;
+    return puede[p.requiere!];
+  });
 
   const estado = useQuery({
     queryKey: [CLAVE, "estado"],
@@ -83,7 +96,7 @@ export default function AgenciaShell({ children }: { children: ReactNode }) {
       )}
 
       <nav className="-mx-4 mt-2 flex gap-2 overflow-x-auto px-4 py-3 lg:mx-0 lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {PESTANAS.filter((p) => esCompleto || p.ruta !== "/agencia/finanzas").map((p) => (
+        {pestanas.map((p) => (
           <Link
             key={p.ruta}
             href={p.ruta}

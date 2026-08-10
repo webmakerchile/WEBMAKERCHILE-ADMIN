@@ -7,7 +7,7 @@ import { panelEspejo, panelSyncEstado } from "@workspace/db/schema";
  * Los registros se pisan completos en cada sync; nunca se editan a mano.
  */
 
-/** Los 20 recursos que expone el panel (ver GET /recursos y el manifiesto). */
+/** Los 23 recursos que expone el panel (ver GET /recursos y el manifiesto). */
 export const RECURSOS_PANEL = [
   "clientes",
   "presupuestos",
@@ -29,6 +29,12 @@ export const RECURSOS_PANEL = [
   "solicitudes-cambio",
   "ofertas-cierre",
   "colaboradores",
+  // Finanzas v2: mismo patrón que arriba -- 404 tolerado si el origen todavía
+  // no los publicó (p. ej. si documentos-sii termina viviendo bajo
+  // documentos-tributarios, este simplemente nunca trae datos).
+  "categorias-gasto",
+  "movimientos-mp",
+  "documentos-sii",
 ] as const;
 
 export type RecursoPanel = (typeof RECURSOS_PANEL)[number];

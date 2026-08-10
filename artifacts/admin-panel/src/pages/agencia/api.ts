@@ -83,7 +83,7 @@ export interface Presupuesto extends Registro {
   clientId: string;
   status: string;
   tokenUrl?: string | null;
-  /** Plata: solo llega en modo dirección — al equipo el servidor no se la manda. */
+  /** Plata: llega en dirección y en acotado con acceso a Proyectos (ventas/dev) — al equipo el servidor no se la manda. */
   subtotal?: number;
   iva?: number;
   total?: number;
@@ -106,7 +106,7 @@ export interface ItemPresupuesto extends Registro {
   name: string;
   description?: string | null;
   quantity: number;
-  /** Solo en modo dirección. */
+  /** Plata: dirección y acotado con acceso a Proyectos; no llega al equipo. */
   unitPrice?: number;
 }
 
@@ -141,7 +141,7 @@ export interface ContratoServicio extends Registro {
   clientRepresentativeName?: string;
   signedAt?: string | null;
   signedByName?: string | null;
-  /** Respaldo legal de la firma: solo llegan en modo dirección. */
+  /** Respaldo legal de la firma: dirección y acotado con acceso a Proyectos; no llega al equipo. */
   signedByEmail?: string | null;
   signedByIp?: string | null;
   signedPdfUrl?: string | null;
@@ -230,20 +230,87 @@ export interface ResumenMantenimiento {
   }>;
 }
 
-export interface ResumenFinanzas {
+/** Filtro de período que acepta la vista de Finanzas en vivo del panel. */
+export type PeriodoFinanzas = "hoy" | "semana" | "mes" | "rango";
+
+/** Categoría de gasto (recurso nuevo del espejo): solo para etiquetar, sin plata propia. */
+export interface CategoriaGasto extends Registro {
+  name: string;
+  tipo?: string | null;
+}
+
+/** Movimiento de Mercado Pago (recurso nuevo del espejo). */
+export interface MovimientoMp extends Registro {
+  date?: string | null;
+  description?: string | null;
+  /** Plata: solo llega en modo dirección/acotado — al equipo el servidor no se la manda. */
+  amount?: number;
+  categoryId?: string | null;
+  categoryName?: string | null;
+}
+
+/** Documento SII (recurso nuevo del espejo; puede no existir si el origen aún lo sirve bajo documentos-tributarios). */
+export interface DocumentoSii extends Registro {
+  type?: string | null;
+  folio?: string | number | null;
+  date?: string | null;
+  amount?: number;
+  status?: string | null;
+  url?: string | null;
+}
+
+/** Un gasto o ingreso manual, tal como los devuelve /finanzas/gastos y /finanzas/ingresos. */
+export interface MovimientoManual extends Registro {
+  description: string;
+  amount?: number;
+  date?: string | null;
+  categoryId?: string | null;
+  notes?: string | null;
+}
+
+/** Cuenta por cobrar de un proyecto, tal cual la entrega la vista de período. */
+export interface CuentaPorCobrar {
+  proyectoId: string;
+  nombre: string;
+  /** Plata: solo llega en modo dirección/acotado. */
+  total?: number;
+  pagado?: number;
+  porcentajePagado?: number;
+}
+
+/** Resumen de movimientos MP agrupados por categoría, tal cual lo entrega el panel. */
+export interface ResumenCategoriaMp {
+  categoryId: string | null;
+  categoryName: string;
+  total?: number;
+  cantidad: number;
+}
+
+/**
+ * Vista de Finanzas en vivo por período (reemplaza el resumen anual v1).
+ * Todo llega calculado por el panel de origen -- acá solo se muestra.
+ */
+export interface FinanzasPeriodo {
   ok: boolean;
-  anio: number;
-  totales: { ingresos: number; gastos: number; neto: number; pagosProyecto: number; ingresosManuales: number };
-  porMes: Array<{ mes: number; pagosProyecto: number; ingresosManuales: number; gastos: number; neto: number }>;
-  pipeline: {
-    presupuestosAbiertos: number;
-    montoCotizado: number;
-    presupuestosGanados: number;
-    montoGanado: number;
-    tasaConversion: number;
+  periodo?: PeriodoFinanzas;
+  desde?: string;
+  hasta?: string;
+  kpis: {
+    /** Plata: todos estos campos solo llegan en modo dirección/acotado. */
+    utilidadNeta?: number;
+    ventasNetas?: number;
+    gastosOperativos?: number;
+    egresosMp?: number;
+    mantenimientos?: number;
+    ivaDebito?: number;
+    notaF29?: string | null;
   };
-  tienda: { pedidosPagados: number; montoPedidosPagados: number };
-  documentosTributarios: { total: number; emitidos: number; fallidos: number; montoEmitido: number };
+  ingresos?: MovimientoManual[];
+  gastos?: MovimientoManual[];
+  porCobrar?: CuentaPorCobrar[];
+  movimientosMp?: MovimientoMp[];
+  resumenPorCategoriaMp?: ResumenCategoriaMp[];
+  documentosSii?: DocumentoSii[];
 }
 
 export interface VistaPresupuesto {
@@ -272,8 +339,30 @@ export const agenciaApi = {
 
   resumen: () => pedir<ResumenPanel>("/panel/resumen"),
   mantenimiento: () => pedir<ResumenMantenimiento>("/panel/mantenimiento/resumen"),
-  finanzas: (anio?: number) => pedir<ResumenFinanzas>(`/panel/finanzas/resumen${anio ? `?anio=${anio}` : ""}`),
   plantillas: () => pedir<{ ok: boolean; datos?: Registro[] } & Partial<Listado>>("/panel/plantillas-contrato"),
+
+  /* Finanzas v2: vista en vivo por período + escrituras delegadas. */
+  finanzasPeriodo: (filtros: { periodo?: PeriodoFinanzas; desde?: string; hasta?: string }) =>
+    pedir<FinanzasPeriodo>(`/panel/finanzas/periodo${qs(filtros)}`),
+  registrarGasto: (b: { description: string; amount: number; categoryId?: string; date?: string; notes?: string }) =>
+    pedir<{ ok: boolean; datos: MovimientoManual }>("/panel/finanzas/gastos", {
+      method: "POST",
+      body: JSON.stringify(b),
+    }),
+  registrarIngreso: (b: { description: string; amount: number; date?: string; notes?: string }) =>
+    pedir<{ ok: boolean; datos: MovimientoManual }>("/panel/finanzas/ingresos", {
+      method: "POST",
+      body: JSON.stringify(b),
+    }),
+  categorizarMovimientoMp: (id: string, categoryId: string) =>
+    pedir<{ ok: boolean; datos: MovimientoMp }>(`/panel/finanzas/movimientos-mp/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ categoryId }),
+    }),
+  sincronizarMp: () =>
+    pedir<{ ok: boolean; sincronizados?: number; datos?: MovimientoMp[] }>("/panel/finanzas/mp-sync", {
+      method: "POST",
+    }),
 
   /* Compartir proyectos terminados con el equipo (solo dirección). */
   compartidos: () => pedir<{ todos: boolean; ids: string[] }>("/panel/compartidos/proyectos"),
