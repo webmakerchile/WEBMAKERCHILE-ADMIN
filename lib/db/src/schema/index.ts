@@ -34,3 +34,4 @@ export * from "./attachments";
 export * from "./contract-payments";
 export * from "./panel-espejo";
 export * from "./personal-tasks";
+export * from "./role-permissions";

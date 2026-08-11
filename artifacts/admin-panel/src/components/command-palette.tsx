@@ -39,6 +39,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLang, type Translations } from "@/lib/lang";
+import { useAuth } from "@/App";
+import { useEffectiveRole, useViewAs } from "@/lib/view-as";
+import { normalizeRole, routesInclude, canAccessRoute } from "@workspace/roles";
+import { NAV_PAGES, filterByRouteAccess, type NavPageId } from "@/lib/nav-pages";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -92,24 +96,34 @@ type Page = {
   shortcut?: string[];
 };
 
-const PAGES: Page[] = [
-  { href: "/", label: (t) => t.navHome, icon: LayoutDashboard, shortcut: ["g", "i"] },
-  { href: "/videos", label: (t) => t.navVideos, icon: Video, shortcut: ["g", "v"] },
-  { href: "/schedule", label: (t) => t.navCalendar, icon: CalendarClock, shortcut: ["g", "c"] },
-  { href: "/cuentas", label: (t) => t.navAccounts, icon: Users2, shortcut: ["g", "u"] },
-  { href: "/insights", label: (t) => t.navInsights, icon: BarChart3, shortcut: ["g", "s"] },
-  { href: "/biblioteca", label: (t) => t.navLibrary, icon: Library, shortcut: ["g", "b"] },
-  { href: "/cover", label: (t) => t.navCovers, icon: ImageIcon, shortcut: ["g", "p"] },
-  { href: "/historias", label: (t) => t.navStories, icon: Sparkles },
-  { href: "/descripciones", label: (t) => t.navDescriptions, icon: MessageSquareText, shortcut: ["g", "d"] },
-  { href: "/drive", label: (t) => t.navDrive, icon: FolderTree },
-  { href: "/estudio", label: (t) => t.navStudio, icon: Clapperboard, shortcut: ["g", "e"] },
-  { href: "/transcriptor", label: (t) => t.navTranscriber, icon: AudioLines, shortcut: ["g", "t"] },
-  { href: "/equipo", label: (t) => t.navTeam, icon: UserCog, shortcut: ["g", "q"] },
-  { href: "/ajustes", label: (t) => t.navSettings, icon: Settings, shortcut: ["g", "a"] },
-  { href: "/ayuda", label: (t) => t.navHelp, icon: HelpCircle },
-  { href: "/dashboard-ejecutivo", label: (t) => t.navHub, icon: LayoutGrid, shortcut: ["g", "h"] },
-];
+const PAGE_ICONS: Record<NavPageId, React.ComponentType<{ className?: string }>> = {
+  home: LayoutDashboard,
+  videos: Video,
+  schedule: CalendarClock,
+  cuentas: Users2,
+  insights: BarChart3,
+  biblioteca: Library,
+  cover: ImageIcon,
+  historias: Sparkles,
+  descripciones: MessageSquareText,
+  drive: FolderTree,
+  estudio: Clapperboard,
+  transcriptor: AudioLines,
+  equipo: UserCog,
+  ajustes: Settings,
+  ayuda: HelpCircle,
+  hub: LayoutGrid,
+};
+
+// Derived from the shared NAV_PAGES list (see lib/nav-pages) so the palette
+// and the "g <key>" shortcuts always agree on which routes exist and which
+// are reachable for the current role -- see PermisosPanel/getAllEffectiveRoutes.
+const PAGES: Page[] = NAV_PAGES.map((p) => ({
+  href: p.href,
+  label: p.label,
+  icon: PAGE_ICONS[p.id],
+  shortcut: p.shortcutKey ? ["g", p.shortcutKey] : undefined,
+}));
 
 type ActionContext = {
   setLocation: (to: string) => void;
@@ -123,6 +137,8 @@ type Action = {
   label: (ctx: ActionContext) => string;
   icon: (ctx: ActionContext) => React.ComponentType<{ className?: string }>;
   shortcut?: string[];
+  /** If set, this action only shows up when the current role can access this route. */
+  href?: string;
   run: (ctx: ActionContext) => void;
 };
 
@@ -132,6 +148,7 @@ const ACTIONS: Action[] = [
     label: () => "Crear nuevo video",
     icon: () => Plus,
     shortcut: ["n"],
+    href: "/videos",
     run: ({ setLocation, currentPath }) =>
       navigateAndTriggerVideo(setLocation, currentPath, "new"),
   },
@@ -140,12 +157,14 @@ const ACTIONS: Action[] = [
     label: () => "Ir a programar publicaciones",
     icon: () => CalendarClock,
     shortcut: ["s"],
+    href: "/schedule",
     run: ({ setLocation }) => setLocation("/schedule"),
   },
   {
     id: "connect-network",
     label: () => "Conectar red social",
     icon: () => Plug,
+    href: "/cuentas",
     run: ({ setLocation }) => setLocation("/cuentas"),
   },
   {
@@ -194,6 +213,16 @@ export function CommandPalette({
   const { t } = useLang();
   const { mode: themeMode, cycle: cycleTheme } = useTheme();
   const actionCtx: ActionContext = { setLocation, currentPath, cycleTheme, themeMode };
+
+  const user = useAuth();
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
+  const dynamicRoutes = user?.roleRoutes?.[normalizeRole(effectiveRole, isSuperAdmin)];
+  const hasAccess = (href: string) =>
+    dynamicRoutes ? routesInclude(dynamicRoutes, href) : canAccessRoute(effectiveRole, href, isSuperAdmin);
+  const visiblePages = filterByRouteAccess(PAGES, hasAccess);
+  const visibleActions = filterByRouteAccess(ACTIONS, hasAccess);
 
   useEffect(() => {
     if (!open) {
@@ -250,7 +279,7 @@ export function CommandPalette({
         </CommandEmpty>
 
         <CommandGroup heading="Acciones">
-          {ACTIONS.map((action) => {
+          {visibleActions.map((action) => {
             const Icon = action.icon(actionCtx);
             const label = action.label(actionCtx);
             return (
@@ -278,7 +307,7 @@ export function CommandPalette({
         </CommandGroup>
 
         <CommandGroup heading="Páginas">
-          {PAGES.map((page) => (
+          {visiblePages.map((page) => (
             <CommandItem
               key={page.href}
               value={`página ${page.label(t)} ${page.href}`}

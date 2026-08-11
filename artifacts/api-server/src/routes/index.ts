@@ -49,6 +49,7 @@ import slaRouter from "./sla";
 import activityRouter from "./activity";
 import cotizacionesRouter from "./cotizaciones";
 import adminUsersRouter from "./admin-users";
+import rolePermissionsRouter from "./role-permissions";
 import panelRouter from "./panel";
 import wmcRouter from "./wmc";
 import { requireArea } from "../lib/require-area";
@@ -173,5 +174,6 @@ router.use("/cotizaciones", requireArea("ceo", "ejecutivo"));
 router.use("/cotizaciones", cotizacionesRouter);
 
 router.use(adminUsersRouter);
+router.use(rolePermissionsRouter);
 
 export default router;

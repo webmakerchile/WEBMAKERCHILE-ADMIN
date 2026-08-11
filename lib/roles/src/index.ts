@@ -198,6 +198,9 @@ export const ROLES: Record<TeamRole, RoleDef> = {
       "/drive-hub",
       "/drive",
       "/agencia",
+      // Necesita entrar a Ajustes para la tarjeta de Permisos por rol (no ve
+      // la sección de credenciales de redes: esa sigue siendo solo dirección).
+      "/ajustes",
       ...COMMON_ROUTES,
     ],
     canManageTeam: false,
@@ -383,19 +386,31 @@ export function isTicketArea(value: unknown): value is TicketArea {
 }
 
 /**
+ * ¿Esta lista de rutas cubre este path? Compara por prefijo de segmento, así
+ * `/campanas/12` hereda el permiso de `/campanas` sin que `/videos-x` cuele
+ * por `/videos`. `"*"` (como valor único o dentro de la lista) = todo.
+ *
+ * Extraído de `canAccessRoute` para poder aplicarlo también a listas de rutas
+ * dinámicas (overrides guardados en DB por la pantalla de Permisos), sin
+ * pasar por `ROLES`/`roleDef`.
+ */
+export function routesInclude(routes: readonly string[] | "*", path: string): boolean {
+  if (routes === "*" || routes.includes("*")) return true;
+  const clean = normalizePath(path);
+  return routes.some(allowed => {
+    const a = normalizePath(allowed);
+    if (a === "/") return clean === "/";
+    return clean === a || clean.startsWith(`${a}/`);
+  });
+}
+
+/**
  * ¿Puede este rol entrar a esta ruta? Compara por prefijo de segmento, así
  * `/campanas/12` hereda el permiso de `/campanas` sin que `/videos-x` cuele
  * por `/videos`.
  */
 export function canAccessRoute(role: unknown, path: string, isSuperAdmin = false): boolean {
-  const def = roleDef(role, isSuperAdmin);
-  if (def.routes.includes("*")) return true;
-  const clean = normalizePath(path);
-  return def.routes.some(allowed => {
-    const a = normalizePath(allowed);
-    if (a === "/") return clean === "/";
-    return clean === a || clean.startsWith(`${a}/`);
-  });
+  return routesInclude(roleDef(role, isSuperAdmin).routes, path);
 }
 
 function normalizePath(path: string): string {
@@ -403,3 +418,83 @@ function normalizePath(path: string): string {
   if (p === "/") return "/";
   return p.replace(/\/+$/, "") || "/";
 }
+
+/**
+ * Grupos de la pantalla de Permisos (Ajustes): reflejan los mismos bloques
+ * del menú lateral (`allRoleSections` en layout.tsx), para que activar/
+ * desactivar una sección se sienta igual a como está organizado el menú.
+ */
+export const SECTION_GROUPS = ["contenido", "herramientas", "area", "hub", "administracion"] as const;
+export type SectionGroup = (typeof SECTION_GROUPS)[number];
+
+export interface SectionDef {
+  /** Ruta real: es lo mismo que compara `canAccessRoute`/`routesInclude`. */
+  path: string;
+  group: SectionGroup;
+}
+
+/**
+ * Catálogo de secciones que la pantalla de Permisos puede prender/apagar por
+ * rol. Es deliberadamente más chico que todas las rutas de `App.tsx`: no
+ * incluye páginas de detalle sin entrada de menú, las pantallas portadas de
+ * webmakerlatam.com (`/admin/*`, gate aparte por `wmcAccess`) ni `/ajustes`
+ * (el contenedor de Permisos: su acceso queda fijo en dirección + dev).
+ *
+ * ⚠️ Debe reflejar los mismos `href` que `allRoleSections` en
+ * `artifacts/admin-panel/src/components/layout.tsx` — si se agrega una
+ * página nueva al menú, agregarla acá también para que se pueda configurar.
+ */
+export const SECTION_CATALOG: readonly SectionDef[] = [
+  { path: "/", group: "contenido" },
+  { path: "/mi-dia", group: "contenido" },
+  { path: "/mis-pendientes", group: "contenido" },
+  { path: "/schedule", group: "contenido" },
+  { path: "/cuentas", group: "contenido" },
+  { path: "/videos", group: "contenido" },
+  { path: "/insights", group: "contenido" },
+
+  { path: "/cover", group: "herramientas" },
+  { path: "/historias", group: "herramientas" },
+  { path: "/descripciones", group: "herramientas" },
+  { path: "/estudio", group: "herramientas" },
+  { path: "/transcriptor", group: "herramientas" },
+  { path: "/drive", group: "herramientas" },
+  { path: "/biblioteca", group: "herramientas" },
+
+  { path: "/edicion", group: "area" },
+  { path: "/redes", group: "area" },
+  { path: "/marketing", group: "area" },
+  { path: "/metas", group: "area" },
+  { path: "/tickets", group: "area" },
+  { path: "/mis-tareas", group: "area" },
+  { path: "/reportes", group: "area" },
+  { path: "/proyecciones", group: "area" },
+  { path: "/rrhh", group: "area" },
+
+  { path: "/dashboard-ejecutivo", group: "hub" },
+  { path: "/torre-ceo", group: "hub" },
+  { path: "/proyectos", group: "hub" },
+  { path: "/clientes", group: "hub" },
+  { path: "/ventas", group: "hub" },
+  { path: "/cobros", group: "hub" },
+  { path: "/servicios", group: "hub" },
+  { path: "/contratos", group: "hub" },
+  { path: "/reuniones", group: "hub" },
+  { path: "/notas", group: "hub" },
+  { path: "/equipo-hoy", group: "hub" },
+  { path: "/asistencia", group: "hub" },
+  { path: "/drive-hub", group: "hub" },
+
+  { path: "/agencia", group: "administracion" },
+  { path: "/equipo", group: "administracion" },
+  { path: "/ayuda", group: "administracion" },
+];
+
+/**
+ * Roles editables desde la pantalla de Permisos: todos menos CEO (acceso
+ * total fijo, así quien configura permisos nunca puede dejarse afuera) y
+ * tester (cuenta de revisión para TikTok, no un puesto real del equipo).
+ */
+export const CONFIGURABLE_ROLES: readonly TeamRole[] = TEAM_ROLES.filter(
+  (r): r is TeamRole => r !== "ceo" && r !== "tester"
+);

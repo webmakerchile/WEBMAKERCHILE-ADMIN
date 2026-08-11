@@ -1,8 +1,17 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { useAuth } from "@/App";
+import { useEffectiveRole, useViewAs } from "@/lib/view-as";
+import { normalizeRole, routesInclude, canAccessRoute } from "@workspace/roles";
+import { filterByRouteAccess } from "@/lib/nav-pages";
 
-type Row = { keys: string[]; label: string };
+type Row = { keys: string[]; label: string; href?: string };
 
+// `href` (when set) is only used to filter out rows for routes the current
+// role can't reach -- it isn't rendered. Labels here are this dialog's own
+// fixed Spanish wording (kept independent of lib/nav-pages' labels/lang.tsx,
+// which don't always match, e.g. "Descripciones" vs. navDescriptions'
+// "Posts IA") -- no visible text changes, just fewer rows per role.
 const SECTIONS: { title: string; rows: Row[] }[] = [
   {
     title: "Generales",
@@ -16,27 +25,27 @@ const SECTIONS: { title: string; rows: Row[] }[] = [
   {
     title: "Acciones rápidas",
     rows: [
-      { keys: ["n"], label: "Crear nuevo video" },
-      { keys: ["s"], label: "Ir a programar publicaciones" },
+      { keys: ["n"], label: "Crear nuevo video", href: "/videos" },
+      { keys: ["s"], label: "Ir a programar publicaciones", href: "/schedule" },
       { keys: ["t"], label: "Cambiar tema (claro / oscuro / sistema)" },
     ],
   },
   {
     title: "Navegación (g + tecla)",
     rows: [
-      { keys: ["g", "i"], label: "Inicio" },
-      { keys: ["g", "v"], label: "Gestor de Videos" },
-      { keys: ["g", "c"], label: "Calendario / Publicaciones" },
-      { keys: ["g", "u"], label: "Cuentas Sociales" },
-      { keys: ["g", "p"], label: "Portadas" },
-      { keys: ["g", "d"], label: "Descripciones" },
-      { keys: ["g", "e"], label: "Estudio" },
-      { keys: ["g", "s"], label: "Insights" },
-      { keys: ["g", "b"], label: "Biblioteca" },
-      { keys: ["g", "t"], label: "Transcriptor" },
-      { keys: ["g", "q"], label: "Equipo" },
-      { keys: ["g", "a"], label: "Ajustes" },
-      { keys: ["g", "h"], label: "Hub Ejecutivo" },
+      { keys: ["g", "i"], label: "Inicio", href: "/" },
+      { keys: ["g", "v"], label: "Gestor de Videos", href: "/videos" },
+      { keys: ["g", "c"], label: "Calendario / Publicaciones", href: "/schedule" },
+      { keys: ["g", "u"], label: "Cuentas Sociales", href: "/cuentas" },
+      { keys: ["g", "p"], label: "Portadas", href: "/cover" },
+      { keys: ["g", "d"], label: "Descripciones", href: "/descripciones" },
+      { keys: ["g", "e"], label: "Estudio", href: "/estudio" },
+      { keys: ["g", "s"], label: "Insights", href: "/insights" },
+      { keys: ["g", "b"], label: "Biblioteca", href: "/biblioteca" },
+      { keys: ["g", "t"], label: "Transcriptor", href: "/transcriptor" },
+      { keys: ["g", "q"], label: "Equipo", href: "/equipo" },
+      { keys: ["g", "a"], label: "Ajustes", href: "/ajustes" },
+      { keys: ["g", "h"], label: "Hub Ejecutivo", href: "/dashboard-ejecutivo" },
     ],
   },
   {
@@ -55,6 +64,19 @@ export function ShortcutsHelp({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const user = useAuth();
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
+  const dynamicRoutes = user?.roleRoutes?.[normalizeRole(effectiveRole, isSuperAdmin)];
+  const hasAccess = (href: string) =>
+    dynamicRoutes ? routesInclude(dynamicRoutes, href) : canAccessRoute(effectiveRole, href, isSuperAdmin);
+
+  const visibleSections = SECTIONS.map((section) => ({
+    ...section,
+    rows: filterByRouteAccess(section.rows, hasAccess),
+  })).filter((section) => section.rows.length > 0);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl max-h-[80vh] overflow-y-auto">
@@ -62,7 +84,7 @@ export function ShortcutsHelp({
           <DialogTitle>Atajos de teclado</DialogTitle>
         </DialogHeader>
         <div className="space-y-5">
-          {SECTIONS.map((section) => (
+          {visibleSections.map((section) => (
             <div key={section.title}>
               <h3 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
                 {section.title}

@@ -50,7 +50,7 @@ import {
   HardDrive,
   type LucideIcon,
 } from "lucide-react";
-import { canAccessRoute } from "@workspace/roles";
+import { canAccessRoute, normalizeRole, routesInclude } from "@workspace/roles";
 import { useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { ViewAsBar } from "@/components/view-as-bar";
 import { NavCustomizer, useHiddenNav } from "@/components/nav-customizer";
@@ -157,11 +157,16 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
   // pero ya no se listan acá.
 
   // Primero el permiso (qué puede ver el rol), después el gusto (qué eligió ocultar).
+  // El mapa dinámico (editable desde Ajustes → Permisos) manda cuando está
+  // disponible; si falta (payload viejo en caché) se cae al default estático.
+  const dynamicRoutes = user?.roleRoutes?.[normalizeRole(effectiveRole, isSuperAdmin)];
+  const hasAccess = (href: string) =>
+    dynamicRoutes ? routesInclude(dynamicRoutes, href) : canAccessRoute(effectiveRole, href, isSuperAdmin);
   const hiddenNav = useHiddenNav();
   const permitidas = allRoleSections
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => canAccessRoute(effectiveRole, item.href, isSuperAdmin)),
+      items: section.items.filter((item) => hasAccess(item.href)),
     }))
     .filter((section) => section.items.length > 0);
 

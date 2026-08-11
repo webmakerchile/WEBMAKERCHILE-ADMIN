@@ -198,10 +198,14 @@ describe("qué NO debe ver cada rol", () => {
   it("las credenciales de las redes son solo de dirección", () => {
     // /ajustes guarda claves de API y gestión de usuarios.
     // "tester" (cuenta de revisión TikTok) tiene acceso total a propósito.
-    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "tester")) {
+    // "dev" sí entra a /ajustes (tarjeta de Permisos por rol), pero la
+    // sección de credenciales de redes se gatea aparte en el frontend
+    // (isSuperAdmin || isCeo), no por esta ruta.
+    for (const role of TEAM_ROLES.filter(r => r !== "ceo" && r !== "tester" && r !== "dev")) {
       expect(canAccessRoute(role, "/ajustes"), `${role} no debería ver /ajustes`).toBe(false);
     }
     expect(canAccessRoute("ceo", "/ajustes")).toBe(true);
+    expect(canAccessRoute("dev", "/ajustes")).toBe(true);
   });
 
   it("nadie entra a la pantalla de otra área por accidente", () => {

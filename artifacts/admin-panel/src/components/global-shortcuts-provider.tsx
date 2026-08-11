@@ -2,14 +2,26 @@ import { useEffect, useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import { CommandPalette } from "@/components/command-palette";
 import { ShortcutsHelp } from "@/components/shortcuts-help";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useKeyboardShortcuts, type ShortcutDefinition } from "@/hooks/use-keyboard-shortcuts";
 import { useTheme } from "@/hooks/use-theme";
+import { useAuth } from "@/App";
+import { useEffectiveRole, useViewAs } from "@/lib/view-as";
+import { normalizeRole, routesInclude, canAccessRoute } from "@workspace/roles";
+import { NAV_PAGES, filterByRouteAccess } from "@/lib/nav-pages";
 
 export function GlobalShortcutsProvider() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [location, setLocation] = useLocation();
   const { cycle: cycleTheme } = useTheme();
+
+  const user = useAuth();
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
+  const dynamicRoutes = user?.roleRoutes?.[normalizeRole(effectiveRole, isSuperAdmin)];
+  const hasAccess = (href: string) =>
+    dynamicRoutes ? routesInclude(dynamicRoutes, href) : canAccessRoute(effectiveRole, href, isSuperAdmin);
 
   // Trigger "new video" reliably from anywhere: if we're already on /videos,
   // dispatch an event the page listens for; otherwise navigate with the
@@ -34,26 +46,31 @@ export function GlobalShortcutsProvider() {
     return () => window.removeEventListener("open-command-palette", open as EventListener);
   }, []);
 
-  useKeyboardShortcuts([
+  // "g <key>" shortcuts are derived from the shared NAV_PAGES list (see
+  // lib/nav-pages) so they always target the same routes as the command
+  // palette. Both this array and the two standalone nav shortcuts below
+  // (n, plain s) carry an `href` used only to filter by `hasAccess` -- it's
+  // stripped before reaching useKeyboardShortcuts.
+  const goToShortcuts: (ShortcutDefinition & { href?: string })[] = NAV_PAGES.filter(
+    (p) => p.shortcutKey,
+  ).map((p) => ({
+    key: p.shortcutKey!,
+    prefix: "g",
+    href: p.href,
+    description: p.shortcutDescription,
+    handler: () => setLocation(p.href),
+  }));
+
+  const allShortcuts: (ShortcutDefinition & { href?: string })[] = [
     { key: "k", meta: true, allowInInput: true, description: "Paleta de comandos", handler: () => setPaletteOpen((v) => !v) },
     { key: "?", description: "Ver atajos", handler: () => setHelpOpen((v) => !v) },
-    { key: "n", description: "Nuevo video", handler: triggerNewVideo },
-    { key: "s", description: "Programar publicaciones", handler: () => setLocation("/schedule") },
-    { key: "i", prefix: "g", description: "Ir a Inicio", handler: () => setLocation("/") },
-    { key: "v", prefix: "g", description: "Ir a Videos", handler: () => setLocation("/videos") },
-    { key: "c", prefix: "g", description: "Ir a Calendario", handler: () => setLocation("/schedule") },
-    { key: "u", prefix: "g", description: "Ir a Cuentas", handler: () => setLocation("/cuentas") },
+    { key: "n", href: "/videos", description: "Nuevo video", handler: triggerNewVideo },
+    { key: "s", href: "/schedule", description: "Programar publicaciones", handler: () => setLocation("/schedule") },
     { key: "t", description: "Cambiar tema", handler: cycleTheme },
-    { key: "p", prefix: "g", description: "Ir a Portadas", handler: () => setLocation("/cover") },
-    { key: "d", prefix: "g", description: "Ir a Descripciones", handler: () => setLocation("/descripciones") },
-    { key: "e", prefix: "g", description: "Ir a Estudio", handler: () => setLocation("/estudio") },
-    { key: "s", prefix: "g", description: "Ir a Insights", handler: () => setLocation("/insights") },
-    { key: "b", prefix: "g", description: "Ir a Biblioteca", handler: () => setLocation("/biblioteca") },
-    { key: "t", prefix: "g", description: "Ir a Transcriptor", handler: () => setLocation("/transcriptor") },
-    { key: "q", prefix: "g", description: "Ir a Equipo", handler: () => setLocation("/equipo") },
-    { key: "a", prefix: "g", description: "Ir a Ajustes", handler: () => setLocation("/ajustes") },
-    { key: "h", prefix: "g", description: "Ir a Hub Ejecutivo", handler: () => setLocation("/dashboard-ejecutivo") },
-  ]);
+    ...goToShortcuts,
+  ];
+
+  useKeyboardShortcuts(filterByRouteAccess(allShortcuts, hasAccess));
 
   return (
     <>

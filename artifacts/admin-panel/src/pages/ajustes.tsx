@@ -27,6 +27,7 @@ import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/compone
 import { useLang } from "@/lib/lang";
 import { useAuth } from "@/App";
 import { RoleBadge, RoleSelector, DiscordLinkPicker, usePeopleSync } from "@/components/role-controls";
+import { PermisosPanel } from "@/components/permisos-panel";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -551,6 +552,8 @@ export default function AjustesPage() {
   const auth = useAuth();
   const isSuperAdmin = auth?.role === "superadmin";
   const isCeo = auth?.teamRole === "ceo";
+  const isDev = auth?.teamRole === "dev";
+  const canSeeCredentials = isSuperAdmin || isCeo;
   const [credentials, setCredentials] = useState<CredentialStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -575,8 +578,11 @@ export default function AjustesPage() {
   }, []);
 
   useEffect(() => {
-    loadCredentials();
-  }, [loadCredentials]);
+    // Dev entra a /ajustes solo por la tarjeta de Permisos: pedir credenciales
+    // acá sería un 403 seguro (soloDireccion) y un loader que nunca resuelve.
+    if (canSeeCredentials) loadCredentials();
+    else setLoading(false);
+  }, [canSeeCredentials, loadCredentials]);
 
   const handleSave = async (key: string, value: string) => {
     await apiFetch(`/credentials/${key}`, {
@@ -613,39 +619,43 @@ export default function AjustesPage() {
           <UsersPanel showToast={showToast} isSuperAdmin={isSuperAdmin} isCeo={isCeo} />
         )}
 
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
-          <Lock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-blue-300">{t.ajustesSecurity}</p>
-            <p className="text-xs text-muted-foreground">{t.ajustesSecurityDesc}</p>
-            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Database className="w-3 h-3 text-emerald-400" />
-                <span className="text-emerald-400 font-medium">DB</span> = guardado en base de datos encriptado
-              </span>
-              <span className="flex items-center gap-1">
-                <Server className="w-3 h-3 text-blue-400" />
-                <span className="text-blue-400 font-medium">Entorno</span> = variable de entorno del servidor
-              </span>
+        {(isSuperAdmin || isCeo || isDev) && <PermisosPanel showToast={showToast} />}
+
+        {canSeeCredentials && (
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex items-start gap-3">
+            <Lock className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-blue-300">{t.ajustesSecurity}</p>
+              <p className="text-xs text-muted-foreground">{t.ajustesSecurityDesc}</p>
+              <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <Database className="w-3 h-3 text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">DB</span> = guardado en base de datos encriptado
+                </span>
+                <span className="flex items-center gap-1">
+                  <Server className="w-3 h-3 text-blue-400" />
+                  <span className="text-blue-400 font-medium">Entorno</span> = variable de entorno del servidor
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {loading && (
+        {canSeeCredentials && loading && (
           <div className="flex items-center justify-center py-16 gap-2 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
             <span className="text-sm">Cargando credenciales…</span>
           </div>
         )}
 
-        {loadError && (
+        {canSeeCredentials && loadError && (
           <div className="flex items-center gap-3 bg-rose-500/10 border border-rose-500/20 rounded-xl p-4 text-sm text-rose-400">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             {loadError}
           </div>
         )}
 
-        {!loading && !loadError && (
+        {canSeeCredentials && !loading && !loadError && (
           <div className="space-y-5">
             {groups.map((group) => (
               <NetworkCard

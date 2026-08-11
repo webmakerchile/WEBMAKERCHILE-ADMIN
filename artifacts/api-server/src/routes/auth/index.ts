@@ -9,6 +9,7 @@ import { normalizeRole } from "@workspace/roles";
 import { clearNetworkRevoked } from "../../lib/connections";
 import { createNotification } from "../../lib/notifications";
 import { hasWmcAccess } from "../../lib/wmc/access";
+import { getAllEffectiveRoutes } from "../../lib/role-permissions";
 
 const router: IRouter = Router();
 
@@ -543,7 +544,7 @@ export function requireClaveCeo(req: Request, res: Response, next: NextFunction)
   res.status(403).json({ error: "clave_requerida" });
 }
 
-router.get("/auth/me", (req: Request, res: Response) => {
+router.get("/auth/me", async (req: Request, res: Response) => {
   if (req.isAuthenticated && req.isAuthenticated() && req.user) {
     const user = req.user as any;
     // Rol normalizado: mapea los roles antiguos y garantiza que el
@@ -565,6 +566,11 @@ router.get("/auth/me", (req: Request, res: Response) => {
       // muestran. La aplicación real (por rol: dev/ventas/ceo) ocurre en
       // el servidor en cada llamada al proxy — ver lib/wmc/access.ts.
       wmcAccess: hasWmcAccess(teamRole),
+      // Rutas visibles por rol (editables desde Ajustes → Permisos). Se manda
+      // el mapa completo, no solo el del propio rol, para que "Ver como"
+      // (simular otro rol) también refleje la config vigente en vez de un
+      // default estático embebido en el bundle.
+      roleRoutes: await getAllEffectiveRoutes(),
     });
   } else {
     res.status(401).json({ error: "No autenticado" });

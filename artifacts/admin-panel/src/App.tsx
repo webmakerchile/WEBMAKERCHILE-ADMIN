@@ -11,7 +11,7 @@ import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
 import { queryClient as wmcQueryClient } from "@/lib/wmc/queryClient";
-import { canAccessRoute, roleHome, canManageTeam, type TeamRole } from "@workspace/roles";
+import { canAccessRoute, roleHome, canManageTeam, normalizeRole, routesInclude, type TeamRole } from "@workspace/roles";
 import { ViewAsProvider, useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { useEffect } from "react";
 
@@ -129,6 +129,13 @@ export type AuthUser = {
   claveRequerida?: boolean;
   /** Acceso a las pantallas portadas de webmakerlatam.com, calculado por rol (dev/ventas/ceo). */
   wmcAccess?: boolean;
+  /**
+   * Rutas visibles por rol, editables desde Ajustes → Permisos. Mapa
+   * completo (no solo el propio rol) para que "Ver como" también refleje la
+   * config vigente. Si falta (payload viejo en caché), se cae al default
+   * estático de `canAccessRoute`.
+   */
+  roleRoutes?: Record<string, string[] | "*">;
 };
 
 const AuthContext = createContext<AuthUser | null>(null);
@@ -158,7 +165,11 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
   // Al simular otro rol, el atajo de superadmin no aplica: la gracia es ver
   // exactamente lo que ve esa persona, con sus límites.
   const isSuperAdmin = !viewAs && user?.role === "superadmin";
-  const allowed = !user || canAccessRoute(effectiveRole, location, isSuperAdmin);
+  // El mapa dinámico (editable desde Ajustes → Permisos) manda cuando está
+  // disponible; si falta (payload viejo en caché) se cae al default estático.
+  const dynamicRoutes = user?.roleRoutes?.[normalizeRole(effectiveRole, isSuperAdmin)];
+  const allowed =
+    !user || (dynamicRoutes ? routesInclude(dynamicRoutes, location) : canAccessRoute(effectiveRole, location, isSuperAdmin));
   const home = roleHome(effectiveRole, isSuperAdmin);
 
   useEffect(() => {
