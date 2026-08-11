@@ -5,7 +5,6 @@ import { panelConfigurado, panelGet, type ListadoPanel } from "./cliente";
 import { estadoSyncFila, guardarRegistros, RECURSOS_PANEL } from "./espejo";
 import { retirarCompartidosDeTerminados } from "./equipo";
 import { limpiarCacheVistas } from "./cache-vistas";
-import { eq, notInArray, sql } from "drizzle-orm";
 
 /** Cada cuánto se refresca el espejo (el manifiesto sugiere 5–15 min). */
 const FRESCURA_MS = 10 * 60 * 1000;

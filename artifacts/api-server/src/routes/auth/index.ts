@@ -23,7 +23,7 @@ function getCallbackURL() {
   return "http://localhost:3001/api/auth/google/callback";
 }
 
-function getYouTubeCallbackURL() {
+export function getYouTubeCallbackURL() {
   if (process.env.GOOGLE_YOUTUBE_CALLBACK_URL) return process.env.GOOGLE_YOUTUBE_CALLBACK_URL;
   const base = getCallbackURL().replace("/auth/google/callback", "");
   return `${base}/auth/youtube/callback`;

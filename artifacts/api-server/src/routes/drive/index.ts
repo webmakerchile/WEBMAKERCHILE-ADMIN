@@ -7,6 +7,7 @@ import {
   RUTA_CONECTAR_DRIVE,
   type UsuarioConGoogle,
 } from "../../lib/google-auth";
+import { getYouTubeCallbackURL } from "../auth";
 import multer from "multer";
 import { Readable } from "stream";
 import { normalizeRole } from "@workspace/roles";
@@ -61,7 +62,15 @@ function idSeguro(id: string): string {
  */
 router.get("/drive/estado", (req, res) => {
   const conectado = Boolean(clienteGoogleDe(req.user as UsuarioConGoogle));
-  res.json({ conectado, conectar: RUTA_CONECTAR_DRIVE, mensaje: conectado ? null : MENSAJE_SIN_GOOGLE });
+  // callbackUrl es para la tarjeta de configuración guiada en /cuentas: si
+  // Google rechaza la conexión ("no cumple con la política OAuth 2.0"), esta
+  // es la URI exacta que falta registrar en la consola de Google Cloud.
+  res.json({
+    conectado,
+    conectar: RUTA_CONECTAR_DRIVE,
+    mensaje: conectado ? null : MENSAJE_SIN_GOOGLE,
+    callbackUrl: getYouTubeCallbackURL(),
+  });
 });
 
 /* ---------------- Carpetas raíz configurables ----------------

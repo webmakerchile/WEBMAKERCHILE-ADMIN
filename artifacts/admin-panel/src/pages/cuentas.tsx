@@ -7,6 +7,8 @@ import { NETWORK_BG, NETWORK_LABELS, NetworkIcon, type Network } from "@/compone
 import { HelpHint } from "@/components/help-hint";
 import { EmptyState } from "@/components/empty-state";
 import { useLang } from "@/lib/lang";
+import { useAuth } from "@/App";
+import { normalizeRole } from "@workspace/roles";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
 
@@ -452,6 +454,14 @@ function CredentialRow({ cred, onSaved }: { cred: CredStatus; onSaved: () => voi
 type CredentialsByNetwork = Record<string, CredStatus[]>;
 
 function CredencialesSection() {
+  // GET /api/credentials es solo-dirección en el servidor (ver soloDireccion
+  // en credentials/index.ts): cualquier otro rol recibe 403 con {error}, no
+  // un arreglo. Sin este check, fetchCreds intentaba iterar ese objeto y
+  // tumbaba TODA /cuentas (RouteErrorBoundary) para cualquiera que no fuera
+  // CEO/superadmin.
+  const user = useAuth();
+  const puedeVer = user?.role === "superadmin" || normalizeRole(user?.teamRole) === "ceo";
+
   const [creds, setCreds] = useState<CredStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -459,13 +469,20 @@ function CredencialesSection() {
   const fetchCreds = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/credentials`, { credentials: "include" });
-      const data = await res.json() as CredStatus[];
-      setCreds(data);
+      const data = await res.json();
+      // Defensa extra: si alguna vez responde algo que no sea un arreglo
+      // (403, 500, HTML de error), no reventar el render con esos datos.
+      if (Array.isArray(data)) setCreds(data);
+      else console.error("[CredencialesSection] respuesta inesperada de /credentials:", data);
     } catch {}
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchCreds(); }, [fetchCreds]);
+  useEffect(() => {
+    if (puedeVer) fetchCreds(); else setLoading(false);
+  }, [puedeVer, fetchCreds]);
+
+  if (!puedeVer) return null;
 
   const byNetwork = useMemo<CredentialsByNetwork>(() => {
     const map: CredentialsByNetwork = {};
@@ -673,6 +690,28 @@ export default function CuentasPage() {
   /** Elegir en qué página de Facebook se publica (o avisar que no hay ninguna). */
   const [fbPicker, setFbPicker] = useState(false);
 
+  // Guía de configuración para cuando Google rechaza /auth/drive o /auth/youtube
+  // (comparten el mismo redirect_uri). Ver comentario en drive/estado.
+  const [driveCallbackUrl, setDriveCallbackUrl] = useState("");
+  const [driveSetupOpen, setDriveSetupOpen] = useState(false);
+  const [driveCopied, setDriveCopied] = useState(false);
+
+  const fetchDriveConfig = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/drive/estado`, { credentials: "include" });
+      const data = await res.json() as { callbackUrl?: string };
+      setDriveCallbackUrl(data.callbackUrl || "");
+    } catch { /* la tarjeta de configuración se queda "(no disponible)" */ }
+  }, []);
+
+  const copyDriveUri = async () => {
+    try {
+      await navigator.clipboard.writeText(driveCallbackUrl);
+      setDriveCopied(true);
+      setTimeout(() => setDriveCopied(false), 1600);
+    } catch { /* clipboard no disponible */ }
+  };
+
   const [accounts, setAccounts] = useState<Record<Network, AccountInfo>>(() => {
     const init: Record<string, AccountInfo> = {};
     for (const n of NETWORK_ORDER) init[n] = { loading: true, connected: false };
@@ -761,6 +800,7 @@ export default function CuentasPage() {
     NETWORK_ORDER.forEach((network) => fetchOne(network, NETWORK_ENDPOINTS[network].status));
     fetchHealth();
     fetchCalendarStatus();
+    fetchDriveConfig();
     const params = new URLSearchParams(window.location.search);
     const connected = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "connected");
     const errNetwork = ["facebook", "linkedin", "tiktok", "x", "youtube"].find(n => params.get(n) === "error");
@@ -787,6 +827,9 @@ export default function CuentasPage() {
           no_code: "La plataforma no devolvió un código de autorización.",
         };
         setOauthError({ network: errNetwork, msg: label[msg] || msg });
+        // Drive y YouTube comparten callback: si algo del intercambio de
+        // tokens falla, abrir de una vez la guía con la URI a registrar.
+        if (errNetwork === "youtube") setDriveSetupOpen(true);
       }
       if (calConnected) fetchCalendarStatus();
       if (calError) {
@@ -1216,6 +1259,66 @@ export default function CuentasPage() {
               </motion.div>
             );
           })}
+        </div>
+
+        {/* Guía de configuración: Drive y YouTube comparten el mismo cliente/redirect_uri de Google */}
+        <div className="rounded-2xl border border-foreground/10 bg-card/50 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setDriveSetupOpen((o) => !o)}
+            className="w-full px-5 py-4 flex items-center gap-3 text-left hover:bg-foreground/[0.02] transition"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+              <AlertCircle className="w-5 h-5 text-amber-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-semibold">¿Google rechaza la conexión de Drive o YouTube?</h2>
+              <p className="text-xs text-muted-foreground">Ver la URI de redirección que hay que registrar en Google Cloud</p>
+            </div>
+            <ChevronDown className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform ${driveSetupOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          {driveSetupOpen && (
+            <div className="px-5 pb-5 -mt-1 text-xs text-muted-foreground leading-relaxed space-y-3">
+              <p>
+                Drive y YouTube autorizan con el mismo cliente de Google, así que comparten la misma URI de
+                redirección. Si al conectar aparece <em>"no cumple con la política OAuth 2.0 de Google"</em> o
+                <em> "redirect_uri_mismatch"</em>, falta registrar esta URI en la consola de Google Cloud:
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <code className="flex-1 min-w-[200px] bg-black/20 border border-foreground/10 rounded-lg px-3 py-2 text-[11px] text-foreground break-all select-all">
+                  {driveCallbackUrl || "(no disponible)"}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyDriveUri}
+                  disabled={!driveCallbackUrl}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition disabled:opacity-50 ${driveCopied ? "bg-emerald-500/15 text-emerald-300" : "bg-primary/90 hover:bg-primary text-primary-foreground"}`}
+                >
+                  {driveCopied ? "✓ Copiada" : "Copiar URI"}
+                </button>
+              </div>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>
+                  Abre{" "}
+                  <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+                    console.cloud.google.com/apis/credentials
+                  </a>{" "}
+                  con la cuenta dueña del proyecto.
+                </li>
+                <li>En <strong>IDs de cliente de OAuth 2.0</strong>, abre el cliente que usa este panel (el mismo del inicio de sesión).</li>
+                <li>En <strong>URIs de redirección autorizadas</strong> agrega la URI copiada y guarda.</li>
+                <li>Espera unos minutos (Google tarda en propagar el cambio) y vuelve a intentar.</li>
+              </ol>
+              <p>
+                Si la URI ya estaba agregada, revisa en la <strong>pantalla de consentimiento OAuth</strong> que el
+                scope de Drive esté permitido y que el cliente esté <strong>en producción</strong> (no en modo
+                prueba, donde solo pueden entrar usuarios de prueba agregados a mano). Si el panel se usa en
+                producción y en desarrollo, registra la URI de cada entorno — esta tarjeta muestra la del entorno
+                actual.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Google Calendar integration card */}
