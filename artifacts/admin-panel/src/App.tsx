@@ -11,7 +11,7 @@ import { ConnectionBanner } from "@/components/connection-banner";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { setSentryUser, setSentryRoute } from "@/lib/sentry";
 import { queryClient as wmcQueryClient } from "@/lib/wmc/queryClient";
-import { canAccessRoute, roleHome, canManageTeam, normalizeRole, routesInclude, type TeamRole } from "@workspace/roles";
+import { canAccessRoute, roleHome, canManageTeam, normalizeRole, routesInclude, canRoleSeeWmcSections, type TeamRole } from "@workspace/roles";
 import { ViewAsProvider, useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { useEffect } from "react";
 
@@ -127,8 +127,6 @@ export type AuthUser = {
   approvalStatus?: string;
   /** La cuenta de dirección debe validar su clave extra antes de usar el panel. */
   claveRequerida?: boolean;
-  /** Acceso a las pantallas portadas de webmakerlatam.com, calculado por rol (dev/ventas/ceo). */
-  wmcAccess?: boolean;
   /**
    * Rutas visibles por rol, editables desde Ajustes → Permisos. Mapa
    * completo (no solo el propio rol) para que "Ver como" también refleje la
@@ -187,15 +185,35 @@ function RouteShell({ name, children }: { name: string; children: ReactNode }) {
 
 /**
  * Gate para las pantallas portadas 1:1 desde webmakerlatam.com (propuestas y
- * proyectos bajo /admin/*): independiente del sistema de rol/área
- * (canAccessRoute) a propósito — el acceso se decide por rol (dev/ventas/ceo),
- * no por área. La aplicación real vive en el servidor (cada llamada al proxy
- * la valida); esto solo evita mostrar la UI, con un mensaje claro en vez de
- * redirigir en silencio.
+ * proyectos bajo /admin/*): sigue Permisos por rol igual que `RouteShell`,
+ * pero contra un `section` fijo (el bucket del catálogo) en vez de la URL
+ * real — `/admin/proposal-builder` no comparte prefijo con `/admin/proposals`
+ * así que no tiene casilla propia, usa la misma que la lista. La aplicación
+ * real vive en el servidor (cada llamada al proxy la valida); esto solo evita
+ * mostrar la UI, con un mensaje claro en vez de redirigir en silencio.
+ *
+ * `canRoleSeeWmcSections` corta aparte a "tester" (cuenta de revisión de
+ * TikTok): tiene `"*"` en todo lo demás, pero wmc expone datos reales de un
+ * negocio externo que un reviewer nunca debe ver.
  */
-function WmcRouteShell({ name, children }: { name: string; children: ReactNode }) {
+function WmcRouteShell({
+  name,
+  section,
+  children,
+}: {
+  name: string;
+  section: "/admin/proposals" | "/admin/projects";
+  children: ReactNode;
+}) {
   const user = useAuth();
-  const allowed = !!user?.wmcAccess;
+  const { viewAs } = useViewAs();
+  const effectiveRole = useEffectiveRole();
+  const isSuperAdmin = !viewAs && user?.role === "superadmin";
+  const rol = normalizeRole(effectiveRole, isSuperAdmin);
+  const dynamicRoutes = user?.roleRoutes?.[rol];
+  const allowed =
+    canRoleSeeWmcSections(rol) &&
+    (dynamicRoutes ? routesInclude(dynamicRoutes, section) : canAccessRoute(effectiveRole, section, isSuperAdmin));
 
   if (!allowed) {
     return (
@@ -524,19 +542,19 @@ function Router() {
         <RouteShell name="metas"><MetasPage /></RouteShell>
       </Route>
       <Route path="/admin/proposals/:id">
-        <WmcRouteShell name="wmc-proposal-details"><WmcProposalDetailsPage /></WmcRouteShell>
+        <WmcRouteShell name="wmc-proposal-details" section="/admin/proposals"><WmcProposalDetailsPage /></WmcRouteShell>
       </Route>
       <Route path="/admin/proposals">
-        <WmcRouteShell name="wmc-proposals"><WmcProposalsPage /></WmcRouteShell>
+        <WmcRouteShell name="wmc-proposals" section="/admin/proposals"><WmcProposalsPage /></WmcRouteShell>
       </Route>
       <Route path="/admin/proposal-builder">
-        <WmcRouteShell name="wmc-proposal-builder"><WmcProposalBuilderPage /></WmcRouteShell>
+        <WmcRouteShell name="wmc-proposal-builder" section="/admin/proposals"><WmcProposalBuilderPage /></WmcRouteShell>
       </Route>
       <Route path="/admin/projects/:id">
-        <WmcRouteShell name="wmc-project-details"><WmcProjectDetailsPage /></WmcRouteShell>
+        <WmcRouteShell name="wmc-project-details" section="/admin/projects"><WmcProjectDetailsPage /></WmcRouteShell>
       </Route>
       <Route path="/admin/projects">
-        <WmcRouteShell name="wmc-projects"><WmcProjectsPage /></WmcRouteShell>
+        <WmcRouteShell name="wmc-projects" section="/admin/projects"><WmcProjectsPage /></WmcRouteShell>
       </Route>
       <Route component={NotFound} />
     </Switch>

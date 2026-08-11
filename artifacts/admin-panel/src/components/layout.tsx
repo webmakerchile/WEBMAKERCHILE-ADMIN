@@ -48,9 +48,11 @@ import {
   Activity,
   Clock3,
   HardDrive,
+  FileSpreadsheet,
+  FolderKanban,
   type LucideIcon,
 } from "lucide-react";
-import { canAccessRoute, normalizeRole, routesInclude } from "@workspace/roles";
+import { canAccessRoute, normalizeRole, routesInclude, canRoleSeeWmcSections } from "@workspace/roles";
 import { useEffectiveRole, useViewAs } from "@/lib/view-as";
 import { ViewAsBar } from "@/components/view-as-bar";
 import { NavCustomizer, useHiddenNav } from "@/components/nav-customizer";
@@ -142,6 +144,8 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
       label: t.navSectionAdmin,
       items: [
         { href: "/agencia", icon: Landmark, label: t.navAgencia, tour: "nav-agencia" },
+        { href: "/admin/proposals", icon: FileSpreadsheet, label: t.navWmcProposals, tour: "nav-wmc-proposals" },
+        { href: "/admin/projects", icon: FolderKanban, label: t.navWmcProjects, tour: "nav-wmc-projects" },
         { href: "/equipo", icon: UserCog, label: t.navTeam, tour: "nav-equipo" },
         { href: "/ajustes", icon: Settings, label: t.navSettings, tour: "nav-ajustes" },
         { href: "/ayuda", icon: HelpCircle, label: t.navHelp, tour: "nav-help" },
@@ -149,19 +153,19 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
     },
   ];
 
-  // Las pantallas WMC (propuestas/proyectos portados 1:1 desde
-  // webmakerlatam.com) ya no viven en el menú: /agencia/proyectos y
-  // /agencia/presupuestos las reemplazan con paridad real. Las rutas
-  // /admin/proposals y /admin/projects siguen existiendo en el código
-  // (detrás del mismo flag user.wmcAccess) por si hace falta volver a ellas,
-  // pero ya no se listan acá.
-
   // Primero el permiso (qué puede ver el rol), después el gusto (qué eligió ocultar).
   // El mapa dinámico (editable desde Ajustes → Permisos) manda cuando está
   // disponible; si falta (payload viejo en caché) se cae al default estático.
-  const dynamicRoutes = user?.roleRoutes?.[normalizeRole(effectiveRole, isSuperAdmin)];
-  const hasAccess = (href: string) =>
-    dynamicRoutes ? routesInclude(dynamicRoutes, href) : canAccessRoute(effectiveRole, href, isSuperAdmin);
+  const rol = normalizeRole(effectiveRole, isSuperAdmin);
+  const dynamicRoutes = user?.roleRoutes?.[rol];
+  const hasAccess = (href: string) => {
+    // "tester" tiene "*" en todo lo demás, pero wmc expone datos reales de
+    // un negocio externo que esa cuenta de revisión nunca debe ver.
+    if ((href === "/admin/proposals" || href === "/admin/projects") && !canRoleSeeWmcSections(rol)) {
+      return false;
+    }
+    return dynamicRoutes ? routesInclude(dynamicRoutes, href) : canAccessRoute(effectiveRole, href, isSuperAdmin);
+  };
   const hiddenNav = useHiddenNav();
   const permitidas = allRoleSections
     .map((section) => ({
@@ -189,6 +193,7 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
     if (href === "/") return location === "/";
     if (location === href || location.startsWith(`${href}/`)) return true;
     if (href === "/biblioteca" && location.startsWith("/campanas")) return true;
+    if (href === "/admin/proposals" && location.startsWith("/admin/proposal-builder")) return true;
     return false;
   };
 

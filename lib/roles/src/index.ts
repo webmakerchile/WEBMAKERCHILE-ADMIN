@@ -170,6 +170,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
       "/drive-hub",
       "/proyecciones",
       "/agencia",
+      "/admin/proposals",
+      "/admin/projects",
       ...COMMON_ROUTES,
     ],
     canManageTeam: false,
@@ -198,6 +200,8 @@ export const ROLES: Record<TeamRole, RoleDef> = {
       "/drive-hub",
       "/drive",
       "/agencia",
+      "/admin/proposals",
+      "/admin/projects",
       // Necesita entrar a Ajustes para la tarjeta de Permisos por rol (no ve
       // la sección de credenciales de redes: esa sigue siendo solo dirección).
       "/ajustes",
@@ -413,6 +417,20 @@ export function canAccessRoute(role: unknown, path: string, isSuperAdmin = false
   return routesInclude(roleDef(role, isSuperAdmin).routes, path);
 }
 
+/**
+ * ¿Puede este rol ver las pantallas wmc (Presupuestos/Proyectos portadas de
+ * webmakerlatam.com), aunque Permisos le habilite la ruta? Único caso
+ * especial: "tester" es la cuenta de revisión de TikTok, con `"*"` en todo
+ * lo demás, pero wmc expone datos reales de clientes y plata de un negocio
+ * externo que un reviewer nunca debe ver — el mismo motivo por el que ya
+ * queda afuera de `CONFIGURABLE_ROLES` (no es un puesto real del equipo).
+ * Vive acá (no como excepción dentro de `routesInclude`) porque es un
+ * recorte propio de wmc, no una regla general de rutas.
+ */
+export function canRoleSeeWmcSections(role: TeamRole): boolean {
+  return role !== "tester";
+}
+
 function normalizePath(path: string): string {
   const p = (path || "/").split("?")[0].split("#")[0];
   if (p === "/") return "/";
@@ -436,9 +454,14 @@ export interface SectionDef {
 /**
  * Catálogo de secciones que la pantalla de Permisos puede prender/apagar por
  * rol. Es deliberadamente más chico que todas las rutas de `App.tsx`: no
- * incluye páginas de detalle sin entrada de menú, las pantallas portadas de
- * webmakerlatam.com (`/admin/*`, gate aparte por `wmcAccess`) ni `/ajustes`
- * (el contenedor de Permisos: su acceso queda fijo en dirección + dev).
+ * incluye páginas de detalle sin entrada de menú ni `/ajustes` (el
+ * contenedor de Permisos: su acceso queda fijo en dirección + dev).
+ *
+ * `/admin/proposals` y `/admin/projects` son las pantallas portadas de
+ * webmakerlatam.com (Presupuestos/Proyectos WMC). `/admin/proposal-builder`
+ * no tiene casilla propia: comparte la de `/admin/proposals` (ver
+ * `WmcRouteShell` en App.tsx, que gatea por un `section` fijo y no por la
+ * URL real del navegador).
  *
  * ⚠️ Debe reflejar los mismos `href` que `allRoleSections` en
  * `artifacts/admin-panel/src/components/layout.tsx` — si se agrega una
@@ -488,6 +511,8 @@ export const SECTION_CATALOG: readonly SectionDef[] = [
   { path: "/agencia", group: "administracion" },
   { path: "/equipo", group: "administracion" },
   { path: "/ayuda", group: "administracion" },
+  { path: "/admin/proposals", group: "administracion" },
+  { path: "/admin/projects", group: "administracion" },
 ];
 
 /**

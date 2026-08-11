@@ -46,6 +46,8 @@ import {
   Landmark,
   UserCog,
   HelpCircle,
+  FileSpreadsheet,
+  FolderKanban,
   type LucideIcon,
 } from "lucide-react";
 import { useLang, type Translations } from "@/lib/lang";
@@ -110,6 +112,8 @@ const SECTION_META: Record<string, { icon: LucideIcon; label: (t: Translations) 
   "/asistencia": { icon: Clock3, label: (t) => t.navHubAtt },
   "/drive-hub": { icon: HardDrive, label: (t) => t.navHubDrive },
   "/agencia": { icon: Landmark, label: (t) => t.navAgencia },
+  "/admin/proposals": { icon: FileSpreadsheet, label: (t) => t.navWmcProposals },
+  "/admin/projects": { icon: FolderKanban, label: (t) => t.navWmcProjects },
   "/equipo": { icon: UserCog, label: (t) => t.navTeam },
   "/ayuda": { icon: HelpCircle, label: (t) => t.navHelp },
 };
