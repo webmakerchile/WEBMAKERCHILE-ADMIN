@@ -29,7 +29,7 @@
 - [Sprint semanal y generación única](sprint-semanal-generacion.md) — cierre foto→arrastre idempotente sin tx; generar 1×/semana = LLM fuera + advisory xact lock + re-chequeo + pares en una sola tx.
 - [Estados de publicación por red](redes-publish-status.md) — éxito = published O uploaded (YouTube/TikTok); filtrar solo por published esconde redes exitosas; e2e real en dev solo Facebook.
 - [Tableros horizontales](tableros-horizontales.md) — reusar el módulo board-nav (chips/flechas/fades/snap); flechas por posición (no índice: clamp con overflow chico); snap off durante drag.
-- [Kit visual del Hub](hub-kit-rediseno.md) — reusar hub-kit (.hk-*, importable fuera del Hub); tras rediseños "solo presentación": auditar drift funcional + selectores CSS borrados aún referenciados.
+- [Kit visual del Hub](hub-kit-rediseno.md) — reusar hub-kit (.hk-*); Hub es CSS a mano, no shadcn/Tailwind (tampoco Command/Popover ahí); auditar drift tras rediseños "solo presentación".
 - [Puertos huérfanos](puertos-huerfanos.md) — si un workflow no abre su puerto: proceso viejo en loop de bind lo captura al liberarse; matar por PID (no solo el socket) y un restart con timeout amplio.
 - [Ciclos de variables CSS](css-vars-ciclo.md) — jamás `--card: hsl(var(--card))` en un scope: ciclo → inválida → fondos transparentes; diagnosticar con getComputedStyle, no con capturas (el blur engaña).
 - [Auditoría móvil del panel](movil-auditoria.md) — auditar SIEMPRE en español (ES desborda donde EN pasa); sonda scrollW/offenders por ruta; fixed bottom-* libra la tab bar con calc(4.75rem+safe-area)+lg:; 1 tester a la vez.

@@ -15,6 +15,8 @@ export default function ProyectosPage() {
   const [projView, setProjView] = useState<ProjViewMode>("board");
   const [searchQ, setSearchQ] = useState("");
   const [filterPrio, setFilterPrio] = useState("");
+  // Filtro de proyecto del tablero Scrum: "" = todos los proyectos (default).
+  const [filterProject, setFilterProject] = useState("");
   // Vista inmersiva del tablero: oculta la navegación principal y agranda
   // el tablero para que quepan todas las columnas sin scroll horizontal.
   const [boardFullscreen, setBoardFullscreen] = useState(false);
@@ -76,6 +78,8 @@ export default function ProyectosPage() {
             setSearchQ={setSearchQ}
             filterPrio={filterPrio}
             setFilterPrio={setFilterPrio}
+            filterProject={filterProject}
+            setFilterProject={setFilterProject}
             apiTasks={hub.apiTasks}
             onRefreshTasks={hub.onRefreshTasks}
             canManage={hub.canManageTasks}

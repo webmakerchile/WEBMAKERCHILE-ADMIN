@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { BoardNav, BoardScroller, useBoardNav } from "@/components/board-nav";
 import { EmptyState } from "@/components/hub-kit";
@@ -8,10 +8,76 @@ import { advanceStageObj, prioW, projProg, STATUS, statusOf, TASK_STAGES, taskSt
 import { DueChip, ProjCard, TaskCard } from "../small-components";
 import { crearCarpetaAutoProyecto, DRIVE_API_BASE } from "../sheet-content";
 
-export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted, onNew, boardFullscreen, setBoardFullscreen }: {
+/** Marca especial para "tareas sin proyecto asignado" en el filtro de Scrum.
+ *  Nunca choca con un id real: `uid()` siempre arranca con "id". */
+const SIN_PROYECTO = "__sin_proyecto__";
+/** Una tarea "Hecha" hace más de esto se oculta del Scrum general (vista sin
+ *  proyecto filtrado). Sigue disponible completa al filtrar por su proyecto
+ *  (o por "Sin proyecto" si no tenía) — no se borra nada, solo deja de
+ *  saturar la columna "Hecho" del tablero mezclado. */
+const DONE_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Dropdown buscable para elegir el proyecto que filtra el tablero Scrum.
+ *
+ * Sigue el patrón visual/interactivo propio del Hub (input + panel flotante,
+ * como en GlobalSearch), no el combobox shadcn de las pantallas wmc — el Hub
+ * tiene su propio sistema visual (hub.css) y mezclar los dos desentonaría.
+ */
+function ProjectFilterCombobox({ projects, value, onChange }: { projects: Project[]; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const openMenu = () => { setQ(""); setOpen(true); setTimeout(() => inputRef.current?.focus(), 30); };
+  const close = () => { setOpen(false); triggerRef.current?.focus(); };
+  const pick = (v: string) => { onChange(v); close(); };
+
+  const qlc = q.trim().toLowerCase();
+  const filtered = qlc ? projects.filter(p => (p.name + " " + (p.client || "")).toLowerCase().includes(qlc)) : projects;
+  const selectedProj = value && value !== SIN_PROYECTO ? projects.find(p => p.id === value) : null;
+  const label = value === SIN_PROYECTO ? "Sin proyecto" : value ? (selectedProj ? selectedProj.name : "Proyecto eliminado") : "Todos los proyectos";
+
+  return (
+    <div
+      className={cn("pfilter", value && "active")}
+      // relatedTarget cae fuera del contenedor solo cuando el foco se va de
+      // verdad del combobox (click afuera, Tab hacia otro control) — moverse
+      // del botón al buscador o a una opción, ambos dentro, no lo dispara.
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}
+      onKeyDown={e => { if (e.key === "Escape") close(); }}
+    >
+      <button ref={triggerRef} type="button" className="pfilter-btn" aria-expanded={open} aria-haspopup="listbox" onClick={() => (open ? setOpen(false) : openMenu())}>
+        <span className="pflabel">{label}</span>
+        <span className="pfcaret">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="pfmenu" role="listbox">
+          <div className="pfsearch"><span>🔍</span><input ref={inputRef} value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar proyecto…" /></div>
+          <div className="pflist">
+            <button type="button" className={cn("pfopt", value === "" && "on")} onClick={() => pick("")}>Todos los proyectos</button>
+            <button type="button" className={cn("pfopt", value === SIN_PROYECTO && "on")} onClick={() => pick(SIN_PROYECTO)}>Sin proyecto</button>
+            {filtered.length > 0 && <div className="pfsep" />}
+            {filtered.map(p => (
+              <button key={p.id} type="button" className={cn("pfopt", value === p.id && "on")} onClick={() => pick(p.id)}>
+                <span className="pfoptname">{p.name}</span>
+                {p.client && <span className="pfoptsub">{p.client}</span>}
+              </button>
+            ))}
+            {qlc && filtered.length === 0 && <div className="pfempty">Sin proyectos con ese nombre</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, projView, setProjView, searchQ, setSearchQ, filterPrio, setFilterPrio, filterProject, setFilterProject, apiTasks, onRefreshTasks, canManage, onDeleteTask, onClearCompleted, onNew, boardFullscreen, setBoardFullscreen }: {
   state: HubState; onSave: (n: StateUpdater) => void; onOpenProject: (id: string) => void; onOpenTask: (id: number) => void;
   onToast: (m: string) => void; projView: ProjViewMode; setProjView: (v: ProjViewMode) => void;
   searchQ: string; setSearchQ: (v: string) => void; filterPrio: string; setFilterPrio: (v: string) => void;
+  filterProject: string; setFilterProject: (v: string) => void;
   apiTasks: HubTask[]; onRefreshTasks: () => void;
   canManage: boolean; onDeleteTask: (id: number) => void; onClearCompleted: () => void; onNew: () => void;
   boardFullscreen: boolean; setBoardFullscreen: (v: boolean) => void;
@@ -39,6 +105,17 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
   const ft = apiTasks.filter(t => {
     if (filterPrio && t.priority !== filterPrio) return false;
     if (searchQ) { const pj = state.projects.find(p => p.id === t.projectRef); if (!((t.title + " " + (pj ? pj.name : "")).toLowerCase().includes(searchQ))) return false; }
+    if (filterProject === SIN_PROYECTO) {
+      if (t.projectRef) return false;
+    } else if (filterProject) {
+      if (t.projectRef !== filterProject) return false;
+    } else if (t.stage === "done" && t.completedAt && Date.now() - new Date(t.completedAt).getTime() > DONE_STALE_MS) {
+      // "Todos los proyectos" (sin filtro): lo completado hace más de 7 días
+      // se esconde para que "Hecho" no acumule el historial de todos los
+      // proyectos. Al filtrar por un proyecto puntual (o "Sin proyecto") se
+      // salta esta rama y vuelve a verse completo.
+      return false;
+    }
     return true;
   });
   const dropProj = (status: string) => {
@@ -76,6 +153,9 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
         <select className="filter" value={filterPrio} onChange={e => setFilterPrio(e.target.value)}>
           <option value="">Prioridad</option><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
         </select>
+        {projView === "scrum" && (
+          <ProjectFilterCombobox projects={state.projects} value={filterProject} onChange={setFilterProject} />
+        )}
         {projView === "scrum" && canManage && (() => {
           const doneCount = apiTasks.filter(t => t.stage === "done").length;
           return (

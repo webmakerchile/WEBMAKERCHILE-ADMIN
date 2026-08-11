@@ -187,6 +187,8 @@
 .hub-root .wrap.board-fullscreen .seg button{font-size:13px;padding:12px 18px;}
 .hub-root .wrap.board-fullscreen select.filter{font-size:13.5px;padding:12px 16px;}
 .hub-root .wrap.board-fullscreen .tsearch{font-size:14.5px;padding:12px 16px;}
+.hub-root .wrap.board-fullscreen .pfilter-btn{font-size:13.5px;padding:12px 16px;}
+.hub-root .wrap.board-fullscreen .pflabel{max-width:220px;}
 .hub-root .wrap.board-fullscreen .board{gap:18px;}
 .hub-root .wrap.board-fullscreen .board.scrum6{grid-template-columns:repeat(6,minmax(185px,1fr));}
 .hub-root .wrap.board-fullscreen .board.scrum6 .col{min-width:185px;}
@@ -292,6 +294,26 @@
 .hub-root .cbox button{border-radius:9px;padding:10px 16px;font-family:'Oswald',sans-serif;font-weight:600;font-size:12.5px;letter-spacing:.8px;text-transform:uppercase;border:1px solid var(--line);background:var(--card1);color:var(--dim);cursor:pointer;}
 .hub-root .cbox button.yes{background:var(--orange);border-color:var(--orange);color:hsl(var(--primary-foreground));}
 .hub-root .cbox button.yes:hover{background:var(--orange2);}
+
+/* filtro de proyecto del Scrum: dropdown buscable */
+.hub-root .pfilter{position:relative;flex:none;}
+.hub-root .pfilter-btn{display:flex;align-items:center;gap:8px;background:var(--card1);border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:9.5px 12px;font-family:'Oswald',sans-serif;font-weight:500;font-size:12.5px;cursor:pointer;white-space:nowrap;}
+.hub-root .pfilter.active .pfilter-btn{border-color:var(--orange-line);color:var(--orange2);background:var(--orange-soft);}
+.hub-root .pflabel{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px;}
+.hub-root .pfcaret{color:var(--faint);font-size:9px;flex:none;}
+.hub-root .pfilter.active .pfcaret{color:var(--orange2);}
+.hub-root .pfmenu{position:absolute;top:calc(100% + 8px);left:0;width:min(300px,86vw);background:var(--bg2);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 16px 40px hsl(0 0% 0%/.5);z-index:70;}
+.hub-root .pfsearch{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line-soft);}
+.hub-root .pfsearch span{color:var(--faint);font-size:12px;}
+.hub-root .pfsearch input{flex:1;min-width:0;background:none;border:0;color:var(--text);outline:none;font-size:12.5px;}
+.hub-root .pflist{max-height:260px;overflow-y:auto;padding:5px;}
+.hub-root .pfopt{display:flex;align-items:baseline;gap:8px;width:100%;background:none;border:0;border-radius:8px;color:var(--text);padding:8px 9px;text-align:left;font-size:12.5px;cursor:pointer;}
+.hub-root .pfopt:hover{background:var(--card1);}
+.hub-root .pfopt.on{background:var(--orange-soft);color:var(--orange2);}
+.hub-root .pfoptname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.hub-root .pfoptsub{color:var(--faint);font-size:11px;margin-left:auto;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88px;}
+.hub-root .pfsep{height:1px;background:var(--line-soft);margin:5px 3px;}
+.hub-root .pfempty{padding:12px;color:var(--faint);font-size:12px;text-align:center;}
 
 /* search results */
 .hub-root .sresults{position:absolute;top:calc(100% + 8px);left:0;right:0;background:var(--bg2);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 16px 40px hsl(0 0% 0%/.5);z-index:70;}
