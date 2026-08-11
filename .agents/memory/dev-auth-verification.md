@@ -15,6 +15,8 @@ La herramienta de captura de pantalla navega **sin cookies**: en esta app solo v
 
 **How to apply:** cualquier verificación en vivo de rutas bajo sesión/rol en esta app (gates 403, catálogos filtrados por rol, páginas nuevas). Siempre dejar DB y rol como estaban.
 
+4. **Forzar tema para verificación visual**: un contexto de navegador nuevo (sin localStorage) arranca en tema **oscuro** por default en esta app (no "system", no depende de preferencia del SO) — ver `bootstrapTheme`/`readStoredMode` en `use-theme.ts`. El botón de tema cicla oscuro→sistema→claro→oscuro; su atributo `title` dice exactamente `Tema: <Oscuro|Claro|Sistema> — clic para cambiar`, útil para confirmar el modo antes de dar por buena una captura. Para forzar **claro** de forma determinística, hacer clic dos veces desde el default y verificar el title (no asumir por la preferencia del SO del entorno de testing, que es ambigua bajo "sistema").
+
 ## El tablero de dirección (Hub) exige un dueño
 
 Si la única cuenta en DB dev es la de prueba (`team_role='tester'`), el Hub entero queda sin dueño: el backend busca un `role='superadmin'` o `team_role='ceo'` para resolver a QUIÉN pertenece el tablero, y si no encuentra ninguno, GET /hub devuelve tablero vacío y PATCH /hub devuelve 409 "todavía no hay tablero" — se ve igual que un fallo de guardado real. Antes de probar cualquier flujo del Hub (proyectos/clientes/tareas/notas/contratos) en dev, confirmar que existe un dueño; si no, aplicar el mismo flip de rol de arriba (`team_role='ceo'`) a la cuenta de prueba, probar, y restaurar a `tester` al final igual que cualquier otro flip.

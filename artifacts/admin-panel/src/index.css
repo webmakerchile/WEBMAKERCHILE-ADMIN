@@ -184,6 +184,19 @@
     @apply font-bold tracking-tight text-foreground;
   }
 
+  /* Los <select> nativos dibujan su menú desplegado con el motor del
+     sistema operativo: si las <option> no tienen colores propios, el texto
+     hereda el color del tema (blanco en oscuro) mientras el navegador pinta
+     el fondo del menú con su claro por defecto, dejando las opciones
+     ilegibles. Se fijan aquí los mismos tokens que ya usa el menú con
+     estilo propio (Popover) para que cualquier select nativo del panel
+     quede con contraste correcto en ambos temas, sin tocar los selects que
+     ya usan el componente de diseño (Radix, que no renderiza <option>). */
+  select option {
+    background-color: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+  }
+
   /* Anillo de foco visible y consistente para teclado.
      Se excluyen inputs de texto / textareas / contenteditable / el input
      de cmdk porque ya gestionan su propio estilo de foco; el ring con
