@@ -4,7 +4,7 @@ import { hubTasks, users, hubTaskActivity, hubTaskComments, videos, slaBreaches,
 import { eq, and, asc, desc, sql, gte, lte, isNull, isNotNull, or, ne } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import { hubWriteScopesFor, normalizeRole } from "@workspace/roles";
+import { hubScopesFor, hubWriteScopesFor, normalizeRole } from "@workspace/roles";
 import { createNotification, notifyResponsablesYDireccion } from "../../lib/notifications";
 import { recordActivity } from "../../lib/activity";
 import { claveSemanaActual } from "../../lib/sprint-semanal";
@@ -35,6 +35,20 @@ function isCeoOrEjecutivo(req: Request): boolean {
 function isCeoOrSuperAdmin(req: Request): boolean {
   const u = me(req);
   return u.role === "superadmin" || normalizeRole(u.teamRole) === "ceo";
+}
+
+/**
+ * ¿Este rol tiene acceso a la sección Scrum/Ban (alcance "tasks" del Hub)?
+ * Tablero compartido: quien la ve, ve la lista completa e idéntica — igual
+ * que el tablero Kanban de proyectos. Antes solo dirección/ventas/rrhh
+ * (canManageAll) veían todo el tablero de tareas y el resto de roles con
+ * acceso a la sección (dev, marketing, tester) veían solo lo suyo, así que
+ * una tarea creada o borrada por uno no le llegaba al resto del equipo con
+ * acceso a la sección.
+ */
+function hasTasksScope(req: Request): boolean {
+  const u = me(req);
+  return hubScopesFor(u.teamRole, u.role === "superadmin").includes("tasks");
 }
 
 /**
@@ -258,12 +272,15 @@ router.get("/hub/tasks", async (req: Request, res: Response) => {
   try {
     const user = me(req);
     const canManageAll = isCeoOrEjecutivo(req);
+    // Tablero compartido: cualquiera con acceso a la sección ve la lista
+    // completa e idéntica, no un recorte por assignee/creador.
+    const sharedBoard = canManageAll || hasTasksScope(req);
 
     const { projectRef, stage, assigneeId, limit, offset } = req.query as Record<string, string>;
 
     const conditions = [];
-    if (!canManageAll) {
-      // Sin gestión total ves lo tuyo: tareas asignadas a ti o creadas por ti.
+    if (!sharedBoard) {
+      // Sin acceso al tablero compartido ves lo tuyo: tareas asignadas a ti o creadas por ti.
       conditions.push(or(eq(hubTasks.assigneeId, user.id), eq(hubTasks.createdById, user.id))!);
     } else if (assigneeId) {
       const aid = parseInt(assigneeId, 10);

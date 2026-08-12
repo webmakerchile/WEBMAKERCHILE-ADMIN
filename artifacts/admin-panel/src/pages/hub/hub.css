@@ -20,7 +20,7 @@
   --dim:        hsl(var(--muted-foreground));
   --faint:      hsl(var(--muted-foreground) / 0.55);
   /* colores de estado del pipeline — se conservan exactos */
-  --lead:#6aa0c0;--disc:#c9a44a;--dev:hsl(var(--primary));--rev:#b06ad0;--done:#4faf6a;
+  --lead:#6aa0c0;--disc:#c9a44a;--design:#5ec0a0;--dev:hsl(var(--primary));--testing:#b06ad0;--done:#4faf6a;--rev:#b06ad0;
   --red:#c0563a;--green:#4faf6a;--gold:#c9a44a;
   /* radii — alineados al admin panel */
   --r-sm: var(--radius);
@@ -124,7 +124,8 @@
 .hub-root .prow.clickable:hover .pn b{color:var(--orange2);}
 
 /* kanban */
-.hub-root .board{display:grid;grid-template-columns:repeat(5,1fr);gap:13px;margin-top:20px;align-items:start;}
+--lead:#6aa0c0;--disc:#c9a44a;--design:#5ec0a0;--dev:hsl(var(--primary));--testing:#b06ad0;--done:#4faf6a;--rev:#b06ad0;
+.hub-root .board{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-top:20px;align-items:start;}
 .hub-root .col{background:var(--card1);border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 10px;min-height:90px;transition:background 0.2s,border-color 0.2s;}
 .hub-root .col.dragover{background:var(--orange-soft);border-color:var(--orange-line);}
 .hub-root .col h3{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1.3px;text-transform:uppercase;margin:2px 4px 12px;display:flex;justify-content:space-between;align-items:center;color:var(--dim);}

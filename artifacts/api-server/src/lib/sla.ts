@@ -28,8 +28,9 @@ export const DEFAULT_SLAS: Array<{ entityType: SlaEntityType; stage: string; max
   { entityType: "video", stage: "aprobado", maxHours: 72 },
   { entityType: "project", stage: "lead", maxHours: 24 * 7 },
   { entityType: "project", stage: "disc", maxHours: 24 * 7 },
+  { entityType: "project", stage: "design", maxHours: 24 * 7 },
   { entityType: "project", stage: "dev", maxHours: 24 * 21 },
-  { entityType: "project", stage: "rev", maxHours: 72 },
+  { entityType: "project", stage: "testing", maxHours: 72 },
   { entityType: "contract", stage: "borrador", maxHours: 24 * 7 },
 ];
 
@@ -165,7 +166,7 @@ const STAGE_LABELS: Record<string, string> = {
   backlog: "Backlog", sprint: "Sprint", doing: "En curso", qa_sent: "QA enviado", qa_rev: "QA revisión",
   abierto: "Abierto", en_progreso: "En progreso", en_revision: "En revisión",
   borrador: "Borrador", aprobado: "Aprobado",
-  lead: "Lead", disc: "Descubrimiento", dev: "Desarrollo", rev: "Revisión",
+  lead: "Lead", disc: "Descubrimiento", design: "Diseño", dev: "Desarrollo", testing: "Testing", rev: "Revisión",
 };
 export function stageLabel(stage: string): string {
   return STAGE_LABELS[stage] ?? stage;
