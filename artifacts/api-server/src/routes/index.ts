@@ -55,6 +55,7 @@ import wmcRouter from "./wmc";
 import { requireArea } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
 import { communityIsHistoriasOnly } from "../lib/community-gate";
+import { requireIdeas } from "../lib/ideas-gate";
 
 const router: IRouter = Router();
 
@@ -107,6 +108,10 @@ router.use(analyticsRouter);
 router.use("/inspirations", requireArea("ceo", "marketing"));
 router.use(inspirationsRouter);
 
+// Ideas: tablero de EQUIPO de Editora + Redes sociales. Gate por ROL, no
+// por área (Redes y Marketing comparten área "marketing" y Marketing NO
+// debe entrar) — ver ideas-gate.ts.
+router.use("/ideas", requireIdeas);
 router.use(ideasRouter);
 router.use(onboardingRouter);
 router.use(savedViewsRouter);
@@ -134,8 +139,9 @@ router.use(hrSelfRouter);
 router.use(activityRouter);
 
 // "Mis pendientes": tareas y checklists 100% privados por usuario, para
-// TODAS las áreas aprobadas — mismo patrón que jornada/ideas. Sin relación
-// con hub/tasks.ts (el tablero compartido detrás de la página "Mis tareas").
+// TODAS las áreas aprobadas — mismo patrón que jornada. Sin relación con
+// hub/tasks.ts (el tablero compartido detrás de la página "Mis tareas") ni
+// con Ideas (que es compartido por rol, no privado por usuario).
 router.use(personalTasksRouter);
 
 // Adjuntos: transversal a proyectos, tareas, tickets y contratos, que son de

@@ -48,6 +48,7 @@ import {
   Activity,
   Clock3,
   HardDrive,
+  Lightbulb,
   FileSpreadsheet,
   FolderKanban,
   type LucideIcon,
@@ -106,6 +107,7 @@ export function Layout({ children, chromeHidden = false }: { children: React.Rea
         { href: "/transcriptor", icon: AudioLines, label: t.navTranscriber, tour: "nav-transcriptor" },
         { href: "/drive", icon: FolderTree, label: t.navDrive, tour: "nav-drive" },
         { href: "/biblioteca", icon: Library, label: t.navLibrary, tour: "nav-biblioteca" },
+        { href: "/ideas", icon: Lightbulb, label: t.navIdeas, tour: "nav-ideas" },
       ],
     },
     {

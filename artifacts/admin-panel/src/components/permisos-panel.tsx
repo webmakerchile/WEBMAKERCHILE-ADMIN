@@ -48,6 +48,7 @@ import {
   HelpCircle,
   FileSpreadsheet,
   FolderKanban,
+  Lightbulb,
   type LucideIcon,
 } from "lucide-react";
 import { useLang, type Translations } from "@/lib/lang";
@@ -89,6 +90,7 @@ const SECTION_META: Record<string, { icon: LucideIcon; label: (t: Translations) 
   "/transcriptor": { icon: AudioLines, label: (t) => t.navTranscriber },
   "/drive": { icon: FolderTree, label: (t) => t.navDrive },
   "/biblioteca": { icon: Library, label: (t) => t.navLibrary },
+  "/ideas": { icon: Lightbulb, label: (t) => t.navIdeas },
   "/edicion": { icon: Scissors, label: (t) => t.navEdicion },
   "/redes": { icon: Share2, label: (t) => t.navRedes },
   "/marketing": { icon: Megaphone, label: (t) => t.navMarketing },

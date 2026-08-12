@@ -66,6 +66,7 @@ const MarketingPage = lazy(() => import("./pages/marketing"));
 const MetasPage = lazy(() => import("./pages/metas"));
 const MiDiaPage = lazy(() => import("./pages/mi-dia"));
 const AgenciaPage = lazy(() => import("./pages/agencia"));
+const IdeasPage = lazy(() => import("./pages/ideas"));
 
 // Wmc: pantallas portadas 1:1 desde webmakerlatam.com (propuestas/proyectos).
 // Llaman al service API del origen vía proxy — este panel no guarda sus datos.
@@ -537,6 +538,9 @@ function Router() {
       </Route>
       <Route path="/marketing">
         <RouteShell name="marketing"><MarketingPage /></RouteShell>
+      </Route>
+      <Route path="/ideas">
+        <RouteShell name="ideas"><IdeasPage /></RouteShell>
       </Route>
       <Route path="/metas">
         <RouteShell name="metas"><MetasPage /></RouteShell>

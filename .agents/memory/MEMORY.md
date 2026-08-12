@@ -11,7 +11,7 @@
 - [Team attendance design](team-attendance-design.md) — team-wide self-service APIs must avoid the area-gated /hub prefix; Santiago-TZ day bucketing, Monday weeks, 16h open-session cap.
 - [Activity log design](activity-log-design.md) — all bitácora writes go through recordActivity + money-sanitized labels; team feed visibility mirrors jornada oversight roles.
 - [Handoffs & playbooks](handoffs-playbooks.md) — claim-then-release en handoff_log; append jsonb atómico; fallos de IA se tragan DENTRO del claim (fallback), dinero se limpia en la frontera del insert.
-- [Monorepo lib builds](monorepo-lib-builds.md) — cualquier edición a lib/*/src (no solo merges) exige tsc -b lib/<pkg> antes de que los consumidores vean el tipo nuevo; custom user names must never be overwritten by Google profile on login.
+- [Monorepo lib builds](monorepo-lib-builds.md) — cualquier edición a lib/*/src (no solo merges) exige tsc -b lib/<pkg> antes de que los consumidores vean el tipo nuevo; schemas usan índices en forma objeto, no array.
 - [Reportes/informes de RRHH → Dirección](hr-reportes-informes-ceo.md) — guardar≠enviar en informes editables; "apartado propio" para supervisión puede revertirse, no es definitivo — confirmar preferencia vigente.
 - [Spinner negro tras editar frontend](vite-hmr-flaky-after-edits.md) — varias ediciones seguidas pueden dejar un `import()` lazy colgado sin error en consola; reintentar con recarga completa antes de tratarlo como regresión real.
 - [Render de portadas](cover-rendering.md) — librsvg pierde espacios en bordes de tspan (unir con &#160;); fuentes nix invisibles para fontconfig → empaquetar TTFs + FONTCONFIG_FILE al boot.
@@ -57,3 +57,6 @@
 - [Verificar qué secreto es cuál](secret-cross-wiring-check.md) — secretos del mismo proveedor/forma pueden cruzarse al configurar; "unauthorized" genérico no distingue clave cruzada de clave vencida — comparar fingerprint (largo+hash) contra la fuente.
 - [Reconciliación del espejo del panel WMC](panel-sync-reconciliacion.md) — delta sync con cursor ciego congela estado; full-snapshot (upsert+prune-por-ausencia) cura staleness y huérfanos a la vez; detail endpoint por id puede traer campos "ricos" que el bulk list no trae.
 - [Permisos de navegación por rol](role-permissions-dynamic-nav.md) — mapa completo en /auth/me para "Ver como"; unir rutas fijas sobre el override; auditar paleta/atajos además del sidebar.
+- [Gate por rol vs. por área](role-vs-area-gate.md) — si dos roles comparten área (social/marketing→"marketing"), un gate de área no puede separarlos; gate dedicado por rol, como community-gate.ts.
+- [Verificar "ya existe pero no se usa"](verify-task-assumptions.md) — grepear páginas reales del frontend antes de creer que un sistema viejo no tiene consumidor; puede haber un widget vivo que nadie mencionó.
+- [Nombre no se pisa con Google login](google-login-name-preserve.md) — existing.name gana sobre profile.displayName; solo se usa al crear la fila por primera vez.

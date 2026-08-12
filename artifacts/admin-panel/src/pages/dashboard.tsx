@@ -5,7 +5,6 @@ import { Layout } from "@/components/layout";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Sparkles,
   Plus,
   TrendingUp,
   TrendingDown,
@@ -34,25 +33,9 @@ import { WhatsNewBanner } from "@/components/whats-new-banner";
 import { ConnectionHealthBanner } from "@/components/connection-health-banner";
 import { PublishLogDialog } from "@/components/publish-log-dialog";
 import { HelpHint } from "@/components/help-hint";
-import { AnalyticsSkeleton, KanbanSkeleton } from "@/components/skeletons";
+import { AnalyticsSkeleton } from "@/components/skeletons";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, "/");
-
-type Idea = {
-  id: number;
-  title: string;
-  description: string | null;
-  kanbanStatus: "por_hacer" | "en_progreso" | "en_revision" | "hecho";
-  kanbanOrder: number;
-  createdAt: string;
-};
-
-const KANBAN_COLUMNS: { key: Idea["kanbanStatus"]; label: string; accent: string }[] = [
-  { key: "por_hacer", label: "Por hacer", accent: "text-slate-300 border-slate-500/30" },
-  { key: "en_progreso", label: "En progreso", accent: "text-blue-300 border-blue-500/30" },
-  { key: "en_revision", label: "En revisión", accent: "text-amber-300 border-amber-500/30" },
-  { key: "hecho", label: "Hecho", accent: "text-emerald-300 border-emerald-500/30" },
-];
 
 function greet(): string {
   const h = new Date().getHours();
@@ -420,224 +403,6 @@ function AnalyticsRow() {
           ))}
         </div>
       )}
-    </section>
-  );
-}
-
-/* ------------------------- Ideas Kanban ------------------------- */
-
-function IdeasKanban() {
-  const qc = useQueryClient();
-  const { data: ideas = [], isLoading } = useQuery<Idea[]>({
-    queryKey: ["ideas"],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/ideas`, { credentials: "include" });
-      const d = await r.json();
-      return d.ideas || [];
-    },
-  });
-
-  const [adding, setAdding] = useState<Idea["kanbanStatus"] | null>(null);
-  const [draftTitle, setDraftTitle] = useState("");
-  const [dragId, setDragId] = useState<number | null>(null);
-
-  const createIdea = useMutation({
-    mutationFn: async (payload: { title: string; kanbanStatus: Idea["kanbanStatus"] }) => {
-      const r = await fetch(`${API_BASE}/ideas`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!r.ok) throw new Error(await r.text());
-      return r.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ideas"] });
-      setAdding(null);
-      setDraftTitle("");
-    },
-  });
-
-  const updateIdea = useMutation({
-    mutationFn: async ({ id, ...patch }: Partial<Idea> & { id: number }) => {
-      const r = await fetch(`${API_BASE}/ideas/${id}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-      if (!r.ok) throw new Error(await r.text());
-      return r.json();
-    },
-    onMutate: async (vars) => {
-      await qc.cancelQueries({ queryKey: ["ideas"] });
-      const prev = qc.getQueryData<Idea[]>(["ideas"]) || [];
-      qc.setQueryData<Idea[]>(["ideas"], (old) =>
-        (old || []).map((i) => (i.id === vars.id ? { ...i, ...vars } : i)),
-      );
-      return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["ideas"], ctx.prev);
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["ideas"] }),
-  });
-
-  const deleteIdea = useMutation({
-    mutationFn: async (id: number) => {
-      await fetch(`${API_BASE}/ideas/${id}`, { method: "DELETE", credentials: "include" });
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["ideas"] }),
-  });
-
-  const grouped = useMemo(() => {
-    const g: Record<Idea["kanbanStatus"], Idea[]> = {
-      por_hacer: [],
-      en_progreso: [],
-      en_revision: [],
-      hecho: [],
-    };
-    ideas.forEach((i) => g[i.kanbanStatus]?.push(i));
-    Object.values(g).forEach((arr) => arr.sort((a, b) => a.kanbanOrder - b.kanbanOrder));
-    return g;
-  }, [ideas]);
-
-  const onDrop = (targetStatus: Idea["kanbanStatus"]) => {
-    if (dragId == null) return;
-    const idea = ideas.find((i) => i.id === dragId);
-    setDragId(null);
-    if (!idea || idea.kanbanStatus === targetStatus) return;
-    updateIdea.mutate({ id: dragId, kanbanStatus: targetStatus });
-  };
-
-  if (isLoading && ideas.length === 0) {
-    return (
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-display font-bold flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
-            Ideas
-          </h2>
-        </div>
-        <KanbanSkeleton columns={KANBAN_COLUMNS.length} cardsPerCol={2} />
-      </section>
-    );
-  }
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-display font-bold flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-primary" />
-          Ideas
-        </h2>
-        <span className="text-[11px] text-muted-foreground">{ideas.length} total</span>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {KANBAN_COLUMNS.map((col) => (
-          <div
-            key={col.key}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => onDrop(col.key)}
-            className="glass-card rounded-2xl border border-foreground/10 p-3 min-h-[260px] flex flex-col"
-          >
-            <div className={`flex items-center justify-between pb-2 mb-2 border-b ${col.accent}`}>
-              <h3 className={`text-xs uppercase tracking-wide font-bold ${col.accent.split(" ")[0]}`}>{col.label}</h3>
-              <span className="text-[10px] text-muted-foreground">{grouped[col.key].length}</span>
-            </div>
-
-            <div className="space-y-2 flex-1">
-              {isLoading ? (
-                <>
-                  <div className="h-16 rounded-lg bg-foreground/5 animate-pulse" />
-                  <div className="h-16 rounded-lg bg-foreground/5 animate-pulse" />
-                </>
-              ) : (
-                <AnimatePresence>
-                  {grouped[col.key].map((idea) => (
-                    <motion.div
-                      layout
-                      key={idea.id}
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      draggable
-                      onDragStart={() => setDragId(idea.id)}
-                      onDragEnd={() => setDragId(null)}
-                      className={`group rounded-lg bg-foreground/5 hover:bg-foreground/10 border border-foreground/10 p-2.5 cursor-grab active:cursor-grabbing transition ${
-                        dragId === idea.id ? "opacity-40" : ""
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-1.5">
-                        <p className="text-sm font-medium leading-snug flex-1 break-words">{idea.title}</p>
-                        <button
-                          onClick={() => deleteIdea.mutate(idea.id)}
-                          className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-rose-400 transition flex-shrink-0"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      {idea.description && (
-                        <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{idea.description}</p>
-                      )}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              )}
-
-              {adding === col.key ? (
-                <div className="rounded-lg bg-background/40 border border-primary/30 p-2">
-                  <input
-                    autoFocus
-                    value={draftTitle}
-                    onChange={(e) => setDraftTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && draftTitle.trim()) {
-                        createIdea.mutate({ title: draftTitle.trim(), kanbanStatus: col.key });
-                      }
-                      if (e.key === "Escape") {
-                        setAdding(null);
-                        setDraftTitle("");
-                      }
-                    }}
-                    placeholder="Tu nueva idea…"
-                    className="w-full bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground/50"
-                  />
-                  <div className="flex items-center gap-1 mt-1.5">
-                    <button
-                      onClick={() => draftTitle.trim() && createIdea.mutate({ title: draftTitle.trim(), kanbanStatus: col.key })}
-                      disabled={!draftTitle.trim() || createIdea.isPending}
-                      className="text-[11px] px-2 py-0.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
-                    >
-                      Añadir
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAdding(null);
-                        setDraftTitle("");
-                      }}
-                      className="text-[11px] px-1 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setAdding(col.key)}
-                  className="w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-dashed border-foreground/10 text-xs text-muted-foreground hover:border-primary/40 hover:text-primary transition"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Nueva idea
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -1469,7 +1234,6 @@ export default function Dashboard() {
           <div className="space-y-8 min-w-0">
             <AnalyticsRow />
             <RecentActivity />
-            <IdeasKanban />
             <InspirationsBlock />
           </div>
           <UpcomingPosts />

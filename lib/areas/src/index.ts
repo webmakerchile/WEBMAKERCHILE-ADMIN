@@ -59,6 +59,12 @@ export const AREA_PAGES: Record<Area, string[] | "*"> = {
  * /api route prefixes (without /api) each area may call.
  * "*" = unrestricted.
  * These map to the backend router prefixes applied in requireArea middleware.
+ *
+ * Algunos prefijos NO aparecen acá a propósito: su gate real es por ROL, no
+ * por área, porque `requireArea` no puede distinguir roles que comparten
+ * área (p.ej. `/ideas`, exclusivo de Editora + Redes sociales — ver
+ * artifacts/api-server/src/lib/ideas-gate.ts). No agregar `/ideas` acá bajo
+ * "marketing" solo porque Redes está ahí: se lo daría también a Marketing.
  */
 export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
   ceo: "*",
@@ -66,7 +72,7 @@ export const AREA_API_PREFIXES: Record<Area, string[] | "*"> = {
   edicion:   [
     "/content", "/studio", "/youtube", "/tiktok", "/instagram",
     "/linkedin", "/x", "/facebook", "/drive", "/library",
-    "/transcriber", "/calendar", "/ideas", "/onboarding",
+    "/transcriber", "/calendar", "/onboarding",
     "/saved-views", "/connections", "/notifications", "/social",
     "/credentials", "/settings", "/hub/tasks",
     // Solo Posts IA (descripciones/interactivo); Historias
