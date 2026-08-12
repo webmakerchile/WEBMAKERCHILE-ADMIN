@@ -295,7 +295,7 @@ export function avisosDeTareas(
 export interface ProyectoVigilado {
   id: string;
   name: string;
-  /** lead | disc | dev | rev | done, tal como los guarda el tablero. */
+  /** lead | disc | design | dev | testing | done, tal como los guarda el tablero. */
   status?: string;
   /** Última escritura, en ms. */
   updatedAt?: number | null;
@@ -307,7 +307,7 @@ const PROYECTO_TERMINADO = "done";
 
 /** Etiquetas legibles de las etapas del embudo de proyectos del Hub. */
 const ETAPA_PROYECTO_LABEL: Record<string, string> = {
-  lead: "Lead", disc: "Descubrimiento", dev: "Desarrollo", rev: "Revisión", done: "Entregado",
+  lead: "Lead", disc: "Descubrimiento", design: "Diseño", dev: "Desarrollo", testing: "Testing", done: "Entregado", rev: "Revisión",
 };
 
 /**
