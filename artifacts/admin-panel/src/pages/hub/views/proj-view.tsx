@@ -148,7 +148,7 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
       <div className="toolbar">
         <div className="tsearch"><span>🔍</span><input value={searchQ} onChange={e => setSearchQ(e.target.value.toLowerCase())} placeholder="Buscar proyecto o tarea…" /></div>
         <div className="seg">
-          {(["board","list","scrum"] as ProjViewMode[]).map(v => <button key={v} className={projView === v ? "on" : ""} onClick={() => setProjView(v)}>{v === "board" ? "Kanban" : v === "list" ? "Lista" : "Scrum"}</button>)}
+          {(["board","scrum"] as ProjViewMode[]).map(v => <button key={v} className={projView === v ? "on" : ""} onClick={() => setProjView(v)}>{v === "board" ? "Kanban" : "Scrum"}</button>)}
         </div>
         <select className="filter" value={filterPrio} onChange={e => setFilterPrio(e.target.value)}>
           <option value="">Prioridad</option><option value="crítica">Crítica</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
@@ -192,26 +192,6 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
               </div>
             );
           })}
-        </div>
-      )}
-      {projView === "list" && (
-        <div className="cardlist">
-          {fp.length === 0 && searchQ && <div style={{ gridColumn: "1/-1" }}><EmptyState title="Sin resultados" hint="Nada coincide con tu búsqueda." icon={<FileCheck2 />} /></div>}
-          {fp.map(p => (
-            <div key={p.id} className="gcard" onClick={() => onOpenProject(p.id)}>
-              <div className="gt">{p.name}</div><div className="gsub">{p.client} · {p.type}</div>
-              <div className="gbody">{p.notes || ""}</div>
-              <div className="gfoot">
-                <span className={`chip prio-${p.prio}`}>{p.prio}</span><span className="badge">{statusOf(p.status).label}</span><DueChip p={p} /><span className="gdate">{projProg(p.id, apiTasks).pct}%</span>
-                {!p.link && p.driveFolderError && (
-                  <button type="button" className="chip drive-warn" title={`No se pudo crear la carpeta: ${p.driveFolderError}`}
-                    onClick={e => { e.stopPropagation(); if (!retryingDriveIds.has(p.id)) retryDriveFolder(p); }} disabled={retryingDriveIds.has(p.id)}>
-                    ⚠ {retryingDriveIds.has(p.id) ? "Creando…" : "Sin carpeta · Reintentar"}
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
         </div>
       )}
       {projView === "scrum" && (
