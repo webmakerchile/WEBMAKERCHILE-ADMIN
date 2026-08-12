@@ -1,7 +1,7 @@
 import { ALL_HUB_SCOPES, type HubScope } from "@workspace/roles";
 
 export type Prio = "crítica" | "alta" | "media" | "baja";
-export type ProjStatus = "lead" | "disc" | "dev" | "rev" | "done";
+export type ProjStatus = "lead" | "disc" | "design" | "dev" | "testing" | "done";
 export type TaskStage = "backlog" | "sprint" | "doing" | "qa_sent" | "qa_rev" | "done";
 export type TaskStatus = "pendiente" | "en_progreso" | "hecha";
 export interface ChecklistItem { id: string; text: string; done: boolean }
@@ -43,7 +43,7 @@ export interface TeamMember {
 }
 export type NoteCat = "proyecto" | "cliente" | "vision" | "equipo" | "otro";
 export type Tab = "dash" | "torre" | "proj" | "clients" | "meet" | "notes" | "contracts" | "ventas" | "cobros" | "svc" | "drive" | "team" | "att";
-export type ProjView = "board" | "list" | "scrum";
+export type ProjView = "board" | "scrum";
 
 export interface Project {
   id: string; name: string; client: string; type: string; prio: Prio; status: ProjStatus;
@@ -181,9 +181,10 @@ export const LS_KEY = "wm_hub_v3";
 export const STATUS = [
   { id: "lead", label: "Lead", color: "var(--lead)" },
   { id: "disc", label: "Discovery", color: "var(--disc)" },
+  { id: "design", label: "Diseño", color: "var(--design)" },
   { id: "dev", label: "Desarrollo", color: "var(--dev)" },
-  { id: "rev", label: "Revisión", color: "var(--rev)" },
-  { id: "done", label: "Entregado", color: "var(--done)" },
+  { id: "testing", label: "Testing", color: "var(--testing)" },
+  { id: "done", label: "Entrega", color: "var(--done)" },
 ];
 export const TASK_STAGES = [
   { id: "backlog",  label: "Backlog",      color: "var(--faint)" },
@@ -201,7 +202,7 @@ export const TAB_TITLES: Record<Tab, [string, string]> = {
   team: ["Equipo hoy", "Centro de comando · cargas · semáforo · actividad"],
   att: ["Asistencia", "Pase de lista · horas trabajadas · registro diario"],
   dash: ["Dashboard", "Resumen ejecutivo en vivo"],
-  proj: ["Scrum/Ban", "Kanban · Lista · Scrumban"],
+  proj: ["Scrum/Ban", "Kanban · Scrumban"],
   clients: ["Clientes", "Cartera y contactos"],
   meet: ["Reuniones", "Notas, resúmenes y seguimiento"],
   notes: ["Notas", "Ideas, acuerdos y estrategia"],
@@ -247,7 +248,7 @@ export function fmtDate(ts: number) { if (!ts) return ""; return new Date(ts).to
 export function statusOf(id: string) { return STATUS.find(s => s.id === id) || STATUS[0]; }
 export function taskStatusOf(id: string) { return TASK_STAGES.find(s => s.id === id) || TASK_STAGES[0]; }
 export function advanceStageObj(o: Record<string, unknown>, newVal: string, field: string) {
-  const now = Date.now();
+  const now = Date.now(); st.projects.forEach(p => { if ((p.status as string) === "rev") p.status = "testing"; });
   if (!o.stageTime) o.stageTime = {};
   const cur = String(o[field]);
   (o.stageTime as Record<string, number>)[cur] = ((o.stageTime as Record<string, number>)[cur] || 0) + (now - ((o.stageSince as number) || now));
@@ -459,8 +460,8 @@ export async function patchHubToServer(st: HubState, baseVersion: number): Promi
   }
 }
 export function migrate(st: HubState): HubState {
-  const now = Date.now();
-  st.projects.forEach(p => { if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now; });
+  const now = Date.now(); st.projects.forEach(p => { if ((p.status as string) === "rev") p.status = "testing"; });
+  st.projects.forEach(p => {    if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now;
   if (!Array.isArray(st.tasks)) st.tasks = [];
   if (!Array.isArray(st.contracts)) st.contracts = [];
   if (!Array.isArray(st.notes)) st.notes = [];
