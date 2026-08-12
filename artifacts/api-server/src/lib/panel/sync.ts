@@ -5,6 +5,7 @@ import { panelConfigurado, panelGet, type ListadoPanel } from "./cliente";
 import { estadoSyncFila, guardarRegistros, RECURSOS_PANEL } from "./espejo";
 import { retirarCompartidosDeTerminados } from "./equipo";
 import { limpiarCacheVistas } from "./cache-vistas";
+import { sincronizarProyectosWmcAlHub } from "./hub-sync";
 
 /** Cada cuánto se refresca el espejo (el manifiesto sugiere 5–15 min). */
 const FRESCURA_MS = 10 * 60 * 1000;
@@ -89,6 +90,7 @@ export async function sincronizarPanel(modo: "auto" | "manual"): Promise<Resulta
     }
 
     // 3) Aplicar en una transacción con lock + re-chequeo del cursor.
+    let datosProyectosAplicados: Array<Record<string, unknown>> | null = null;
     const resultado = await db.transaction(async (tx): Promise<ResultadoSync> => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('panel-sync'))`);
       const fila = await estadoSyncFila(tx);
@@ -106,6 +108,7 @@ export async function sincronizarPanel(modo: "auto" | "manual"): Promise<Resulta
           await retirarCompartidosDeTerminados(datos, tx);
         }
         porRecurso[recurso] = await guardarRegistros(recurso, datos, tx);
+        if (recurso === "proyectos") datosProyectosAplicados = datos;
       }
 
       const ahora = new Date();
@@ -136,6 +139,20 @@ export async function sincronizarPanel(modo: "auto" | "manual"): Promise<Resulta
       // pueden haber quedado viejas — se botan al tiro.
       limpiarCacheVistas();
       console.log(`[PanelSync] ${resultado.tipo}: ${resultado.totalRegistros} registros en ${resultado.duracionMs}ms`);
+      // Puente al Kanban del Hub (Scrum/Ban), DESPUÉS de confirmar la
+      // transacción del espejo (no adentro): un fallo acá jamás debe poder
+      // revertir ni bloquear el sync del espejo, que es lo crítico. Si algo
+      // sale mal se loguea y se reintenta solo en el próximo sync/reconciliación.
+      if (datosProyectosAplicados) {
+        try {
+          const { creados, movidos } = await sincronizarProyectosWmcAlHub(datosProyectosAplicados);
+          if (creados || movidos) {
+            console.log(`[PanelSync→Hub] ${creados} tarjeta(s) nueva(s), ${movidos} movida(s) de fase`);
+          }
+        } catch (e) {
+          console.error("[PanelSync→Hub] fallo (no afecta el sync del espejo):", e instanceof Error ? e.message : e);
+        }
+      }
     }
     return resultado;
   } catch (e) {
@@ -234,6 +251,7 @@ export async function reconciliarPanel(): Promise<ResultadoReconciliacion> {
   try {
     const snapshot = await traerSnapshotCompleto();
 
+    let datosProyectosAplicados: Array<Record<string, unknown>> | null = null;
     const resultado = await db.transaction(async (tx): Promise<ResultadoReconciliacion> => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('panel-sync'))`);
       const fila = await estadoSyncFila(tx);
@@ -250,6 +268,7 @@ export async function reconciliarPanel(): Promise<ResultadoReconciliacion> {
           await retirarCompartidosDeTerminados(datos, tx);
         }
         porRecursoActualizados[recurso] = await guardarRegistros(recurso, datos, tx);
+        if (recurso === "proyectos") datosProyectosAplicados = datos;
 
         const idsFrescos = datos
           .filter((r): r is Record<string, unknown> & { id: string } => typeof r?.id === "string" && r.id.length > 0)
@@ -292,6 +311,19 @@ export async function reconciliarPanel(): Promise<ResultadoReconciliacion> {
       );
       if (resultado.omitidos?.length) {
         console.warn(`[PanelReconciliacion] poda salteada (universo vacío) en: ${resultado.omitidos.join(", ")}`);
+      }
+      // Puente al Kanban del Hub, después de confirmar la transacción (ver
+      // el mismo comentario en sincronizarPanel): nunca debe poder afectar
+      // la reconciliación del espejo, que es lo crítico.
+      if (datosProyectosAplicados) {
+        try {
+          const { creados, movidos } = await sincronizarProyectosWmcAlHub(datosProyectosAplicados);
+          if (creados || movidos) {
+            console.log(`[PanelReconciliacion→Hub] ${creados} tarjeta(s) nueva(s), ${movidos} movida(s) de fase`);
+          }
+        } catch (e) {
+          console.error("[PanelReconciliacion→Hub] fallo (no afecta la reconciliación del espejo):", e instanceof Error ? e.message : e);
+        }
       }
     }
     return resultado;

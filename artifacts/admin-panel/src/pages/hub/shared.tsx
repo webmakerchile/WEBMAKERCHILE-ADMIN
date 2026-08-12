@@ -67,6 +67,15 @@ export interface Project {
   /** A quién le toca, por id real de usuario. Vacío = de todo el equipo. */
   assigneeIds?: number[];
   /**
+   * Id del proyecto de origen en Proyectos (WMC), si esta tarjeta se generó
+   * automáticamente desde ahí (ver `lib/panel/hub-sync.ts` del servidor).
+   * Presente = la columna (`status`) la mueve el sync según la etapa wmc;
+   * ausente = tarjeta propia del Hub, se mueve solo a mano.
+   */
+  wmcId?: string;
+  /** Última etapa wmc vista (`Project.status` de wmc) — la usa el sync para detectar cambios. */
+  wmcStatus?: string;
+  /**
    * true = el área de marketing trabaja en este proyecto.
    *
    * Opt-in explícito: a diferencia de Programación, que recibe todos los

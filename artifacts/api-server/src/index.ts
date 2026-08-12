@@ -8,6 +8,7 @@ import { startScheduler } from "./scheduler";
 import { startDiscordSweep } from "./lib/discord-sweep";
 import { purgarBorradoresCaducados } from "./routes/community";
 import { migrarTareasDelBlob } from "./lib/migrar-tareas-blob";
+import { respaldarProyectosWmcAlHubDesdeEspejo } from "./lib/panel/hub-sync";
 import { db } from "@workspace/db";
 import { users, hubState, hubTasks } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
@@ -212,5 +213,10 @@ app.listen(port, async () => {
   // Las tareas que el equipo creó en el sistema viejo pasan al real. Una sola
   // vez: la marca vive en el propio tablero.
   void migrarTareasDelBlob().catch((e) => console.error("[migrar-tareas] falló:", e));
+  // Respaldo de arranque del puente Proyectos (WMC) → Kanban del Hub: cubre
+  // los proyectos wmc que ya existían antes de que este puente existiera, sin
+  // esperar a la próxima reconciliación diaria. Idempotente (dedupe por
+  // `wmcId`): un reinicio no duplica tarjetas.
+  void respaldarProyectosWmcAlHubDesdeEspejo().catch((e) => console.error("[wmc→hub] respaldo falló:", e));
   setInterval(barrerBorradores, 24 * 60 * 60 * 1000).unref();
 });

@@ -210,6 +210,9 @@ export function ProjCard({ p, tasks, onClick, onDragStart, onDragEnd, onRetryDri
         <span className={`chip prio-${p.prio}`}>{p.prio}</span>
         <span className="chip">{p.type}</span>
         {p.owner && p.owner.trim() !== "—" && <span className="chip">{p.owner}</span>}
+        {/* Tarjeta generada automáticamente desde Proyectos (WMC): el sync la
+            crea y la mueve de columna cuando cambia la etapa en el origen. */}
+        {p.wmcId && <span className="chip" title="Sincronizado desde Proyectos (WMC): se crea y se mueve de columna sola según la etapa del proyecto">🔗 WMC</span>}
         <DueChip p={p} />
         {p.link && (
           <a href={p.link} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
