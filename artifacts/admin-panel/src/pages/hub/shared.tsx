@@ -248,7 +248,7 @@ export function fmtDate(ts: number) { if (!ts) return ""; return new Date(ts).to
 export function statusOf(id: string) { return STATUS.find(s => s.id === id) || STATUS[0]; }
 export function taskStatusOf(id: string) { return TASK_STAGES.find(s => s.id === id) || TASK_STAGES[0]; }
 export function advanceStageObj(o: Record<string, unknown>, newVal: string, field: string) {
-  const now = Date.now(); st.projects.forEach(p => { if ((p.status as string) === "rev") p.status = "testing"; });
+    const now = Date.now();
   if (!o.stageTime) o.stageTime = {};
   const cur = String(o[field]);
   (o.stageTime as Record<string, number>)[cur] = ((o.stageTime as Record<string, number>)[cur] || 0) + (now - ((o.stageSince as number) || now));
@@ -461,7 +461,7 @@ export async function patchHubToServer(st: HubState, baseVersion: number): Promi
 }
 export function migrate(st: HubState): HubState {
   const now = Date.now(); st.projects.forEach(p => { if ((p.status as string) === "rev") p.status = "testing"; });
-  st.projects.forEach(p => {    if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now;
+    st.projects.forEach(p => { if (p.stageSince == null) p.stageSince = p.updatedAt || p.createdAt || now; });
   if (!Array.isArray(st.tasks)) st.tasks = [];
   if (!Array.isArray(st.contracts)) st.contracts = [];
   if (!Array.isArray(st.notes)) st.notes = [];
