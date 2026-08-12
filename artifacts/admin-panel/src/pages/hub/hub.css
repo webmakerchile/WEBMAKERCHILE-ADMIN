@@ -124,7 +124,6 @@
 .hub-root .prow.clickable:hover .pn b{color:var(--orange2);}
 
 /* kanban */
---lead:#6aa0c0;--disc:#c9a44a;--design:#5ec0a0;--dev:hsl(var(--primary));--testing:#b06ad0;--done:#4faf6a;--rev:#b06ad0;
 .hub-root .board{display:grid;grid-template-columns:repeat(6,1fr);gap:13px;margin-top:20px;align-items:start;}
 .hub-root .col{background:var(--card1);border:1px solid var(--line);border-radius:var(--r-lg);padding:12px 10px;min-height:90px;transition:background 0.2s,border-color 0.2s;}
 .hub-root .col.dragover{background:var(--orange-soft);border-color:var(--orange-line);}
