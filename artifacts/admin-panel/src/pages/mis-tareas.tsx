@@ -38,7 +38,7 @@ const STAGE_IDS = STAGES.map(s => s.id) as readonly string[];
 const CRITS = ["crítica", "alta", "media", "baja"] as const;
 const CRIT_COLOR: Record<string, string> = { crítica: "#cc2222", alta: "#e0795a", media: "#c9a44a", baja: "#6aa0c0" };
 
-const PROJ_STATUS: Record<string, string> = { lead: "Lead", disc: "Discovery", dev: "Desarrollo", rev: "Revisión", done: "Entregado" };
+const PROJ_STATUS: Record<string, string> = { lead: "Lead", disc: "Discovery", design: "Diseño", dev: "Desarrollo", testing: "Testing", done: "Entregado", rev: "Revisión" };
 
 /** Cuántas tareas en desarrollo a la vez antes de que avisemos. */
 const WIP_LIMITE = 3;
