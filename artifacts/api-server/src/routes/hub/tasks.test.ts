@@ -365,7 +365,7 @@ describe("PATCH /hub/tasks/:id — stage transitions", () => {
     expect(res.status).toBe(403);
   });
 
-  it("marketing gets 403 on unassigned task", async () => {
+  it("edicion gets 403 on unassigned task", async () => {
     const unassigned = { ...sampleTask, assigneeId: 99 };
     const chain = {
       from: vi.fn().mockReturnThis(),
@@ -376,7 +376,7 @@ describe("PATCH /hub/tasks/:id — stage transitions", () => {
       offset: vi.fn().mockResolvedValue([unassigned]),
     };
     vi.mocked(db.select).mockReturnValue(chain as never);
-    const res = await request(await buildApp(mockMarketingUser))
+    const res = await request(await buildApp(mockEditorUser))
       .patch("/hub/tasks/1")
       .send({ stage: "doing" });
     expect(res.status).toBe(403);
@@ -417,10 +417,11 @@ describe("DELETE /hub/tasks/:id", () => {
     expect(res.status).toBe(200);
   });
 
-  it("ejecutivo NO puede eliminar tareas creadas por otros", async () => {
+  it("ejecutivo puede eliminar tareas creadas por otros (escritura de tareas)", async () => {
     mockSelectSeq([sampleTask]); // createdById 1 ≠ 3
+    mockDeleteChain([{ id: 1 }]);
     const res = await request(await buildApp(mockEjecutivoUser)).delete("/hub/tasks/1");
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it("edicion NO puede eliminar tareas creadas por otros", async () => {
@@ -563,7 +564,7 @@ describe("Task comments", () => {
 
   it("unrelated member gets 403 on comments", async () => {
     mockSelectSeq([ownTask]);
-    const res = await request(await buildApp(mockMarketingUser)).get("/hub/tasks/1/comments");
+    const res = await request(await buildApp(mockSocialUser)).get("/hub/tasks/1/comments");
     expect(res.status).toBe(403);
   });
 
@@ -619,7 +620,7 @@ describe("GET /hub/tasks/:id/activity", () => {
 
   it("unrelated member gets 403", async () => {
     mockSelectSeq([{ id: 1, title: "T", assigneeId: 2, createdById: 1 }]);
-    const res = await request(await buildApp(mockMarketingUser)).get("/hub/tasks/1/activity");
+    const res = await request(await buildApp(mockSocialUser)).get("/hub/tasks/1/activity");
     expect(res.status).toBe(403);
   });
 });

@@ -271,7 +271,7 @@ router.get("/hub/tasks/team-members", async (req: Request, res: Response) => {
 router.get("/hub/tasks", async (req: Request, res: Response) => {
   try {
     const user = me(req);
-    const canManageAll = isCeoOrEjecutivo(req);
+    const canManageAll = isCeoOrEjecutivo(req) || canWriteTasks(req);
     // Tablero compartido: cualquiera con acceso a la sección ve la lista
     // completa e idéntica, no un recorte por assignee/creador.
     const sharedBoard = canManageAll || hasTasksScope(req);
@@ -1020,7 +1020,7 @@ router.get("/hub/tasks/:id", async (req: Request, res: Response) => {
     const task = await fetchTaskWithUsers(id);
     if (!task) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
     const user = me(req);
-    if (!isCeoOrEjecutivo(req) && task.assigneeId !== user.id && task.createdById !== user.id) {
+    if (!isCeoOrEjecutivo(req) && !canWriteTasks(req) && task.assigneeId !== user.id && task.createdById !== user.id) {
       res.status(403).json({ error: "Sin acceso" }); return;
     }
     res.json({ task });
@@ -1037,12 +1037,12 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
 
   try {
     const user = me(req);
-    const canManageAll = isCeoOrEjecutivo(req);
+    const canManageAll = isCeoOrEjecutivo(req) || canWriteTasks(req);
 
     const [existing] = await db.select().from(hubTasks).where(eq(hubTasks.id, id)).limit(1);
     if (!existing) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
 
-    // Autonomía con límites: dirección/ventas/rrhh gestionan todo; quien creó
+    // Todo rol con escritura de tareas gestiona todo (acceso a la sección = gestionar); quien creó
     // la tarea la edita completa; el asignado que no la creó solo mueve etapa
     // y marca checklist.
     const canFullEdit = canManageAll || existing.createdById === user.id;
@@ -1198,7 +1198,7 @@ async function loadTaskForMember(req: Request, res: Response, id: number) {
     .limit(1);
   if (!task) { res.status(404).json({ error: "Tarea no encontrada" }); return null; }
   const user = me(req);
-  if (!isCeoOrEjecutivo(req) && task.assigneeId !== user.id && task.createdById !== user.id) {
+  if (!isCeoOrEjecutivo(req) && !canWriteTasks(req) && task.assigneeId !== user.id && task.createdById !== user.id) {
     res.status(403).json({ error: "Sin acceso" });
     return null;
   }
@@ -1324,8 +1324,8 @@ router.delete("/hub/tasks/:id", async (req: Request, res: Response) => {
       .where(eq(hubTasks.id, id))
       .limit(1);
     if (!existing) { res.status(404).json({ error: "Tarea no encontrada" }); return; }
-    // Dirección elimina cualquier tarea; el resto, solo las que creó.
-    if (!isCeoOrSuperAdmin(req) && existing.createdById !== user.id) {
+    // Cualquier rol con escritura de tareas (hubWrite incluye "tasks") elimina cualquier tarea; el resto, solo las que creó.
+    if (!isCeoOrSuperAdmin(req) && !canWriteTasks(req) && existing.createdById !== user.id) {
       res.status(403).json({ error: "Solo la dirección o quien creó la tarea puede eliminarla" }); return;
     }
     const [deleted] = await db
