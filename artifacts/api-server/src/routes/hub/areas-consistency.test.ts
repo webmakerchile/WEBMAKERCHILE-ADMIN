@@ -117,11 +117,11 @@ describe("gates de área del flujo de ventas (routes/index.ts)", () => {
   const routesSrc = readFileSync(fileURLToPath(new URL("../index.ts", import.meta.url)), "utf8");
 
   it("/cotizaciones permite al área ejecutivo — autonomía del rol ventas", () => {
-    expect(routesSrc).toContain('router.use("/cotizaciones", requireArea("ceo", "ejecutivo"))');
+    expect(routesSrc).toContain('router.use("/cotizaciones", requireAreaOSeccion(["/ventas", "/cotizaciones"], "ceo", "ejecutivo"))');
   });
 
   it("el gate de /hub incluye al área ejecutivo", () => {
-    expect(routesSrc).toContain('requireArea("ceo", "ejecutivo", "rrhh")');
+    expect(routesSrc).toContain('"/metas"], "ceo", "ejecutivo", "rrhh")');
   });
 
   it("AREA_API_PREFIXES.ejecutivo documenta /hub y /cotizaciones", () => {

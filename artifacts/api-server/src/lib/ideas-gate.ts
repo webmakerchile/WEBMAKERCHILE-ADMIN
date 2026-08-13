@@ -1,6 +1,8 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { normalizeRole, type TeamRole } from "@workspace/roles";
 import type { AreaCheckUser } from "./require-area";
+import { routesInclude } from "@workspace/roles";
+import { getAllEffectiveRoutes } from "./role-permissions";
 
 /**
  * Quién entra al tablero de Ideas (Editora + Redes sociales, más los roles
@@ -27,5 +29,22 @@ export function requireIdeas(req: Request, res: Response, next: NextFunction): v
     next();
     return;
   }
-  res.status(403).json({ error: "No tienes acceso a esta sección" });
+  // Acceso a la seccion = uso: si en Ajustes le concedieron "/ideas" al rol,
+  // el tablero tambien se abre (ver lib/require-area.ts, requireAreaOSeccion).
+  void (async () => {
+    try {
+      const rol = (req.user as AreaCheckUser | undefined)?.teamRole;
+      if (rol) {
+        const mapa = await getAllEffectiveRoutes();
+        const efectivas = (mapa as Record<string, readonly string[] | "*" | undefined>)[rol];
+        if (efectivas && routesInclude(efectivas, "/ideas")) {
+          next();
+          return;
+        }
+      }
+    } catch {
+      // sin permisos legibles: cae al 403
+    }
+    res.status(403).json({ error: "No tienes acceso a esta sección" });
+  })();
 }

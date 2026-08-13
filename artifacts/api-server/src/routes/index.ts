@@ -52,7 +52,7 @@ import adminUsersRouter from "./admin-users";
 import rolePermissionsRouter from "./role-permissions";
 import panelRouter from "./panel";
 import wmcRouter from "./wmc";
-import { requireArea } from "../lib/require-area";
+import { requireArea, requireAreaOSeccion } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
 import { communityIsHistoriasOnly } from "../lib/community-gate";
 import { requireIdeas } from "../lib/ideas-gate";
@@ -78,9 +78,9 @@ router.use(driveRouter);
 router.use(contentRouter);
 
 // Studio + transcriber: edicion area only (+ ceo/superadmin bypassed inside requireArea)
-router.use("/studio", requireArea("ceo", "edicion"));
+router.use("/studio", requireAreaOSeccion(["/estudio", "/ideas"], "ceo", "edicion"));
 router.use(studioRouter);
-router.use("/transcriber", requireArea("ceo", "edicion"));
+router.use("/transcriber", requireAreaOSeccion(["/transcriptor"], "ceo", "edicion"));
 router.use(transcriberRouter);
 
 router.use(youtubeRouter);
@@ -93,19 +93,19 @@ router.use(facebookRouter);
 // Community + analytics + inspirations: marketing area only — excepto Posts
 // IA (descripciones/interactivo), que edición también necesita.
 // Historias sigue exclusivo de marketing/dirección: ver community-gate.ts.
-const communityMarketingOnly = requireArea("ceo", "marketing");
-const communityWithEdicion = requireArea("ceo", "marketing", "edicion");
+const communityMarketingOnly = requireAreaOSeccion(["/historias"], "ceo", "marketing");
+const communityWithEdicion = requireAreaOSeccion(["/descripciones", "/historias"], "ceo", "marketing", "edicion");
 router.use("/community", (req, res, next) => {
   if (communityIsHistoriasOnly(req.path)) { communityMarketingOnly(req, res, next); return; }
   communityWithEdicion(req, res, next);
 });
 router.use(communityRouter);
 // Cuentas publicitarias de clientes: del área de marketing (y dirección).
-router.use("/marketing", requireArea("ceo", "marketing"));
+router.use("/marketing", requireAreaOSeccion(["/marketing"], "ceo", "marketing"));
 router.use(marketingRouter);
-router.use("/analytics", requireArea("ceo", "marketing"));
+router.use("/analytics", requireAreaOSeccion(["/schedule", "/insights"], "ceo", "marketing"));
 router.use(analyticsRouter);
-router.use("/inspirations", requireArea("ceo", "marketing"));
+router.use("/inspirations", requireAreaOSeccion(["/ideas", "/historias"], "ceo", "marketing"));
 router.use(inspirationsRouter);
 
 // Ideas: tablero de EQUIPO de Editora + Redes sociales. Gate por ROL, no
@@ -154,7 +154,7 @@ router.use(adjuntosRouter);
 //
 // El tablero (`/hub`, `/hub/owner`) y las tareas (`/hub/tasks*`) los gatea el
 // ROL, no el área: ver lib/hub-gate.ts. El resto de /hub sigue por área.
-const hubAreaGate = requireArea("ceo", "ejecutivo", "rrhh");
+const hubAreaGate = requireAreaOSeccion(["/dashboard-ejecutivo", "/torre-ceo", "/proyectos", "/clientes", "/ventas", "/cobros", "/reportes", "/proyecciones", "/rrhh", "/tickets", "/metas"], "ceo", "ejecutivo", "rrhh");
 router.use("/hub", (req, res, next) => {
   if (!hubNeedsAreaGate(req.path)) { next(); return; }
   hubAreaGate(req, res, next);
@@ -176,7 +176,7 @@ router.use(ticketsRouter);
 router.use(goalsRouter);
 
 // Cotizaciones: generador de cotizaciones PDF (hub ejecutivo)
-router.use("/cotizaciones", requireArea("ceo", "ejecutivo"));
+router.use("/cotizaciones", requireAreaOSeccion(["/ventas", "/cotizaciones"], "ceo", "ejecutivo"));
 router.use("/cotizaciones", cotizacionesRouter);
 
 router.use(adminUsersRouter);
