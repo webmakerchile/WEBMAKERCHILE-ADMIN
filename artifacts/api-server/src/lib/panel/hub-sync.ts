@@ -222,6 +222,16 @@ export async function respaldarProyectosWmcAlHubDesdeEspejo(): Promise<void> {
       `[PanelSync→Hub] respaldo de arranque: ${creados} tarjeta(s) nueva(s), ${movidos} movida(s) de fase`,
     );
   }
+  try {
+    const puente = await sincronizarTareasWmcAlScrum();
+    if (puente.creadas || puente.completadas || puente.notas) {
+      console.log(
+        `[PanelSync->Scrum] respaldo: ${puente.creadas} tarea(s) sembrada(s), ${puente.completadas} completada(s), ${puente.notas} nota(s) de proyecto actualizada(s)`,
+      );
+    }
+  } catch (e) {
+    console.error("[PanelSync->Scrum] respaldo fallo:", e instanceof Error ? e.message : e);
+  }
 }
 
 /**
