@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { hubState, hubTasks, panelEspejo } from "@workspace/db/schema";
+import { hubState, hubTasks, panelEspejo, type HubStateRow } from "@workspace/db/schema";
 import { findBoardOwner } from "../hub-board";
 
 /**
@@ -314,8 +314,9 @@ export async function sincronizarTareasWmcAlScrum(): Promise<{
     }
   }
 
-  // Alcances en la tarjeta de proyecto del Kanban (solo si la nota sigue
-  // siendo la del sync o una version anterior de este mismo resumen).
+  // Alcances en la tarjeta de proyecto del Kanban. Se arma el resumen por
+  // proyecto y se escribe dentro de una transaccion con FOR UPDATE, para no
+  // pisar lo que el equipo mueva en paralelo.
   const porProyecto = new Map<string, Record<string, unknown>[]>();
   for (const t of tareas) {
     const pid = t.projectId != null ? String(t.projectId) : "";
@@ -324,8 +325,8 @@ export async function sincronizarTareasWmcAlScrum(): Promise<{
     lista.push(t);
     porProyecto.set(pid, lista);
   }
-  let notasActualizadas = 0;
-  const ahoraMs = Date.now();
+
+  const notasPorProyecto = new Map<string, string>();
   for (const [pid, lista] of porProyecto) {
     const lineas: string[] = [];
     for (const fase of FASES_WMC) {
@@ -337,45 +338,52 @@ export async function sincronizarTareasWmcAlScrum(): Promise<{
         lineas.push(`${marca} ${String(t.title ?? "")}`);
       }
     }
-    if (lineas.length === 0) continue;
-    const nota = `Alcances (WMC):\n${lineas.join("\n")}`;
-    const resultado = await db.execute(sql`
-      UPDATE hub_state
-      SET data = jsonb_set(
-        data,
-        '{projects}',
-        COALESCE((
-          SELECT jsonb_agg(
-            CASE
-              WHEN elem->>'wmcId' = ${pid}
-                AND COALESCE(elem->>'notes', '') IS DISTINCT FROM ${nota}
-                AND (
-                  COALESCE(elem->>'notes', '') = ''
-                  OR elem->>'notes' = ${NOTA_PLACEHOLDER}
-                  OR elem->>'notes' LIKE 'Alcances (WMC):%'
-                )
-              THEN elem || jsonb_build_object('notes', ${nota}::text, 'updatedAt', ${ahoraMs}::bigint)
-              ELSE elem
-            END
-          )
-          FROM jsonb_array_elements(COALESCE(data->'projects', '[]'::jsonb)) elem
-        ), '[]'::jsonb)
-      ),
-      updated_at = now()
-      WHERE user_id = ${owner.id}
-        AND EXISTS (
-          SELECT 1 FROM jsonb_array_elements(COALESCE(data->'projects', '[]'::jsonb)) e2
-          WHERE e2->>'wmcId' = ${pid}
-            AND COALESCE(e2->>'notes', '') IS DISTINCT FROM ${nota}
-            AND (
-              COALESCE(e2->>'notes', '') = ''
-              OR e2->>'notes' = ${NOTA_PLACEHOLDER}
-              OR e2->>'notes' LIKE 'Alcances (WMC):%'
-            )
-        )
-    `);
-    const n = (resultado as unknown as { rowCount?: number }).rowCount ?? 0;
-    if (n > 0) notasActualizadas += 1;
+    if (lineas.length > 0) {
+      notasPorProyecto.set(pid, `Alcances (WMC):\n${lineas.join("\n")}`);
+    }
+  }
+
+  let notasActualizadas = 0;
+  if (notasPorProyecto.size > 0) {
+    await db.transaction(async (tx) => {
+      notasActualizadas = 0;
+      const [fila] = await tx
+        .select({ datos: hubState.data })
+        .from(hubState)
+        .where(eq(hubState.userId, owner.id))
+        .for("update")
+        .limit(1);
+      if (!fila) return;
+      const datos = (fila.datos ?? {}) as Record<string, unknown>;
+      const proyectos = Array.isArray(datos.projects)
+        ? (datos.projects as Record<string, unknown>[])
+        : [];
+      if (proyectos.length === 0) return;
+      const ahoraMs = Date.now();
+      const nuevos = proyectos.map((p) => {
+        const wmcId = p?.wmcId != null ? String(p.wmcId) : "";
+        const nota = notasPorProyecto.get(wmcId);
+        if (!nota) return p;
+        const actual = typeof p.notes === "string" ? p.notes : "";
+        if (actual === nota) return p;
+        // Nunca pisamos una nota escrita a mano.
+        const esNuestra =
+          actual === "" ||
+          actual === NOTA_PLACEHOLDER ||
+          actual.startsWith("Alcances (WMC):");
+        if (!esNuestra) return p;
+        notasActualizadas += 1;
+        return { ...p, notes: nota, updatedAt: ahoraMs };
+      });
+      if (notasActualizadas === 0) return;
+      await tx
+        .update(hubState)
+        .set({
+          data: { ...datos, projects: nuevos } as HubStateRow["data"],
+          updatedAt: new Date(),
+        })
+        .where(eq(hubState.userId, owner.id));
+    });
   }
 
   return { creadas, completadas, notas: notasActualizadas };
