@@ -224,9 +224,9 @@ export async function respaldarProyectosWmcAlHubDesdeEspejo(): Promise<void> {
   }
   try {
     const puente = await sincronizarTareasWmcAlScrum();
-    if (puente.creadas || puente.completadas || puente.notas) {
+    if (puente.creadas || puente.completadas || puente.revinculadas || puente.notas) {
       console.log(
-        `[PanelSync->Scrum] respaldo: ${puente.creadas} tarea(s) sembrada(s), ${puente.completadas} completada(s), ${puente.notas} nota(s) de proyecto actualizada(s)`,
+        `[PanelSync->Scrum] respaldo: ${puente.creadas} tarea(s) sembrada(s), ${puente.completadas} completada(s), ${puente.revinculadas} revinculada(s), ${puente.notas} nota(s) de proyecto actualizada(s)`,
       );
     }
   } catch (e) {
@@ -261,9 +261,10 @@ function esTareaWmcValida(r: Record<string, unknown>): r is { id: string } & Rec
 export async function sincronizarTareasWmcAlScrum(): Promise<{
   creadas: number;
   completadas: number;
+  revinculadas: number;
   notas: number;
 }> {
-  const nada = { creadas: 0, completadas: 0, notas: 0 };
+  const nada = { creadas: 0, completadas: 0, revinculadas: 0, notas: 0 };
   const owner = await findBoardOwner();
   if (!owner) return nada;
 
@@ -278,13 +279,36 @@ export async function sincronizarTareasWmcAlScrum(): Promise<{
   if (tareas.length === 0) return nada;
 
   const existentes = await db
-    .select({ id: hubTasks.id, stage: hubTasks.stage, origin: hubTasks.origin })
+    .select({
+      id: hubTasks.id,
+      stage: hubTasks.stage,
+      origin: hubTasks.origin,
+      projectRef: hubTasks.projectRef,
+    })
     .from(hubTasks)
     .where(sql`${hubTasks.origin} LIKE 'wmc:%'`);
   const porOrigin = new Map(existentes.map((t) => [String(t.origin), t]));
 
+  // Las tarjetas del Kanban tienen id propio; `projectRef` tiene que apuntar a
+  // ese id (no al uuid de wmc) para que la tarea se vincule al proyecto en la UI.
+  const [estado] = await db
+    .select({ datos: hubState.data })
+    .from(hubState)
+    .where(eq(hubState.userId, owner.id))
+    .limit(1);
+  const tarjetasProyecto = Array.isArray((estado?.datos as Record<string, unknown> | undefined)?.projects)
+    ? (((estado!.datos as Record<string, unknown>).projects) as Record<string, unknown>[])
+    : [];
+  const refPorWmcId = new Map<string, string>();
+  for (const tarjeta of tarjetasProyecto) {
+    const wmcId = tarjeta?.wmcId != null ? String(tarjeta.wmcId) : "";
+    const id = tarjeta?.id != null ? String(tarjeta.id) : "";
+    if (wmcId && id) refPorWmcId.set(wmcId, id);
+  }
+
   let creadas = 0;
   let completadas = 0;
+  let revinculadas = 0;
   const ahora = new Date();
   for (const t of tareas) {
     const origin = `wmc:${t.id}`;
@@ -299,13 +323,26 @@ export async function sincronizarTareasWmcAlScrum(): Promise<{
         title: String(t.title ?? "Tarea wmc").slice(0, 300),
         notes: notas || null,
         createdById: owner.id,
-        projectRef: idProyecto ? `wmc:${idProyecto}` : null,
+        projectRef: refPorWmcId.get(idProyecto) ?? null,
         stage: completadaEnWmc ? "done" : "backlog",
         origin,
         completedAt: completadaEnWmc ? ahora : null,
       });
       creadas += 1;
-    } else if (completadaEnWmc && previa.stage !== "done") {
+    } else {
+      // Reparar el vinculo al proyecto si quedo apuntando al uuid de wmc o si la
+      // tarjeta del Kanban aparecio despues de haber sembrado la tarea.
+      const idProyecto = t.projectId != null ? String(t.projectId) : "";
+      const refCorrecta = refPorWmcId.get(idProyecto) ?? null;
+      if (refCorrecta && previa.projectRef !== refCorrecta) {
+        await db
+          .update(hubTasks)
+          .set({ projectRef: refCorrecta, updatedAt: ahora })
+          .where(eq(hubTasks.id, previa.id));
+        revinculadas += 1;
+      }
+    }
+    if (previa && completadaEnWmc && previa.stage !== "done") {
       await db
         .update(hubTasks)
         .set({ stage: "done", stageSince: ahora, completedAt: ahora, updatedAt: ahora })
@@ -386,5 +423,5 @@ export async function sincronizarTareasWmcAlScrum(): Promise<{
     });
   }
 
-  return { creadas, completadas, notas: notasActualizadas };
+  return { creadas, completadas, revinculadas, notas: notasActualizadas };
 }

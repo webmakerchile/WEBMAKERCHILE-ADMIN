@@ -146,9 +146,9 @@ export async function sincronizarPanel(modo: "auto" | "manual"): Promise<Resulta
       // Puente tareas wmc -> Scrum del Hub (idempotente; lee el espejo ya confirmado).
       try {
         const puenteTareas = await sincronizarTareasWmcAlScrum();
-        if (puenteTareas.creadas || puenteTareas.completadas || puenteTareas.notas) {
+        if (puenteTareas.creadas || puenteTareas.completadas || puenteTareas.revinculadas || puenteTareas.notas) {
           console.log(
-            `[PanelSync->Scrum] ${puenteTareas.creadas} tarea(s) sembrada(s), ${puenteTareas.completadas} completada(s), ${puenteTareas.notas} nota(s) de proyecto actualizada(s)`,
+            `[PanelSync->Scrum] ${puenteTareas.creadas} tarea(s) sembrada(s), ${puenteTareas.completadas} completada(s), ${puenteTareas.revinculadas} revinculada(s), ${puenteTareas.notas} nota(s) de proyecto actualizada(s)`,
           );
         }
       } catch (e) {
@@ -329,9 +329,9 @@ export async function reconciliarPanel(): Promise<ResultadoReconciliacion> {
       // Puente tareas wmc -> Scrum del Hub (idempotente; lee el espejo ya confirmado).
       try {
         const puenteTareas = await sincronizarTareasWmcAlScrum();
-        if (puenteTareas.creadas || puenteTareas.completadas || puenteTareas.notas) {
+        if (puenteTareas.creadas || puenteTareas.completadas || puenteTareas.revinculadas || puenteTareas.notas) {
           console.log(
-            `[PanelSync->Scrum] ${puenteTareas.creadas} tarea(s) sembrada(s), ${puenteTareas.completadas} completada(s), ${puenteTareas.notas} nota(s) de proyecto actualizada(s)`,
+            `[PanelSync->Scrum] ${puenteTareas.creadas} tarea(s) sembrada(s), ${puenteTareas.completadas} completada(s), ${puenteTareas.revinculadas} revinculada(s), ${puenteTareas.notas} nota(s) de proyecto actualizada(s)`,
           );
         }
       } catch (e) {
