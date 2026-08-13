@@ -158,7 +158,7 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
         {projView === "scrum" && (
           <ProjectFilterCombobox projects={state.projects} value={filterProject} onChange={setFilterProject} />
         )}
-        {projView === "scrum" && (() => {
+        {projView === "scrum" && canManage && (() => {
           const doneCount = apiTasks.filter(t => t.stage === "done").length;
           return (
             <button
@@ -196,7 +196,7 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
           })}
         </div>
       )}
-      {projView === "scrum" && canManage && (
+      {projView === "scrum" && (
         <div className="flex justify-end mb-2">
           <Dictado
             tipo="tareas"
