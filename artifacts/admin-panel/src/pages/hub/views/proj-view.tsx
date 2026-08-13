@@ -158,7 +158,7 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
         {projView === "scrum" && (
           <ProjectFilterCombobox projects={state.projects} value={filterProject} onChange={setFilterProject} />
         )}
-        {projView === "scrum" && canManage && (() => {
+        {projView === "scrum" && (() => {
           const doneCount = apiTasks.filter(t => t.stage === "done").length;
           return (
             <button
