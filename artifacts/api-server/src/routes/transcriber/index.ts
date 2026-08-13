@@ -14,9 +14,9 @@ import {
 
 const router: IRouter = Router();
 
-const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+export const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MODEL = "whisper-large-v3-turbo";
-const SIZE_LIMIT = 24 * 1024 * 1024; // 24MB Groq limit
+export const SIZE_LIMIT = 24 * 1024 * 1024; // 24MB Groq limit
 const FFMPEG_TIMEOUT_MS = 5 * 60 * 1000;
 
 const upload = multer({
@@ -68,7 +68,7 @@ function runFfmpeg(args: string[]): Promise<void> {
  * WAV is still too big (uncompressed PCM grows for long audio), fall back to
  * Opus 32kbps mono 16kHz which compresses ~40x vs PCM.
  */
-async function shrinkForApi(
+export async function shrinkForApi(
   inputPath: string,
   // Los temporales se anotan AQUÍ según se crean, no al devolver.
   //
@@ -97,7 +97,7 @@ async function shrinkForApi(
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function transcribeWithGroq(filePath: string, filename: string, apiKey: string): Promise<string> {
+export async function transcribeWithGroq(filePath: string, filename: string, apiKey: string): Promise<string> {
   const MAX_ATTEMPTS = 5;
   let lastErr: Error | null = null;
 

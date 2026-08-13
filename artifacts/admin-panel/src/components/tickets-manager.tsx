@@ -13,6 +13,7 @@ import {
   type Ticket, type TicketPriority, type TicketStatus,
 } from "@/lib/tickets";
 import { useHubOwner } from "@/lib/hub-owner";
+import { Dictado, type ItemDictado } from "@/components/dictado";
 import {
   Loader2, AlertTriangle, Plus, Inbox, MessageSquare, ListChecks, Send, X,
 } from "lucide-react";
@@ -104,10 +105,31 @@ export function TicketsManager({ showHeader = true }: { showHeader?: boolean } =
             </p>
           </div>
         )}
-        <Button onClick={() => setCreating(v => !v)}>
-          {creating ? <X className="w-4 h-4 mr-1.5" /> : <Plus className="w-4 h-4 mr-1.5" />}
-          {creating ? "Cancelar" : "Nuevo ticket"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Dictado
+            tipo="tickets"
+            etiquetaDestino={(item) =>
+              TICKET_AREA_LABELS[item.area as TicketArea] ?? item.area ?? ""
+            }
+            onCrear={async (items: ItemDictado[]) => {
+              // En serie: cada ticket avisa a su area al crearse, y asi
+              // quedan en la bandeja en el mismo orden en que se dictaron.
+              for (const item of items) {
+                await createTicket.mutateAsync({
+                  title: item.title,
+                  description: item.description ?? "",
+                  area: item.area as TicketArea,
+                  priority: item.priority,
+                });
+              }
+              toast({ title: `${items.length} ticket(s) creados y derivados` });
+            }}
+          />
+          <Button onClick={() => setCreating(v => !v)}>
+            {creating ? <X className="w-4 h-4 mr-1.5" /> : <Plus className="w-4 h-4 mr-1.5" />}
+            {creating ? "Cancelar" : "Nuevo ticket"}
+          </Button>
+        </div>
       </header>
 
       {creating && (

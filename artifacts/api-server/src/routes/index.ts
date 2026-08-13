@@ -24,6 +24,7 @@ import collaborationRouter from "./collaboration";
 import connectionsRouter from "./connections";
 import settingsRouter from "./settings";
 import transcriberRouter from "./transcriber";
+import dictadoRouter from "./dictado";
 import credentialsRouter from "./credentials";
 import calendarRouter from "./calendar";
 import hubRouter from "./hub";
@@ -82,6 +83,7 @@ router.use("/studio", requireAreaOSeccion(["/estudio", "/ideas"], "ceo", "edicio
 router.use(studioRouter);
 router.use("/transcriber", requireAreaOSeccion(["/transcriptor"], "ceo", "edicion"));
 router.use(transcriberRouter);
+router.use(dictadoRouter);
 
 router.use(youtubeRouter);
 router.use(tiktokRouter);

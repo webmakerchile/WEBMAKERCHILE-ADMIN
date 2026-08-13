@@ -7,6 +7,8 @@ import type { HubState, HubTask, Project, ProjView as ProjViewMode, StateUpdater
 import { advanceStageObj, prioW, projProg, STATUS, statusOf, TASK_STAGES, taskStatusOf } from "../shared";
 import { DueChip, ProjCard, TaskCard } from "../small-components";
 import { crearCarpetaAutoProyecto, DRIVE_API_BASE } from "../sheet-content";
+import { Dictado, type ItemDictado } from "@/components/dictado";
+import { crearTareaHub } from "@/lib/tareas-hub";
 
 /** Marca especial para "tareas sin proyecto asignado" en el filtro de Scrum.
  *  Nunca choca con un id real: `uid()` siempre arranca con "id". */
@@ -192,6 +194,29 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
               </div>
             );
           })}
+        </div>
+      )}
+      {projView === "scrum" && canManage && (
+        <div className="flex justify-end mb-2">
+          <Dictado
+            tipo="tareas"
+            etiquetaDestino={(item: ItemDictado) => {
+              const p = state.projects.find((x) => x.id === item.projectRef);
+              return p ? p.name : "Sin proyecto";
+            }}
+            onCrear={async (items: ItemDictado[]) => {
+              for (const item of items) {
+                await crearTareaHub({
+                  title: item.title,
+                  notes: item.notes,
+                  priority: item.priority,
+                  projectRef: item.projectRef ?? null,
+                });
+              }
+              onRefreshTasks();
+              onToast(`${items.length} tarea(s) al Backlog`);
+            }}
+          />
         </div>
       )}
       {projView === "scrum" && (

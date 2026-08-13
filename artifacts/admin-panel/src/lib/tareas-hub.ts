@@ -247,3 +247,33 @@ export function useGenerarContenido() {
     },
   });
 }
+
+/**
+ * Crea una tarea suelta en el tablero (sin pasar por el hook).
+ *
+ * La usa el dictado, que crea varias de una: ahi no hay un formulario con su
+ * mutacion, sino una lista ya revisada que se manda entera.
+ */
+export async function crearTareaHub(t: {
+  title: string;
+  notes?: string;
+  priority?: string;
+  projectRef?: string | null;
+}): Promise<void> {
+  const r = await fetch(`${API_BASE}/hub/tasks`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: t.title,
+      notes: t.notes || undefined,
+      priority: t.priority || "media",
+      projectRef: t.projectRef || undefined,
+      stage: "backlog",
+    }),
+  });
+  if (!r.ok) {
+    const data = (await r.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || "No se pudo crear la tarea.");
+  }
+}
