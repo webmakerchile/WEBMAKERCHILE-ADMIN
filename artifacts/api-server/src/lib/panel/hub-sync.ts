@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { hubState, panelEspejo } from "@workspace/db/schema";
+import { hubState, hubTasks, panelEspejo } from "@workspace/db/schema";
 import { findBoardOwner } from "../hub-board";
 
 /**
@@ -222,4 +222,151 @@ export async function respaldarProyectosWmcAlHubDesdeEspejo(): Promise<void> {
       `[PanelSync→Hub] respaldo de arranque: ${creados} tarjeta(s) nueva(s), ${movidos} movida(s) de fase`,
     );
   }
+}
+
+/**
+ * Puente tareas wmc -> tablero Scrum/Ban del Hub (hub_tasks).
+ *
+ * - Siembra cada tarea wmc como tarjeta en Backlog una sola vez (marca
+ *   origin = "wmc:<id>"); despues el equipo la mueve con total libertad.
+ * - Si la tarea se completa en wmc, la tarjeta pasa a "done" (nunca se
+ *   revierte en el otro sentido una columna movida por el equipo).
+ * - Rellena las notas de la tarjeta de proyecto del Kanban con los alcances
+ *   (tareas por fase) mientras la nota siga siendo la del sync automatico.
+ */
+const FASES_WMC = ["MOCKUP", "DEVELOPMENT", "QA", "DELIVERY", "COMPLETED"] as const;
+const FASE_LABEL: Record<string, string> = {
+  MOCKUP: "Diseño",
+  DEVELOPMENT: "Desarrollo",
+  QA: "Testing",
+  DELIVERY: "Entrega",
+  COMPLETED: "Completado",
+};
+const NOTA_PLACEHOLDER = "Sincronizado automáticamente desde Proyectos (WMC).";
+
+function esTareaWmcValida(r: Record<string, unknown>): r is { id: string } & Record<string, unknown> {
+  return typeof r?.id === "string" && r.id.length > 0;
+}
+
+export async function sincronizarTareasWmcAlScrum(): Promise<{
+  creadas: number;
+  completadas: number;
+  notas: number;
+}> {
+  const nada = { creadas: 0, completadas: 0, notas: 0 };
+  const owner = await findBoardOwner();
+  if (!owner) return nada;
+
+  const filas = await db
+    .select({ datos: panelEspejo.datos })
+    .from(panelEspejo)
+    .where(eq(panelEspejo.recurso, "tareas"));
+  if (filas.length === 0) return nada;
+  const tareas = filas
+    .map((f) => f.datos as Record<string, unknown>)
+    .filter(esTareaWmcValida);
+  if (tareas.length === 0) return nada;
+
+  const existentes = await db
+    .select({ id: hubTasks.id, stage: hubTasks.stage, origin: hubTasks.origin })
+    .from(hubTasks)
+    .where(sql`${hubTasks.origin} LIKE 'wmc:%'`);
+  const porOrigin = new Map(existentes.map((t) => [String(t.origin), t]));
+
+  let creadas = 0;
+  let completadas = 0;
+  const ahora = new Date();
+  for (const t of tareas) {
+    const origin = `wmc:${t.id}`;
+    const completadaEnWmc = String(t.status ?? "") === "completed";
+    const previa = porOrigin.get(origin);
+    if (!previa) {
+      const fase = FASE_LABEL[String(t.phase ?? "")] ?? "";
+      const desc = typeof t.description === "string" ? t.description.trim() : "";
+      const notas = [fase ? `Fase: ${fase}` : "", desc].filter(Boolean).join("\n");
+      const idProyecto = t.projectId != null ? String(t.projectId) : "";
+      await db.insert(hubTasks).values({
+        title: String(t.title ?? "Tarea wmc").slice(0, 300),
+        notes: notas || null,
+        createdById: owner.id,
+        projectRef: idProyecto ? `wmc:${idProyecto}` : null,
+        stage: completadaEnWmc ? "done" : "backlog",
+        origin,
+        completedAt: completadaEnWmc ? ahora : null,
+      });
+      creadas += 1;
+    } else if (completadaEnWmc && previa.stage !== "done") {
+      await db
+        .update(hubTasks)
+        .set({ stage: "done", stageSince: ahora, completedAt: ahora, updatedAt: ahora })
+        .where(eq(hubTasks.id, previa.id));
+      completadas += 1;
+    }
+  }
+
+  // Alcances en la tarjeta de proyecto del Kanban (solo si la nota sigue
+  // siendo la del sync o una version anterior de este mismo resumen).
+  const porProyecto = new Map<string, Record<string, unknown>[]>();
+  for (const t of tareas) {
+    const pid = t.projectId != null ? String(t.projectId) : "";
+    if (!pid) continue;
+    const lista = porProyecto.get(pid) ?? [];
+    lista.push(t);
+    porProyecto.set(pid, lista);
+  }
+  let notasActualizadas = 0;
+  const ahoraMs = Date.now();
+  for (const [pid, lista] of porProyecto) {
+    const lineas: string[] = [];
+    for (const fase of FASES_WMC) {
+      const deFase = lista.filter((t) => String(t.phase ?? "") === fase);
+      if (deFase.length === 0) continue;
+      lineas.push(`${FASE_LABEL[fase]}:`);
+      for (const t of deFase) {
+        const marca = String(t.status ?? "") === "completed" ? "[x]" : "[ ]";
+        lineas.push(`${marca} ${String(t.title ?? "")}`);
+      }
+    }
+    if (lineas.length === 0) continue;
+    const nota = `Alcances (WMC):\n${lineas.join("\n")}`;
+    const resultado = await db.execute(sql`
+      UPDATE hub_state
+      SET data = jsonb_set(
+        data,
+        '{projects}',
+        COALESCE((
+          SELECT jsonb_agg(
+            CASE
+              WHEN elem->>'wmcId' = ${pid}
+                AND COALESCE(elem->>'notes', '') IS DISTINCT FROM ${nota}
+                AND (
+                  COALESCE(elem->>'notes', '') = ''
+                  OR elem->>'notes' = ${NOTA_PLACEHOLDER}
+                  OR elem->>'notes' LIKE 'Alcances (WMC):%'
+                )
+              THEN elem || jsonb_build_object('notes', ${nota}::text, 'updatedAt', ${ahoraMs}::bigint)
+              ELSE elem
+            END
+          )
+          FROM jsonb_array_elements(COALESCE(data->'projects', '[]'::jsonb)) elem
+        ), '[]'::jsonb)
+      ),
+      updated_at = now()
+      WHERE user_id = ${owner.id}
+        AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements(COALESCE(data->'projects', '[]'::jsonb)) e2
+          WHERE e2->>'wmcId' = ${pid}
+            AND COALESCE(e2->>'notes', '') IS DISTINCT FROM ${nota}
+            AND (
+              COALESCE(e2->>'notes', '') = ''
+              OR e2->>'notes' = ${NOTA_PLACEHOLDER}
+              OR e2->>'notes' LIKE 'Alcances (WMC):%'
+            )
+        )
+    `);
+    const n = (resultado as unknown as { rowCount?: number }).rowCount ?? 0;
+    if (n > 0) notasActualizadas += 1;
+  }
+
+  return { creadas, completadas, notas: notasActualizadas };
 }

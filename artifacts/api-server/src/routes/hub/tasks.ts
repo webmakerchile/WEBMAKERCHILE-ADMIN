@@ -10,6 +10,7 @@ import { recordActivity } from "../../lib/activity";
 import { claveSemanaActual } from "../../lib/sprint-semanal";
 import { generarPlanContenido, type VideoSemana } from "../../lib/contenido-ia";
 import { buildBrandToneSuffix } from "../../lib/brand-tone";
+import { panelConfigurado, panelPatch } from "../../lib/panel/cliente";
 
 const router: IRouter = Router();
 
@@ -1112,6 +1113,31 @@ router.patch("/hub/tasks/:id", async (req: Request, res: Response) => {
     }
 
     await db.update(hubTasks).set(updates).where(eq(hubTasks.id, id));
+
+    // Puente inverso Scrum -> wmc: si la tarea vino del panel wmc, reflejar el avance alla.
+    if (
+      d.stage !== undefined &&
+      d.stage !== existing.stage &&
+      typeof existing.origin === "string" &&
+      existing.origin.startsWith("wmc:") &&
+      panelConfigurado()
+    ) {
+      const idTareaWmc = existing.origin.slice(4);
+      const ETAPA_A_ESTADO_WMC: Record<string, string> = {
+        backlog: "pending",
+        sprint: "pending",
+        doing: "in_progress",
+        qa_sent: "in_progress",
+        qa_rev: "in_progress",
+        done: "completed",
+      };
+      const estadoWmc = ETAPA_A_ESTADO_WMC[d.stage];
+      if (estadoWmc) {
+        void panelPatch(`/tareas/${idTareaWmc}`, { status: estadoWmc }).catch((e) =>
+          console.error("[Hub->wmc] no se pudo reflejar el avance de la tarea:", e instanceof Error ? e.message : e),
+        );
+      }
+    }
 
     // Log activity
     if (d.stage !== undefined && d.stage !== existing.stage) {

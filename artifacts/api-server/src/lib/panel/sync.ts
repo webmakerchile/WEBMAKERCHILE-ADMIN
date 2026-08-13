@@ -5,7 +5,7 @@ import { panelConfigurado, panelGet, type ListadoPanel } from "./cliente";
 import { estadoSyncFila, guardarRegistros, RECURSOS_PANEL } from "./espejo";
 import { retirarCompartidosDeTerminados } from "./equipo";
 import { limpiarCacheVistas } from "./cache-vistas";
-import { sincronizarProyectosWmcAlHub } from "./hub-sync";
+import { sincronizarProyectosWmcAlHub, sincronizarTareasWmcAlScrum } from "./hub-sync";
 
 /** Cada cuánto se refresca el espejo (el manifiesto sugiere 5–15 min). */
 const FRESCURA_MS = 10 * 60 * 1000;
@@ -143,6 +143,17 @@ export async function sincronizarPanel(modo: "auto" | "manual"): Promise<Resulta
       // transacción del espejo (no adentro): un fallo acá jamás debe poder
       // revertir ni bloquear el sync del espejo, que es lo crítico. Si algo
       // sale mal se loguea y se reintenta solo en el próximo sync/reconciliación.
+      // Puente tareas wmc -> Scrum del Hub (idempotente; lee el espejo ya confirmado).
+      try {
+        const puenteTareas = await sincronizarTareasWmcAlScrum();
+        if (puenteTareas.creadas || puenteTareas.completadas || puenteTareas.notas) {
+          console.log(
+            `[PanelSync->Scrum] ${puenteTareas.creadas} tarea(s) sembrada(s), ${puenteTareas.completadas} completada(s), ${puenteTareas.notas} nota(s) de proyecto actualizada(s)`,
+          );
+        }
+      } catch (e) {
+        console.error("[PanelSync->Scrum] fallo (no afecta el sync del espejo):", e instanceof Error ? e.message : e);
+      }
       if (datosProyectosAplicados) {
         try {
           const { creados, movidos } = await sincronizarProyectosWmcAlHub(datosProyectosAplicados);
@@ -315,6 +326,17 @@ export async function reconciliarPanel(): Promise<ResultadoReconciliacion> {
       // Puente al Kanban del Hub, después de confirmar la transacción (ver
       // el mismo comentario en sincronizarPanel): nunca debe poder afectar
       // la reconciliación del espejo, que es lo crítico.
+      // Puente tareas wmc -> Scrum del Hub (idempotente; lee el espejo ya confirmado).
+      try {
+        const puenteTareas = await sincronizarTareasWmcAlScrum();
+        if (puenteTareas.creadas || puenteTareas.completadas || puenteTareas.notas) {
+          console.log(
+            `[PanelSync->Scrum] ${puenteTareas.creadas} tarea(s) sembrada(s), ${puenteTareas.completadas} completada(s), ${puenteTareas.notas} nota(s) de proyecto actualizada(s)`,
+          );
+        }
+      } catch (e) {
+        console.error("[PanelSync->Scrum] fallo (no afecta el sync del espejo):", e instanceof Error ? e.message : e);
+      }
       if (datosProyectosAplicados) {
         try {
           const { creados, movidos } = await sincronizarProyectosWmcAlHub(datosProyectosAplicados);
