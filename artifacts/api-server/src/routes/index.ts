@@ -64,6 +64,15 @@ import {
   transcribirAudioWmc,
   responderErrorAudio,
 } from "./wmc-audio";
+import {
+  WmcIAError,
+  generarMensaje,
+  generarCorreo,
+  corregirItems,
+  itemsDeComplemento,
+  generarAcuerdo,
+  corregirAcuerdo,
+} from "../lib/wmc-ia";
 import { requireArea, requireAreaOSeccion } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
 import { communityIsHistoriasOnly } from "../lib/community-gate";
@@ -147,6 +156,74 @@ router.post(
     }
   },
 );
+
+// Generadores de texto del panel wmc. Todos caian en el proxy ciego, que
+// devolvia el HTML del SPA con 200, asi que el panel fallaba sin decir por que.
+// Van ANTES del proxy; el resto de /wmc/* sigue viajando a wmc sin cambios.
+function errorIA(res: Response, e: unknown, etiqueta: string, generico: string) {
+  if (e instanceof WmcIAError) {
+    res.status(422).json({ error: e.message });
+    return;
+  }
+  console.error("[" + etiqueta + "]", e instanceof Error ? e.message : e);
+  res.status(500).json({ error: generico });
+}
+
+const MENSAJES = [
+  ["/wmc/proposals/generate-whatsapp-message", "whatsapp"],
+  ["/wmc/proposals/generate-cold-outreach", "frio"],
+  ["/wmc/proposals/generate-drive-message", "drive"],
+] as const;
+
+for (const [ruta, canal] of MENSAJES) {
+  router.post(ruta, async (req: Request, res: Response) => {
+    try {
+      res.json({ message: await generarMensaje(canal, req.body) });
+    } catch (e) {
+      errorIA(res, e, canal, "No se pudo generar el mensaje.");
+    }
+  });
+}
+
+router.post("/wmc/proposals/generate-email-message", async (req: Request, res: Response) => {
+  try {
+    res.json(await generarCorreo(req.body));
+  } catch (e) {
+    errorIA(res, e, "email-message", "No se pudo generar el correo.");
+  }
+});
+
+router.post("/wmc/proposals/correct-items-ai", async (req: Request, res: Response) => {
+  try {
+    res.json({ items: await corregirItems(req.body) });
+  } catch (e) {
+    errorIA(res, e, "correct-items-ai", "No se pudo corregir la lista de items.");
+  }
+});
+
+router.post("/wmc/addons/generate-items-ai", async (req: Request, res: Response) => {
+  try {
+    res.json(await itemsDeComplemento(req.body));
+  } catch (e) {
+    errorIA(res, e, "addons-items-ai", "No se pudo generar la lista de items.");
+  }
+});
+
+router.post("/wmc/service-agreements/generate-ai-content", async (req: Request, res: Response) => {
+  try {
+    res.json({ sections: await generarAcuerdo(req.body) });
+  } catch (e) {
+    errorIA(res, e, "acuerdo-generar", "No se pudo generar el acuerdo.");
+  }
+});
+
+router.post("/wmc/service-agreements/correct-ai-content", async (req: Request, res: Response) => {
+  try {
+    res.json({ sections: await corregirAcuerdo(req.body) });
+  } catch (e) {
+    errorIA(res, e, "acuerdo-corregir", "No se pudo corregir el acuerdo.");
+  }
+});
 
 router.use("/wmc", wmcRouter);
 router.use(driveRouter);
