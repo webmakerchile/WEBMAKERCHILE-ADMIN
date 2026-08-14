@@ -53,6 +53,7 @@ import adminUsersRouter from "./admin-users";
 import rolePermissionsRouter from "./role-permissions";
 import panelRouter from "./panel";
 import wmcRouter from "./wmc";
+import { desglosarEnItems, PresupuestoIAError } from "../lib/presupuesto-ia";
 import { requireArea, requireAreaOSeccion } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
 import { communityIsHistoriasOnly } from "../lib/community-gate";
@@ -74,6 +75,27 @@ router.use(panelRouter);
 // Gate propio por ROL (dev/ventas/ceo, los tres sin diferencias — ver
 // lib/wmc/access.ts), sin gate de área: no cuelga de /hub. Sistema aparte
 // del "Agencia" de arriba, que es un espejo con caché local y gate por rol.
+// El panel wmc ofrece "Generar Items (IA)" pero ese endpoint nunca existio del
+// otro lado: el proxy devolvia el HTML del SPA y el navegador moria al
+// parsearlo. Se atiende aca, ANTES del proxy, porque este server ya tiene la
+// clave de OpenAI. El resto de /wmc/* sigue viajando al panel sin cambios.
+router.post("/wmc/proposals/generate-items-ai", async (req, res) => {
+  const cuerpo = (req.body ?? {}) as { text?: unknown; clientName?: unknown };
+  const texto = typeof cuerpo.text === "string" ? cuerpo.text : "";
+  const cliente = typeof cuerpo.clientName === "string" ? cuerpo.clientName : undefined;
+  try {
+    const items = await desglosarEnItems(texto, cliente);
+    res.json({ items });
+  } catch (e) {
+    if (e instanceof PresupuestoIAError) {
+      res.status(422).json({ error: e.message });
+      return;
+    }
+    console.error("[generate-items-ai]", e instanceof Error ? e.message : e);
+    res.status(500).json({ error: "No se pudo generar la lista de items." });
+  }
+});
+
 router.use("/wmc", wmcRouter);
 router.use(driveRouter);
 router.use(contentRouter);

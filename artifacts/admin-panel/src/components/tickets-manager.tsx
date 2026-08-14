@@ -120,6 +120,8 @@ export function TicketsManager({ showHeader = true }: { showHeader?: boolean } =
                   description: item.description ?? "",
                   area: item.area as TicketArea,
                   priority: item.priority,
+                  assignedTo: item.assignedTo ?? null,
+                  dueDate: item.dueDate ?? "",
                 });
               }
               toast({ title: `${items.length} ticket(s) creados y derivados` });

@@ -14,6 +14,31 @@ export interface ItemDictado {
   area?: string;
   priority: PrioridadDictada;
   projectRef?: string | null;
+  assignedTo?: number | null;
+  assigneeId?: number | null;
+  dueDate?: string | null;
+  dudas?: string[];
+}
+
+export interface PersonaDictado {
+  id: number;
+  nombre: string;
+}
+
+/** Campos que la IA no logro deducir del audio: se marcan para revision manual. */
+const ETIQUETA_DUDA: Record<string, string> = {
+  area: "area",
+  priority: "prioridad",
+  assignedTo: "encargado",
+  assigneeId: "encargado",
+  dueDate: "fecha limite",
+  projectRef: "proyecto",
+};
+
+function nombrePersona(item: ItemDictado, equipo: PersonaDictado[]) {
+  const id = item.assignedTo ?? item.assigneeId ?? null;
+  if (id == null) return null;
+  return equipo.find((x) => x.id === id)?.nombre ?? null;
 }
 
 interface Props {
@@ -47,6 +72,7 @@ export function Dictado({ tipo, etiquetaDestino, onCrear, botonClassName }: Prop
   const [error, setError] = useState<string | null>(null);
   const [transcripcion, setTranscripcion] = useState("");
   const [items, setItems] = useState<ItemDictado[]>([]);
+  const [equipo, setEquipo] = useState<PersonaDictado[]>([]);
   const [segundos, setSegundos] = useState(0);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -121,11 +147,13 @@ export function Dictado({ tipo, etiquetaDestino, onCrear, botonClassName }: Prop
       const data = (await r.json().catch(() => ({}))) as {
         texto?: string;
         items?: ItemDictado[];
+        equipo?: PersonaDictado[];
         error?: string;
       };
       if (!r.ok) throw new Error(data.error || "No se pudo procesar el dictado.");
       setTranscripcion(data.texto ?? "");
       setItems(data.items ?? []);
+      setEquipo(data.equipo ?? []);
       if (!data.items?.length) {
         setError("No se entendio ningun encargo concreto en el audio. Proba de nuevo.");
       }
@@ -258,6 +286,21 @@ export function Dictado({ tipo, etiquetaDestino, onCrear, botonClassName }: Prop
                       <Badge variant="outline" className={PRIORIDAD_COLOR[item.priority]}>
                         {item.priority}
                       </Badge>
+                      {nombrePersona(item, equipo) && (
+                        <Badge variant="outline">{nombrePersona(item, equipo)}</Badge>
+                      )}
+                      {item.dueDate && (
+                        <Badge variant="outline">Vence {item.dueDate}</Badge>
+                      )}
+                      {(item.dudas ?? []).map((d) => (
+                        <Badge
+                          key={d}
+                          variant="outline"
+                          className="border-amber-500 text-amber-600"
+                        >
+                          Revisar {ETIQUETA_DUDA[d] ?? d}
+                        </Badge>
+                      ))}
                     </div>
                     {(item.description || item.notes) && (
                       <p className="mt-2 text-xs text-muted-foreground">

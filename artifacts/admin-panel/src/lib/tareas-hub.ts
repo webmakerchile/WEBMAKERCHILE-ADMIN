@@ -259,6 +259,8 @@ export async function crearTareaHub(t: {
   notes?: string;
   priority?: string;
   projectRef?: string | null;
+  assigneeId?: number | null;
+  dueDate?: string | null;
 }): Promise<void> {
   const r = await fetch(`${API_BASE}/hub/tasks`, {
     method: "POST",
@@ -269,6 +271,8 @@ export async function crearTareaHub(t: {
       notes: t.notes || undefined,
       priority: t.priority || "media",
       projectRef: t.projectRef || undefined,
+      assigneeId: t.assigneeId ?? undefined,
+      dueDate: t.dueDate || undefined,
       stage: "backlog",
     }),
   });

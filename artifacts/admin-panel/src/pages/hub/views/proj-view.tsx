@@ -211,6 +211,8 @@ export function ProjView({ state, onSave, onOpenProject, onOpenTask, onToast, pr
                   notes: item.notes,
                   priority: item.priority,
                   projectRef: item.projectRef ?? null,
+                  assigneeId: item.assigneeId ?? null,
+                  dueDate: item.dueDate ?? null,
                 });
               }
               onRefreshTasks();

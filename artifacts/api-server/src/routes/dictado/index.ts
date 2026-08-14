@@ -3,9 +3,9 @@ import multer from "multer";
 import fs from "fs";
 import os from "os";
 import { db } from "@workspace/db";
-import { hubState } from "@workspace/db/schema";
+import { hubState, users } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
-import { ticketAreasFor, normalizeRole } from "@workspace/roles";
+import { findBoardOwner } from "../../lib/hub-board";
 import {
   decidirArchivo,
   explicarFalloTranscripcion,
@@ -17,6 +17,7 @@ import {
   extraerTickets,
   DictadoError,
   type ProyectoParaDictado,
+  type PersonaEquipo,
 } from "../../lib/dictado-ia";
 
 /**
@@ -92,48 +93,61 @@ function responderError(res: Response, e: unknown) {
   res.status(500).json({ error: explicarFalloTranscripcion(mensaje) });
 }
 
-/** Dictado -> tickets propuestos, ya derivados por area. */
+/** Carga el equipo para que la IA pueda resolver "encargado a ...". */
+async function cargarEquipo(): Promise<PersonaEquipo[]> {
+  const filas = await db
+    .select({ id: users.id, nombre: users.name, email: users.email, rol: users.teamRole })
+    .from(users);
+  return filas
+    .map((u) => ({
+      id: u.id,
+      nombre: (u.nombre || u.email || "").trim(),
+      rol: u.rol || undefined,
+    }))
+    .filter((p) => p.nombre.length > 0);
+}
+
+/** Proyectos del tablero compartido (board owner), no del usuario que dicta. */
+async function cargarProyectos(): Promise<ProyectoParaDictado[]> {
+  const owner = await findBoardOwner();
+  if (!owner) return [];
+  const [fila] = await db
+    .select({ datos: hubState.data })
+    .from(hubState)
+    .where(eq(hubState.userId, owner.id))
+    .limit(1);
+  const datos = (fila?.datos ?? {}) as Record<string, unknown>;
+  const lista = Array.isArray(datos.projects)
+    ? (datos.projects as Record<string, unknown>[])
+    : [];
+  return lista
+    .map((p) => ({
+      ref: p?.id != null ? String(p.id) : "",
+      nombre: p?.name != null ? String(p.name) : "",
+      cliente: p?.client != null ? String(p.client) : undefined,
+    }))
+    .filter((p) => p.ref && p.nombre);
+}
+
+/** Dictado -> tickets propuestos con area, prioridad, encargado y fecha limite. */
 router.post("/dictado/tickets", recibirAudio, async (req: Request, res: Response) => {
   try {
-    const usuario = req.user as UsuarioReq;
-    const areas = ticketAreasFor(
-      normalizeRole(usuario?.teamRole),
-      usuario?.role === "superadmin",
-    );
+    const equipo = await cargarEquipo();
     const texto = await transcribir(req);
-    const items = await extraerTickets(texto, areas as readonly string[]);
-    res.json({ texto, items });
+    const items = await extraerTickets(texto, equipo);
+    res.json({ texto, items, equipo });
   } catch (e) {
     responderError(res, e);
   }
 });
 
-/** Dictado -> tareas propuestas para el tablero, vinculadas al proyecto si se nombro. */
+/** Dictado -> tareas del tablero con proyecto, encargado, prioridad y fecha limite. */
 router.post("/dictado/tareas", recibirAudio, async (req: Request, res: Response) => {
   try {
-    const usuario = req.user as UsuarioReq;
-    let proyectos: ProyectoParaDictado[] = [];
-    if (usuario?.id) {
-      const [fila] = await db
-        .select({ datos: hubState.data })
-        .from(hubState)
-        .where(eq(hubState.userId, usuario.id))
-        .limit(1);
-      const datos = (fila?.datos ?? {}) as Record<string, unknown>;
-      const lista = Array.isArray(datos.projects)
-        ? (datos.projects as Record<string, unknown>[])
-        : [];
-      proyectos = lista
-        .map((p) => ({
-          ref: p?.id != null ? String(p.id) : "",
-          nombre: p?.name != null ? String(p.name) : "",
-          cliente: p?.client != null ? String(p.client) : undefined,
-        }))
-        .filter((p) => p.ref && p.nombre);
-    }
+    const [proyectos, equipo] = await Promise.all([cargarProyectos(), cargarEquipo()]);
     const texto = await transcribir(req);
-    const items = await extraerTareas(texto, proyectos);
-    res.json({ texto, items });
+    const items = await extraerTareas(texto, proyectos, equipo);
+    res.json({ texto, items, proyectos, equipo });
   } catch (e) {
     responderError(res, e);
   }
