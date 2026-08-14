@@ -1,4 +1,9 @@
-import { Router, type IRouter } from "express";
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+} from "express";
 import healthRouter from "./health";
 import geminiRouter from "./gemini";
 import driveRouter from "./drive";
@@ -54,6 +59,11 @@ import rolePermissionsRouter from "./role-permissions";
 import panelRouter from "./panel";
 import wmcRouter from "./wmc";
 import { desglosarEnItems, PresupuestoIAError } from "../lib/presupuesto-ia";
+import {
+  recibirAudioWmc,
+  transcribirAudioWmc,
+  responderErrorAudio,
+} from "./wmc-audio";
 import { requireArea, requireAreaOSeccion } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
 import { communityIsHistoriasOnly } from "../lib/community-gate";
@@ -95,6 +105,48 @@ router.post("/wmc/proposals/generate-items-ai", async (req, res) => {
     res.status(500).json({ error: "No se pudo generar la lista de items." });
   }
 });
+
+// El panel wmc ofrece dictar audio en Propuestas y en Complementos, pero esos
+// endpoints nunca existieron del otro lado: el proxy devolvia el HTML del SPA
+// con 200 y el navegador no encontraba el texto. Se atienden aca, ANTES del
+// proxy, igual que "generate-items-ai".
+async function transcribirYResponder(req: Request, res: Response) {
+  try {
+    const text = await transcribirAudioWmc(req);
+    res.json({ text });
+  } catch (e) {
+    responderErrorAudio(res, e, "transcribe-audio", "No se pudo transcribir el audio.");
+  }
+}
+router.post("/wmc/proposals/transcribe-audio", recibirAudioWmc, transcribirYResponder);
+router.post("/wmc/addons/transcribe-audio", recibirAudioWmc, transcribirYResponder);
+
+/** Audio -> texto -> items, para armar la propuesta completa de una sola vez. */
+router.post(
+  "/wmc/proposals/auto-fill-from-audio",
+  recibirAudioWmc,
+  async (req: Request, res: Response) => {
+    try {
+      const text = await transcribirAudioWmc(req);
+      const cuerpo = (req.body ?? {}) as { clientName?: unknown };
+      const cliente =
+        typeof cuerpo.clientName === "string" ? cuerpo.clientName : undefined;
+      const items = await desglosarEnItems(text, cliente);
+      res.json({ text, items });
+    } catch (e) {
+      if (e instanceof PresupuestoIAError) {
+        res.status(422).json({ error: e.message });
+        return;
+      }
+      responderErrorAudio(
+        res,
+        e,
+        "auto-fill-from-audio",
+        "No se pudo armar la propuesta desde el audio.",
+      );
+    }
+  },
+);
 
 router.use("/wmc", wmcRouter);
 router.use(driveRouter);
