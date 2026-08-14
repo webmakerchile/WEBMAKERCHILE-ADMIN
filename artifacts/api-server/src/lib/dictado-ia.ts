@@ -83,9 +83,19 @@ function texto(valor: unknown, max: number): string {
   return typeof valor === "string" ? valor.trim().slice(0, max) : "";
 }
 
+/** Marca un campo para revision manual cuando no se pudo deducir del audio. */
+function marcar(dudas: string[], falta: boolean, campo: string) {
+  if (falta && !dudas.includes(campo)) dudas.push(campo);
+}
+
+function sinTildes(v: string) {
+  return v.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/** Acepta la prioridad con o sin tilde: el modelo la devuelve de las dos formas. */
 function prioridad(valor: unknown): Prioridad {
-  const v = texto(valor, 20).toLowerCase();
-  return (PRIORIDADES as readonly string[]).includes(v) ? (v as Prioridad) : "media";
+  const v = sinTildes(texto(valor, 20).toLowerCase().trim());
+  return PRIORIDADES.find((x) => sinTildes(x) === v) ?? "media";
 }
 
 /** Solo aceptamos YYYY-MM-DD; cualquier otra cosa se descarta. */
@@ -134,7 +144,7 @@ function reglasComunes(hoy: string): string {
     "  'media' si no se dijo nada del plazo.",
     `- fechaLimite: hoy es ${hoy}. Convertí a YYYY-MM-DD lo que se diga ("el viernes", "en dos semanas", "antes de fin de mes"). Si no se menciona ninguna fecha, null.`,
     "- encargado: SOLO el id numerico de la lista, cuando se nombre a la persona ('que lo tome Roberto', 'para Josue'). Si no se nombra a nadie, null.",
-    "- dudas: lista con los nombres de los campos que NO pudiste deducir del audio y tuviste que suponer. Si algo se dijo explicitamente, NO lo pongas en dudas.",
+    "- dudas: lista con los nombres de los campos que NO pudiste deducir del audio y tuviste que suponer. Si algo se dijo explicitamente, NO lo pongas en dudas. Regla estricta: todo campo que dejes en null, o que hayas rellenado suponiendo (por ejemplo prioridad 'media' sin que se dijera el plazo), DEBE aparecer en dudas.",
   ].join("\n");
 }
 
@@ -167,14 +177,18 @@ export async function extraerTickets(
       const area = texto(t.area, 40).toLowerCase();
       const valida = areas.includes(area);
       const dudas = listaDudas(t.dudas, CAMPOS_TICKET);
-      if (!valida && !dudas.includes("area")) dudas.push("area");
+      const asignado = persona(t.encargado, equipo);
+      const limite = fecha(t.fechaLimite);
+      marcar(dudas, !valida, "area");
+      marcar(dudas, asignado == null, "assignedTo");
+      marcar(dudas, limite == null, "dueDate");
       return {
         title: texto(t.titulo, 90),
         description: texto(t.descripcion, 2000),
         area: valida ? area : String(areas[0]),
         priority: prioridad(t.prioridad),
-        assignedTo: persona(t.encargado, equipo),
-        dueDate: fecha(t.fechaLimite),
+        assignedTo: asignado,
+        dueDate: limite,
         dudas,
       };
     })
@@ -197,21 +211,28 @@ export async function extraerTareas(
 
   const parsed = await pedirJson(
     "Sos el asistente operativo de una agencia digital chilena. Convertis dictados de voz en tareas de un tablero Scrum. Responde SOLO con JSON valido.",
-    `Transcripcion del audio:\n"""\n${transcripcion}\n"""\n\nDevolve este JSON exacto:\n{ "tareas": [ { "titulo": "...", "notas": "...", "prioridad": "crítica|alta|media|baja", "proyecto": null, "encargado": null, "fechaLimite": null, "dudas": [] } ] }\n\nProyectos disponibles (usa exactamente la clave de la izquierda):\n${catalogo}\n\nEquipo (para "encargado", usa el id numerico):\n${catalogoEquipo(equipo)}\n\nReglas:\n${reglasComunes(hoy)}\n- notas: el detalle que se dijo. Si no se dijo mas, string vacio.\n- proyecto: si se nombra al cliente o al proyecto ("para MyTurno", "lo de OFIX"), busca la clave que mejor calce. Si no se nombra ninguno, null y NO lo agregues a dudas.\n- Nombres de campo validos en dudas: ${CAMPOS_TAREA.join(", ")}.`,
+    `Transcripcion del audio:\n"""\n${transcripcion}\n"""\n\nDevolve este JSON exacto:\n{ "tareas": [ { "titulo": "...", "notas": "...", "prioridad": "crítica|alta|media|baja", "proyecto": null, "encargado": null, "fechaLimite": null, "dudas": [] } ] }\n\nProyectos disponibles (usa exactamente la clave de la izquierda):\n${catalogo}\n\nEquipo (para "encargado", usa el id numerico):\n${catalogoEquipo(equipo)}\n\nReglas:\n${reglasComunes(hoy)}\n- notas: el detalle que se dijo. Si no se dijo mas, string vacio.\n- proyecto: si se nombra al cliente o al proyecto ("para MyTurno", "lo de OFIX"), busca la clave que mejor calce. Si no se nombra ninguno, null y agrega "projectRef" a dudas.\n- Nombres de campo validos en dudas: ${CAMPOS_TAREA.join(", ")}.`,
   );
 
   const refs = new Set(proyectos.map((p) => p.ref));
   return listaDe(parsed, "tareas")
     .map((t) => {
       const ref = texto(t.proyecto, 120);
+      const proyecto = refs.has(ref) ? ref : null;
+      const asignado = persona(t.encargado, equipo);
+      const limite = fecha(t.fechaLimite);
+      const dudas = listaDudas(t.dudas, CAMPOS_TAREA);
+      marcar(dudas, proyecto == null, "projectRef");
+      marcar(dudas, asignado == null, "assigneeId");
+      marcar(dudas, limite == null, "dueDate");
       return {
         title: texto(t.titulo, 90),
         notes: texto(t.notas, 2000),
         priority: prioridad(t.prioridad),
-        projectRef: refs.has(ref) ? ref : null,
-        assigneeId: persona(t.encargado, equipo),
-        dueDate: fecha(t.fechaLimite),
-        dudas: listaDudas(t.dudas, CAMPOS_TAREA),
+        projectRef: proyecto,
+        assigneeId: asignado,
+        dueDate: limite,
+        dudas,
       };
     })
     .filter((t) => t.title.length > 0);
