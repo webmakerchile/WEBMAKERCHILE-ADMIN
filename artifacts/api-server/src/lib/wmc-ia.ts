@@ -230,3 +230,38 @@ export async function corregirAcuerdo(contexto: unknown): Promise<SeccionAcuerdo
   if (secciones.length === 0) throw new WmcIAError("No se pudo corregir el acuerdo.");
   return secciones;
 }
+
+/**
+ * Mini-contrato de un complemento. El panel solo lo muestra en pantalla
+ * (setShowContractPreview), no lo guarda, asi que aca solo se genera el texto.
+ */
+export async function generarContrato(contexto: unknown): Promise<string> {
+  const dato = await pedirJson(
+    "Redacta un mini-contrato breve para un trabajo adicional (complemento) " +
+      "sobre un proyecto ya en curso. Cubri en prosa: que incluye el trabajo, " +
+      "que no incluye, plazo estimado, precio y forma de pago, y que pasa si el " +
+      "cliente pide cambios despues de aprobado. Maximo 2500 caracteres, sin " +
+      "jerga legal innecesaria. No inventes plazos ni montos que no esten en el " +
+      "contexto: si falta un dato, dejalo indicado entre corchetes." +
+      '\n\nDevolve exactamente este JSON: { "contract": "..." }',
+    contexto,
+  );
+  const contrato = texto(dato.contract, 8000);
+  if (!contrato) throw new WmcIAError("No se pudo generar el contrato.");
+  return contrato;
+}
+
+/** Aplica una instruccion en lenguaje natural sobre un mini-contrato ya escrito. */
+export async function editarContrato(contexto: unknown): Promise<string> {
+  const dato = await pedirJson(
+    "Recibis un mini-contrato y una instruccion de cambio escrita por la " +
+      "persona que lo arma. Aplica el cambio y devolve el contrato completo, " +
+      "respetando todo lo que no se pidio cambiar. Mantene el mismo tono y " +
+      "extension." +
+      '\n\nDevolve exactamente este JSON: { "contract": "..." }',
+    contexto,
+  );
+  const contrato = texto(dato.contract, 8000);
+  if (!contrato) throw new WmcIAError("No se pudo editar el contrato.");
+  return contrato;
+}

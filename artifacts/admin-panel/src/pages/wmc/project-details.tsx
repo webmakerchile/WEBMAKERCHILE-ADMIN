@@ -356,13 +356,13 @@ export default function ProjectDetails() {
     }
   };
 
-  const generateAddonContract = async (addonId: string) => {
+  const generateAddonContract = async (addonId: string, datos?: unknown) => {
     setIsGeneratingContract(true);
     try {
       const res = await fetch("/api/wmc/addons/generate-contract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addonId }),
+        body: JSON.stringify({ addonId, addon: datos }),
       });
       const data = await res.json();
       if (data.contract) {
@@ -377,14 +377,18 @@ export default function ProjectDetails() {
     }
   };
 
-  const editAddonContract = async (addonId: string) => {
+  const editAddonContract = async (addonId: string, datos?: unknown) => {
     if (!contractEditInput.trim()) return;
     setIsEditingContract(true);
     try {
       const res = await fetch("/api/wmc/addons/edit-contract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ addonId, instruction: contractEditInput }),
+        body: JSON.stringify({
+          addonId,
+          addon: datos,
+          instruction: contractEditInput,
+        }),
       });
       const data = await res.json();
       if (data.contract) {
@@ -1554,7 +1558,7 @@ export default function ProjectDetails() {
                                   />
                                   <Button
                                     size="sm"
-                                    onClick={() => editAddonContract(addon.id)}
+                                    onClick={() => editAddonContract(addon.id, addon)}
                                     disabled={!contractEditInput.trim() || isEditingContract || editingContractId !== addon.id}
                                     className="bg-[#4A7C34] hover:bg-[#3d6b2b] text-white h-8 px-3 shrink-0"
                                     data-testid={`button-admin-edit-contract-${addon.id}`}
@@ -1566,7 +1570,7 @@ export default function ProjectDetails() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => generateAddonContract(addon.id)}
+                                    onClick={() => generateAddonContract(addon.id, addon)}
                                     disabled={isGeneratingContract}
                                     className="text-xs text-muted-foreground h-6"
                                     data-testid={`button-admin-regen-contract-${addon.id}`}
@@ -1603,7 +1607,7 @@ export default function ProjectDetails() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => generateAddonContract(addon.id)}
+                              onClick={() => generateAddonContract(addon.id, addon)}
                               disabled={isGeneratingContract}
                               className="border-[#4A7C34]/30 text-[#4A7C34]"
                               data-testid={`button-admin-gen-contract-${addon.id}`}

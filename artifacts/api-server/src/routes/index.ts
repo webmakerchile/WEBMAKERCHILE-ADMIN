@@ -72,6 +72,8 @@ import {
   itemsDeComplemento,
   generarAcuerdo,
   corregirAcuerdo,
+  generarContrato,
+  editarContrato,
 } from "../lib/wmc-ia";
 import { requireArea, requireAreaOSeccion } from "../lib/require-area";
 import { hubNeedsAreaGate } from "../lib/hub-gate";
@@ -222,6 +224,22 @@ router.post("/wmc/service-agreements/correct-ai-content", async (req: Request, r
     res.json({ sections: await corregirAcuerdo(req.body) });
   } catch (e) {
     errorIA(res, e, "acuerdo-corregir", "No se pudo corregir el acuerdo.");
+  }
+});
+
+router.post("/wmc/addons/generate-contract", async (req: Request, res: Response) => {
+  try {
+    res.json({ contract: await generarContrato(req.body) });
+  } catch (e) {
+    errorIA(res, e, "generar-contrato", "No se pudo generar el contrato.");
+  }
+});
+
+router.post("/wmc/addons/edit-contract", async (req: Request, res: Response) => {
+  try {
+    res.json({ contract: await editarContrato(req.body) });
+  } catch (e) {
+    errorIA(res, e, "editar-contrato", "No se pudo editar el contrato.");
   }
 });
 
